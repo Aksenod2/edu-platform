@@ -14,7 +14,10 @@ const STUDENT_NAV = [
     items: [
       { label: 'Обзор',      href: '/dashboard',          icon: <GridIcon /> },
       { label: 'Уроки',      href: '/dashboard/lessons',  icon: <BookIcon /> },
+      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
+      { label: 'Тред',       href: '/dashboard/thread',   icon: <ChatIcon /> },
       { label: 'Расписание', href: '/dashboard/schedule', icon: <CalendarIcon /> },
+      { label: 'Профиль',   href: '/dashboard/profile',  icon: <UserIcon /> },
     ],
   },
 ];
@@ -28,6 +31,9 @@ export default function DashboardPage() {
     if (!loading && !user) router.push('/login');
     if (!loading && user?.role === 'admin') router.push('/admin');
     if (!loading && user?.mustChangePassword) router.push('/change-password');
+    if (!loading && user?.role === 'student' && user.questionnaireCompleted === false) {
+      router.push('/dashboard/profile');
+    }
   }, [user, loading, router]);
 
   if (loading) {
@@ -69,10 +75,28 @@ export default function DashboardPage() {
           href="/dashboard/lessons"
         />
         <QuickCard
+          title="Задания"
+          description="Назначенные задания и их статусы"
+          mono="ASSIGNMENTS"
+          href="/dashboard/assignments"
+        />
+        <QuickCard
+          title="Тред"
+          description="Записи, файлы, обратная связь"
+          mono="THREAD"
+          href="/dashboard/thread"
+        />
+        <QuickCard
           title="Расписание"
           description="Предстоящие занятия и сроки"
           mono="SCHEDULE"
           href="/dashboard/schedule"
+        />
+        <QuickCard
+          title="Профиль"
+          description="Анкета и контактные данные"
+          mono="PROFILE"
+          href="/dashboard/profile"
         />
       </div>
     </DashboardLayout>
@@ -134,6 +158,33 @@ function CalendarIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <rect x="1" y="3" width="14" height="12" />
       <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 2h12v9H5l-3 3V2z" />
+      <path d="M5 6h6M5 9h3" />
+    </svg>
+  );
+}
+
+function ClipboardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="2" width="10" height="13" rx="1" />
+      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
     </svg>
   );
 }

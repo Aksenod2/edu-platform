@@ -20,7 +20,10 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Email и пароль обязательны' });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { studentProfile: { select: { questionnaireCompletedAt: true } } },
+    });
     if (!user || !user.isActive) {
       return reply.status(401).send({ error: 'Неверный email или пароль' });
     }
@@ -57,6 +60,9 @@ export async function authRoutes(app: FastifyInstance) {
         name: user.name,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        questionnaireCompleted: user.role === 'student'
+          ? !!user.studentProfile?.questionnaireCompletedAt
+          : undefined,
       },
     };
   });
@@ -70,7 +76,11 @@ export async function authRoutes(app: FastifyInstance) {
 
     const storedToken = await prisma.refreshToken.findUnique({
       where: { token: refreshTokenValue },
-      include: { user: true },
+      include: {
+        user: {
+          include: { studentProfile: { select: { questionnaireCompletedAt: true } } },
+        },
+      },
     });
 
     if (!storedToken || storedToken.expiresAt < new Date() || !storedToken.user.isActive) {
@@ -113,6 +123,9 @@ export async function authRoutes(app: FastifyInstance) {
         name: storedToken.user.name,
         role: storedToken.user.role,
         mustChangePassword: storedToken.user.mustChangePassword,
+        questionnaireCompleted: storedToken.user.role === 'student'
+          ? !!storedToken.user.studentProfile?.questionnaireCompletedAt
+          : undefined,
       },
     };
   });

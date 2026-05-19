@@ -9,6 +9,9 @@ import { streamRoutes } from './routes/streams.js';
 import { userRoutes } from './routes/users.js';
 import { lessonRoutes } from './routes/lessons.js';
 import { scheduleRoutes } from './routes/schedule.js';
+import { assignmentRoutes } from './routes/assignments.js';
+import { profileRoutes } from './routes/profiles.js';
+import { threadRoutes } from './routes/threads.js';
 
 const app = Fastify({ logger: true });
 
@@ -39,6 +42,9 @@ await app.register(streamRoutes);
 await app.register(userRoutes);
 await app.register(lessonRoutes);
 await app.register(scheduleRoutes);
+await app.register(assignmentRoutes);
+await app.register(profileRoutes);
+await app.register(threadRoutes);
 
 app.get('/health', async () => {
   await prisma.$queryRaw`SELECT 1`;

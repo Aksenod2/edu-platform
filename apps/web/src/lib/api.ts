@@ -8,6 +8,7 @@ interface AuthResponse {
     name: string;
     role: 'admin' | 'student';
     mustChangePassword: boolean;
+    questionnaireCompleted?: boolean;
   };
 }
 
@@ -357,4 +358,288 @@ export async function deleteScheduleEntry(
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+}
+
+// Assignments API
+
+export interface Assignment {
+  id: string;
+  streamId: string;
+  lessonId: string | null;
+  title: string;
+  description: string | null;
+  type: 'short' | 'long';
+  tags: string[];
+  dueDate: string | null;
+  groupId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lesson?: { id: string; title: string } | null;
+  stream?: { id: string; name: string };
+  _count?: { studentAssignments: number };
+}
+
+export interface StudentAssignment {
+  id: string;
+  assignmentId: string;
+  studentId: string;
+  status: 'assigned' | 'submitted' | 'reviewed';
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assignment?: Assignment;
+  student?: { id: string; name: string; email: string };
+}
+
+export async function getAssignments(
+  accessToken: string,
+  streamId: string,
+): Promise<{ assignments: Assignment[] }> {
+  return request(`/assignments?streamId=${encodeURIComponent(streamId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getAssignment(
+  accessToken: string,
+  id: string,
+): Promise<{ assignment: Assignment }> {
+  return request(`/assignments/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createAssignment(
+  accessToken: string,
+  data: {
+    streamId: string;
+    title: string;
+    description?: string;
+    type?: 'short' | 'long';
+    tags?: string[];
+    dueDate?: string;
+    lessonId?: string;
+  },
+): Promise<{ assignment: Assignment }> {
+  return request('/assignments', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAssignment(
+  accessToken: string,
+  id: string,
+  data: {
+    title?: string;
+    description?: string;
+    type?: 'short' | 'long';
+    tags?: string[];
+    dueDate?: string | null;
+    lessonId?: string | null;
+  },
+): Promise<{ assignment: Assignment }> {
+  return request(`/assignments/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAssignment(
+  accessToken: string,
+  id: string,
+): Promise<{ message: string }> {
+  return request(`/assignments/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function assignAssignment(
+  accessToken: string,
+  id: string,
+  data: { studentId?: string; groupId?: string },
+): Promise<{ studentAssignment?: StudentAssignment; assigned?: number; message?: string }> {
+  return request(`/assignments/${id}/assign`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getStudentAssignments(
+  accessToken: string,
+  params?: { streamId?: string; status?: string },
+): Promise<{ studentAssignments: StudentAssignment[] }> {
+  const query = new URLSearchParams();
+  if (params?.streamId) query.set('streamId', params.streamId);
+  if (params?.status) query.set('status', params.status);
+  const qs = query.toString();
+  return request(`/student-assignments${qs ? '?' + qs : ''}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function updateStudentAssignment(
+  accessToken: string,
+  id: string,
+  data: { status: 'submitted' | 'reviewed' },
+): Promise<{ studentAssignment: StudentAssignment }> {
+  return request(`/student-assignments/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+// Profiles API
+
+export interface StudentProfile {
+  id: string;
+  resume: string | null;
+  portfolio: string | null;
+  contacts: { email?: string; telegram?: string } | null;
+  direction: string | null;
+  questionnaireCompletedAt: string | null;
+}
+
+export interface TeacherNote {
+  id: string;
+  studentId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  author: { id: string; name: string };
+}
+
+export interface ProfileResponse {
+  student: { id: string; email: string; name: string; createdAt: string };
+  profile: StudentProfile | null;
+  notes?: TeacherNote[];
+}
+
+export async function getProfile(
+  accessToken: string,
+  studentId: string,
+): Promise<ProfileResponse> {
+  return request(`/profiles/${studentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function updateProfile(
+  accessToken: string,
+  studentId: string,
+  data: {
+    resume?: string;
+    portfolio?: string;
+    contacts?: { email?: string; telegram?: string };
+    direction?: string;
+  },
+): Promise<{ profile: StudentProfile }> {
+  return request(`/profiles/${studentId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getTeacherNotes(
+  accessToken: string,
+  studentId: string,
+): Promise<{ notes: TeacherNote[] }> {
+  return request(`/profiles/${studentId}/notes`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addTeacherNote(
+  accessToken: string,
+  studentId: string,
+  content: string,
+): Promise<{ note: TeacherNote }> {
+  return request(`/profiles/${studentId}/notes`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ content }),
+  });
+}
+
+// Threads API
+
+export type ThreadEntryType = 'text' | 'file' | 'audio' | 'link' | 'comment' | 'note';
+
+export interface ThreadEntry {
+  id: string;
+  threadId: string;
+  authorId: string;
+  type: ThreadEntryType;
+  content: string;
+  metadata: {
+    s3Key?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
+  } | null;
+  assignmentId: string | null;
+  createdAt: string;
+  author: { id: string; name: string; role: string };
+  assignment: { id: string; title: string } | null;
+}
+
+export interface ThreadResponse {
+  student: { id: string; name: string; email: string };
+  thread: { id: string };
+  entries: ThreadEntry[];
+}
+
+export async function getThread(
+  accessToken: string,
+  studentId: string,
+): Promise<ThreadResponse> {
+  return request(`/threads/${studentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addThreadEntry(
+  accessToken: string,
+  studentId: string,
+  data: { type: ThreadEntryType; content: string; assignmentId?: string },
+): Promise<{ entry: ThreadEntry }> {
+  return request(`/threads/${studentId}/entries`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadThreadFile(
+  accessToken: string,
+  studentId: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+  assignmentId?: string,
+): Promise<{ entry: ThreadEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+  if (assignmentId) formData.append('assignmentId', assignmentId);
+
+  const res = await fetch(`${API_URL}/threads/${studentId}/entries`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Ошибка загрузки файла');
+  }
+  return data as { entry: ThreadEntry };
 }

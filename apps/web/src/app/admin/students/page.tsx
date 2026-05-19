@@ -226,6 +226,12 @@ export default function StudentsPage() {
                 <td style={{ padding: '8px 12px' }}>
                   {!s.deletedAt && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <a
+                        href={`/admin/students/${s.id}`}
+                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: '#f5f5f5', textDecoration: 'none', color: '#333' }}
+                      >
+                        Профиль
+                      </a>
                       <button
                         onClick={() => handleToggleActive(s)}
                         style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: s.isActive ? '#fee' : '#efe' }}

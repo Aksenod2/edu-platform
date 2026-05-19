@@ -66,6 +66,7 @@ export default function AdminPage() {
         <QuickCard title="Ученики"    description="Список и карточки учеников"        mono="STUDENTS" href="/admin/students" />
         <QuickCard title="Потоки"     description="Учебные группы и их уроки"          mono="STREAMS"  href="/admin/streams" />
         <QuickCard title="Расписание" description="Предстоящие занятия и сроки сдачи" mono="SCHEDULE" href="/admin/schedule" />
+        <QuickCard title="Задания"    description="Управление заданиями (через потоки)"  mono="ASSIGNMENTS" href="/admin/streams" />
       </div>
     </DashboardLayout>
   );

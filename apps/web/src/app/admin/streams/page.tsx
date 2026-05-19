@@ -240,6 +240,12 @@ export default function StreamsPage() {
                         Уроки
                       </button>
                       <button
+                        onClick={() => router.push(`/admin/streams/${stream.id}/assignments`)}
+                        style={{ padding: '4px 12px', background: '#f0e8fd', border: '1px solid #d5b3f2', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#7c3aed' }}
+                      >
+                        Задания
+                      </button>
+                      <button
                         onClick={() => { setEditingId(stream.id); setEditName(stream.name); }}
                         style={{ padding: '4px 12px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
                       >
