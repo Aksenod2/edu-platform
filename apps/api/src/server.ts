@@ -1,13 +1,35 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
 import { prisma } from '@platform/db';
+import { authRoutes } from './routes/auth.js';
 
 const app = Fastify({ logger: true });
 
 await app.register(cors, {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true,
 });
+
+await app.register(cookie);
+
+await app.register(rateLimit, {
+  global: false,
+});
+
+// Rate limit on auth endpoints
+await app.register(
+  async (authScope) => {
+    await authScope.register(rateLimit, {
+      max: 10,
+      timeWindow: '1 minute',
+    });
+    await authScope.register(authRoutes);
+  },
+  { prefix: '' },
+);
 
 app.get('/health', async () => {
   await prisma.$queryRaw`SELECT 1`;
