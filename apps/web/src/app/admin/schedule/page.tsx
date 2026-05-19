@@ -1,8 +1,16 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { Card } from '@platform/ui/molecules';
+import { FormField } from '@platform/ui/molecules';
+import { EmptyState } from '@platform/ui/molecules';
+import { Button } from '@platform/ui/atoms';
+import { Input } from '@platform/ui/atoms';
+import { Heading, Text } from '@platform/ui/atoms';
+import { Spinner } from '@platform/ui/atoms';
 import {
   getStreams,
   getSchedule,
@@ -13,9 +21,22 @@ import {
   type ScheduleEntry,
 } from '@/lib/api';
 
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
+
 export default function SchedulePage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [selectedStreamId, setSelectedStreamId] = useState<string>('');
@@ -23,7 +44,6 @@ export default function SchedulePage() {
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [error, setError] = useState('');
 
-  // Create form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [newStartTime, setNewStartTime] = useState('');
@@ -31,7 +51,6 @@ export default function SchedulePage() {
   const [newNotes, setNewNotes] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
@@ -45,7 +64,6 @@ export default function SchedulePage() {
     if (!loading && user?.mustChangePassword) router.push('/change-password');
   }, [user, loading, router]);
 
-  // Load streams
   useEffect(() => {
     if (!accessToken || !user || user.role !== 'admin') return;
     getStreams(accessToken)
@@ -142,230 +160,323 @@ export default function SchedulePage() {
     }
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   if (!user || user.role !== 'admin') return null;
 
-  return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <button
-            onClick={() => router.push('/admin')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#666', marginBottom: 8, display: 'block' }}
-          >
-            &larr; Назад к панели
-          </button>
-          <h1 style={{ margin: 0 }}>Расписание</h1>
-        </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          disabled={!selectedStreamId}
-          style={{
-            padding: '8px 16px',
-            background: selectedStreamId ? '#0070f3' : '#ccc',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: selectedStreamId ? 'pointer' : 'default',
-            fontSize: 14,
-          }}
-        >
-          {showCreateForm ? 'Отмена' : 'Добавить занятие'}
-        </button>
-      </div>
+  const streamSelector = (
+    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+      <select
+        value={selectedStreamId}
+        onChange={(e) => setSelectedStreamId(e.target.value)}
+        style={{
+          padding: 'var(--space-2) var(--space-3)',
+          border: '1px solid var(--color-border-default)',
+          borderRadius: 'var(--radius-xs)',
+          fontSize: 'var(--text-sm)',
+          fontFamily: 'var(--font-mono)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+        }}
+      >
+        {streams.length === 0 && <option value="">Нет потоков</option>}
+        {streams.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name} {s.status === 'archived' ? '(архив)' : ''}
+          </option>
+        ))}
+      </select>
+      <Button
+        variant={showCreateForm ? 'ghost' : 'primary'}
+        size="sm"
+        onClick={() => setShowCreateForm(!showCreateForm)}
+        disabled={!selectedStreamId}
+      >
+        {showCreateForm ? 'Отмена' : 'Добавить занятие'}
+      </Button>
+    </div>
+  );
 
-      {/* Stream selector */}
-      <div style={{ marginBottom: 24 }}>
-        <label style={{ fontWeight: 'bold', marginRight: 8 }}>Поток:</label>
-        <select
-          value={selectedStreamId}
-          onChange={(e) => setSelectedStreamId(e.target.value)}
-          style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-        >
-          {streams.length === 0 && <option value="">Нет потоков</option>}
-          {streams.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} {s.status === 'archived' ? '(архив)' : ''}
-            </option>
-          ))}
-        </select>
-      </div>
+  return (
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+      <PageHeader
+        title="Расписание"
+        subtitle="Управление расписанием занятий"
+        action={streamSelector}
+      />
 
       {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00' }}>
-          {error}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+          <Text size="sm" color="var(--color-error)">{error}</Text>
+        </Card>
       )}
 
       {showCreateForm && (
-        <form onSubmit={handleCreate} style={{ marginBottom: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, border: '1px solid #eee' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>Новое занятие</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 'bold' }}>Дата</label>
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
+        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
+          <Heading level={3} size="md" style={{ marginBottom: 'var(--space-4)' }}>Новое занятие</Heading>
+          <form onSubmit={handleCreate}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+              <FormField
+                id="new-date"
+                label="Дата"
                 required
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                inputProps={{
+                  type: 'date',
+                  value: newDate,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewDate(e.target.value),
+                  required: true,
+                }}
+              />
+              <FormField
+                id="new-time"
+                label="Время начала"
+                required
+                inputProps={{
+                  type: 'time',
+                  value: newStartTime,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewStartTime(e.target.value),
+                  required: true,
+                }}
               />
             </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 'bold' }}>Время начала</label>
-              <input
-                type="time"
-                value={newStartTime}
-                onChange={(e) => setNewStartTime(e.target.value)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+              <FormField
+                id="new-lesson-title"
+                label="Название урока"
                 required
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                inputProps={{
+                  type: 'text',
+                  value: newLessonTitle,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewLessonTitle(e.target.value),
+                  placeholder: 'Например: Основы типографики',
+                  required: true,
+                }}
               />
+              <FormField
+                id="new-notes"
+                label="Тезисы"
+                hint="Опционально, markdown"
+              >
+                <textarea
+                  id="new-notes"
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="Краткое описание того, что будет на занятии..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: 'var(--space-3) var(--space-4)',
+                    border: '1px solid var(--color-border-default)',
+                    borderRadius: 'var(--radius-xs)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: 'var(--text-base)',
+                    color: 'var(--color-text-primary)',
+                    background: 'var(--color-bg-surface)',
+                    boxSizing: 'border-box',
+                    resize: 'vertical',
+                  }}
+                />
+              </FormField>
             </div>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 'bold' }}>Название урока</label>
-            <input
-              type="text"
-              value={newLessonTitle}
-              onChange={(e) => setNewLessonTitle(e.target.value)}
-              placeholder="Например: Основы типографики"
-              required
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
-            />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 'bold' }}>Тезисы (опционально, markdown)</label>
-            <textarea
-              value={newNotes}
-              onChange={(e) => setNewNotes(e.target.value)}
-              placeholder="Краткое описание того, что будет на занятии..."
-              rows={3}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={creating || !newDate || !newStartTime || !newLessonTitle.trim()}
-            style={{
-              padding: '8px 16px',
-              background: creating ? '#ccc' : '#0070f3',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: creating ? 'default' : 'pointer',
-              fontSize: 14,
-            }}
-          >
-            {creating ? 'Создание...' : 'Создать'}
-          </button>
-        </form>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={creating}
+              disabled={!newDate || !newStartTime || !newLessonTitle.trim()}
+            >
+              Создать
+            </Button>
+          </form>
+        </Card>
       )}
 
       {loadingEntries ? (
-        <p>Загрузка расписания...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+          <Spinner size="md" />
+        </div>
       ) : !selectedStreamId ? (
-        <p style={{ color: '#666' }}>Выберите поток для просмотра расписания.</p>
+        <EmptyState
+          title="Выберите поток"
+          description="Выберите поток для просмотра расписания."
+        />
       ) : entries.length === 0 ? (
-        <p style={{ color: '#666' }}>Расписание пока пусто. Добавьте первое занятие.</p>
+        <EmptyState
+          title="Расписание пусто"
+          description="Расписание пока пусто. Добавьте первое занятие."
+          action={{ label: 'Добавить занятие', onClick: () => setShowCreateForm(true) }}
+        />
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #eee' }}>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Дата</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Время</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Урок</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Тезисы</th>
-              <th style={{ textAlign: 'right', padding: '8px 12px' }}>Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id} style={{ borderBottom: '1px solid #eee' }}>
-                {editingId === entry.id ? (
-                  <>
-                    <td style={{ padding: 12 }}>
-                      <input
-                        type="date"
-                        value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
-                        style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13 }}
-                      />
-                    </td>
-                    <td style={{ padding: 12 }}>
-                      <input
-                        type="time"
-                        value={editStartTime}
-                        onChange={(e) => setEditStartTime(e.target.value)}
-                        style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13 }}
-                      />
-                    </td>
-                    <td style={{ padding: 12 }}>
-                      <input
-                        type="text"
-                        value={editLessonTitle}
-                        onChange={(e) => setEditLessonTitle(e.target.value)}
-                        style={{ width: '100%', padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, boxSizing: 'border-box' }}
-                      />
-                    </td>
-                    <td style={{ padding: 12 }}>
-                      <textarea
-                        value={editNotes}
-                        onChange={(e) => setEditNotes(e.target.value)}
-                        rows={2}
-                        style={{ width: '100%', padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
-                      />
-                    </td>
-                    <td style={{ padding: 12, textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={() => handleUpdate(entry.id)}
-                          disabled={saving || !editLessonTitle.trim()}
-                          style={{ padding: '4px 8px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
-                        >
-                          {saving ? '...' : 'Сохранить'}
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          style={{ padding: '4px 8px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
-                        >
-                          Отмена
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td style={{ padding: 12, fontSize: 14 }}>
-                      {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </td>
-                    <td style={{ padding: 12, fontSize: 14 }}>{entry.startTime}</td>
-                    <td style={{ padding: 12, fontWeight: 500 }}>{entry.lessonTitle}</td>
-                    <td style={{ padding: 12, fontSize: 13, color: '#666', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {entry.notes || '—'}
-                    </td>
-                    <td style={{ padding: 12, textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={() => startEdit(entry)}
-                          style={{ padding: '4px 12px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
-                        >
-                          Редактировать
-                        </button>
-                        <button
-                          onClick={() => handleDelete(entry.id)}
-                          style={{ padding: '4px 12px', background: '#fee', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#c00' }}
-                        >
-                          Удалить
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                )}
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 'var(--text-sm)',
+          }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Дата</th>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Время</th>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Урок</th>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Тезисы</th>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'right', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Действия</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                  {editingId === entry.id ? (
+                    <>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          size="sm"
+                        />
+                      </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Input
+                          type="time"
+                          value={editStartTime}
+                          onChange={(e) => setEditStartTime(e.target.value)}
+                          size="sm"
+                        />
+                      </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Input
+                          type="text"
+                          value={editLessonTitle}
+                          onChange={(e) => setEditLessonTitle(e.target.value)}
+                          size="sm"
+                        />
+                      </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <textarea
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          rows={2}
+                          style={{
+                            width: '100%',
+                            padding: 'var(--space-2) var(--space-3)',
+                            border: '1px solid var(--color-border-default)',
+                            borderRadius: 'var(--radius-xs)',
+                            fontFamily: 'var(--font-sans)',
+                            fontSize: 'var(--text-sm)',
+                            color: 'var(--color-text-primary)',
+                            background: 'var(--color-bg-surface)',
+                            boxSizing: 'border-box',
+                            resize: 'vertical',
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleUpdate(entry.id)}
+                            loading={saving}
+                            disabled={!editLessonTitle.trim()}
+                          >
+                            Сохранить
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                            Отмена
+                          </Button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Text size="sm" as="span">
+                          {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </Text>
+                      </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Text size="sm" as="span">{entry.startTime}</Text>
+                      </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Text size="sm" weight="medium" as="span">{entry.lessonTitle}</Text>
+                      </td>
+                      <td style={{ padding: 'var(--space-3)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <Text size="xs" color="tertiary" as="span">{entry.notes || '—'}</Text>
+                      </td>
+                      <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                          <Button variant="secondary" size="sm" onClick={() => startEdit(entry)}>
+                            Редактировать
+                          </Button>
+                          <Button variant="danger" size="sm" onClick={() => handleDelete(entry.id)}>
+                            Удалить
+                          </Button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </main>
+    </DashboardLayout>
+  );
+}
+
+// ─── Icons ──────────────────────────────────────────────
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
   );
 }

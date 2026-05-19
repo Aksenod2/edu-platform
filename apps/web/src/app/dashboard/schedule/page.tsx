@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -9,6 +9,26 @@ import {
   type Stream,
   type ScheduleEntry,
 } from '@/lib/api';
+import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { Card } from '@platform/ui/molecules';
+import { Heading, Text, Mono } from '@platform/ui/atoms';
+import { Spinner } from '@platform/ui/atoms';
+import { Badge } from '@platform/ui/atoms';
+import { Divider } from '@platform/ui/atoms';
+
+const STUDENT_NAV = [
+  {
+    label: 'Обучение',
+    items: [
+      { label: 'Обзор',      href: '/dashboard',            icon: <GridIcon /> },
+      { label: 'Уроки',      href: '/dashboard/lessons',    icon: <BookIcon /> },
+      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
+      { label: 'Тред',       href: '/dashboard/thread',     icon: <ChatIcon /> },
+      { label: 'Расписание', href: '/dashboard/schedule',   icon: <CalendarIcon /> },
+      { label: 'Профиль',    href: '/dashboard/profile',    icon: <UserIcon /> },
+    ],
+  },
+];
 
 function isPast(dateStr: string, startTime: string): boolean {
   const entryDate = new Date(dateStr);
@@ -18,8 +38,9 @@ function isPast(dateStr: string, startTime: string): boolean {
 }
 
 export default function StudentSchedulePage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [selectedStreamId, setSelectedStreamId] = useState<string>('');
@@ -33,7 +54,6 @@ export default function StudentSchedulePage() {
     if (!loading && user?.mustChangePassword) router.push('/change-password');
   }, [user, loading, router]);
 
-  // Load streams (active only for students)
   useEffect(() => {
     if (!accessToken || !user) return;
     getStreams(accessToken)
@@ -65,121 +85,180 @@ export default function StudentSchedulePage() {
     if (selectedStreamId) fetchSchedule();
   }, [selectedStreamId, fetchSchedule]);
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   if (!user) return null;
 
   const upcomingEntries = entries.filter((e) => !isPast(e.date, e.startTime));
   const pastEntries = entries.filter((e) => isPast(e.date, e.startTime));
 
   return (
-    <main style={{ padding: '24px 16px', fontFamily: 'sans-serif', maxWidth: 700, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <button
-            onClick={() => router.push('/dashboard')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#666', marginBottom: 4, display: 'block' }}
-          >
-            &larr; Назад
-          </button>
-          <h1 style={{ margin: 0, fontSize: 22 }}>Расписание</h1>
-        </div>
-        {streams.length > 1 && (
-          <select
-            value={selectedStreamId}
-            onChange={(e) => setSelectedStreamId(e.target.value)}
-            style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-          >
-            {streams.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: user.role as 'admin' | 'student' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+      }}
+      sidebar={{ sections: STUDENT_NAV }}
+    >
+      <PageHeader
+        title="Расписание"
+        subtitle="Предстоящие занятия и сроки"
+        action={
+          streams.length > 1 ? (
+            <select
+              value={selectedStreamId}
+              onChange={(e) => setSelectedStreamId(e.target.value)}
+              style={{
+                padding: 'var(--space-2) var(--space-4)',
+                background: 'var(--color-bg-surface)',
+                border: '1px solid var(--color-border-default)',
+                borderRadius: 'var(--radius-xs)',
+                color: 'var(--color-text-primary)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 'var(--text-sm)',
+              }}
+            >
+              {streams.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          ) : undefined
+        }
+      />
 
       {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00' }}>
-          {error}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+          <Text size="sm" color="var(--color-error)">{error}</Text>
+        </Card>
       )}
 
       {loadingEntries ? (
-        <p style={{ color: '#666' }}>Загрузка расписания...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+          <Spinner size="md" />
+        </div>
       ) : entries.length === 0 ? (
-        <p style={{ color: '#666' }}>Расписание пока не заполнено.</p>
+        <Text color="tertiary">Расписание пока не заполнено.</Text>
       ) : (
         <>
-          {/* Upcoming */}
           {upcomingEntries.length > 0 && (
-            <section style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 16, color: '#0070f3', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Предстоящие занятия
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <section style={{ marginBottom: 'var(--space-8)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-accent-red)' }}>
+                  Предстоящие занятия
+                </Mono>
+                <Badge variant="accent">{upcomingEntries.length}</Badge>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {upcomingEntries.map((entry) => (
-                  <div
+                  <Card
                     key={entry.id}
-                    style={{
-                      padding: 16,
-                      background: '#f0f7ff',
-                      border: '1px solid #d0e3ff',
-                      borderRadius: 8,
-                      borderLeft: '4px solid #0070f3',
-                    }}
+                    variant="default"
+                    padding="sm"
+                    style={{ borderLeft: '2px solid var(--color-accent-red)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
-                      <span style={{ fontWeight: 600, fontSize: 16 }}>{entry.lessonTitle}</span>
-                      <span style={{ fontSize: 13, color: '#555', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                      <Heading level={4} size="md" style={{ margin: 0 }}>{entry.lessonTitle}</Heading>
+                      <Mono size="xs" color="var(--color-text-tertiary)">
                         {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, {entry.startTime}
-                      </span>
+                      </Mono>
                     </div>
                     {entry.notes && (
-                      <p style={{ margin: '8px 0 0', fontSize: 14, color: '#444', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      <Text size="sm" color="secondary" style={{ marginTop: 'var(--space-2)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
                         {entry.notes}
-                      </p>
+                      </Text>
                     )}
-                  </div>
+                  </Card>
                 ))}
               </div>
             </section>
           )}
 
-          {/* Past */}
+          {upcomingEntries.length > 0 && pastEntries.length > 0 && (
+            <Divider spacing="md" />
+          )}
+
           {pastEntries.length > 0 && (
             <section>
-              <h2 style={{ fontSize: 16, color: '#999', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+              <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-4)', display: 'block' }}>
                 Прошедшие занятия
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              </Mono>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 {pastEntries.map((entry) => (
-                  <div
+                  <Card
                     key={entry.id}
-                    style={{
-                      padding: 12,
-                      background: '#fafafa',
-                      border: '1px solid #eee',
-                      borderRadius: 8,
-                      borderLeft: '4px solid #ddd',
-                      opacity: 0.7,
-                    }}
+                    variant="outlined"
+                    padding="sm"
+                    style={{ opacity: 0.6, borderLeft: '2px solid var(--color-border-subtle)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
-                      <span style={{ fontWeight: 500, fontSize: 15 }}>{entry.lessonTitle}</span>
-                      <span style={{ fontSize: 13, color: '#888', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                      <Text size="sm" weight="medium">{entry.lessonTitle}</Text>
+                      <Mono size="xs" color="var(--color-text-tertiary)">
                         {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, {entry.startTime}
-                      </span>
+                      </Mono>
                     </div>
                     {entry.notes && (
-                      <p style={{ margin: '6px 0 0', fontSize: 13, color: '#777', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                      <Text size="xs" color="tertiary" style={{ marginTop: 'var(--space-1)', whiteSpace: 'pre-wrap' }}>
                         {entry.notes}
-                      </p>
+                      </Text>
                     )}
-                  </div>
+                  </Card>
                 ))}
               </div>
             </section>
           )}
         </>
       )}
-    </main>
+    </DashboardLayout>
+  );
+}
+
+// ─── Inline icons ─────────────────────────────────────
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 2h10v12H3z" /><path d="M6 2v12" /><path d="M6 5h4M6 8h4M6 11h4" />
+    </svg>
+  );
+}
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" /><path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
+  );
+}
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 2h12v9H5l-3 3V2z" /><path d="M5 6h6M5 9h3" />
+    </svg>
+  );
+}
+function ClipboardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="2" width="10" height="13" rx="1" /><path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
+    </svg>
   );
 }

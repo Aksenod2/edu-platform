@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStudents,
@@ -12,10 +12,26 @@ import {
   resetStudentPassword,
   type Student,
 } from '@/lib/api';
+import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { Card, FormField } from '@platform/ui/molecules';
+import { Button, Input, Badge, Heading, Text, Mono, Spinner } from '@platform/ui/atoms';
+
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
 
 export default function StudentsPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState('');
@@ -23,7 +39,6 @@ export default function StudentsPage() {
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
-  // Create form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -120,157 +135,190 @@ export default function StudentsPage() {
     }
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   if (!user || user.role !== 'admin') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 960, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <a href="/admin" style={{ color: '#666', textDecoration: 'none', fontSize: 14 }}>&larr; Панель администратора</a>
-          <h1 style={{ margin: '8px 0 0' }}>Ученики</h1>
-        </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          style={{ padding: '8px 16px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-        >
-          {showCreateForm ? 'Отмена' : 'Создать ученика'}
-        </button>
-      </div>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+      <PageHeader
+        title="Ученики"
+        subtitle="Управление учениками"
+        action={
+          <Button
+            variant={showCreateForm ? 'ghost' : 'primary'}
+            size="sm"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+          >
+            {showCreateForm ? 'Отмена' : 'Создать ученика'}
+          </Button>
+        }
+      />
 
       {error && (
-        <div style={{ padding: '8px 12px', background: '#fee', color: '#c00', borderRadius: 4, marginBottom: 16 }}>
-          {error}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+          <Text size="sm" color="var(--color-error)">{error}</Text>
+        </Card>
       )}
 
       {actionMessage && (
-        <div style={{ padding: '8px 12px', background: '#efe', color: '#060', borderRadius: 4, marginBottom: 16, wordBreak: 'break-all' }}>
-          {actionMessage}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-success)', marginBottom: 'var(--space-4)' }}>
+          <Mono size="xs" style={{ wordBreak: 'break-all', color: 'var(--color-success)' }}>{actionMessage}</Mono>
+        </Card>
       )}
 
       {showCreateForm && (
-        <form onSubmit={handleCreate} style={{ padding: 16, background: '#f9f9f9', border: '1px solid #ddd', borderRadius: 6, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px' }}>Новый ученик</h3>
-          <div style={{ marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Имя"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              required
-              style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <input
-              type="email"
-              placeholder="Email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              required
-              style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={creating}
-            style={{ padding: '8px 16px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-          >
-            {creating ? 'Создание...' : 'Создать'}
-          </button>
-        </form>
+        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
+          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-4)' }}>Новый ученик</Heading>
+          <form onSubmit={handleCreate}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+              <FormField id="new-name" label="Имя" required inputProps={{ placeholder: 'Имя', value: newName, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value) }} />
+              <FormField id="new-email" label="Email" required inputProps={{ type: 'email', placeholder: 'Email', value: newEmail, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value) }} />
+            </div>
+            <Button type="submit" variant="primary" size="sm" loading={creating}>
+              Создать
+            </Button>
+          </form>
+        </Card>
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <input
-          type="text"
+      <div style={{ marginBottom: 'var(--space-4)' }}>
+        <Input
           placeholder="Поиск по имени или email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, width: '100%', maxWidth: 400, boxSizing: 'border-box' }}
+          leftElement={<SearchIcon />}
+          style={{ maxWidth: 400 }}
         />
       </div>
 
       {loadingStudents ? (
-        <p>Загрузка...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+          <Spinner size="md" />
+        </div>
       ) : students.length === 0 ? (
-        <p style={{ color: '#666' }}>Ученики не найдены</p>
+        <Text color="tertiary">Ученики не найдены</Text>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #ddd', textAlign: 'left' }}>
-              <th style={{ padding: '8px 12px' }}>Имя</th>
-              <th style={{ padding: '8px 12px' }}>Email</th>
-              <th style={{ padding: '8px 12px' }}>Статус</th>
-              <th style={{ padding: '8px 12px' }}>Дата создания</th>
-              <th style={{ padding: '8px 12px' }}>Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((s) => (
-              <tr key={s.id} style={{ borderBottom: '1px solid #eee', opacity: s.deletedAt ? 0.5 : 1 }}>
-                <td style={{ padding: '8px 12px' }}>{s.name}</td>
-                <td style={{ padding: '8px 12px' }}>{s.email}</td>
-                <td style={{ padding: '8px 12px' }}>
-                  {s.deletedAt ? (
-                    <span style={{ color: '#999' }}>Удалён</span>
-                  ) : s.isActive ? (
-                    <span style={{ color: '#060' }}>Активен</span>
-                  ) : (
-                    <span style={{ color: '#c00' }}>Заблокирован</span>
-                  )}
-                </td>
-                <td style={{ padding: '8px 12px' }}>{new Date(s.createdAt).toLocaleDateString('ru-RU')}</td>
-                <td style={{ padding: '8px 12px' }}>
-                  {!s.deletedAt && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <a
-                        href={`/admin/students/${s.id}`}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: '#f5f5f5', textDecoration: 'none', color: '#333' }}
-                      >
-                        Профиль
-                      </a>
-                      <a
-                        href={`/admin/students/${s.id}/thread`}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #99c', borderRadius: 3, cursor: 'pointer', background: '#eef', textDecoration: 'none', color: '#339' }}
-                      >
-                        Тред
-                      </a>
-                      <button
-                        onClick={() => handleToggleActive(s)}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: s.isActive ? '#fee' : '#efe' }}
-                      >
-                        {s.isActive ? 'Заблокировать' : 'Разблокировать'}
-                      </button>
-                      <button
-                        onClick={() => handleInvite(s)}
-                        disabled={!s.isActive}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: '#eef' }}
-                      >
-                        Invite
-                      </button>
-                      <button
-                        onClick={() => handleResetPassword(s)}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: '#ffe' }}
-                      >
-                        Сброс пароля
-                      </button>
-                      <button
-                        onClick={() => handleDelete(s)}
-                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #c00', color: '#c00', borderRadius: 3, cursor: 'pointer', background: '#fff' }}
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  )}
-                </td>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 'var(--text-sm)',
+          }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
+                {['Имя', 'Email', 'Статус', 'Создан', 'Действия'].map((h) => (
+                  <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {students.map((s) => (
+                <tr key={s.id} style={{ borderBottom: '1px solid var(--color-border-subtle)', opacity: s.deletedAt ? 0.4 : 1 }}>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>{s.name}</td>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <Mono size="xs">{s.email}</Mono>
+                  </td>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    {s.deletedAt ? (
+                      <Badge variant="default">Удалён</Badge>
+                    ) : s.isActive ? (
+                      <Badge variant="success">Активен</Badge>
+                    ) : (
+                      <Badge variant="error">Заблокирован</Badge>
+                    )}
+                  </td>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <Mono size="xs" color="var(--color-text-tertiary)">
+                      {new Date(s.createdAt).toLocaleDateString('ru-RU')}
+                    </Mono>
+                  </td>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    {!s.deletedAt && (
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                        <a href={`/admin/students/${s.id}`} style={{ textDecoration: 'none' }}>
+                          <Button variant="ghost" size="sm">Профиль</Button>
+                        </a>
+                        <a href={`/admin/students/${s.id}/thread`} style={{ textDecoration: 'none' }}>
+                          <Button variant="ghost" size="sm">Тред</Button>
+                        </a>
+                        <Button
+                          variant={s.isActive ? 'danger' : 'secondary'}
+                          size="sm"
+                          onClick={() => handleToggleActive(s)}
+                        >
+                          {s.isActive ? 'Блокировать' : 'Разблокировать'}
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => handleInvite(s)} disabled={!s.isActive}>
+                          Invite
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleResetPassword(s)}>
+                          Сброс пароля
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => handleDelete(s)}>
+                          Удалить
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </main>
+    </DashboardLayout>
+  );
+}
+
+// ─── Inline icons ─────────────────────────────────────
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" /><circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="7" cy="7" r="4" /><path d="M10 10l4 4" />
+    </svg>
   );
 }

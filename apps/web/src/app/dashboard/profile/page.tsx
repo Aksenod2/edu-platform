@@ -1,13 +1,35 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { Card } from '@platform/ui/molecules';
+import { FormField } from '@platform/ui/molecules';
+import { Button } from '@platform/ui/atoms';
+import { Text } from '@platform/ui/atoms';
+import { Spinner } from '@platform/ui/atoms';
+import { Badge } from '@platform/ui/atoms';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
 
+const STUDENT_NAV = [
+  {
+    label: 'Обучение',
+    items: [
+      { label: 'Обзор',      href: '/dashboard',          icon: <GridIcon /> },
+      { label: 'Уроки',      href: '/dashboard/lessons',  icon: <BookIcon /> },
+      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
+      { label: 'Тред',       href: '/dashboard/thread',   icon: <ChatIcon /> },
+      { label: 'Расписание', href: '/dashboard/schedule', icon: <CalendarIcon /> },
+      { label: 'Профиль',   href: '/dashboard/profile',  icon: <UserIcon /> },
+    ],
+  },
+];
+
 export default function ProfilePage() {
-  const { user, accessToken, loading, setUser } = useAuth();
+  const { user, accessToken, loading, logout, setUser } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -86,126 +108,201 @@ export default function ProfilePage() {
   };
 
   if (loading || loadingProfile) {
-    return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
   }
+
   if (!user) return null;
 
   const isCompleted = !!profile?.questionnaireCompletedAt;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 640, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>{isCompleted ? 'Мой профиль' : 'Анкета (Задание №0)'}</h1>
-        <a href="/dashboard" style={{ color: '#666', textDecoration: 'none' }}>
-          ← Назад
-        </a>
-      </div>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: user.role as 'admin' | 'student' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+      }}
+      sidebar={{ sections: STUDENT_NAV }}
+    >
+      <PageHeader
+        title={isCompleted ? 'Мой профиль' : 'Анкета (Задание №0)'}
+        subtitle={isCompleted ? 'Контактные данные и профессиональный бэкграунд' : undefined}
+      />
 
       {!isCompleted && (
-        <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, padding: 12, marginBottom: 20 }}>
-          Заполните анкету, чтобы преподаватель знал ваш профессиональный бэкграунд. Все поля обязательны.
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-warning)', marginBottom: 'var(--space-5)' }}>
+          <Text size="sm" color="var(--color-warning)">
+            Заполните анкету, чтобы преподаватель знал ваш профессиональный бэкграунд. Все поля обязательны.
+          </Text>
+        </Card>
       )}
 
       {error && (
-        <div style={{ background: '#f8d7da', border: '1px solid #dc3545', borderRadius: 6, padding: 12, marginBottom: 16, color: '#721c24' }}>
-          {error}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+          <Text size="sm" color="var(--color-error)">{error}</Text>
+        </Card>
       )}
+
       {message && (
-        <div style={{ background: '#d4edda', border: '1px solid #28a745', borderRadius: 6, padding: 12, marginBottom: 16, color: '#155724' }}>
-          {message}
-        </div>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-success)', marginBottom: 'var(--space-4)' }}>
+          <Text size="sm" color="var(--color-success)">{message}</Text>
+        </Card>
       )}
 
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
-            Резюме <span style={{ color: '#dc3545' }}>*</span>
-          </label>
-          <textarea
-            value={resume}
-            onChange={(e) => setResume(e.target.value)}
-            placeholder="Краткое профессиональное описание себя"
-            rows={4}
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, fontFamily: 'sans-serif', boxSizing: 'border-box' }}
-          />
-        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', maxWidth: 560 }}>
+          <FormField
+            id="resume"
+            label="Резюме"
+            required
+            hint="Краткое профессиональное описание себя"
+          >
+            <textarea
+              id="resume"
+              value={resume}
+              onChange={(e) => setResume(e.target.value)}
+              placeholder="Краткое профессиональное описание себя"
+              rows={4}
+              style={{
+                width: '100%',
+                padding: 'var(--space-3) var(--space-4)',
+                border: '1px solid var(--color-border-default)',
+                borderRadius: 'var(--radius-xs)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 'var(--text-base)',
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-bg-surface)',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+              }}
+            />
+          </FormField>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
-            Портфолио <span style={{ color: '#dc3545' }}>*</span>
-          </label>
-          <input
-            type="text"
-            value={portfolio}
-            onChange={(e) => setPortfolio(e.target.value)}
-            placeholder="Ссылка на портфолио (Behance, Dribbble, и т.д.)"
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
+          <FormField
+            id="portfolio"
+            label="Портфолио"
+            required
+            inputProps={{
+              type: 'text',
+              value: portfolio,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setPortfolio(e.target.value),
+              placeholder: 'Ссылка на портфолио (Behance, Dribbble, и т.д.)',
+            }}
           />
-        </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
-            Email для связи <span style={{ color: '#dc3545' }}>*</span>
-          </label>
-          <input
-            type="email"
-            value={contactEmail}
-            onChange={(e) => setContactEmail(e.target.value)}
-            placeholder="Email"
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
+          <FormField
+            id="contact-email"
+            label="Email для связи"
+            required
+            inputProps={{
+              type: 'email',
+              value: contactEmail,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setContactEmail(e.target.value),
+              placeholder: 'Email',
+            }}
           />
-        </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
-            Telegram
-          </label>
-          <input
-            type="text"
-            value={contactTelegram}
-            onChange={(e) => setContactTelegram(e.target.value)}
-            placeholder="@username"
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
+          <FormField
+            id="contact-telegram"
+            label="Telegram"
+            inputProps={{
+              type: 'text',
+              value: contactTelegram,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setContactTelegram(e.target.value),
+              placeholder: '@username',
+            }}
           />
-        </div>
 
-        <div style={{ marginBottom: 24 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
-            Направление <span style={{ color: '#dc3545' }}>*</span>
-          </label>
-          <input
-            type="text"
-            value={direction}
-            onChange={(e) => setDirection(e.target.value)}
-            placeholder="Специализация в дизайне (UX/UI, графический дизайн, и т.д.)"
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
+          <FormField
+            id="direction"
+            label="Направление"
+            required
+            inputProps={{
+              type: 'text',
+              value: direction,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDirection(e.target.value),
+              placeholder: 'Специализация в дизайне (UX/UI, графический дизайн, и т.д.)',
+            }}
           />
-        </div>
 
-        <button
-          type="submit"
-          disabled={saving}
-          style={{
-            padding: '10px 24px',
-            background: saving ? '#ccc' : '#333',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: saving ? 'default' : 'pointer',
-            fontSize: 16,
-          }}
-        >
-          {saving ? 'Сохранение...' : isCompleted ? 'Обновить профиль' : 'Отправить анкету'}
-        </button>
+          <div>
+            <Button type="submit" variant="primary" size="lg" loading={saving}>
+              {isCompleted ? 'Обновить профиль' : 'Отправить анкету'}
+            </Button>
+          </div>
+        </div>
       </form>
 
       {isCompleted && (
-        <p style={{ marginTop: 16, color: '#666', fontSize: 14 }}>
-          Анкета заполнена {new Date(profile!.questionnaireCompletedAt!).toLocaleDateString('ru-RU')}
-        </p>
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <Badge variant="success">
+            Анкета заполнена {new Date(profile!.questionnaireCompletedAt!).toLocaleDateString('ru-RU')}
+          </Badge>
+        </div>
       )}
-    </main>
+    </DashboardLayout>
+  );
+}
+
+// ─── Icons ──────────────────────────────────────────────
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 2h10v12H3z" />
+      <path d="M6 2v12" />
+      <path d="M6 5h4M6 8h4M6 11h4" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 2h12v9H5l-3 3V2z" />
+      <path d="M5 6h6M5 9h3" />
+    </svg>
+  );
+}
+
+function ClipboardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="2" width="10" height="13" rx="1" />
+      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
+    </svg>
   );
 }
