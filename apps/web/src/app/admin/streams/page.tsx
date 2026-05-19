@@ -3,15 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Card } from '@platform/ui/molecules';
-import { FormField } from '@platform/ui/molecules';
-import { EmptyState } from '@platform/ui/molecules';
-import { Button } from '@platform/ui/atoms';
-import { Input } from '@platform/ui/atoms';
-import { Heading, Text } from '@platform/ui/atoms';
-import { Spinner } from '@platform/ui/atoms';
-import { Badge } from '@platform/ui/atoms';
 import {
   getStreams,
   createStream,
@@ -19,6 +10,9 @@ import {
   archiveStream,
   type Stream,
 } from '@/lib/api';
+import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { Card, FormField } from '@platform/ui/molecules';
+import { Button, Input, Badge, Heading, Text, Mono, Spinner } from '@platform/ui/atoms';
 
 const ADMIN_NAV = [
   {
@@ -162,18 +156,18 @@ export default function StreamsPage() {
 
       {showCreateForm && (
         <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
-          <Heading level={3} size="md" style={{ marginBottom: 'var(--space-4)' }}>Новый поток</Heading>
+          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-4)' }}>Новый поток</Heading>
           <form onSubmit={handleCreate}>
             <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
                 <FormField
                   id="new-stream-name"
                   label="Название потока"
+                  required
                   inputProps={{
-                    type: 'text',
+                    placeholder: 'Например: Поток #1',
                     value: newName,
                     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value),
-                    placeholder: 'Например: Поток #1',
                     autoFocus: true,
                   }}
                 />
@@ -191,11 +185,7 @@ export default function StreamsPage() {
           <Spinner size="md" />
         </div>
       ) : streams.length === 0 ? (
-        <EmptyState
-          title="Нет потоков"
-          description="Потоков пока нет. Создайте первый поток."
-          action={{ label: 'Создать поток', onClick: () => setShowCreateForm(true) }}
-        />
+        <Text color="tertiary">Потоков пока нет. Создайте первый поток.</Text>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{
@@ -205,26 +195,24 @@ export default function StreamsPage() {
             fontSize: 'var(--text-sm)',
           }}>
             <thead>
-              <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Название</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Статус</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Создан</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'right', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Действия</th>
+              <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
+                {['Название', 'Статус', 'Создан', 'Действия'].map((h) => (
+                  <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {streams.map((stream) => (
                 <tr key={stream.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <td style={{ padding: 'var(--space-3)' }}>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>
                     {editingId === stream.id ? (
                       <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                         <Input
-                          type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           size="sm"
-                          style={{ flex: 1 }}
                           autoFocus
+                          style={{ maxWidth: 250 }}
                         />
                         <Button
                           variant="primary"
@@ -247,30 +235,26 @@ export default function StreamsPage() {
                       <Text size="sm" weight="medium" as="span">{stream.name}</Text>
                     )}
                   </td>
-                  <td style={{ padding: 'var(--space-3)' }}>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
                     <Badge variant={stream.status === 'active' ? 'success' : 'error'}>
                       {stream.status === 'active' ? 'Активный' : 'Архивный'}
                     </Badge>
                   </td>
-                  <td style={{ padding: 'var(--space-3)' }}>
-                    <Text size="xs" color="tertiary" as="span">
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <Mono size="xs" color="var(--color-text-tertiary)">
                       {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
-                    </Text>
+                    </Mono>
                   </td>
-                  <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
                     {editingId !== stream.id && (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/lessons`)}>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                        <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/lessons`)}>
                           Уроки
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/assignments`)}>
+                        <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/assignments`)}>
                           Задания
                         </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => { setEditingId(stream.id); setEditName(stream.name); }}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => { setEditingId(stream.id); setEditName(stream.name); }}>
                           Редактировать
                         </Button>
                         {stream.status === 'active' && (
@@ -291,30 +275,21 @@ export default function StreamsPage() {
   );
 }
 
-// ─── Icons ──────────────────────────────────────────────
-
+// ─── Inline icons ─────────────────────────────────────
 function GridIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
+      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
     </svg>
   );
 }
-
 function UsersIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="5" r="3" />
-      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
-      <circle cx="12" cy="4" r="2" />
-      <path d="M15 13c0-2-1-4-3-4" />
+      <circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" /><circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" />
     </svg>
   );
 }
-
 function StreamIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -322,12 +297,10 @@ function StreamIcon() {
     </svg>
   );
 }
-
 function CalendarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
+      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
     </svg>
   );
 }
