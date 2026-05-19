@@ -208,3 +208,153 @@ export async function resetStudentPassword(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
+
+// Lessons API
+
+export interface Lesson {
+  id: string;
+  streamId: string;
+  title: string;
+  videoUrl: string | null;
+  summary: string | null;
+  notes: string | null;
+  status: 'draft' | 'published' | 'closed';
+  publishAt: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getLessons(
+  accessToken: string,
+  streamId: string,
+): Promise<{ lessons: Lesson[] }> {
+  return request(`/lessons?streamId=${encodeURIComponent(streamId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getLesson(
+  accessToken: string,
+  id: string,
+): Promise<{ lesson: Lesson }> {
+  return request(`/lessons/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createLesson(
+  accessToken: string,
+  data: {
+    streamId: string;
+    title: string;
+    videoUrl?: string;
+    summary?: string;
+    notes?: string;
+    publishAt?: string;
+    sortOrder?: number;
+  },
+): Promise<{ lesson: Lesson }> {
+  return request('/lessons', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateLesson(
+  accessToken: string,
+  id: string,
+  data: {
+    title?: string;
+    videoUrl?: string;
+    summary?: string;
+    notes?: string;
+    status?: 'draft' | 'published' | 'closed';
+    publishAt?: string | null;
+    sortOrder?: number;
+  },
+): Promise<{ lesson: Lesson }> {
+  return request(`/lessons/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteLesson(
+  accessToken: string,
+  id: string,
+): Promise<{ message: string }> {
+  return request(`/lessons/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Schedule API
+
+export interface ScheduleEntry {
+  id: string;
+  streamId: string;
+  date: string;
+  startTime: string;
+  lessonTitle: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stream?: { id: string; name: string };
+}
+
+export async function getSchedule(
+  accessToken: string,
+  streamId: string,
+): Promise<{ schedule: ScheduleEntry[] }> {
+  return request(`/schedule?streamId=${encodeURIComponent(streamId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createScheduleEntry(
+  accessToken: string,
+  data: {
+    streamId: string;
+    date: string;
+    startTime: string;
+    lessonTitle: string;
+    notes?: string;
+  },
+): Promise<{ entry: ScheduleEntry }> {
+  return request('/schedule', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateScheduleEntry(
+  accessToken: string,
+  id: string,
+  data: {
+    date?: string;
+    startTime?: string;
+    lessonTitle?: string;
+    notes?: string | null;
+  },
+): Promise<{ entry: ScheduleEntry }> {
+  return request(`/schedule/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteScheduleEntry(
+  accessToken: string,
+  id: string,
+): Promise<{ success: boolean }> {
+  return request(`/schedule/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}

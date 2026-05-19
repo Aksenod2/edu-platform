@@ -234,6 +234,12 @@ export default function StreamsPage() {
                   {editingId !== stream.id && (
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <button
+                        onClick={() => router.push(`/admin/streams/${stream.id}/lessons`)}
+                        style={{ padding: '4px 12px', background: '#e8f4fd', border: '1px solid #b3d9f2', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#0070f3' }}
+                      >
+                        Уроки
+                      </button>
+                      <button
                         onClick={() => { setEditingId(stream.id); setEditName(stream.name); }}
                         style={{ padding: '4px 12px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
                       >

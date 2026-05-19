@@ -55,6 +55,22 @@ export default function AdminPage() {
               Ученики
             </a>
           </li>
+          <li>
+            <a
+              href="/admin/streams"
+              style={{ display: 'block', padding: '12px 20px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, textDecoration: 'none', color: '#333' }}
+            >
+              Уроки (через потоки)
+            </a>
+          </li>
+          <li>
+            <a
+              href="/admin/schedule"
+              style={{ display: 'block', padding: '12px 20px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, textDecoration: 'none', color: '#333' }}
+            >
+              Расписание
+            </a>
+          </li>
         </ul>
       </nav>
     </main>

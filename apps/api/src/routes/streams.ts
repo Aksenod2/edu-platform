@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, authenticate } from '../middleware/auth.js';
 
 export async function streamRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
 
   // GET /streams — список потоков
-  app.get('/streams', { onRequest: adminOnly }, async () => {
+  // Admin: все потоки; Student: только активные
+  app.get('/streams', { onRequest: authenticate }, async (request) => {
+    const isAdmin = request.user?.role === 'admin';
     const streams = await prisma.stream.findMany({
+      where: isAdmin ? {} : { status: 'active' },
       orderBy: { createdAt: 'desc' },
     });
     return { streams };

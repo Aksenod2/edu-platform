@@ -35,6 +35,28 @@ export default function DashboardPage() {
         </button>
       </div>
       <p>Добро пожаловать, {user.name}!</p>
+
+      <nav style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 18, marginBottom: 12 }}>Разделы</h2>
+        <ul style={{ listStyle: 'none', padding: 0, display: 'flex', gap: 12 }}>
+          <li>
+            <a
+              href="/dashboard/lessons"
+              style={{ display: 'block', padding: '12px 20px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, textDecoration: 'none', color: '#333' }}
+            >
+              Уроки
+            </a>
+          </li>
+          <li>
+            <a
+              href="/dashboard/schedule"
+              style={{ display: 'block', padding: '12px 20px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, textDecoration: 'none', color: '#333' }}
+            >
+              Расписание
+            </a>
+          </li>
+        </ul>
+      </nav>
     </main>
   );
 }

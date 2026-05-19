@@ -7,6 +7,8 @@ import { prisma } from '@platform/db';
 import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
 import { userRoutes } from './routes/users.js';
+import { lessonRoutes } from './routes/lessons.js';
+import { scheduleRoutes } from './routes/schedule.js';
 
 const app = Fastify({ logger: true });
 
@@ -35,6 +37,8 @@ await app.register(
 
 await app.register(streamRoutes);
 await app.register(userRoutes);
+await app.register(lessonRoutes);
+await app.register(scheduleRoutes);
 
 app.get('/health', async () => {
   await prisma.$queryRaw`SELECT 1`;
