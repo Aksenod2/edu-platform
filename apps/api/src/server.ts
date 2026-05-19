@@ -5,6 +5,8 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import { prisma } from '@platform/db';
 import { authRoutes } from './routes/auth.js';
+import { streamRoutes } from './routes/streams.js';
+import { userRoutes } from './routes/users.js';
 
 const app = Fastify({ logger: true });
 
@@ -30,6 +32,9 @@ await app.register(
   },
   { prefix: '' },
 );
+
+await app.register(streamRoutes);
+await app.register(userRoutes);
 
 app.get('/health', async () => {
   await prisma.$queryRaw`SELECT 1`;

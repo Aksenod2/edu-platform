@@ -71,3 +71,140 @@ export async function resetPassword(
     body: JSON.stringify({ token, password }),
   });
 }
+
+export async function acceptInvite(
+  token: string,
+  password: string,
+): Promise<{ message: string }> {
+  return request('/auth/accept-invite', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+// Streams API
+
+export interface Stream {
+  id: string;
+  name: string;
+  status: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getStreams(accessToken: string): Promise<{ streams: Stream[] }> {
+  return request('/streams', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createStream(
+  accessToken: string,
+  name: string,
+): Promise<{ stream: Stream }> {
+  return request('/streams', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function updateStream(
+  accessToken: string,
+  id: string,
+  name: string,
+): Promise<{ stream: Stream }> {
+  return request(`/streams/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function archiveStream(
+  accessToken: string,
+  id: string,
+): Promise<{ stream: Stream }> {
+  return request(`/streams/${id}/archive`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Users (Students) API
+
+export interface Student {
+  id: string;
+  email: string;
+  name: string;
+  role: 'student' | 'admin';
+  isActive: boolean;
+  createdAt: string;
+  inviteToken?: string | null;
+  inviteExpiresAt?: string | null;
+  deletedAt?: string | null;
+}
+
+export async function getStudents(
+  accessToken: string,
+  search?: string,
+): Promise<{ users: Student[] }> {
+  const params = search ? `?search=${encodeURIComponent(search)}` : '';
+  return request(`/users${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createStudent(
+  accessToken: string,
+  email: string,
+  name: string,
+): Promise<{ user: Student }> {
+  return request('/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ email, name }),
+  });
+}
+
+export async function updateStudent(
+  accessToken: string,
+  id: string,
+  data: { name?: string; email?: string; isActive?: boolean },
+): Promise<{ user: Student }> {
+  return request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteStudent(
+  accessToken: string,
+  id: string,
+): Promise<{ user: Student }> {
+  return request(`/users/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function inviteStudent(
+  accessToken: string,
+  id: string,
+): Promise<{ inviteUrl: string; expiresAt: string }> {
+  return request(`/users/${id}/invite`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function resetStudentPassword(
+  accessToken: string,
+  id: string,
+): Promise<{ tempPassword: string; message: string }> {
+  return request(`/users/${id}/reset-password`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
