@@ -1,0 +1,193 @@
+/**
+ * Nothing Phone Design System — Design Tokens
+ * Atomic Design Level: N/A (foundational layer)
+ *
+ * Aesthetic: Nothing Phone
+ * - Monochrome base (pure black/white)
+ * - Point accents: red (#FF0000), neon green (#39FF14)
+ * - Dot-matrix typography via Space Mono
+ * - Strict geometric grid, zero visual noise
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  /* ─── COLOR TOKENS ─────────────────────────────────── */
+
+  /* Background scale */
+  --color-bg-base:        #000000;
+  --color-bg-surface:     #0D0D0D;
+  --color-bg-elevated:    #161616;
+  --color-bg-overlay:     #1F1F1F;
+
+  /* Border scale */
+  --color-border-subtle:  #1A1A1A;
+  --color-border-default: #2A2A2A;
+  --color-border-strong:  #404040;
+
+  /* Text scale */
+  --color-text-primary:   #FFFFFF;
+  --color-text-secondary: #A0A0A0;
+  --color-text-tertiary:  #606060;
+  --color-text-disabled:  #3A3A3A;
+  --color-text-inverse:   #000000;
+
+  /* Accent: Nothing Red */
+  --color-accent-red:       #FF0000;
+  --color-accent-red-dim:   rgba(255, 0, 0, 0.12);
+  --color-accent-red-glow:  rgba(255, 0, 0, 0.24);
+
+  /* Accent: Neon (dot-matrix highlights) */
+  --color-accent-neon:      #39FF14;
+  --color-accent-neon-dim:  rgba(57, 255, 20, 0.10);
+
+  /* Semantic */
+  --color-success:         #39FF14;
+  --color-success-dim:     rgba(57, 255, 20, 0.10);
+  --color-warning:         #FFB800;
+  --color-warning-dim:     rgba(255, 184, 0, 0.10);
+  --color-error:           #FF0000;
+  --color-error-dim:       rgba(255, 0, 0, 0.10);
+  --color-info:            #4DA6FF;
+  --color-info-dim:        rgba(77, 166, 255, 0.10);
+
+  /* ─── TYPOGRAPHY TOKENS ────────────────────────────── */
+
+  --font-sans:  'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono:  'Space Mono', 'Courier New', monospace;
+
+  /* Scale (Major Third — 1.250) */
+  --text-xs:   0.64rem;   /* 10.24px */
+  --text-sm:   0.8rem;    /* 12.8px  */
+  --text-base: 1rem;      /* 16px    */
+  --text-lg:   1.25rem;   /* 20px    */
+  --text-xl:   1.563rem;  /* 25px    */
+  --text-2xl:  1.953rem;  /* 31.25px */
+  --text-3xl:  2.441rem;  /* 39px    */
+  --text-4xl:  3.052rem;  /* 48.83px */
+
+  /* Weight */
+  --font-light:   300;
+  --font-regular: 400;
+  --font-medium:  500;
+  --font-semibold: 600;
+  --font-bold:    700;
+
+  /* Line heights */
+  --leading-none:   1;
+  --leading-tight:  1.2;
+  --leading-snug:   1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  /* Letter spacing */
+  --tracking-tight:  -0.02em;
+  --tracking-normal:  0em;
+  --tracking-wide:    0.05em;
+  --tracking-wider:   0.1em;
+  --tracking-widest:  0.2em;
+
+  /* ─── SPACING TOKENS ───────────────────────────────── */
+  /* Base: 4px (0.25rem) — 8-point grid */
+
+  --space-0:   0;
+  --space-1:   0.25rem;   /* 4px  */
+  --space-2:   0.5rem;    /* 8px  */
+  --space-3:   0.75rem;   /* 12px */
+  --space-4:   1rem;      /* 16px */
+  --space-5:   1.25rem;   /* 20px */
+  --space-6:   1.5rem;    /* 24px */
+  --space-8:   2rem;      /* 32px */
+  --space-10:  2.5rem;    /* 40px */
+  --space-12:  3rem;      /* 48px */
+  --space-16:  4rem;      /* 64px */
+  --space-20:  5rem;      /* 80px */
+  --space-24:  6rem;      /* 96px */
+  --space-32:  8rem;      /* 128px */
+
+  /* ─── BORDER RADIUS TOKENS ─────────────────────────── */
+  /* Nothing Phone: minimal rounding, sharp edges */
+
+  --radius-none: 0;
+  --radius-xs:   2px;
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-xl:   12px;
+  --radius-full: 9999px;
+
+  /* ─── SHADOW TOKENS ────────────────────────────────── */
+  /* Nothing Phone: no soft shadows — precise geometric borders */
+
+  --shadow-none:    none;
+  --shadow-glow-red:  0 0 12px rgba(255, 0, 0, 0.3), 0 0 24px rgba(255, 0, 0, 0.1);
+  --shadow-glow-neon: 0 0 12px rgba(57, 255, 20, 0.3), 0 0 24px rgba(57, 255, 20, 0.1);
+  --shadow-inset:     inset 0 0 0 1px var(--color-border-default);
+  --shadow-inset-accent: inset 0 0 0 1px var(--color-accent-red);
+
+  /* ─── ANIMATION TOKENS ─────────────────────────────── */
+
+  --duration-instant: 0ms;
+  --duration-fast:    100ms;
+  --duration-normal:  200ms;
+  --duration-slow:    350ms;
+
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in:      cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
+  --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─── LAYOUT TOKENS ────────────────────────────────── */
+
+  --sidebar-width:    240px;
+  --header-height:    56px;
+  --content-max-w:    1200px;
+  --content-padding:  var(--space-8);
+
+  /* Z-index scale */
+  --z-below:    -1;
+  --z-base:      0;
+  --z-raised:    10;
+  --z-dropdown:  100;
+  --z-sticky:    200;
+  --z-overlay:   300;
+  --z-modal:     400;
+  --z-toast:     500;
+}
+
+/* ─── GLOBAL RESETS ─────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--font-regular);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-base);
+  min-height: 100vh;
+}
+
+/* Dot-matrix accent: monospace spans */
+.mono, [data-mono] {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* Focus ring — accessible, on-brand */
+:focus-visible {
+  outline: 2px solid var(--color-accent-red);
+  outline-offset: 2px;
+}

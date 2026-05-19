@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { Spinner } from '@platform/ui/atoms';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -22,8 +23,16 @@ export default function Home() {
   }, [user, loading, router]);
 
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <p>Загрузка...</p>
-    </main>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--color-bg-base)',
+      }}
+    >
+      <Spinner size="lg" />
+    </div>
   );
 }

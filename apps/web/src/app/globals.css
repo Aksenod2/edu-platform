@@ -1,0 +1,55 @@
+/* Nothing Phone Design System — Global Styles */
+@import '@platform/ui/styles';
+
+/* Spinner keyframe — used by Button (loading) and Spinner atom */
+@keyframes np-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Focus styles enhancement for interactive cards */
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-accent-red);
+  outline-offset: 2px;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar — Nothing Phone monochrome */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* Input focus — on-brand red border */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--color-accent-red) !important;
+  box-shadow: 0 0 0 1px var(--color-accent-red);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-accent-red-dim);
+  color: var(--color-text-primary);
+}
+
+/* Placeholder */
+::placeholder {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+}
