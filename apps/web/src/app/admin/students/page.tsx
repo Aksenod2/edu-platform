@@ -232,6 +232,12 @@ export default function StudentsPage() {
                       >
                         Профиль
                       </a>
+                      <a
+                        href={`/admin/students/${s.id}/thread`}
+                        style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #99c', borderRadius: 3, cursor: 'pointer', background: '#eef', textDecoration: 'none', color: '#339' }}
+                      >
+                        Тред
+                      </a>
                       <button
                         onClick={() => handleToggleActive(s)}
                         style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 3, cursor: 'pointer', background: s.isActive ? '#fee' : '#efe' }}
