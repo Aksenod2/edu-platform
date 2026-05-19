@@ -249,4 +249,41 @@ export async function authRoutes(app: FastifyInstance) {
 
     return { accessToken, message: 'Пароль успешно изменён' };
   });
+
+  // POST /auth/accept-invite — accept invite and set password
+  app.post('/auth/accept-invite', async (request, reply) => {
+    const { token, password } = request.body as { token: string; password: string };
+
+    if (!token || !password) {
+      return reply.status(400).send({ error: 'Токен и пароль обязательны' });
+    }
+
+    if (password.length < 6) {
+      return reply.status(400).send({ error: 'Пароль должен быть не менее 6 символов' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        inviteToken: token,
+        inviteExpiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      return reply.status(400).send({ error: 'Невалидная или просроченная ссылка приглашения' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        inviteToken: null,
+        inviteExpiresAt: null,
+        mustChangePassword: false,
+      },
+    });
+
+    return { message: 'Регистрация завершена. Теперь вы можете войти.' };
+  });
 }

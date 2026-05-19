@@ -1,0 +1,257 @@
+import type { FastifyInstance } from 'fastify';
+import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
+import { prisma } from '@platform/db';
+import { requireRole } from '../middleware/auth.js';
+import { sendInviteEmail } from '../lib/email.js';
+
+const INVITE_TOKEN_TTL_HOURS = 72;
+
+export async function userRoutes(app: FastifyInstance) {
+  // All routes require admin role
+  app.addHook('preHandler', requireRole('admin'));
+
+  // GET /users — list students
+  app.get('/users', async (request) => {
+    const { search, includeDeleted } = request.query as {
+      search?: string;
+      includeDeleted?: string;
+    };
+
+    const where: Record<string, unknown> = { role: 'student' as const };
+
+    if (includeDeleted !== 'true') {
+      where.deletedAt = null;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        inviteToken: true,
+        inviteExpiresAt: true,
+        deletedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { users };
+  });
+
+  // POST /users — create student
+  app.post('/users', async (request, reply) => {
+    const { email, name } = request.body as { email: string; name: string };
+
+    if (!email || !name) {
+      return reply.status(400).send({ error: 'Email и имя обязательны' });
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return reply.status(409).send({ error: 'Пользователь с таким email уже существует' });
+    }
+
+    // Generate temporary password — student will set their own via invite
+    const tempPassword = crypto.randomBytes(16).toString('hex');
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        name,
+        passwordHash,
+        role: 'student',
+        mustChangePassword: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    return reply.status(201).send({ user });
+  });
+
+  // GET /users/:id — get single student
+  app.get('/users/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        mustChangePassword: true,
+        createdAt: true,
+        updatedAt: true,
+        inviteToken: true,
+        inviteExpiresAt: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    return { user };
+  });
+
+  // PATCH /users/:id — update student (block/unblock, edit name/email)
+  app.patch('/users/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as {
+      isActive?: boolean;
+      name?: string;
+      email?: string;
+    };
+
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    if (body.email && body.email !== existing.email) {
+      const emailTaken = await prisma.user.findUnique({ where: { email: body.email } });
+      if (emailTaken) {
+        return reply.status(409).send({ error: 'Этот email уже используется' });
+      }
+    }
+
+    const data: Record<string, unknown> = {};
+    if (body.isActive !== undefined) data.isActive = body.isActive;
+    if (body.name) data.name = body.name;
+    if (body.email) data.email = body.email;
+
+    // When deactivating, also invalidate all refresh tokens
+    if (body.isActive === false) {
+      await prisma.refreshToken.deleteMany({ where: { userId: id } });
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        deletedAt: true,
+      },
+    });
+
+    return { user };
+  });
+
+  // DELETE /users/:id — soft delete
+  app.delete('/users/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    // Soft delete: deactivate + set deletedAt
+    await prisma.refreshToken.deleteMany({ where: { userId: id } });
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    return { user };
+  });
+
+  // POST /users/:id/invite — generate invite link
+  app.post('/users/:id/invite', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    if (!user.isActive) {
+      return reply.status(400).send({ error: 'Нельзя отправить приглашение заблокированному пользователю' });
+    }
+
+    const inviteToken = crypto.randomBytes(32).toString('hex');
+    const inviteExpiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_HOURS * 60 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id },
+      data: { inviteToken, inviteExpiresAt },
+    });
+
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:3000';
+    const inviteUrl = `${frontendUrl}/invite?token=${inviteToken}`;
+
+    try {
+      await sendInviteEmail(user.email, user.name, inviteUrl);
+    } catch (err) {
+      request.log.error(err, 'Failed to send invite email');
+    }
+
+    return { inviteUrl, expiresAt: inviteExpiresAt };
+  });
+
+  // POST /users/:id/reset-password — admin reset password
+  app.post('/users/:id/reset-password', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    // Generate new temporary password
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+    await prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+        resetToken: null,
+        resetTokenExpiresAt: null,
+      },
+    });
+
+    // Invalidate all sessions
+    await prisma.refreshToken.deleteMany({ where: { userId: id } });
+
+    return { tempPassword, message: 'Пароль сброшен. Передайте временный пароль ученику.' };
+  });
+}

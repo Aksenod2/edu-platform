@@ -22,3 +22,17 @@ export async function sendPasswordResetEmail(to: string, resetToken: string): Pr
     `,
   });
 }
+
+export async function sendInviteEmail(to: string, name: string, inviteUrl: string): Promise<void> {
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || 'noreply@platform.local',
+    to,
+    subject: 'Приглашение на обучающую платформу',
+    html: `
+      <p>Здравствуйте, ${name}!</p>
+      <p>Вас пригласили на обучающую платформу.</p>
+      <p><a href="${inviteUrl}">Перейдите по ссылке для регистрации</a></p>
+      <p>Ссылка действительна 72 часа.</p>
+    `,
+  });
+}

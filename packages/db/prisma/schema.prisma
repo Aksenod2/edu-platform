@@ -55,6 +55,7 @@ model User {
   inviteExpiresAt    DateTime?
   resetToken         String?   @unique
   resetTokenExpiresAt DateTime?
+  deletedAt          DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
