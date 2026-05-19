@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -10,7 +10,7 @@ import {
   type Lesson,
 } from '@/lib/api';
 
-export default function StudentLessonsPage() {
+function StudentLessonsContent() {
   const { user, accessToken, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -223,5 +223,13 @@ export default function StudentLessonsPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function StudentLessonsPage() {
+  return (
+    <Suspense fallback={<p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>}>
+      <StudentLessonsContent />
+    </Suspense>
   );
 }

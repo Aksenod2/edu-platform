@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { acceptInvite } from '@/lib/api';
 
-export default function InvitePage() {
+function InviteForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
 
@@ -101,5 +101,17 @@ export default function InvitePage() {
         </button>
       </form>
     </main>
+  );
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense fallback={
+      <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 400, margin: '0 auto' }}>
+        <p>Загрузка...</p>
+      </main>
+    }>
+      <InviteForm />
+    </Suspense>
   );
 }
