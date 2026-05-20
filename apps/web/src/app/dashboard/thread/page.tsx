@@ -234,7 +234,7 @@ export default function StudentThreadPage() {
       )}
 
       {/* Thread entries */}
-      <div style={{ border: '1px solid #e0e0e0', borderRadius: 12, padding: 16, minHeight: 300, maxHeight: 500, overflowY: 'auto', marginBottom: 16, background: '#fafafa' }}>
+      <div style={{ border: '1px solid var(--color-border-default)', borderRadius: 12, padding: 16, minHeight: 300, maxHeight: 500, overflowY: 'auto', marginBottom: 16, background: 'var(--color-bg-surface)' }}>
         {loadingData ? (
           <p style={{ color: '#999', textAlign: 'center', paddingTop: 100 }}>Загрузка...</p>
         ) : entries.length === 0 ? (
@@ -250,7 +250,7 @@ export default function StudentThreadPage() {
       </div>
 
       {/* Input area */}
-      <div style={{ border: '1px solid #e0e0e0', borderRadius: 12, padding: 16 }}>
+      <div style={{ border: '1px solid var(--color-border-default)', borderRadius: 12, padding: 16, background: 'var(--color-bg-surface)' }}>
         {/* Mode tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {(['text', 'link', 'file', 'audio'] as const).map((mode) => (
@@ -275,7 +275,7 @@ export default function StudentThreadPage() {
               value={textContent}
               onChange={(e) => setTextContent(e.target.value)}
               placeholder="Введите текст..."
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc', minHeight: 60, resize: 'vertical', fontFamily: 'inherit', fontSize: 14 }}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid var(--color-border-default)', minHeight: 60, resize: 'vertical', fontFamily: 'inherit', fontSize: 14, background: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)' }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); } }}
             />
             <Button
@@ -296,14 +296,14 @@ export default function StudentThreadPage() {
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
               placeholder="https://..."
-              style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc', fontSize: 14 }}
+              style={{ padding: 10, borderRadius: 8, border: '1px solid var(--color-border-default)', fontSize: 14, background: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)' }}
             />
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 value={linkTitle}
                 onChange={(e) => setLinkTitle(e.target.value)}
                 placeholder="Описание (необязательно)"
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc', fontSize: 14 }}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid var(--color-border-default)', fontSize: 14, background: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)' }}
               />
               <Button
                 variant="primary"
@@ -459,7 +459,7 @@ function EntryCard({ entry, currentUserId }: { entry: ThreadEntry; currentUserId
   };
 
   const bgColor = isAdmin ? 'var(--color-info-dim)' : isOwn ? 'var(--color-bg-surface)' : 'var(--color-bg-elevated)';
-  const borderColor = isAdmin ? '#99c' : '#e0e0e0';
+  const borderColor = isAdmin ? 'var(--color-info)' : 'var(--color-border-default)';
 
   return (
     <div

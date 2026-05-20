@@ -8,10 +8,9 @@ services:
   - type: web
     name: platform-api
     plan: free
-    runtime: node
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @platform/api build
-    preDeployCommand: cd packages/db && npx prisma db push --skip-generate && npx tsx prisma/seed.ts
-    startCommand: cd apps/api && node dist/server.js
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -40,9 +39,9 @@ services:
   - type: web
     name: platform-web
     plan: free
-    runtime: node
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @platform/web build
-    startCommand: cd apps/web && node .next/standalone/apps/web/server.js
+    runtime: docker
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
     envVars:
       - key: NEXT_PUBLIC_API_URL
         sync: false
