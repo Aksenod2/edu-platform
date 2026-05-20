@@ -1,9 +1,15 @@
 import nodemailer from 'nodemailer';
 
+const smtpPort = Number(process.env.SMTP_PORT) || 1025;
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'localhost',
-  port: Number(process.env.SMTP_PORT) || 1025,
-  secure: false,
+  port: smtpPort,
+  // port 465 uses implicit TLS; port 587 uses STARTTLS (secure: false)
+  secure: smtpPort === 465,
+  ...(process.env.SMTP_USER && process.env.SMTP_PASS
+    ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }
+    : {}),
 });
 
 export async function sendPasswordResetEmail(to: string, resetToken: string): Promise<void> {

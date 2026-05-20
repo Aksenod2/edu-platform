@@ -35,6 +35,16 @@ services:
         value: platform-uploads
       - key: S3_REGION
         value: us-east-1
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
 
   - type: web
     name: platform-web
