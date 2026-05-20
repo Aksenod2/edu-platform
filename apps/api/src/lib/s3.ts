@@ -1,4 +1,10 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  CreateBucketCommand,
+  HeadBucketCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'node:crypto';
 
@@ -14,6 +20,15 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.S3_BUCKET || 'platform-uploads';
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+export async function ensureBucketExists(): Promise<void> {
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+  } catch {
+    await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
+    console.log(`S3 bucket '${BUCKET}' created`);
+  }
+}
 
 export async function uploadFile(
   buffer: Buffer,

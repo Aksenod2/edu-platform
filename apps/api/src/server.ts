@@ -15,6 +15,7 @@ import { scheduleRoutes } from './routes/schedule.js';
 import { assignmentRoutes } from './routes/assignments.js';
 import { profileRoutes } from './routes/profiles.js';
 import { threadRoutes } from './routes/threads.js';
+import { ensureBucketExists } from './lib/s3.js';
 
 const app = Fastify({ logger: true });
 
@@ -58,6 +59,7 @@ const port = Number(process.env.PORT) || 4000;
 const host = process.env.HOST || '0.0.0.0';
 
 try {
+  await ensureBucketExists();
   await app.listen({ port, host });
   console.log(`API server listening on ${host}:${port}`);
 } catch (err) {
