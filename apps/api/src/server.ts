@@ -59,10 +59,14 @@ const port = Number(process.env.PORT) || 4000;
 const host = process.env.HOST || '0.0.0.0';
 
 try {
-  await ensureBucketExists();
   await app.listen({ port, host });
   console.log(`API server listening on ${host}:${port}`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);
 }
+
+// Init S3 bucket in background - non-fatal, server is already running
+ensureBucketExists().catch((err) => {
+  app.log.warn({ err }, 'S3 bucket init failed - uploads will fail until MinIO is available');
+});
