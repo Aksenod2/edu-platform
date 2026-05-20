@@ -48,7 +48,7 @@ export async function authRoutes(app: FastifyInstance) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/auth',
+      path: '/',
       maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60,
     });
 
@@ -87,7 +87,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (storedToken) {
         await prisma.refreshToken.delete({ where: { id: storedToken.id } });
       }
-      reply.clearCookie('refreshToken', { path: '/auth' });
+      reply.clearCookie('refreshToken', { path: '/' });
       return reply.status(401).send({ error: 'Невалидный или просроченный refresh token' });
     }
 
@@ -106,7 +106,7 @@ export async function authRoutes(app: FastifyInstance) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/auth',
+      path: '/',
       maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60,
     });
 
@@ -136,7 +136,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (refreshTokenValue) {
       await prisma.refreshToken.deleteMany({ where: { token: refreshTokenValue } });
     }
-    reply.clearCookie('refreshToken', { path: '/auth' });
+    reply.clearCookie('refreshToken', { path: '/' });
     return { success: true };
   });
 
