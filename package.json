@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev",
+    "dev:services": "docker compose up postgres minio minio-init -d",
+    "dev:up": "docker compose up postgres minio minio-init -d && turbo dev",
+    "dev:down": "docker compose down",
     "build": "turbo build",
     "lint": "turbo lint",
     "type-check": "turbo type-check",
