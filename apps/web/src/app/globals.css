@@ -6,6 +6,12 @@
   to { transform: rotate(360deg); }
 }
 
+/* Pulse animation for audio recording indicator */
+@keyframes np-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* Focus styles enhancement for interactive cards */
 [role="button"]:focus-visible {
   outline: 2px solid var(--color-accent-red);
