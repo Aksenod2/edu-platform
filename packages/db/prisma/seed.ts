@@ -4,7 +4,8 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash('admin123', 12);
+  const adminHash = await bcrypt.hash('admin123', 12);
+  const studentHash = await bcrypt.hash('student123', 12);
 
   await prisma.user.upsert({
     where: { email: 'admin@platform.local' },
@@ -12,7 +13,7 @@ async function main() {
     create: {
       email: 'admin@platform.local',
       name: 'Администратор',
-      passwordHash,
+      passwordHash: adminHash,
       role: 'admin',
       isActive: true,
     },
@@ -24,13 +25,25 @@ async function main() {
     create: {
       email: 'teacher@platform.local',
       name: 'Преподаватель',
-      passwordHash,
+      passwordHash: adminHash,
       role: 'admin',
       isActive: true,
     },
   });
 
-  console.log('Seed: 2 admin users created');
+  await prisma.user.upsert({
+    where: { email: 'student@platform.local' },
+    update: {},
+    create: {
+      email: 'student@platform.local',
+      name: 'Демо Студент',
+      passwordHash: studentHash,
+      role: 'student',
+      isActive: true,
+    },
+  });
+
+  console.log('Seed: 2 admin + 1 student users created');
 }
 
 main()
