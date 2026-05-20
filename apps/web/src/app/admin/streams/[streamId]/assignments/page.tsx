@@ -1,8 +1,22 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button, Badge} from '@platform/ui/atoms';
+
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
 import {
   getAssignments,
   createAssignment,
@@ -50,16 +64,17 @@ const saStatusLabels: Record<string, string> = {
   reviewed: 'Проверено',
 };
 
-const saStatusColors: Record<string, { bg: string; color: string }> = {
-  assigned: { bg: '#fff3cd', color: '#856404' },
-  submitted: { bg: '#cce5ff', color: '#004085' },
-  reviewed: { bg: '#e6f4ea', color: '#1a7f37' },
+const saStatusBadgeVariant: Record<string, 'warning' | 'info' | 'success'> = {
+  assigned: 'warning',
+  submitted: 'info',
+  reviewed: 'success',
 };
 
 export default function AssignmentsPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const streamId = params.streamId as string;
 
   const [stream, setStream] = useState<Stream | null>(null);
@@ -254,38 +269,47 @@ export default function AssignmentsPage() {
     ? assignments // status filtering is done on student-assignments level, not on assignments
     : assignments;
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   if (!user || user.role !== 'admin') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 1000, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 1000 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => router.push('/admin/streams')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#666', marginBottom: 8, display: 'block' }}
+            style={{ marginBottom: 8, display: 'block' }}
           >
-            &larr; Назад к потокам
-          </button>
+            ← Назад к потокам
+          </Button>
           <h1 style={{ margin: 0 }}>
             Задания{stream ? `: ${stream.name}` : ''}
           </h1>
         </div>
         {stream?.status !== 'archived' && (
-          <button
+          <Button
+            variant="primary"
             onClick={showForm ? closeForm : openCreate}
-            style={{
-              padding: '8px 16px',
-              background: '#0070f3',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 14,
-            }}
           >
             {showForm && !editingId ? 'Отмена' : 'Добавить задание'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -372,28 +396,21 @@ export default function AssignmentsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
+            <Button
               type="submit"
-              disabled={submitting || !form.title.trim()}
-              style={{
-                padding: '8px 16px',
-                background: submitting ? '#ccc' : '#0070f3',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: submitting ? 'default' : 'pointer',
-                fontSize: 14,
-              }}
+              variant="primary"
+              disabled={!form.title.trim()}
+              loading={submitting}
             >
               {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               onClick={closeForm}
-              style={{ padding: '8px 16px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}
             >
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -429,9 +446,7 @@ export default function AssignmentsPage() {
                     )}
                   </td>
                   <td style={{ padding: '12px' }}>
-                    <span style={{ fontSize: 12, background: a.type === 'long' ? '#e8d5f5' : '#d5e8f5', padding: '2px 8px', borderRadius: 12 }}>
-                      {typeLabels[a.type]}
-                    </span>
+                    <Badge variant="default">{typeLabels[a.type]}</Badge>
                   </td>
                   <td style={{ padding: '12px', color: '#666', fontSize: 14 }}>
                     {a.lesson?.title || '—'}
@@ -446,30 +461,34 @@ export default function AssignmentsPage() {
                   </td>
                   <td style={{ padding: '12px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      <button
+                      <Button
+                        variant={viewingId === a.id ? 'primary' : 'ghost'}
+                        size="sm"
                         onClick={() => handleView(a.id)}
-                        style={{ padding: '4px 10px', background: viewingId === a.id ? '#0070f3' : '#eee', color: viewingId === a.id ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
                       >
                         {viewingId === a.id ? 'Скрыть' : 'Назначения'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => { setAssigningId(a.id); setAssignStudentId(''); }}
-                        style={{ padding: '4px 10px', background: '#e6f4ea', border: '1px solid #a3d9a5', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#1a7f37' }}
                       >
                         Назначить
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => openEdit(a)}
-                        style={{ padding: '4px 10px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
                       >
                         Ред.
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => handleDelete(a.id)}
-                        style={{ padding: '4px 10px', background: '#fee', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#c00' }}
                       >
                         Удалить
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -489,25 +508,25 @@ export default function AssignmentsPage() {
                             <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
                           ))}
                         </select>
-                        <button
-                          onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
+                        <Button
+                          variant="primary"
                           disabled={!assignStudentId}
-                          style={{ padding: '6px 12px', background: assignStudentId ? '#0070f3' : '#ccc', color: '#fff', border: 'none', borderRadius: 4, cursor: assignStudentId ? 'pointer' : 'default', fontSize: 13 }}
+                          onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
                         >
                           Назначить ученику
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="secondary"
                           onClick={() => handleAssign(a.id, undefined, streamId)}
-                          style={{ padding: '6px 12px', background: '#1a7f37', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}
                         >
                           Назначить всем
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
                           onClick={() => setAssigningId(null)}
-                          style={{ padding: '6px 12px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}
                         >
                           Отмена
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -518,7 +537,7 @@ export default function AssignmentsPage() {
                   <tr key={`detail-${a.id}`}>
                     <td colSpan={6} style={{ padding: '12px', background: '#fafafa', borderBottom: '2px solid #eee' }}>
                       {a.description && (
-                        <div style={{ marginBottom: 12, padding: 12, background: '#fff', border: '1px solid #eee', borderRadius: 4 }}>
+                        <div style={{ marginBottom: 12, padding: 12, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-default)', borderRadius: 4 }}>
                           <strong style={{ fontSize: 13 }}>Описание:</strong>
                           <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: '4px 0 0', fontSize: 14 }}>{a.description}</pre>
                         </div>
@@ -559,16 +578,9 @@ export default function AssignmentsPage() {
                               <tr key={sa.id} style={{ borderBottom: '1px solid #eee' }}>
                                 <td style={{ padding: '6px 8px' }}>{sa.student?.name || sa.studentId}</td>
                                 <td style={{ padding: '6px 8px' }}>
-                                  <span style={{
-                                    padding: '1px 6px',
-                                    borderRadius: 10,
-                                    fontSize: 11,
-                                    fontWeight: 'bold',
-                                    background: saStatusColors[sa.status]?.bg,
-                                    color: saStatusColors[sa.status]?.color,
-                                  }}>
+                                  <Badge variant={saStatusBadgeVariant[sa.status] ?? 'default'}>
                                     {saStatusLabels[sa.status]}
-                                  </span>
+                                  </Badge>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#666' }}>
                                   {sa.submittedAt ? new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
@@ -578,12 +590,13 @@ export default function AssignmentsPage() {
                                 </td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                   {sa.status === 'submitted' && (
-                                    <button
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
                                       onClick={() => handleReview(sa.id)}
-                                      style={{ padding: '2px 8px', background: '#e6f4ea', border: '1px solid #a3d9a5', borderRadius: 4, cursor: 'pointer', fontSize: 11, color: '#1a7f37' }}
                                     >
                                       Проверено
-                                    </button>
+                                    </Button>
                                   )}
                                 </td>
                               </tr>
@@ -599,6 +612,46 @@ export default function AssignmentsPage() {
           </tbody>
         </table>
       )}
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
   );
 }

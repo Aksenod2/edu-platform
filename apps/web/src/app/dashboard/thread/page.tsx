@@ -1,8 +1,24 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button } from '@platform/ui/atoms';
+
+const STUDENT_NAV = [
+  {
+    label: 'Обучение',
+    items: [
+      { label: 'Обзор',      href: '/dashboard',             icon: <GridIcon /> },
+      { label: 'Уроки',      href: '/dashboard/lessons',     icon: <BookIcon /> },
+      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
+      { label: 'Тред',       href: '/dashboard/thread',      icon: <ChatIcon /> },
+      { label: 'Расписание', href: '/dashboard/schedule',    icon: <CalendarIcon /> },
+      { label: 'Профиль',    href: '/dashboard/profile',     icon: <UserIcon /> },
+    ],
+  },
+];
 import {
   getThread,
   addThreadEntry,
@@ -12,8 +28,9 @@ import {
 } from '@/lib/api';
 
 export default function StudentThreadPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -179,11 +196,25 @@ export default function StudentThreadPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   if (!user || user.role !== 'student') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 800, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'student' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+      }}
+      sidebar={{ sections: STUDENT_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 800 }}>
       <div style={{ marginBottom: 24 }}>
         <button
           onClick={() => router.push('/dashboard')}
@@ -223,25 +254,17 @@ export default function StudentThreadPage() {
         {/* Mode tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {(['text', 'link', 'file', 'audio'] as const).map((mode) => (
-            <button
+            <Button
               key={mode}
+              variant={inputMode === mode ? 'primary' : 'ghost'}
+              size="sm"
               onClick={() => setInputMode(mode)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: inputMode === mode ? '2px solid #000' : '1px solid #ccc',
-                background: inputMode === mode ? '#000' : '#fff',
-                color: inputMode === mode ? '#fff' : '#333',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 500,
-              }}
             >
               {mode === 'text' && 'Текст'}
               {mode === 'link' && 'Ссылка'}
               {mode === 'file' && 'Файл'}
               {mode === 'audio' && 'Аудио'}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -255,13 +278,14 @@ export default function StudentThreadPage() {
               style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc', minHeight: 60, resize: 'vertical', fontFamily: 'inherit', fontSize: 14 }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); } }}
             />
-            <button
-              onClick={handleSendText}
+            <Button
+              variant="primary"
               disabled={sending || !textContent.trim()}
-              style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#000', color: '#fff', cursor: 'pointer', alignSelf: 'flex-end', opacity: sending || !textContent.trim() ? 0.5 : 1 }}
+              onClick={handleSendText}
+              style={{ alignSelf: 'flex-end' }}
             >
               {sending ? '...' : 'Отправить'}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -281,13 +305,13 @@ export default function StudentThreadPage() {
                 placeholder="Описание (необязательно)"
                 style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc', fontSize: 14 }}
               />
-              <button
-                onClick={handleSendLink}
+              <Button
+                variant="primary"
                 disabled={sending || !linkUrl.trim()}
-                style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#000', color: '#fff', cursor: 'pointer', opacity: sending || !linkUrl.trim() ? 0.5 : 1 }}
+                onClick={handleSendLink}
               >
                 {sending ? '...' : 'Добавить'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -301,13 +325,14 @@ export default function StudentThreadPage() {
               onChange={handleFileUpload}
               style={{ display: 'none' }}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
+            <Button
+              variant="ghost"
+              fullWidth
               disabled={sending}
-              style={{ padding: '12px 24px', borderRadius: 8, border: '2px dashed #ccc', background: '#fff', cursor: 'pointer', width: '100%', fontSize: 14, color: '#666' }}
+              onClick={() => fileInputRef.current?.click()}
             >
               {sending ? 'Загрузка...' : 'Выберите файл (до 50MB)'}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -315,46 +340,107 @@ export default function StudentThreadPage() {
         {inputMode === 'audio' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {!isRecording && !audioBlob && (
-              <button
+              <Button
+                variant="danger"
                 onClick={startRecording}
-                style={{ padding: '12px 24px', borderRadius: 8, border: 'none', background: '#c00', color: '#fff', cursor: 'pointer', fontSize: 14 }}
               >
                 🎙 Начать запись
-              </button>
+              </Button>
             )}
             {isRecording && (
               <>
                 <span style={{ color: '#c00', fontWeight: 600 }}>● Запись {formatTime(recordingTime)}</span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={stopRecording}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#333', color: '#fff', cursor: 'pointer', fontSize: 13 }}
                 >
                   Остановить
-                </button>
+                </Button>
               </>
             )}
             {audioBlob && !isRecording && (
               <>
                 <span style={{ fontSize: 14, color: '#333' }}>Аудио записано ({formatTime(recordingTime)})</span>
-                <button
-                  onClick={sendAudio}
+                <Button
+                  variant="primary"
+                  size="sm"
                   disabled={sending}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#000', color: '#fff', cursor: 'pointer', fontSize: 13 }}
+                  onClick={sendAudio}
                 >
                   {sending ? '...' : 'Отправить'}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={cancelAudio}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc', background: '#fff', cursor: 'pointer', fontSize: 13 }}
                 >
                   Отмена
-                </button>
+                </Button>
               </>
             )}
           </div>
         )}
       </div>
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 2h10v12H3z" />
+      <path d="M6 2v12" />
+      <path d="M6 5h4M6 8h4M6 11h4" />
+    </svg>
+  );
+}
+
+function ClipboardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="2" width="10" height="13" rx="1" />
+      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 2h12v9H5l-3 3V2z" />
+      <path d="M5 6h6M5 9h3" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
   );
 }
 
@@ -372,7 +458,7 @@ function EntryCard({ entry, currentUserId }: { entry: ThreadEntry; currentUserId
     note: '📝',
   };
 
-  const bgColor = isAdmin ? '#eef' : isOwn ? '#fff' : '#f5f5f5';
+  const bgColor = isAdmin ? 'var(--color-info-dim)' : isOwn ? 'var(--color-bg-surface)' : 'var(--color-bg-elevated)';
   const borderColor = isAdmin ? '#99c' : '#e0e0e0';
 
   return (

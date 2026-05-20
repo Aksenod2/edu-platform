@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button, Badge } from '@platform/ui/atoms';
 import {
   getLessons,
   createLesson,
@@ -12,6 +14,18 @@ import {
   type Lesson,
   type Stream,
 } from '@/lib/api';
+
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
 
 type LessonFormData = {
   title: string;
@@ -39,16 +53,17 @@ const statusLabels: Record<string, string> = {
   closed: 'Закрыт',
 };
 
-const statusColors: Record<string, { bg: string; color: string }> = {
-  draft: { bg: '#fff3cd', color: '#856404' },
-  published: { bg: '#e6f4ea', color: '#1a7f37' },
-  closed: { bg: '#f4e6e6', color: '#9a3030' },
+const statusBadgeVariant: Record<string, 'warning' | 'success' | 'error'> = {
+  draft: 'warning',
+  published: 'success',
+  closed: 'error',
 };
 
 export default function LessonsPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const streamId = params.streamId as string;
 
   const [stream, setStream] = useState<Stream | null>(null);
@@ -167,43 +182,50 @@ export default function LessonsPage() {
     }
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   if (!user || user.role !== 'admin') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 900, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 900 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => router.push('/admin/streams')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#666', marginBottom: 8, display: 'block' }}
+            style={{ marginBottom: 8, display: 'block' }}
           >
-            &larr; Назад к потокам
-          </button>
+            ← Назад к потокам
+          </Button>
           <h1 style={{ margin: 0 }}>
             Уроки{stream ? `: ${stream.name}` : ''}
           </h1>
           {stream?.status === 'archived' && (
-            <span style={{ fontSize: 12, color: '#9a3030', background: '#f4e6e6', padding: '2px 8px', borderRadius: 12, fontWeight: 'bold' }}>
-              Архивный поток
-            </span>
+            <Badge variant="error">Архивный поток</Badge>
           )}
         </div>
         {stream?.status !== 'archived' && (
-          <button
+          <Button
+            variant="primary"
             onClick={showForm ? closeForm : openCreate}
-            style={{
-              padding: '8px 16px',
-              background: '#0070f3',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 14,
-            }}
           >
             {showForm && !editingId ? 'Отмена' : 'Добавить урок'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -300,28 +322,21 @@ export default function LessonsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
+            <Button
               type="submit"
-              disabled={submitting || !form.title.trim()}
-              style={{
-                padding: '8px 16px',
-                background: submitting ? '#ccc' : '#0070f3',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: submitting ? 'default' : 'pointer',
-                fontSize: 14,
-              }}
+              variant="primary"
+              disabled={!form.title.trim()}
+              loading={submitting}
             >
               {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               onClick={closeForm}
-              style={{ padding: '8px 16px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}
             >
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -354,18 +369,9 @@ export default function LessonsPage() {
                   )}
                 </td>
                 <td style={{ padding: '12px' }}>
-                  <span
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: 12,
-                      fontSize: 12,
-                      fontWeight: 'bold',
-                      background: statusColors[lesson.status]?.bg,
-                      color: statusColors[lesson.status]?.color,
-                    }}
-                  >
+                  <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
                     {statusLabels[lesson.status]}
-                  </span>
+                  </Badge>
                 </td>
                 <td style={{ padding: '12px', color: '#666', fontSize: 14 }}>
                   {lesson.publishAt
@@ -375,18 +381,20 @@ export default function LessonsPage() {
                 <td style={{ padding: '12px', textAlign: 'right' }}>
                   {stream?.status !== 'archived' && (
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => openEdit(lesson)}
-                        style={{ padding: '4px 12px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
                       >
                         Редактировать
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => handleDelete(lesson.id)}
-                        style={{ padding: '4px 12px', background: '#fee', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#c00' }}
                       >
                         Удалить
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </td>
@@ -395,6 +403,46 @@ export default function LessonsPage() {
           </tbody>
         </table>
       )}
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
   );
 }

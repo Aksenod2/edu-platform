@@ -1,8 +1,22 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button } from '@platform/ui/atoms';
+
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
 import {
   getThread,
   addThreadEntry,
@@ -12,9 +26,10 @@ import {
 } from '@/lib/api';
 
 export default function AdminStudentThreadPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const studentId = params.id as string;
 
   const [studentName, setStudentName] = useState('');
@@ -98,11 +113,26 @@ export default function AdminStudentThreadPage() {
     }
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   if (!user || user.role !== 'admin') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 800, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 800 }}>
       <div style={{ marginBottom: 24 }}>
         <button
           onClick={() => router.push('/admin/students')}
@@ -139,47 +169,34 @@ export default function AdminStudentThreadPage() {
       {/* Admin input area */}
       <div style={{ border: '1px solid #e0e0e0', borderRadius: 12, padding: 16 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button
+          <Button
+            variant={inputMode === 'comment' ? 'primary' : 'ghost'}
+            size="sm"
             onClick={() => setInputMode('comment')}
-            style={{
-              padding: '6px 14px', borderRadius: 6,
-              border: inputMode === 'comment' ? '2px solid #339' : '1px solid #ccc',
-              background: inputMode === 'comment' ? '#339' : '#fff',
-              color: inputMode === 'comment' ? '#fff' : '#333',
-              cursor: 'pointer', fontSize: 13, fontWeight: 500,
-            }}
           >
             💬 Комментарий
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={inputMode === 'note' ? 'secondary' : 'ghost'}
+            size="sm"
             onClick={() => setInputMode('note')}
-            style={{
-              padding: '6px 14px', borderRadius: 6,
-              border: inputMode === 'note' ? '2px solid #963' : '1px solid #ccc',
-              background: inputMode === 'note' ? '#963' : '#fff',
-              color: inputMode === 'note' ? '#fff' : '#333',
-              cursor: 'pointer', fontSize: 13, fontWeight: 500,
-            }}
           >
             📝 Заметка (скрытая)
-          </button>
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
             onChange={handleFileUpload}
             style={{ display: 'none' }}
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={sending}
-            style={{
-              padding: '6px 14px', borderRadius: 6,
-              border: '1px solid #ccc', background: '#fff',
-              cursor: 'pointer', fontSize: 13, color: '#333',
-            }}
+            onClick={() => fileInputRef.current?.click()}
           >
             📎 Файл
-          </button>
+          </Button>
         </div>
 
         {inputMode === 'note' && (
@@ -196,21 +213,57 @@ export default function AdminStudentThreadPage() {
             style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc', minHeight: 60, resize: 'vertical', fontFamily: 'inherit', fontSize: 14 }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           />
-          <button
-            onClick={handleSend}
+          <Button
+            variant="primary"
             disabled={sending || !content.trim()}
-            style={{
-              padding: '10px 20px', borderRadius: 8, border: 'none',
-              background: inputMode === 'note' ? '#963' : '#339',
-              color: '#fff', cursor: 'pointer', alignSelf: 'flex-end',
-              opacity: sending || !content.trim() ? 0.5 : 1,
-            }}
+            onClick={handleSend}
+            style={{ alignSelf: 'flex-end' }}
           >
             {sending ? '...' : 'Отправить'}
-          </button>
+          </Button>
         </div>
       </div>
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
   );
 }
 
@@ -223,7 +276,7 @@ function EntryCard({ entry }: { entry: ThreadEntry }) {
     text: '', file: '📎', audio: '🎵', link: '🔗', comment: '💬', note: '📝',
   };
 
-  const bgColor = isNote ? '#fff8ee' : isAdmin ? '#eef' : '#fff';
+  const bgColor = isNote ? 'var(--color-warning-dim)' : isAdmin ? 'var(--color-info-dim)' : 'var(--color-bg-surface)';
   const borderColor = isNote ? '#e0c090' : isAdmin ? '#99c' : '#e0e0e0';
 
   return (

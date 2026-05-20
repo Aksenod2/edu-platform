@@ -3,6 +3,8 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { acceptInvite } from '@/lib/api';
+import { Button, Input } from '@platform/ui/atoms';
+import { AuthLayout } from '@platform/ui/templates';
 
 function InviteForm() {
   const searchParams = useSearchParams();
@@ -41,28 +43,28 @@ function InviteForm() {
 
   if (!token) {
     return (
-      <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 400, margin: '0 auto' }}>
-        <h1>Ошибка</h1>
-        <p style={{ color: '#c00' }}>Ссылка приглашения невалидна.</p>
-      </main>
+      <AuthLayout title="Ошибка">
+        <p style={{ color: 'var(--color-accent-red)' }}>Ссылка приглашения невалидна.</p>
+      </AuthLayout>
     );
   }
 
   if (success) {
     return (
-      <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 400, margin: '0 auto' }}>
-        <h1>Готово!</h1>
-        <p>Регистрация завершена. Теперь вы можете войти.</p>
-        <a href="/login" style={{ color: '#0070f3' }}>Перейти на страницу входа</a>
-      </main>
+      <AuthLayout title="Готово!">
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-4)' }}>
+          Регистрация завершена. Теперь вы можете войти.
+        </p>
+        <a href="/login" style={{ color: 'var(--color-accent-red)' }}>Перейти на страницу входа</a>
+      </AuthLayout>
     );
   }
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 400, margin: '0 auto' }}>
-      <h1>Регистрация</h1>
-      <p style={{ color: '#666', marginBottom: 16 }}>Установите пароль для входа на платформу.</p>
-
+    <AuthLayout
+      title="Регистрация"
+      subtitle="Установите пароль для входа на платформу."
+    >
       {error && (
         <div style={{ padding: '8px 12px', background: '#fee', color: '#c00', borderRadius: 4, marginBottom: 16, userSelect: 'text', cursor: 'text' }}>
           {error}
@@ -72,44 +74,44 @@ function InviteForm() {
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Пароль</label>
-          <input
+          <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            style={{ width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
           />
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Подтвердите пароль</label>
-          <input
+          <Input
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
             minLength={6}
-            style={{ width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
           />
         </div>
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          fullWidth
+          loading={loading}
           disabled={loading}
-          style={{ width: '100%', padding: '10px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 16 }}
         >
           {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-        </button>
+        </Button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }
 
 export default function InvitePage() {
   return (
     <Suspense fallback={
-      <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 400, margin: '0 auto' }}>
-        <p>Загрузка...</p>
-      </main>
+      <AuthLayout>
+        <p style={{ color: 'var(--color-text-tertiary)', textAlign: 'center' }}>Загрузка...</p>
+      </AuthLayout>
     }>
       <InviteForm />
     </Suspense>

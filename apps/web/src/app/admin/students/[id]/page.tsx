@@ -1,8 +1,22 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button } from '@platform/ui/atoms';
+
+const ADMIN_NAV = [
+  {
+    label: 'Управление',
+    items: [
+      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
+      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
+      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
+      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+    ],
+  },
+];
 import {
   getProfile,
   addTeacherNote,
@@ -11,9 +25,10 @@ import {
 } from '@/lib/api';
 
 export default function StudentProfilePage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const studentId = params.id as string;
 
   const [data, setData] = useState<ProfileResponse | null>(null);
@@ -70,16 +85,30 @@ export default function StudentProfilePage() {
   };
 
   if (loading || loadingProfile) {
-    return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
   }
   if (!user || user.role !== 'admin') return null;
 
   if (error && !data) {
     return (
-      <main style={{ padding: 32, fontFamily: 'sans-serif' }}>
-        <a href="/admin/students" style={{ color: '#666', textDecoration: 'none' }}>← К списку учеников</a>
-        <p style={{ color: '#dc3545', marginTop: 16 }}>{error}</p>
-      </main>
+      <DashboardLayout
+        currentPath={pathname}
+        header={{
+          user: { name: user.name, role: 'admin' },
+          onLogout: async () => { await logout(); router.push('/login'); },
+          platformName: 'PLATFORM ADMIN',
+        }}
+        sidebar={{ sections: ADMIN_NAV }}
+      >
+        <div style={{ padding: 'var(--space-4)' }}>
+          <a href="/admin/students" style={{ color: '#666', textDecoration: 'none' }}>← К списку учеников</a>
+          <p style={{ color: '#dc3545', marginTop: 16 }}>{error}</p>
+        </div>
+      </DashboardLayout>
     );
   }
 
@@ -88,7 +117,16 @@ export default function StudentProfilePage() {
   const { student, profile, notes } = data;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 800, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'admin' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+        platformName: 'PLATFORM ADMIN',
+      }}
+      sidebar={{ sections: ADMIN_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 800 }}>
       <a href="/admin/students" style={{ color: '#666', textDecoration: 'none' }}>← К списку учеников</a>
 
       <h1 style={{ marginTop: 16 }}>{student.name}</h1>
@@ -107,7 +145,7 @@ export default function StudentProfilePage() {
       <section style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 20, marginBottom: 12 }}>Анкета (Задание №0)</h2>
         {profile ? (
-          <div style={{ background: '#f9f9f9', border: '1px solid #eee', borderRadius: 6, padding: 16 }}>
+          <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 6, padding: 16 }}>
             <div style={{ marginBottom: 12 }}>
               <strong>Резюме:</strong>
               <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{profile.resume || '—'}</p>
@@ -154,20 +192,14 @@ export default function StudentProfilePage() {
             rows={3}
             style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, fontFamily: 'sans-serif', boxSizing: 'border-box', marginBottom: 8 }}
           />
-          <button
+          <Button
             type="submit"
-            disabled={savingNote || !noteContent.trim()}
-            style={{
-              padding: '8px 16px',
-              background: savingNote || !noteContent.trim() ? '#ccc' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: savingNote || !noteContent.trim() ? 'default' : 'pointer',
-            }}
+            variant="primary"
+            disabled={!noteContent.trim()}
+            loading={savingNote}
           >
             {savingNote ? 'Сохранение...' : 'Добавить заметку'}
-          </button>
+          </Button>
           {noteMessage && (
             <span style={{ marginLeft: 12, color: '#28a745' }}>{noteMessage}</span>
           )}
@@ -178,7 +210,7 @@ export default function StudentProfilePage() {
             {notes.map((note: TeacherNote) => (
               <div
                 key={note.id}
-                style={{ background: '#f9f9f9', border: '1px solid #eee', borderRadius: 6, padding: 12 }}
+                style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 6, padding: 12 }}
               >
                 <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{note.content}</p>
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: '#999' }}>
@@ -191,6 +223,46 @@ export default function StudentProfilePage() {
           <p style={{ color: '#999' }}>Заметок пока нет.</p>
         )}
       </section>
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
+    </svg>
+  );
+}
+
+function StreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 4h12M2 8h8M2 12h10" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
   );
 }

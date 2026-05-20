@@ -1,8 +1,24 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@platform/ui/templates';
+import { Spinner, Button, Badge } from '@platform/ui/atoms';
+
+const STUDENT_NAV = [
+  {
+    label: 'Обучение',
+    items: [
+      { label: 'Обзор',      href: '/dashboard',             icon: <GridIcon /> },
+      { label: 'Уроки',      href: '/dashboard/lessons',     icon: <BookIcon /> },
+      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
+      { label: 'Тред',       href: '/dashboard/thread',      icon: <ChatIcon /> },
+      { label: 'Расписание', href: '/dashboard/schedule',    icon: <CalendarIcon /> },
+      { label: 'Профиль',    href: '/dashboard/profile',     icon: <UserIcon /> },
+    ],
+  },
+];
 import {
   getStudentAssignments,
   updateStudentAssignment,
@@ -17,10 +33,10 @@ const statusLabels: Record<string, string> = {
   reviewed: 'Проверено',
 };
 
-const statusColors: Record<string, { bg: string; color: string }> = {
-  assigned: { bg: '#fff3cd', color: '#856404' },
-  submitted: { bg: '#cce5ff', color: '#004085' },
-  reviewed: { bg: '#e6f4ea', color: '#1a7f37' },
+const statusBadgeVariant: Record<string, 'warning' | 'info' | 'success'> = {
+  assigned: 'warning',
+  submitted: 'info',
+  reviewed: 'success',
 };
 
 const typeLabels: Record<string, string> = {
@@ -29,8 +45,9 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function StudentAssignmentsPage() {
-  const { user, accessToken, loading } = useAuth();
+  const { user, accessToken, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [assignments, setAssignments] = useState<StudentAssignment[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -94,19 +111,35 @@ export default function StudentAssignmentsPage() {
     }
   };
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   if (!user || user.role !== 'student') return null;
 
   return (
-    <main style={{ padding: 32, fontFamily: 'sans-serif', maxWidth: 900, margin: '0 auto' }}>
+    <DashboardLayout
+      currentPath={pathname}
+      header={{
+        user: { name: user.name, role: 'student' },
+        onLogout: async () => { await logout(); router.push('/login'); },
+      }}
+      sidebar={{ sections: STUDENT_NAV }}
+    >
+    <div style={{ padding: 'var(--space-4)', maxWidth: 900 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => router.push('/dashboard')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#666', marginBottom: 8, display: 'block' }}
+            style={{ marginBottom: 8, display: 'block' }}
           >
-            &larr; Назад
-          </button>
+            ← Назад
+          </Button>
           <h1 style={{ margin: 0 }}>Мои задания</h1>
         </div>
       </div>
@@ -118,7 +151,7 @@ export default function StudentAssignmentsPage() {
       )}
 
       {success && (
-        <div style={{ padding: 12, background: '#e6f4ea', border: '1px solid #a3d9a5', borderRadius: 4, marginBottom: 16, color: '#1a7f37' }}>
+        <div style={{ padding: 12, background: 'var(--color-success-dim)', border: '1px solid var(--color-success)', borderRadius: 4, marginBottom: 16, color: 'var(--color-success)' }}>
           {success}
         </div>
       )}
@@ -165,7 +198,7 @@ export default function StudentAssignmentsPage() {
                   border: '1px solid #eee',
                   borderRadius: 8,
                   overflow: 'hidden',
-                  background: '#fff',
+                  background: 'var(--color-bg-surface)',
                 }}
               >
                 <div
@@ -176,26 +209,17 @@ export default function StudentAssignmentsPage() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    background: isExpanded ? '#f9f9f9' : '#fff',
+                    background: isExpanded ? 'var(--color-bg-elevated)' : 'var(--color-bg-surface)',
                   }}
                 >
                   <div>
                     <div style={{ fontWeight: 500, fontSize: 16 }}>{a?.title}</div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{
-                        padding: '1px 8px',
-                        borderRadius: 10,
-                        fontSize: 11,
-                        fontWeight: 'bold',
-                        background: statusColors[sa.status]?.bg,
-                        color: statusColors[sa.status]?.color,
-                      }}>
+                      <Badge variant={statusBadgeVariant[sa.status] ?? 'default'}>
                         {statusLabels[sa.status]}
-                      </span>
+                      </Badge>
                       {a?.type && (
-                        <span style={{ fontSize: 11, background: a.type === 'long' ? '#e8d5f5' : '#d5e8f5', padding: '1px 6px', borderRadius: 8 }}>
-                          {typeLabels[a.type]}
-                        </span>
+                        <Badge variant="default">{typeLabels[a.type]}</Badge>
                       )}
                       {a?.stream && (
                         <span style={{ fontSize: 12, color: '#666' }}>{a.stream.name}</span>
@@ -248,20 +272,12 @@ export default function StudentAssignmentsPage() {
 
                     {sa.status === 'assigned' && (
                       <div style={{ marginTop: 16 }}>
-                        <button
+                        <Button
+                          variant="primary"
                           onClick={() => handleSubmit(sa.id)}
-                          style={{
-                            padding: '8px 20px',
-                            background: '#0070f3',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: 14,
-                          }}
                         >
                           Отправить на проверку
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -271,6 +287,64 @@ export default function StudentAssignmentsPage() {
           })}
         </div>
       )}
-    </main>
+    </div>
+    </DashboardLayout>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 2h10v12H3z" />
+      <path d="M6 2v12" />
+      <path d="M6 5h4M6 8h4M6 11h4" />
+    </svg>
+  );
+}
+
+function ClipboardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="2" width="10" height="13" rx="1" />
+      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 2h12v9H5l-3 3V2z" />
+      <path d="M5 6h6M5 9h3" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
   );
 }
