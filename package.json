@@ -12,6 +12,9 @@
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "db:generate": "turbo db:generate",
+    "db:migrate:dev": "turbo db:migrate:dev",
+    "db:migrate:deploy": "turbo db:migrate:deploy",
+    "db:migrate:status": "turbo db:migrate:status",
     "db:push": "turbo db:push",
     "db:seed": "turbo db:seed"
   },
