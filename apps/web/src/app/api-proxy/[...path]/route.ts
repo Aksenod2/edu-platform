@@ -14,8 +14,6 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
 
   // Build headers, forwarding cookie from the client
   const headers = new Headers();
-  const contentType = request.headers.get('content-type');
-  if (contentType) headers.set('content-type', contentType);
   const authorization = request.headers.get('authorization');
   if (authorization) headers.set('authorization', authorization);
   const cookie = request.headers.get('cookie');
@@ -27,8 +25,16 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
     redirect: 'manual',
   };
 
+  // Only forward body (and content-type) when there is actual content.
+  // Sending an empty body with content-type: application/json causes
+  // Fastify to reject it as invalid JSON (400 Bad Request).
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = await request.arrayBuffer();
+    const bodyBuf = await request.arrayBuffer();
+    if (bodyBuf.byteLength > 0) {
+      init.body = bodyBuf;
+      const contentType = request.headers.get('content-type');
+      if (contentType) headers.set('content-type', contentType);
+    }
   }
 
   const upstream = await fetch(url.toString(), init);
