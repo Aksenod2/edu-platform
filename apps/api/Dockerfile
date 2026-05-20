@@ -21,12 +21,15 @@ RUN pnpm --filter @platform/api build
 FROM base AS runner
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/
+COPY --from=build /app/apps/api/start.sh ./apps/api/
 COPY --from=build /app/packages/db ./packages/db
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages/db/node_modules ./packages/db/node_modules
 COPY pnpm-workspace.yaml package.json ./
 
+RUN chmod +x /app/apps/api/start.sh
+
 WORKDIR /app/apps/api
 EXPOSE 4000
-CMD ["node", "dist/server.js"]
+CMD ["sh", "start.sh"]
