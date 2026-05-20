@@ -6,63 +6,38 @@ export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
 
-  // GET /lessons?streamId=xxx — список уроков потока
+  // GET /lessons?streamId=xxx — список уроков (опциональная фильтрация по streamId)
   // Admin: все уроки; Student: только published (+ auto-publish по publishAt)
   app.get('/lessons', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId } = request.query as { streamId?: string };
 
-    if (!streamId) {
-      return reply.status(400).send({ error: 'streamId обязателен' });
-    }
-
-    const stream = await prisma.stream.findUnique({ where: { id: streamId } });
-    if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+    if (streamId) {
+      const stream = await prisma.stream.findUnique({ where: { id: streamId } });
+      if (!stream) {
+        return reply.status(404).send({ error: 'Поток не найден' });
+      }
     }
 
     const isAdmin = request.user?.role === 'admin';
+    const streamFilter = streamId ? { streamId } : {};
 
     // Auto-publish: переводим draft → published если publishAt <= now
-    if (isAdmin) {
-      await prisma.lesson.updateMany({
-        where: {
-          streamId,
-          status: 'draft',
-          publishAt: { lte: new Date() },
-        },
-        data: { status: 'published' },
-      });
-    }
+    await prisma.lesson.updateMany({
+      where: {
+        ...streamFilter,
+        status: 'draft',
+        publishAt: { lte: new Date() },
+      },
+      data: { status: 'published' },
+    });
 
     const lessons = await prisma.lesson.findMany({
       where: {
-        streamId,
+        ...streamFilter,
         ...(!isAdmin && { status: { in: ['published', 'closed'] } }),
       },
       orderBy: { sortOrder: 'asc' },
     });
-
-    // Для студентов тоже запускаем auto-publish при запросе
-    if (!isAdmin) {
-      await prisma.lesson.updateMany({
-        where: {
-          streamId,
-          status: 'draft',
-          publishAt: { lte: new Date() },
-        },
-        data: { status: 'published' },
-      });
-
-      // Перезапрашиваем после auto-publish
-      const updatedLessons = await prisma.lesson.findMany({
-        where: {
-          streamId,
-          status: { in: ['published', 'closed'] },
-        },
-        orderBy: { sortOrder: 'asc' },
-      });
-      return { lessons: updatedLessons };
-    }
 
     return { lessons };
   });

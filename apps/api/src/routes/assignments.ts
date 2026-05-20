@@ -6,22 +6,20 @@ export async function assignmentRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
 
-  // GET /assignments?streamId=xxx — список заданий потока
+  // GET /assignments?streamId=xxx — список заданий (опциональная фильтрация по streamId)
   // Admin: все; Student: все (фильтрация через student-assignments)
   app.get('/assignments', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId } = request.query as { streamId?: string };
 
-    if (!streamId) {
-      return reply.status(400).send({ error: 'streamId обязателен' });
-    }
-
-    const stream = await prisma.stream.findUnique({ where: { id: streamId } });
-    if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+    if (streamId) {
+      const stream = await prisma.stream.findUnique({ where: { id: streamId } });
+      if (!stream) {
+        return reply.status(404).send({ error: 'Поток не найден' });
+      }
     }
 
     const assignments = await prisma.assignment.findMany({
-      where: { streamId },
+      where: streamId ? { streamId } : {},
       include: {
         lesson: { select: { id: true, title: true } },
         _count: { select: { studentAssignments: true } },
