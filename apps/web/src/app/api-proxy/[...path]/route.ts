@@ -24,6 +24,7 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
   const init: RequestInit = {
     method: request.method,
     headers,
+    redirect: 'manual',
   };
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -32,15 +33,19 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
 
   const upstream = await fetch(url.toString(), init);
 
-  // Build the response, forwarding all Set-Cookie headers from upstream
+  // Build the response headers
   const responseHeaders = new Headers();
-  upstream.headers.forEach((value, key) => {
-    // Forward content-type and all set-cookie headers
-    const lower = key.toLowerCase();
-    if (lower === 'content-type' || lower === 'set-cookie') {
-      responseHeaders.append(key, value);
+  const ct = upstream.headers.get('content-type');
+  if (ct) responseHeaders.set('content-type', ct);
+
+  // Forward Set-Cookie headers using getSetCookie() — Headers.forEach()
+  // does not reliably expose set-cookie in Node.js fetch implementation
+  const setCookies = (upstream.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.();
+  if (setCookies) {
+    for (const sc of setCookies) {
+      responseHeaders.append('set-cookie', sc);
     }
-  });
+  }
 
   const body = await upstream.arrayBuffer();
 
