@@ -47,6 +47,8 @@ export default function LoginPage() {
               background: 'var(--color-error-dim)',
               border: '1px solid var(--color-error)',
               borderRadius: 'var(--radius-xs)',
+              userSelect: 'text',
+              cursor: 'text',
             }}
           >
             <Text size="sm" color="var(--color-error)">{error}</Text>
@@ -90,7 +92,7 @@ export default function LoginPage() {
                 letterSpacing: 'var(--tracking-wide)',
               }}
             >
-              FORGOT PASSWORD
+              ЗАБЫЛИ ПАРОЛЬ
             </a>
           </div>
         </div>
@@ -102,7 +104,7 @@ export default function LoginPage() {
           fullWidth
           loading={loading}
         >
-          {loading ? 'SIGNING IN' : 'SIGN IN'}
+          {loading ? 'ВХОД...' : 'ВОЙТИ'}
         </Button>
       </form>
     </AuthLayout>

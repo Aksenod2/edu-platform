@@ -196,7 +196,7 @@ export default function StudentThreadPage() {
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', background: '#fee', color: '#c00', borderRadius: 8, marginBottom: 16 }}>
+        <div style={{ padding: '12px 16px', background: '#fee', color: '#c00', borderRadius: 8, marginBottom: 16, userSelect: 'text', cursor: 'text' }}>
           {error}
           <button onClick={() => setError('')} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: '#c00' }}>✕</button>
         </div>

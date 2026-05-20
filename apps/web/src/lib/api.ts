@@ -12,19 +12,57 @@ interface AuthResponse {
   };
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+function translateNetworkError(err: unknown): string {
+  if (!(err instanceof Error)) return 'Неизвестная ошибка';
+  const msg = err.message.toLowerCase();
+  if (msg.includes('failed to fetch') || msg.includes('networkerror'))
+    return 'Не удалось подключиться к серверу. Проверьте интернет-соединение или попробуйте позже.';
+  if (msg.includes('timeout') || msg.includes('aborted'))
+    return 'Превышено время ожидания ответа от сервера. Попробуйте позже.';
+  if (msg.includes('json'))
+    return 'Сервер вернул некорректный ответ. Попробуйте позже или обратитесь в поддержку.';
+  return err.message;
+}
 
-  const data = await res.json();
+const HTTP_STATUS_MESSAGES: Record<number, string> = {
+  400: 'Некорректный запрос',
+  401: 'Необходима авторизация',
+  403: 'Доступ запрещён',
+  404: 'Ресурс не найден',
+  409: 'Конфликт данных',
+  422: 'Ошибка валидации данных',
+  429: 'Слишком много запросов. Подождите немного.',
+  500: 'Внутренняя ошибка сервера',
+  502: 'Сервер временно недоступен',
+  503: 'Сервис временно недоступен',
+};
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка сервера (${res.status})`);
+  }
+
   if (!res.ok) {
-    throw new Error(data.error || 'Ошибка запроса');
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    const fallback = HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`;
+    throw new Error(serverMsg || fallback);
   }
   return data as T;
 }
@@ -630,16 +668,28 @@ export async function uploadThreadFile(
   formData.append('type', type);
   if (assignmentId) formData.append('assignmentId', assignmentId);
 
-  const res = await fetch(`${API_URL}/threads/${studentId}/entries`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/threads/${studentId}/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
 
-  const data = await res.json();
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
   if (!res.ok) {
-    throw new Error(data.error || 'Ошибка загрузки файла');
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
   }
   return data as { entry: ThreadEntry };
 }

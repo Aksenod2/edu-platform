@@ -208,7 +208,7 @@ export default function LessonsPage() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00' }}>
+        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00', userSelect: 'text', cursor: 'text' }}>
           {error}
         </div>
       )}

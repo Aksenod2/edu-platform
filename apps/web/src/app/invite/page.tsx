@@ -64,7 +64,7 @@ function InviteForm() {
       <p style={{ color: '#666', marginBottom: 16 }}>Установите пароль для входа на платформу.</p>
 
       {error && (
-        <div style={{ padding: '8px 12px', background: '#fee', color: '#c00', borderRadius: 4, marginBottom: 16 }}>
+        <div style={{ padding: '8px 12px', background: '#fee', color: '#c00', borderRadius: 4, marginBottom: 16, userSelect: 'text', cursor: 'text' }}>
           {error}
         </div>
       )}
