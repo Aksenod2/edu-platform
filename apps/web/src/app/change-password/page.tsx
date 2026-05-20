@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { AuthLayout } from '@platform/ui/templates';
+import { Input, Button, Label } from '@platform/ui/atoms';
 import { useAuth } from '@/lib/auth-context';
 import { changePassword } from '@/lib/api';
 
@@ -14,7 +16,28 @@ export default function ChangePasswordPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  if (loading) return <p style={{ padding: 32, fontFamily: 'sans-serif' }}>Загрузка...</p>;
+  if (loading) {
+    return (
+      <AuthLayout title="Загрузка...">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'var(--space-8)',
+        }}>
+          <div style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            border: '2px solid var(--color-border-default)',
+            borderTopColor: 'var(--color-accent-red)',
+            animation: 'np-spin 0.7s linear infinite',
+          }} />
+        </div>
+      </AuthLayout>
+    );
+  }
+
   if (!user || !accessToken) {
     router.push('/login');
     return null;
@@ -29,7 +52,7 @@ export default function ChangePasswordPage() {
       return;
     }
     if (newPassword.length < 6) {
-      setError('Новый пароль должен быть не менее 6 символов');
+      setError('Новый пароль должен содержать минимум 6 символов');
       return;
     }
 
@@ -38,11 +61,7 @@ export default function ChangePasswordPage() {
       const result = await changePassword(accessToken!, currentPassword, newPassword);
       setAccessToken(result.accessToken);
       setUser({ ...user!, mustChangePassword: false });
-      if (user!.role === 'admin') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
-      }
+      router.push(user!.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка смены пароля');
     } finally {
@@ -51,70 +70,86 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <main style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <form onSubmit={handleSubmit} style={{ width: 360, padding: 32, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h1 style={{ fontSize: 24, marginBottom: 8, textAlign: 'center' }}>Смена пароля</h1>
-        {user.mustChangePassword && (
-          <p style={{ fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 24 }}>
-            Необходимо сменить пароль перед началом работы
-          </p>
-        )}
-
+    <AuthLayout
+      title="Смена пароля"
+      subtitle={
+        user.mustChangePassword
+          ? 'Необходимо сменить пароль перед началом работы'
+          : 'Введите текущий пароль и задайте новый'
+      }
+    >
+      <form onSubmit={handleSubmit}>
         {error && (
-          <div style={{ background: '#fee', color: '#c00', padding: 12, borderRadius: 4, marginBottom: 16, fontSize: 14, userSelect: 'text', cursor: 'text' }}>
+          <div style={{
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'var(--color-error-dim)',
+            border: '1px solid var(--color-error)',
+            borderRadius: 'var(--radius-xs)',
+            marginBottom: 'var(--space-5)',
+            color: 'var(--color-error)',
+            fontSize: 'var(--text-sm)',
+            userSelect: 'text',
+          }}>
             {error}
           </div>
         )}
 
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="currentPassword" style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Текущий пароль</label>
-          <input
-            id="currentPassword"
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
-          />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+          <div>
+            <Label htmlFor="currentPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
+              Текущий пароль
+            </Label>
+            <Input
+              id="currentPassword"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="newPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
+              Новый пароль
+            </Label>
+            <Input
+              id="newPassword"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="confirmPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
+              Подтвердите новый пароль
+            </Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+              error={!!(confirmPassword && confirmPassword !== newPassword)}
+            />
+          </div>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="newPassword" style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Новый пароль</label>
-          <input
-            id="newPassword"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={6}
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 24 }}>
-          <label htmlFor="confirmPassword" style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Подтвердите новый пароль</label>
-          <input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-            style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <button
+        <Button
           type="submit"
-          disabled={submitting}
-          style={{
-            width: '100%', padding: 10, background: '#333', color: '#fff',
-            border: 'none', borderRadius: 4, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 16,
-          }}
+          variant="primary"
+          fullWidth
+          loading={submitting}
         >
-          {submitting ? 'Сохранение...' : 'Сменить пароль'}
-        </button>
+          Сменить пароль
+        </Button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

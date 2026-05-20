@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card, FormField } from '@platform/ui/molecules';
-import { Button, Heading, Text, Mono, Spinner } from '@platform/ui/atoms';
+import { Button, Heading, Text, Mono, Spinner, Textarea } from '@platform/ui/atoms';
 
 const STUDENT_NAV = [
   {
@@ -158,24 +158,12 @@ export default function ProfilePage() {
               required
               hint="Краткое профессиональное описание себя"
             >
-              <textarea
+              <Textarea
                 id="resume"
                 value={resume}
                 onChange={(e) => setResume(e.target.value)}
                 placeholder="Краткое профессиональное описание себя"
                 rows={4}
-                style={{
-                  width: '100%',
-                  padding: 'var(--space-3) var(--space-4)',
-                  background: 'var(--color-bg-surface)',
-                  border: '1px solid var(--color-border-default)',
-                  borderRadius: 'var(--radius-xs)',
-                  color: 'var(--color-text-primary)',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: 'var(--text-base)',
-                  resize: 'vertical',
-                  boxSizing: 'border-box',
-                }}
               />
             </FormField>
 

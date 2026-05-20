@@ -11,10 +11,7 @@ import {
 } from '@/lib/api';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card } from '@platform/ui/molecules';
-import { Heading, Text, Mono } from '@platform/ui/atoms';
-import { Spinner } from '@platform/ui/atoms';
-import { Badge } from '@platform/ui/atoms';
-import { Divider } from '@platform/ui/atoms';
+import { Heading, Text, Mono, Spinner, Badge, Divider, Select } from '@platform/ui/atoms';
 
 const STUDENT_NAV = [
   {
@@ -112,23 +109,16 @@ export default function StudentSchedulePage() {
         subtitle="Предстоящие занятия и сроки"
         action={
           streams.length > 1 ? (
-            <select
+            <Select
               value={selectedStreamId}
               onChange={(e) => setSelectedStreamId(e.target.value)}
-              style={{
-                padding: 'var(--space-2) var(--space-4)',
-                background: 'var(--color-bg-surface)',
-                border: '1px solid var(--color-border-default)',
-                borderRadius: 'var(--radius-xs)',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-sm)',
-              }}
+              fullWidth={false}
+              style={{ minWidth: 160 }}
             >
               {streams.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
-            </select>
+            </Select>
           ) : undefined
         }
       />

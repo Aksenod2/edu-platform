@@ -314,13 +314,13 @@ export default function AssignmentsPage() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00', userSelect: 'text', cursor: 'text' }}>
+        <div style={{ padding: 12, background: 'var(--color-error-dim)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-xs)', marginBottom: 16, color: 'var(--color-error)', userSelect: 'text', cursor: 'text' }}>
           {error}
         </div>
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, border: '1px solid #eee' }}>
+        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-default)' }}>
           <h3 style={{ marginTop: 0 }}>{editingId ? 'Редактировать задание' : 'Новое задание'}</h3>
 
           <div style={{ marginBottom: 12 }}>
@@ -330,7 +330,7 @@ export default function AssignmentsPage() {
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               placeholder="Название задания"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               autoFocus
             />
           </div>
@@ -342,7 +342,7 @@ export default function AssignmentsPage() {
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Описание задания в формате Markdown..."
               rows={5}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box', resize: 'vertical' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
             />
           </div>
 
@@ -352,7 +352,7 @@ export default function AssignmentsPage() {
               <select
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value as 'short' | 'long' })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               >
                 <option value="short">Короткое</option>
                 <option value="long">Длинное</option>
@@ -364,7 +364,7 @@ export default function AssignmentsPage() {
               <select
                 value={form.lessonId}
                 onChange={(e) => setForm({ ...form, lessonId: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               >
                 <option value="">— Без привязки —</option>
                 {lessons.map((l) => (
@@ -379,7 +379,7 @@ export default function AssignmentsPage() {
                 type="datetime-local"
                 value={form.dueDate}
                 onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -391,7 +391,7 @@ export default function AssignmentsPage() {
               value={form.tags}
               onChange={(e) => setForm({ ...form, tags: e.target.value })}
               placeholder="дизайн, верстка, типографика"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
             />
           </div>
 
@@ -418,11 +418,11 @@ export default function AssignmentsPage() {
       {loadingData ? (
         <p>Загрузка заданий...</p>
       ) : filteredAssignments.length === 0 ? (
-        <p style={{ color: '#666' }}>Заданий пока нет. Добавьте первое задание.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>Заданий пока нет. Добавьте первое задание.</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid #eee' }}>
+            <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
               <th style={{ textAlign: 'left', padding: '8px 12px' }}>Название</th>
               <th style={{ textAlign: 'left', padding: '8px 12px' }}>Тип</th>
               <th style={{ textAlign: 'left', padding: '8px 12px' }}>Урок</th>
@@ -434,7 +434,7 @@ export default function AssignmentsPage() {
           <tbody>
             {filteredAssignments.map((a) => (
               <>
-                <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}>
+                <tr key={a.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                   <td style={{ padding: '12px' }}>
                     <div style={{ fontWeight: 500 }}>{a.title}</div>
                     {a.tags.length > 0 && (
@@ -448,10 +448,10 @@ export default function AssignmentsPage() {
                   <td style={{ padding: '12px' }}>
                     <Badge variant="default">{typeLabels[a.type]}</Badge>
                   </td>
-                  <td style={{ padding: '12px', color: '#666', fontSize: 14 }}>
+                  <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
                     {a.lesson?.title || '—'}
                   </td>
-                  <td style={{ padding: '12px', color: '#666', fontSize: 14 }}>
+                  <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
                     {a.dueDate
                       ? new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
                       : '—'}
@@ -535,7 +535,7 @@ export default function AssignmentsPage() {
                 {/* Student assignments detail */}
                 {viewingId === a.id && (
                   <tr key={`detail-${a.id}`}>
-                    <td colSpan={6} style={{ padding: '12px', background: '#fafafa', borderBottom: '2px solid #eee' }}>
+                    <td colSpan={6} style={{ padding: '12px', background: '#fafafa', borderBottom: '2px solid var(--color-border-default)' }}>
                       {a.description && (
                         <div style={{ marginBottom: 12, padding: 12, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-default)', borderRadius: 4 }}>
                           <strong style={{ fontSize: 13 }}>Описание:</strong>
@@ -558,7 +558,7 @@ export default function AssignmentsPage() {
                       {loadingSA ? (
                         <p style={{ fontSize: 13 }}>Загрузка...</p>
                       ) : studentAssignments.length === 0 ? (
-                        <p style={{ fontSize: 13, color: '#666' }}>Нет назначений. Используйте «Назначить» для добавления учеников.</p>
+                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Нет назначений. Используйте «Назначить» для добавления учеников.</p>
                       ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                           <thead>
@@ -575,17 +575,17 @@ export default function AssignmentsPage() {
                               ? studentAssignments.filter((sa) => sa.status === statusFilter)
                               : studentAssignments
                             ).map((sa) => (
-                              <tr key={sa.id} style={{ borderBottom: '1px solid #eee' }}>
+                              <tr key={sa.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                                 <td style={{ padding: '6px 8px' }}>{sa.student?.name || sa.studentId}</td>
                                 <td style={{ padding: '6px 8px' }}>
                                   <Badge variant={saStatusBadgeVariant[sa.status] ?? 'default'}>
                                     {saStatusLabels[sa.status]}
                                   </Badge>
                                 </td>
-                                <td style={{ padding: '6px 8px', color: '#666' }}>
+                                <td style={{ padding: '6px 8px', color: 'var(--color-text-secondary)' }}>
                                   {sa.submittedAt ? new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                                 </td>
-                                <td style={{ padding: '6px 8px', color: '#666' }}>
+                                <td style={{ padding: '6px 8px', color: 'var(--color-text-secondary)' }}>
                                   {sa.reviewedAt ? new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                                 </td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right' }}>

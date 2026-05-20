@@ -4,7 +4,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { DashboardLayout } from '@platform/ui/templates';
-import { Spinner, Button, Badge } from '@platform/ui/atoms';
+import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
+import {
+  getStudentAssignments,
+  updateStudentAssignment,
+  getStreams,
+  type StudentAssignment,
+  type Stream,
+} from '@/lib/api';
 
 const STUDENT_NAV = [
   {
@@ -19,27 +26,20 @@ const STUDENT_NAV = [
     ],
   },
 ];
-import {
-  getStudentAssignments,
-  updateStudentAssignment,
-  getStreams,
-  type StudentAssignment,
-  type Stream,
-} from '@/lib/api';
 
-const statusLabels: Record<string, string> = {
+const STATUS_LABELS: Record<string, string> = {
   assigned: 'Назначено',
   submitted: 'Отправлено',
   reviewed: 'Проверено',
 };
 
-const statusBadgeVariant: Record<string, 'warning' | 'info' | 'success'> = {
+const STATUS_VARIANT: Record<string, 'warning' | 'info' | 'success'> = {
   assigned: 'warning',
   submitted: 'info',
   reviewed: 'success',
 };
 
-const typeLabels: Record<string, string> = {
+const TYPE_LABELS: Record<string, string> = {
   short: 'Короткое',
   long: 'Длинное',
 };
@@ -54,12 +54,8 @@ export default function StudentAssignmentsPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  // Filters
   const [streamFilter, setStreamFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-
-  // Expanded assignment
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,9 +87,7 @@ export default function StudentAssignmentsPage() {
   }, [accessToken, streamFilter, statusFilter]);
 
   useEffect(() => {
-    if (accessToken && user?.role === 'student') {
-      fetchData();
-    }
+    if (accessToken && user?.role === 'student') fetchData();
   }, [accessToken, user, fetchData]);
 
   const handleSubmit = async (saId: string) => {
@@ -129,190 +123,455 @@ export default function StudentAssignmentsPage() {
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >
-    <div style={{ padding: 'var(--space-4)', maxWidth: 900 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <Button
-            variant="ghost"
-            size="sm"
+      <div style={{ padding: 'var(--space-6)', maxWidth: 900 }}>
+        {/* Page header */}
+        <div style={{ marginBottom: 'var(--space-6)' }}>
+          <button
             onClick={() => router.push('/dashboard')}
-            style={{ marginBottom: 8, display: 'block' }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-sm)',
+              fontFamily: 'var(--font-sans)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-1)',
+              marginBottom: 'var(--space-3)',
+              padding: 0,
+              transition: 'color var(--duration-fast) var(--ease-default)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
           >
-            ← Назад
-          </Button>
-          <h1 style={{ margin: 0 }}>Мои задания</h1>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M9 2L4 7l5 5" />
+            </svg>
+            Назад
+          </button>
+          <h1 style={{
+            margin: 0,
+            fontSize: 'var(--text-2xl)',
+            fontWeight: 'var(--font-semibold)',
+            fontFamily: 'var(--font-sans)',
+            letterSpacing: 'var(--tracking-tight)',
+            color: 'var(--color-text-primary)',
+          }}>
+            Мои задания
+          </h1>
+          <p style={{
+            margin: 'var(--space-1) 0 0',
+            color: 'var(--color-text-tertiary)',
+            fontSize: 'var(--text-sm)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: 'var(--tracking-wide)',
+            textTransform: 'uppercase',
+          }}>
+            {assignments.length} задани{assignments.length === 1 ? 'е' : assignments.length < 5 ? 'я' : 'й'}
+          </p>
         </div>
-      </div>
 
-      {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00', userSelect: 'text', cursor: 'text' }}>
-          {error}
+        {/* Alerts */}
+        {error && (
+          <div style={{
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'var(--color-error-dim)',
+            border: '1px solid var(--color-error)',
+            borderRadius: 'var(--radius-xs)',
+            marginBottom: 'var(--space-4)',
+            color: 'var(--color-error)',
+            fontSize: 'var(--text-sm)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            userSelect: 'text',
+          }}>
+            <span>{error}</span>
+            <button
+              onClick={() => setError('')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 16 }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {success && (
+          <div style={{
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'var(--color-success-dim)',
+            border: '1px solid var(--color-success)',
+            borderRadius: 'var(--radius-xs)',
+            marginBottom: 'var(--space-4)',
+            color: 'var(--color-success)',
+            fontSize: 'var(--text-sm)',
+          }}>
+            {success}
+          </div>
+        )}
+
+        {/* Filters */}
+        <div style={{
+          display: 'flex',
+          gap: 'var(--space-3)',
+          marginBottom: 'var(--space-5)',
+          flexWrap: 'wrap',
+        }}>
+          <Select
+            value={streamFilter}
+            onChange={(e) => setStreamFilter(e.target.value)}
+            fullWidth={false}
+            style={{ minWidth: 160 }}
+          >
+            <option value="">Все потоки</option>
+            {streams.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </Select>
+
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            fullWidth={false}
+            style={{ minWidth: 160 }}
+          >
+            <option value="">Все статусы</option>
+            <option value="assigned">Назначено</option>
+            <option value="submitted">Отправлено</option>
+            <option value="reviewed">Проверено</option>
+          </Select>
+
+          {(streamFilter || statusFilter) && (
+            <button
+              onClick={() => { setStreamFilter(''); setStatusFilter(''); }}
+              style={{
+                background: 'none',
+                border: '1px solid var(--color-border-default)',
+                borderRadius: 'var(--radius-xs)',
+                color: 'var(--color-text-tertiary)',
+                cursor: 'pointer',
+                padding: 'var(--space-2) var(--space-3)',
+                fontSize: 'var(--text-xs)',
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: 'var(--tracking-wide)',
+                textTransform: 'uppercase',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-1)',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 2l8 8M10 2L2 10" />
+              </svg>
+              Сбросить
+            </button>
+          )}
         </div>
-      )}
 
-      {success && (
-        <div style={{ padding: 12, background: 'var(--color-success-dim)', border: '1px solid var(--color-success)', borderRadius: 4, marginBottom: 16, color: 'var(--color-success)' }}>
-          {success}
-        </div>
-      )}
+        {/* Content */}
+        {loadingData ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-16)' }}>
+            <Spinner size="lg" />
+          </div>
+        ) : assignments.length === 0 ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 'var(--space-3)',
+            padding: 'var(--space-16)',
+            border: '1px dashed var(--color-border-default)',
+            borderRadius: 'var(--radius-md)',
+          }}>
+            <div style={{
+              width: 48,
+              height: 48,
+              borderRadius: 'var(--radius-full)',
+              border: '2px solid var(--color-border-default)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--color-text-disabled)',
+            }}>
+              <ClipboardIcon />
+            </div>
+            <p style={{
+              color: 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-sm)',
+              margin: 0,
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: 'var(--tracking-wide)',
+              textTransform: 'uppercase',
+            }}>
+              {statusFilter || streamFilter ? 'Нет заданий по фильтрам' : 'Заданий пока нет'}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {assignments.map((sa) => {
+              const a = sa.assignment;
+              const isExpanded = expandedId === sa.id;
+              const isOverdue = a?.dueDate && new Date(a.dueDate) < new Date() && sa.status === 'assigned';
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <select
-          value={streamFilter}
-          onChange={(e) => setStreamFilter(e.target.value)}
-          style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-        >
-          <option value="">Все потоки</option>
-          {streams.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ padding: '6px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-        >
-          <option value="">Все статусы</option>
-          <option value="assigned">Назначено</option>
-          <option value="submitted">Отправлено</option>
-          <option value="reviewed">Проверено</option>
-        </select>
-      </div>
-
-      {loadingData ? (
-        <p>Загрузка заданий...</p>
-      ) : assignments.length === 0 ? (
-        <p style={{ color: '#666' }}>
-          {statusFilter || streamFilter ? 'Нет заданий по выбранным фильтрам.' : 'У вас пока нет назначенных заданий.'}
-        </p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {assignments.map((sa) => {
-            const a = sa.assignment;
-            const isExpanded = expandedId === sa.id;
-            return (
-              <div
-                key={sa.id}
-                style={{
-                  border: '1px solid #eee',
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                  background: 'var(--color-bg-surface)',
-                }}
-              >
+              return (
                 <div
-                  onClick={() => setExpandedId(isExpanded ? null : sa.id)}
+                  key={sa.id}
                   style={{
-                    padding: '16px 20px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    background: isExpanded ? 'var(--color-bg-elevated)' : 'var(--color-bg-surface)',
+                    border: `1px solid ${isOverdue ? 'var(--color-error)' : 'var(--color-border-default)'}`,
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden',
+                    background: 'var(--color-bg-surface)',
+                    transition: 'border-color var(--duration-fast) var(--ease-default)',
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: 16 }}>{a?.title}</div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <Badge variant={statusBadgeVariant[sa.status] ?? 'default'}>
-                        {statusLabels[sa.status]}
-                      </Badge>
-                      {a?.type && (
-                        <Badge variant="default">{typeLabels[a.type]}</Badge>
-                      )}
-                      {a?.stream && (
-                        <span style={{ fontSize: 12, color: '#666' }}>{a.stream.name}</span>
-                      )}
-                      {a?.lesson && (
-                        <span style={{ fontSize: 12, color: '#999' }}>Урок: {a.lesson.title}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    {a?.dueDate && (
-                      <div style={{ fontSize: 13, color: new Date(a.dueDate) < new Date() ? '#c00' : '#666', textAlign: 'right' }}>
-                        <div style={{ fontSize: 11, color: '#999' }}>Дедлайн</div>
-                        {new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                  {/* Card header — clickable */}
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : sa.id)}
+                    aria-expanded={isExpanded}
+                    style={{
+                      width: '100%',
+                      padding: 'var(--space-4) var(--space-5)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: isExpanded ? 'var(--color-bg-elevated)' : 'transparent',
+                      border: 'none',
+                      textAlign: 'left',
+                      transition: 'background var(--duration-fast) var(--ease-default)',
+                      gap: 'var(--space-4)',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontWeight: 'var(--font-medium)' as unknown as number,
+                        fontSize: 'var(--text-base)',
+                        fontFamily: 'var(--font-sans)',
+                        color: 'var(--color-text-primary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginBottom: 'var(--space-2)',
+                      }}>
+                        {a?.title}
                       </div>
-                    )}
-                    <span style={{ fontSize: 18, color: '#999' }}>{isExpanded ? '▲' : '▼'}</span>
-                  </div>
+                      <div style={{
+                        display: 'flex',
+                        gap: 'var(--space-2)',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}>
+                        <Badge variant={STATUS_VARIANT[sa.status] ?? 'default'}>
+                          {STATUS_LABELS[sa.status]}
+                        </Badge>
+                        {a?.type && (
+                          <Badge variant="default">{TYPE_LABELS[a.type] ?? a.type}</Badge>
+                        )}
+                        {a?.stream && (
+                          <span style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-text-tertiary)',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: 'var(--tracking-wide)',
+                          }}>
+                            {a.stream.name}
+                          </span>
+                        )}
+                        {a?.lesson && (
+                          <span style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-text-disabled)',
+                          }}>
+                            Урок: {a.lesson.title}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      gap: 'var(--space-4)',
+                      alignItems: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {a?.dueDate && (
+                        <div style={{
+                          textAlign: 'right',
+                          fontSize: 'var(--text-xs)',
+                        }}>
+                          <div style={{
+                            color: 'var(--color-text-disabled)',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: 'var(--tracking-wide)',
+                            textTransform: 'uppercase',
+                            marginBottom: 2,
+                          }}>
+                            Дедлайн
+                          </div>
+                          <div style={{
+                            color: isOverdue ? 'var(--color-error)' : 'var(--color-text-secondary)',
+                            fontFamily: 'var(--font-mono)',
+                            fontWeight: isOverdue ? 'var(--font-semibold)' as unknown as number : undefined,
+                          }}>
+                            {new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                        </div>
+                      )}
+                      <ChevronIcon open={isExpanded} />
+                    </div>
+                  </button>
+
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <div style={{
+                      padding: 'var(--space-4) var(--space-5)',
+                      borderTop: '1px solid var(--color-border-subtle)',
+                    }}>
+                      {a?.description ? (
+                        <div style={{ marginBottom: 'var(--space-4)' }}>
+                          <p style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-text-tertiary)',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: 'var(--tracking-wide)',
+                            textTransform: 'uppercase',
+                            marginBottom: 'var(--space-2)',
+                          }}>
+                            Описание
+                          </p>
+                          <p style={{
+                            whiteSpace: 'pre-wrap',
+                            margin: 0,
+                            fontSize: 'var(--text-sm)',
+                            lineHeight: 'var(--leading-relaxed)',
+                            color: 'var(--color-text-secondary)',
+                          }}>
+                            {a.description}
+                          </p>
+                        </div>
+                      ) : (
+                        <p style={{
+                          color: 'var(--color-text-disabled)',
+                          fontSize: 'var(--text-sm)',
+                          fontStyle: 'italic',
+                          marginBottom: 'var(--space-4)',
+                        }}>
+                          Описание не указано
+                        </p>
+                      )}
+
+                      {a?.tags && a.tags.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          gap: 'var(--space-1)',
+                          flexWrap: 'wrap',
+                          marginBottom: 'var(--space-4)',
+                        }}>
+                          {a.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              style={{
+                                fontSize: 'var(--text-xs)',
+                                background: 'var(--color-bg-overlay)',
+                                color: 'var(--color-text-tertiary)',
+                                padding: 'var(--space-1) var(--space-2)',
+                                borderRadius: 'var(--radius-full)',
+                                border: '1px solid var(--color-border-subtle)',
+                                fontFamily: 'var(--font-mono)',
+                                letterSpacing: 'var(--tracking-wide)',
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{
+                        display: 'flex',
+                        gap: 'var(--space-5)',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          gap: 'var(--space-5)',
+                          fontSize: 'var(--text-xs)',
+                          color: 'var(--color-text-disabled)',
+                          fontFamily: 'var(--font-mono)',
+                          letterSpacing: 'var(--tracking-wide)',
+                        }}>
+                          {sa.submittedAt && (
+                            <span>Отправлено: {new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          )}
+                          {sa.reviewedAt && (
+                            <span>Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          )}
+                        </div>
+
+                        {sa.status === 'assigned' && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleSubmit(sa.id)}
+                          >
+                            Отправить на проверку
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {isExpanded && (
-                  <div style={{ padding: '0 20px 16px', borderTop: '1px solid #eee' }}>
-                    {a?.description ? (
-                      <div style={{ marginTop: 12 }}>
-                        <strong style={{ fontSize: 13 }}>Описание:</strong>
-                        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: '4px 0 0', fontSize: 14, lineHeight: 1.5 }}>
-                          {a.description}
-                        </pre>
-                      </div>
-                    ) : (
-                      <p style={{ color: '#999', fontSize: 13, marginTop: 12 }}>Описание не указано.</p>
-                    )}
-
-                    {a?.tags && a.tags.length > 0 && (
-                      <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {a.tags.map((tag) => (
-                          <span key={tag} style={{ fontSize: 11, background: '#e8e8e8', padding: '1px 6px', borderRadius: 8 }}>{tag}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#666' }}>
-                      {sa.submittedAt && (
-                        <span>Отправлено: {new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                      )}
-                      {sa.reviewedAt && (
-                        <span>Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                      )}
-                    </div>
-
-                    {sa.status === 'assigned' && (
-                      <div style={{ marginTop: 16 }}>
-                        <Button
-                          variant="primary"
-                          onClick={() => handleSubmit(sa.id)}
-                        >
-                          Отправить на проверку
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </DashboardLayout>
+  );
+}
+
+/* ─── Icons ─── */
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        color: 'var(--color-text-tertiary)',
+        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform var(--duration-fast) var(--ease-default)',
+      }}
+    >
+      <path d="M4 6l4 4 4-4" />
+    </svg>
   );
 }
 
 function GridIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
+      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
     </svg>
   );
 }
-
 function BookIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 2h10v12H3z" />
-      <path d="M6 2v12" />
-      <path d="M6 5h4M6 8h4M6 11h4" />
+      <path d="M3 2h10v12H3z" /><path d="M6 2v12" /><path d="M6 5h4M6 8h4M6 11h4" />
     </svg>
   );
 }
-
 function ClipboardIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -321,30 +580,24 @@ function ClipboardIcon() {
     </svg>
   );
 }
-
 function ChatIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 2h12v9H5l-3 3V2z" />
-      <path d="M5 6h6M5 9h3" />
+      <path d="M2 2h12v9H5l-3 3V2z" /><path d="M5 6h6M5 9h3" />
     </svg>
   );
 }
-
 function CalendarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
+      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
     </svg>
   );
 }
-
 function UserIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="5" r="3" />
-      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="8" cy="5" r="3" /><path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
     </svg>
   );
 }

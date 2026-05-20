@@ -230,13 +230,13 @@ export default function LessonsPage() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, marginBottom: 16, color: '#c00', userSelect: 'text', cursor: 'text' }}>
+        <div style={{ padding: 12, background: 'var(--color-error-dim)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-xs)', marginBottom: 16, color: 'var(--color-error)', userSelect: 'text', cursor: 'text' }}>
           {error}
         </div>
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, border: '1px solid #eee' }}>
+        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-default)' }}>
           <h3 style={{ marginTop: 0 }}>{editingId ? 'Редактировать урок' : 'Новый урок'}</h3>
 
           <div style={{ marginBottom: 12 }}>
@@ -246,7 +246,7 @@ export default function LessonsPage() {
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               placeholder="Название урока"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               autoFocus
             />
           </div>
@@ -258,7 +258,7 @@ export default function LessonsPage() {
               value={form.videoUrl}
               onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
               placeholder="https://..."
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
             />
           </div>
 
@@ -269,7 +269,7 @@ export default function LessonsPage() {
               onChange={(e) => setForm({ ...form, summary: e.target.value })}
               placeholder="Markdown-текст краткого описания..."
               rows={3}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box', resize: 'vertical' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
             />
           </div>
 
@@ -280,7 +280,7 @@ export default function LessonsPage() {
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
               placeholder="Markdown-текст конспекта..."
               rows={5}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box', resize: 'vertical' }}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
             />
           </div>
 
@@ -291,7 +291,7 @@ export default function LessonsPage() {
                 type="datetime-local"
                 value={form.publishAt}
                 onChange={(e) => setForm({ ...form, publishAt: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               />
             </div>
 
@@ -301,7 +301,7 @@ export default function LessonsPage() {
                 type="number"
                 value={form.sortOrder}
                 onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
               />
             </div>
 
@@ -311,7 +311,7 @@ export default function LessonsPage() {
                 <select
                   value={form.status}
                   onChange={(e) => setForm({ ...form, status: e.target.value as LessonFormData['status'] })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
                 >
                   <option value="draft">Черновик</option>
                   <option value="published">Опубликован</option>
@@ -344,11 +344,11 @@ export default function LessonsPage() {
       {loadingLessons ? (
         <p>Загрузка уроков...</p>
       ) : lessons.length === 0 ? (
-        <p style={{ color: '#666' }}>Уроков пока нет. Добавьте первый урок.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>Уроков пока нет. Добавьте первый урок.</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid #eee' }}>
+            <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
               <th style={{ textAlign: 'left', padding: '8px 12px', width: 50 }}>#</th>
               <th style={{ textAlign: 'left', padding: '8px 12px' }}>Название</th>
               <th style={{ textAlign: 'left', padding: '8px 12px' }}>Статус</th>
@@ -358,12 +358,12 @@ export default function LessonsPage() {
           </thead>
           <tbody>
             {lessons.map((lesson) => (
-              <tr key={lesson.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '12px', color: '#666' }}>{lesson.sortOrder}</td>
+              <tr key={lesson.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                <td style={{ padding: '12px', color: 'var(--color-text-secondary)' }}>{lesson.sortOrder}</td>
                 <td style={{ padding: '12px' }}>
                   <div>{lesson.title}</div>
                   {lesson.videoUrl && (
-                    <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
                       Video: {lesson.videoUrl.length > 40 ? lesson.videoUrl.slice(0, 40) + '...' : lesson.videoUrl}
                     </div>
                   )}
@@ -373,7 +373,7 @@ export default function LessonsPage() {
                     {statusLabels[lesson.status]}
                   </Badge>
                 </td>
-                <td style={{ padding: '12px', color: '#666', fontSize: 14 }}>
+                <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
                   {lesson.publishAt
                     ? new Date(lesson.publishAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
                     : '—'}

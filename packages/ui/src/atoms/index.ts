@@ -28,3 +28,9 @@ export type { SpinnerProps, SpinnerSize } from './Spinner';
 
 export { Avatar } from './Avatar';
 export type { AvatarProps, AvatarSize } from './Avatar';
+
+export { Select } from './Select';
+export type { SelectProps, SelectSize } from './Select';
+
+export { Textarea } from './Textarea';
+export type { TextareaProps } from './Textarea';
