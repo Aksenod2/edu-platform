@@ -2,8 +2,9 @@
  * Sidebar — Организм
  * Atomic level: Organism
  *
- * Состав: NavItem[] (молекула) + Divider (атом) + секции навигации
- * Токены: --sidebar-width, --color-bg-surface, --color-border-subtle
+ * Мигрирован на Tailwind CSS v4 (CMP-252).
+ * Состав: NavItem[] (молекула) + секции навигации
+ * Токены: w-60 (240px), bg-bg-surface, border-border-subtle
  *
  * Nothing Phone: 240px фиксированная колонка, нет скруглений, 1px border-right
  * Активный пункт = красная левая полоска (visually distinct signal)
@@ -11,6 +12,7 @@
 import React from 'react';
 import { NavItem, type NavItemProps } from '../molecules/NavItem';
 import { Mono } from '../atoms/Typography';
+import { cn } from '../lib/utils';
 
 export interface SidebarSection {
   label?: string;
@@ -25,38 +27,15 @@ export interface SidebarProps {
 
 export function Sidebar({ sections, currentPath, footer }: SidebarProps) {
   return (
-    <aside
-      style={{
-        width: 'var(--sidebar-width)',
-        flexShrink: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--color-bg-surface)',
-        borderRight: '1px solid var(--color-border-subtle)',
-        overflowY: 'auto',
-      }}
-    >
-      <nav
-        style={{
-          flex: 1,
-          paddingBlock: 'var(--space-4)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-1)',
-        }}
-      >
+    <aside className="w-60 shrink-0 h-full flex flex-col bg-bg-surface border-r border-border-subtle overflow-y-auto">
+      <nav className="flex-1 py-4 flex flex-col gap-1">
         {sections.map((section, si) => (
           <div key={si}>
             {section.label && (
-              <div style={{ paddingInline: 'var(--space-4)', paddingTop: si > 0 ? 'var(--space-4)' : 0, paddingBottom: 'var(--space-2)' }}>
+              <div className={cn('px-4 pb-2', si > 0 && 'pt-4')}>
                 <Mono
                   size="xs"
-                  style={{
-                    color: 'var(--color-text-tertiary)',
-                    letterSpacing: 'var(--tracking-widest)',
-                    textTransform: 'uppercase',
-                  }}
+                  className="text-text-tertiary tracking-widest uppercase"
                 >
                   {section.label}
                 </Mono>
@@ -74,12 +53,7 @@ export function Sidebar({ sections, currentPath, footer }: SidebarProps) {
       </nav>
 
       {footer && (
-        <div
-          style={{
-            borderTop: '1px solid var(--color-border-subtle)',
-            padding: 'var(--space-4)',
-          }}
-        >
+        <div className="border-t border-border-subtle p-4">
           {footer}
         </div>
       )}

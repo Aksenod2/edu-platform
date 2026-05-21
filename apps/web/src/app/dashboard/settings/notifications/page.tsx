@@ -310,7 +310,7 @@ export default function NotificationSettingsPage() {
 
       {/* Matrix table */}
       <Card>
-        <CardBody style={{ padding: 0 }}>
+        <CardBody>
           {/* Header row */}
           <div
             style={{

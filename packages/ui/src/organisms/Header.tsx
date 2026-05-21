@@ -2,8 +2,9 @@
  * Header — Организм
  * Atomic level: Organism
  *
- * Состав: Avatar (атом) + Text (атом) + Divider (атом) + Button (атом)
- * Токены: --header-height, --color-bg-surface, --color-border-subtle
+ * Мигрирован на Tailwind CSS v4 + shadcn Button + Avatar (CMP-252).
+ * Состав: Avatar (атом) + Mono (атом) + Button (атом)
+ * Токены: h-14 (56px), bg-bg-surface, border-border-subtle, z-[200]
  *
  * Nothing Phone: 56px фиксированная высота, строгий border-bottom,
  * имя платформы в Space Mono — dot-matrix сигнатура
@@ -12,6 +13,7 @@ import React from 'react';
 import { Avatar } from '../atoms/Avatar';
 import { Mono } from '../atoms/Typography';
 import { Button } from '../atoms/Button';
+import { cn } from '../lib/utils';
 
 export interface HeaderUser {
   name: string;
@@ -30,41 +32,28 @@ export interface HeaderProps {
 
 export function Header({ user, onLogout, platformName = 'PLATFORM', notificationBell }: HeaderProps) {
   return (
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 'var(--z-sticky)' as unknown as number,
-        height: 'var(--header-height)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingInline: 'var(--space-6)',
-        background: 'var(--color-bg-surface)',
-        borderBottom: '1px solid var(--color-border-subtle)',
-      }}
-    >
+    <header className="sticky top-0 z-[200] h-14 flex items-center justify-between px-6 bg-bg-surface border-b border-border-subtle">
       {/* Логотип — dot-matrix сигнатура */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      <div className="flex items-center gap-2">
         <DotMatrixLogo />
-        <Mono size="sm" style={{ color: 'var(--color-text-primary)', fontWeight: 700, letterSpacing: 'var(--tracking-widest)' }}>
+        <Mono size="sm" className="text-text-primary font-bold tracking-widest">
           {platformName}
         </Mono>
       </div>
 
       {/* Правая сторона: колокольчик + пользователь + выход */}
       {user && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <div className="flex items-center gap-4">
           {notificationBell}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <div className="flex items-center gap-3">
             <Avatar name={user.name} src={user.avatarSrc} size="sm" />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Mono size="xs" style={{ color: 'var(--color-text-primary)', fontWeight: 700 }}>
+            <div className="flex flex-col gap-[2px]">
+              <Mono size="xs" className="text-text-primary font-bold">
                 {user.name}
               </Mono>
               {user.role && (
-                <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
+                <Mono size="xs" className="text-text-tertiary uppercase">
                   {user.role === 'admin' ? 'TEACHER' : 'STUDENT'}
                 </Mono>
               )}
@@ -86,22 +75,17 @@ export function Header({ user, onLogout, platformName = 'PLATFORM', notification
 function DotMatrixLogo() {
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 3px)',
-        gap: '2px',
-      }}
+      className="grid gap-0.5"
+      style={{ gridTemplateColumns: 'repeat(3, 3px)' }}
       aria-hidden
     >
-      {[1,1,1, 1,0,1, 1,1,1].map((on, i) => (
+      {[1, 1, 1, 1, 0, 1, 1, 1, 1].map((on, i) => (
         <span
           key={i}
-          style={{
-            width: 3,
-            height: 3,
-            borderRadius: '50%',
-            background: on ? 'var(--color-accent-red)' : 'transparent',
-          }}
+          className={cn(
+            'w-[3px] h-[3px] rounded-full',
+            on ? 'bg-accent-red' : 'bg-transparent',
+          )}
         />
       ))}
     </div>
