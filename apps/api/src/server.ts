@@ -19,6 +19,7 @@ import { profileRoutes } from './routes/profiles.js';
 import { threadRoutes } from './routes/threads.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { pushSubscriptionRoutes } from './routes/push-subscriptions.js';
+import { apiKeyRoutes } from './routes/api-keys.js';
 import { ensureBucketExists } from './lib/s3.js';
 import { startCronJobs } from './lib/cron.js';
 
@@ -57,6 +58,7 @@ await app.register(profileRoutes);
 await app.register(threadRoutes);
 await app.register(notificationRoutes);
 await app.register(pushSubscriptionRoutes);
+await app.register(apiKeyRoutes);
 
 app.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };
