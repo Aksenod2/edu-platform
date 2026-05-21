@@ -1,0 +1,12 @@
+# Продакшн-compose для приложения Web (Timeweb App Platform).
+# GitHub Action кладёт этот файл в КОРЕНЬ ветки tw-web как docker-compose.yml.
+# NEXT_PUBLIC_API_URL зашивается ПРИ СБОРКЕ (build-arg) из переменной приложения.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    ports:
+      - "3000:3000"

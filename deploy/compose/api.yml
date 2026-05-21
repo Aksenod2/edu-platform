@@ -1,0 +1,18 @@
+# Продакшн-compose для приложения API (Timeweb App Platform).
+# GitHub Action кладёт этот файл в КОРЕНЬ ветки tw-api как docker-compose.yml.
+# Один сервис → получает HTTPS на главном домене. ${...} — переменные приложения (заданы в Timeweb).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=${PORT}
+      - HOST=${HOST}
+      - NODE_ENV=${NODE_ENV}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_BASE_URL=${API_BASE_URL}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+    ports:
+      - "4000:4000"
