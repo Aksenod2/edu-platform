@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   MoreHorizontal,
@@ -67,6 +68,7 @@ function initials(name: string) {
 
 export default function StudentsPage() {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState('');
@@ -273,7 +275,19 @@ export default function StudentsPage() {
               </TableRow>
             ) : (
               students.map((s) => (
-                <TableRow key={s.id} className={s.deletedAt ? 'opacity-50' : undefined}>
+                <TableRow
+                  key={s.id}
+                  className={
+                    s.deletedAt
+                      ? 'opacity-50'
+                      : 'cursor-pointer hover:bg-muted/50'
+                  }
+                  onClick={
+                    s.deletedAt
+                      ? undefined
+                      : () => router.push(`/admin/students/${s.id}`)
+                  }
+                >
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="size-8">
@@ -300,7 +314,10 @@ export default function StudentsPage() {
                   <TableCell className="text-muted-foreground tabular-nums">
                     {new Date(s.createdAt).toLocaleDateString('ru-RU')}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {!s.deletedAt && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

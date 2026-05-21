@@ -16,6 +16,13 @@ import {
 } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
   Table,
   TableBody,
   TableCell,
@@ -60,6 +67,18 @@ const emptyForm: LessonFormData = {
   status: 'draft',
 };
 
+function lessonToForm(lesson: Lesson): LessonFormData {
+  return {
+    title: lesson.title,
+    videoUrl: lesson.videoUrl || '',
+    summary: lesson.summary || '',
+    notes: lesson.notes || '',
+    publishAt: lesson.publishAt ? lesson.publishAt.slice(0, 16) : '',
+    sortOrder: lesson.sortOrder,
+    status: lesson.status,
+  };
+}
+
 const statusLabels: Record<string, string> = {
   draft: 'Черновик',
   published: 'Опубликован',
@@ -80,11 +99,17 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [error, setError] = useState('');
 
-  // Create / edit form
+  // Create form (separate inline affordance)
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LessonFormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+
+  // Row-view Sheet (view-first, then in-place edit — Variant A)
+  const [viewLesson, setViewLesson] = useState<Lesson | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<LessonFormData>(emptyForm);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!accessToken || !streamId) return;
@@ -112,58 +137,55 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   }, [accessToken, user, fetchData]);
 
   const openCreate = () => {
-    setEditingId(null);
     setForm(emptyForm);
-    setShowForm(true);
-  };
-
-  const openEdit = (lesson: Lesson) => {
-    setEditingId(lesson.id);
-    setForm({
-      title: lesson.title,
-      videoUrl: lesson.videoUrl || '',
-      summary: lesson.summary || '',
-      notes: lesson.notes || '',
-      publishAt: lesson.publishAt ? lesson.publishAt.slice(0, 16) : '',
-      sortOrder: lesson.sortOrder,
-      status: lesson.status,
-    });
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
-    setEditingId(null);
     setForm(emptyForm);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // --- Row view / in-place edit ---
+  const openView = (lesson: Lesson) => {
+    setViewLesson(lesson);
+    setEditing(false);
+    setSheetOpen(true);
+  };
+
+  const startEdit = () => {
+    if (!viewLesson) return;
+    setEditForm(lessonToForm(viewLesson));
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+  };
+
+  const handleSheetOpenChange = (open: boolean) => {
+    setSheetOpen(open);
+    if (!open) {
+      setEditing(false);
+      setViewLesson(null);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !form.title.trim()) return;
     setSubmitting(true);
     setError('');
     try {
-      if (editingId) {
-        await updateLesson(accessToken, editingId, {
-          title: form.title.trim(),
-          videoUrl: form.videoUrl.trim() || undefined,
-          summary: form.summary || undefined,
-          notes: form.notes || undefined,
-          status: form.status,
-          publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : null,
-          sortOrder: form.sortOrder,
-        });
-      } else {
-        await createLesson(accessToken, {
-          streamId,
-          title: form.title.trim(),
-          videoUrl: form.videoUrl.trim() || undefined,
-          summary: form.summary || undefined,
-          notes: form.notes || undefined,
-          publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
-          sortOrder: form.sortOrder,
-        });
-      }
+      await createLesson(accessToken, {
+        streamId,
+        title: form.title.trim(),
+        videoUrl: form.videoUrl.trim() || undefined,
+        summary: form.summary || undefined,
+        notes: form.notes || undefined,
+        publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
+        sortOrder: form.sortOrder,
+      });
       closeForm();
       await fetchData();
     } catch (err) {
@@ -173,12 +195,38 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     }
   };
 
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessToken || !viewLesson || !editForm.title.trim()) return;
+    setSavingEdit(true);
+    setError('');
+    try {
+      const { lesson } = await updateLesson(accessToken, viewLesson.id, {
+        title: editForm.title.trim(),
+        videoUrl: editForm.videoUrl.trim() || undefined,
+        summary: editForm.summary || undefined,
+        notes: editForm.notes || undefined,
+        status: editForm.status,
+        publishAt: editForm.publishAt ? new Date(editForm.publishAt).toISOString() : null,
+        sortOrder: editForm.sortOrder,
+      });
+      setViewLesson(lesson);
+      setEditing(false);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка сохранения');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
     if (!confirm('Удалить этот урок? Действие необратимо.')) return;
     setError('');
     try {
       await deleteLesson(accessToken, id);
+      if (viewLesson?.id === id) handleSheetOpenChange(false);
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка удаления');
@@ -198,10 +246,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         </div>
         {!isArchived && (
           <Button
-            variant={showForm && !editingId ? 'outline' : 'default'}
+            variant={showForm ? 'outline' : 'default'}
             onClick={showForm ? closeForm : openCreate}
           >
-            {showForm && !editingId ? (
+            {showForm ? (
               'Отмена'
             ) : (
               <>
@@ -222,10 +270,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingId ? 'Редактировать урок' : 'Новый урок'}</CardTitle>
+            <CardTitle>Новый урок</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleCreate}>
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="lesson-title">Название *</FieldLabel>
@@ -293,33 +341,12 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       }
                     />
                   </Field>
-
-                  {editingId && (
-                    <Field className="sm:w-44">
-                      <FieldLabel htmlFor="lesson-status">Статус</FieldLabel>
-                      <Select
-                        value={form.status}
-                        onValueChange={(v) =>
-                          setForm({ ...form, status: v as LessonFormData['status'] })
-                        }
-                      >
-                        <SelectTrigger id="lesson-status" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="draft">Черновик</SelectItem>
-                          <SelectItem value="published">Опубликован</SelectItem>
-                          <SelectItem value="closed">Закрыт</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  )}
                 </div>
 
                 <Field orientation="horizontal">
                   <Button type="submit" disabled={submitting || !form.title.trim()}>
                     {submitting && <Loader2 className="animate-spin" />}
-                    {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
+                    {submitting ? 'Сохранение...' : 'Создать'}
                   </Button>
                   <Button type="button" variant="ghost" onClick={closeForm}>
                     Отмена
@@ -358,7 +385,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
               </TableRow>
             ) : (
               lessons.map((lesson) => (
-                <TableRow key={lesson.id}>
+                <TableRow
+                  key={lesson.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => openView(lesson)}
+                >
                   <TableCell className="tabular-nums text-muted-foreground">
                     {lesson.sortOrder}
                   </TableCell>
@@ -389,17 +420,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8"
-                          onClick={() => openEdit(lesson)}
-                        >
-                          <Pencil />
-                          <span className="sr-only">Редактировать</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
                           className="size-8 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(lesson.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(lesson.id);
+                          }}
                         >
                           <Trash2 />
                           <span className="sr-only">Удалить</span>
@@ -413,6 +438,234 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           </TableBody>
         </Table>
       </div>
+
+      <Sheet open={sheetOpen} onOpenChange={handleSheetOpenChange}>
+        <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+          {viewLesson && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{editing ? 'Редактировать урок' : viewLesson.title}</SheetTitle>
+              </SheetHeader>
+
+              {editing ? (
+                <form
+                  onSubmit={handleSaveEdit}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <div className="flex-1 overflow-y-auto px-4 pb-4">
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor="edit-title">Название *</FieldLabel>
+                        <Input
+                          id="edit-title"
+                          value={editForm.title}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, title: e.target.value })
+                          }
+                          placeholder="Название урока"
+                          autoFocus
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="edit-video">Видео URL</FieldLabel>
+                        <Input
+                          id="edit-video"
+                          type="url"
+                          value={editForm.videoUrl}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, videoUrl: e.target.value })
+                          }
+                          placeholder="https://..."
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="edit-summary">Краткое описание</FieldLabel>
+                        <Textarea
+                          id="edit-summary"
+                          value={editForm.summary}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, summary: e.target.value })
+                          }
+                          placeholder="Краткое описание урока..."
+                          rows={3}
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="edit-notes">Конспект</FieldLabel>
+                        <Textarea
+                          id="edit-notes"
+                          value={editForm.notes}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, notes: e.target.value })
+                          }
+                          placeholder="Текст конспекта..."
+                          rows={5}
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="edit-status">Статус</FieldLabel>
+                        <Select
+                          value={editForm.status}
+                          onValueChange={(v) =>
+                            setEditForm({
+                              ...editForm,
+                              status: v as LessonFormData['status'],
+                            })
+                          }
+                        >
+                          <SelectTrigger id="edit-status" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="draft">Черновик</SelectItem>
+                            <SelectItem value="published">Опубликован</SelectItem>
+                            <SelectItem value="closed">Закрыт</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+
+                      <div className="flex flex-col gap-4 sm:flex-row">
+                        <Field className="flex-1">
+                          <FieldLabel htmlFor="edit-publish">Дата публикации</FieldLabel>
+                          <Input
+                            id="edit-publish"
+                            type="datetime-local"
+                            value={editForm.publishAt}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, publishAt: e.target.value })
+                            }
+                          />
+                        </Field>
+
+                        <Field className="sm:w-28">
+                          <FieldLabel htmlFor="edit-order">Порядок</FieldLabel>
+                          <Input
+                            id="edit-order"
+                            type="number"
+                            value={editForm.sortOrder}
+                            onChange={(e) =>
+                              setEditForm({
+                                ...editForm,
+                                sortOrder: parseInt(e.target.value) || 0,
+                              })
+                            }
+                          />
+                        </Field>
+                      </div>
+                    </FieldGroup>
+                  </div>
+
+                  <SheetFooter className="flex-row">
+                    <Button type="submit" disabled={savingEdit || !editForm.title.trim()}>
+                      {savingEdit && <Loader2 className="animate-spin" />}
+                      {savingEdit ? 'Сохранение...' : 'Сохранить'}
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={cancelEdit}>
+                      Отмена
+                    </Button>
+                  </SheetFooter>
+                </form>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto px-4 pb-4">
+                    <dl className="flex flex-col gap-5 text-sm">
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Статус</dt>
+                        <dd>
+                          <Badge
+                            variant={statusBadgeVariant[viewLesson.status] ?? 'default'}
+                          >
+                            {statusLabels[viewLesson.status]}
+                          </Badge>
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Видео</dt>
+                        <dd>
+                          {viewLesson.videoUrl ? (
+                            <a
+                              href={viewLesson.videoUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-primary underline underline-offset-4 break-all"
+                            >
+                              <Video className="size-4 shrink-0" />
+                              {viewLesson.videoUrl}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Краткое описание</dt>
+                        <dd>
+                          {viewLesson.summary ? (
+                            <span className="whitespace-pre-wrap">{viewLesson.summary}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Конспект</dt>
+                        <dd>
+                          {viewLesson.notes ? (
+                            <span className="whitespace-pre-wrap">{viewLesson.notes}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Дата публикации</dt>
+                        <dd className="tabular-nums">
+                          {viewLesson.publishAt
+                            ? new Date(viewLesson.publishAt).toLocaleString('ru-RU', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Порядок</dt>
+                        <dd className="tabular-nums">{viewLesson.sortOrder}</dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  {!isArchived && (
+                    <SheetFooter className="flex-row">
+                      <Button onClick={startEdit}>
+                        <Pencil />
+                        Редактировать
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(viewLesson.id)}
+                      >
+                        <Trash2 />
+                        Удалить
+                      </Button>
+                    </SheetFooter>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
