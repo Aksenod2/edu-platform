@@ -1,5 +1,6 @@
 /* Nothing Phone Design System — Global Styles */
-@import '@platform/ui/styles';
+/* Tailwind CSS v4 + design tokens from @platform/ui */
+@import '@platform/ui/tailwind';
 
 /* Spinner keyframe — used by Button (loading) and Spinner atom */
 @keyframes np-spin {

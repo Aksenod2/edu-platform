@@ -11,6 +11,9 @@
  * Подключение CSS-токенов: import '@platform/ui/styles' в root layout
  */
 
+// Утилиты
+export { cn } from './lib/utils';
+
 // Токены
 export * from './tokens';
 
