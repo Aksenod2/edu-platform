@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import * as templates from './email-templates';
+import * as templates from './email-templates.js';
 
 const smtpPort = Number(process.env.SMTP_PORT) || 1025;
 
