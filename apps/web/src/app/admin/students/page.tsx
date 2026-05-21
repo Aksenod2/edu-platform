@@ -1,6 +1,19 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
+import {
+  Search,
+  MoreHorizontal,
+  MessageSquare,
+  Ban,
+  Unlock,
+  Mail,
+  KeyRound,
+  Trash2,
+  Plus,
+  User,
+} from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStudents,
@@ -11,9 +24,45 @@ import {
   resetStudentPassword,
   type Student,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card, CardHeader, CardBody, FormField } from '@platform/ui/molecules';
-import { Button, Input, Badge, Heading, Mono, Spinner } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
 
 export default function StudentsPage() {
   const { accessToken } = useAuth();
@@ -115,183 +164,205 @@ export default function StudentsPage() {
   };
 
   return (
-    <>
-      <PageHeader
-        title="Ученики"
-        subtitle="Управление учениками"
-        action={
-          <Button
-            variant={showCreateForm ? 'ghost' : 'primary'}
-            size="sm"
-            onClick={() => setShowCreateForm(!showCreateForm)}
-          >
-            {showCreateForm ? 'Отмена' : 'Создать ученика'}
-          </Button>
-        }
-      />
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Ученики</h1>
+          <p className="text-sm text-muted-foreground">Управление учениками</p>
+        </div>
+        <Button
+          variant={showCreateForm ? 'outline' : 'default'}
+          onClick={() => setShowCreateForm(!showCreateForm)}
+        >
+          {showCreateForm ? (
+            'Отмена'
+          ) : (
+            <>
+              <Plus />
+              Создать ученика
+            </>
+          )}
+        </Button>
+      </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-xs border border-error bg-error-dim">
-          <Mono size="xs" className="text-error break-all">{error}</Mono>
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription className="break-all">{error}</AlertDescription>
+        </Alert>
       )}
 
       {actionMessage && (
-        <div className="mb-4 px-4 py-3 rounded-xs border border-success bg-success-dim">
-          <Mono size="xs" className="text-success break-all">{actionMessage}</Mono>
-        </div>
+        <Alert>
+          <AlertDescription className="break-all">{actionMessage}</AlertDescription>
+        </Alert>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" className="mb-6">
+        <Card>
           <CardHeader>
-            <Heading level={3} size="lg">Новый ученик</Heading>
+            <CardTitle>Новый ученик</CardTitle>
           </CardHeader>
-          <CardBody>
+          <CardContent>
             <form onSubmit={handleCreate}>
-              <div className="flex flex-col gap-3 mb-4">
-                <FormField
-                  id="new-name"
-                  label="Имя"
-                  required
-                  inputProps={{
-                    placeholder: 'Имя',
-                    value: newName,
-                    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value),
-                  }}
-                />
-                <FormField
-                  id="new-email"
-                  label="Email"
-                  required
-                  inputProps={{
-                    type: 'email',
-                    placeholder: 'Email',
-                    value: newEmail,
-                    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value),
-                  }}
-                />
-              </div>
-              <Button type="submit" variant="primary" size="sm" loading={creating}>
-                Создать
-              </Button>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="new-name">Имя</FieldLabel>
+                  <Input
+                    id="new-name"
+                    placeholder="Имя"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    required
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="new-email">Email</FieldLabel>
+                  <Input
+                    id="new-email"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    required
+                  />
+                </Field>
+                <Field>
+                  <Button type="submit" disabled={creating} className="w-fit">
+                    {creating ? 'Создание...' : 'Создать'}
+                  </Button>
+                </Field>
+              </FieldGroup>
             </form>
-          </CardBody>
+          </CardContent>
         </Card>
       )}
 
-      <div className="mb-4">
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Поиск по имени или email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          leftElement={<SearchIcon />}
-          className="max-w-[400px]"
+          className="pl-8"
         />
       </div>
 
-      {loadingStudents ? (
-        <div className="flex justify-center py-8">
-          <Spinner size="md" />
-        </div>
-      ) : students.length === 0 ? (
-        <Mono size="sm" className="text-text-tertiary">Ученики не найдены</Mono>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse font-sans text-sm">
-            <thead>
-              <tr className="border-b border-border-strong">
-                {['Имя', 'Email', 'Статус', 'Создан', 'Действия'].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-text-tertiary"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {students.map((s) => (
-                <tr
-                  key={s.id}
-                  className={`border-b border-border-subtle transition-colors hover:bg-bg-surface ${s.deletedAt ? 'opacity-40' : ''}`}
-                >
-                  <td className="px-4 py-3 text-text-primary">
-                    <span className="flex items-center gap-2">
-                      {s.name}
-                      {!!s.submittedCount && s.submittedCount > 0 && (
-                        <Badge variant="warning">
-                          {s.submittedCount} ждут проверки
-                        </Badge>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Mono size="xs">{s.email}</Mono>
-                  </td>
-                  <td className="px-4 py-3">
-                    {s.deletedAt ? (
-                      <Badge variant="default">Удалён</Badge>
-                    ) : s.isActive ? (
-                      <Badge variant="success">Активен</Badge>
-                    ) : (
-                      <Badge variant="error">Заблокирован</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Mono size="xs" className="text-text-tertiary">
-                      {new Date(s.createdAt).toLocaleDateString('ru-RU')}
-                    </Mono>
-                  </td>
-                  <td className="px-4 py-3">
-                    {!s.deletedAt && (
-                      <div className="flex flex-wrap gap-2">
-                        <a href={`/admin/students/${s.id}`} className="no-underline">
-                          <Button variant="ghost" size="sm">Профиль</Button>
-                        </a>
-                        <a href={`/admin/students/${s.id}/thread`} className="no-underline">
-                          <Button variant="ghost" size="sm">Тред</Button>
-                        </a>
-                        <Button
-                          variant={s.isActive ? 'danger' : 'secondary'}
-                          size="sm"
-                          onClick={() => handleToggleActive(s)}
-                        >
-                          {s.isActive ? 'Блокировать' : 'Разблокировать'}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleInvite(s)}
-                          disabled={!s.isActive}
-                        >
-                          Invite
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleResetPassword(s)}>
-                          Сброс пароля
-                        </Button>
-                        <Button variant="danger" size="sm" onClick={() => handleDelete(s)}>
-                          Удалить
-                        </Button>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Имя</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead>Создан</TableHead>
+              <TableHead className="w-[1%] text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loadingStudents ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="size-8 rounded-full" />
+                      <Skeleton className="h-4 w-32" />
+                    </div>
+                  </TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
+                </TableRow>
+              ))
+            ) : students.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  Ученики не найдены
+                </TableCell>
+              </TableRow>
+            ) : (
+              students.map((s) => (
+                <TableRow key={s.id} className={s.deletedAt ? 'opacity-50' : undefined}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="size-8">
+                        <AvatarFallback className="text-xs">{initials(s.name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{s.name}</span>
+                        {!!s.submittedCount && s.submittedCount > 0 && (
+                          <Badge variant="secondary">{s.submittedCount} ждут проверки</Badge>
+                        )}
                       </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{s.email}</TableCell>
+                  <TableCell>
+                    {s.deletedAt ? (
+                      <Badge variant="outline">Удалён</Badge>
+                    ) : s.isActive ? (
+                      <Badge>Активен</Badge>
+                    ) : (
+                      <Badge variant="destructive">Заблокирован</Badge>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ─── Inline icons ─────────────────────────────────────
-function SearchIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="7" cy="7" r="4" /><path d="M10 10l4 4" />
-    </svg>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {new Date(s.createdAt).toLocaleDateString('ru-RU')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {!s.deletedAt && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreHorizontal />
+                            <span className="sr-only">Действия</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/admin/students/${s.id}`}>
+                              <User />
+                              Профиль
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/admin/students/${s.id}/thread`}>
+                              <MessageSquare />
+                              Тред
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => handleToggleActive(s)}>
+                            {s.isActive ? <Ban /> : <Unlock />}
+                            {s.isActive ? 'Блокировать' : 'Разблокировать'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => handleInvite(s)}
+                            disabled={!s.isActive}
+                          >
+                            <Mail />
+                            Invite
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleResetPassword(s)}>
+                            <KeyRound />
+                            Сброс пароля
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => handleDelete(s)}>
+                            <Trash2 />
+                            Удалить
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
