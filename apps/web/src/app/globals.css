@@ -1,8 +1,6 @@
 @import "tailwindcss";
-@import '@platform/ui/tailwind';
-@source '../../../../packages/ui/src';
 
-/* shadcn/ui light theme (zinc) — standard from ui.shadcn.com */
+/* shadcn/ui — классическая zinc тема (ui.shadcn.com) */
 :root {
   --background: 0 0% 100%;
   --foreground: 240 10% 3.9%;
@@ -48,7 +46,6 @@
   --ring: 240 4.9% 83.9%;
 }
 
-/* Base styles */
 * {
   border-color: hsl(var(--border));
 }
@@ -56,9 +53,4 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-}
-
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
 }
