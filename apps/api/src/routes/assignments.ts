@@ -236,7 +236,12 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     if (body.groupId) {
       // Назначить группе — в MVP группа = поток (streamId)
-      // Находим всех студентов и назначаем задание каждому
+      // Помечаем задание как групповое и назначаем каждому студенту
+      await prisma.assignment.update({
+        where: { id },
+        data: { groupId: body.groupId },
+      });
+
       const students = await prisma.user.findMany({
         where: { role: 'student', isActive: true, deletedAt: null },
       });
@@ -266,7 +271,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
   // GET /student-assignments — список назначений ученика со статусами
   app.get('/student-assignments', { onRequest: anyAuth }, async (request, reply) => {
-    const { streamId, status } = request.query as { streamId?: string; status?: string };
+    const { streamId, status, studentId } = request.query as { streamId?: string; status?: string; studentId?: string };
     const isAdmin = request.user?.role === 'admin';
     const userId = request.user!.userId;
 
@@ -274,6 +279,8 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     if (!isAdmin) {
       where.studentId = userId;
+    } else if (studentId) {
+      where.studentId = studentId;
     }
 
     if (streamId) {
@@ -304,10 +311,10 @@ export async function assignmentRoutes(app: FastifyInstance) {
     return { studentAssignments };
   });
 
-  // PATCH /student-assignments/:id — смена статуса (submitted/reviewed)
+  // PATCH /student-assignments/:id — смена статуса (submitted/reviewed/needs_revision)
   app.patch('/student-assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { status: 'submitted' | 'reviewed' };
+    const body = request.body as { status: 'submitted' | 'reviewed' | 'needs_revision' };
     const isAdmin = request.user?.role === 'admin';
     const userId = request.user!.userId;
 
@@ -320,11 +327,11 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Назначение не найдено' });
     }
 
-    if (!body.status || !['submitted', 'reviewed'].includes(body.status)) {
-      return reply.status(400).send({ error: 'Статус: submitted или reviewed' });
+    if (!body.status || !['submitted', 'reviewed', 'needs_revision'].includes(body.status)) {
+      return reply.status(400).send({ error: 'Статус: submitted, reviewed или needs_revision' });
     }
 
-    // Студент может только отправить (submitted), админ — reviewed
+    // Студент может только отправить (submitted), админ — reviewed/needs_revision
     if (!isAdmin && sa.studentId !== userId) {
       return reply.status(403).send({ error: 'Нет доступа' });
     }
@@ -333,8 +340,14 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Студент может только отправить задание (submitted)' });
     }
 
-    if (!isAdmin && sa.status !== 'assigned') {
+    // Студент может отправить из assigned или needs_revision (пересдача)
+    if (!isAdmin && sa.status !== 'assigned' && sa.status !== 'needs_revision') {
       return reply.status(400).send({ error: 'Задание уже отправлено' });
+    }
+
+    // Админ: reviewed/needs_revision только из submitted
+    if (isAdmin && (body.status === 'reviewed' || body.status === 'needs_revision') && sa.status !== 'submitted') {
+      return reply.status(400).send({ error: 'Проверить можно только отправленное задание' });
     }
 
     const data: Record<string, unknown> = { status: body.status };
@@ -361,7 +374,6 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Notify relevant parties about status change
     if (body.status === 'submitted') {
-      // Notify all admins that student submitted an assignment
       const admins = await prisma.user.findMany({
         where: { role: 'admin', isActive: true, deletedAt: null },
         select: { id: true },
@@ -374,12 +386,19 @@ export async function assignmentRoutes(app: FastifyInstance) {
         { studentAssignmentId: updated.id, assignmentId: updated.assignmentId, studentId: updated.studentId },
       ).catch(() => {});
     } else if (body.status === 'reviewed') {
-      // Notify student that their assignment has been reviewed
       createNotification({
         userId: updated.studentId,
         type: 'assignment_reviewed',
         title: 'Задание проверено',
         body: `Ваше задание «${updated.assignment.title}» проверено преподавателем`,
+        metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
+      }).catch(() => {});
+    } else if (body.status === 'needs_revision') {
+      createNotification({
+        userId: updated.studentId,
+        type: 'assignment_reviewed',
+        title: 'Задание на доработке',
+        body: `Ваше задание «${updated.assignment.title}» возвращено на доработку`,
         metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
       }).catch(() => {});
     }

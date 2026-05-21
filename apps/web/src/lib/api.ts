@@ -535,7 +535,7 @@ export async function getStudentAssignments(
 export async function updateStudentAssignment(
   accessToken: string,
   id: string,
-  data: { status: 'submitted' | 'reviewed' },
+  data: { status: 'submitted' | 'reviewed' | 'needs_revision' },
 ): Promise<{ studentAssignment: StudentAssignment }> {
   return request(`/student-assignments/${id}`, {
     method: 'PATCH',
