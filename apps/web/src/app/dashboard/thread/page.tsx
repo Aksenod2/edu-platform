@@ -92,6 +92,9 @@ export default function StudentThreadPage() {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Assignment context from URL params
+  const [activeContext, setActiveContext] = useState<{ id: string; title: string } | null>(null);
+
   // Input state — always text; overlays for link/file/audio
   const [textContent, setTextContent] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
@@ -114,6 +117,22 @@ export default function StudentThreadPage() {
     if (!loading && user?.role === 'admin') router.push('/admin');
     if (!loading && user?.mustChangePassword) router.push('/change-password');
   }, [user, loading, router]);
+
+  // Init assignment context from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('assignmentId');
+    const title = params.get('title');
+    if (id && title) setActiveContext({ id, title: decodeURIComponent(title) });
+  }, []);
+
+  const clearActiveContext = () => {
+    setActiveContext(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('assignmentId');
+    url.searchParams.delete('title');
+    window.history.replaceState({}, '', url.pathname);
+  };
 
   const fetchThread = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -154,6 +173,7 @@ export default function StudentThreadPage() {
       const { entry } = await addThreadEntry(accessToken, user.id, {
         type: 'text',
         content: textContent.trim(),
+        ...(activeContext && { assignmentId: activeContext.id }),
       });
       setEntries((prev) => [...prev, entry]);
       setTextContent('');
@@ -173,6 +193,7 @@ export default function StudentThreadPage() {
         type: 'link',
         content: linkUrl.trim(),
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
+        ...(activeContext && { assignmentId: activeContext.id }),
       });
       setEntries((prev) => [...prev, entry]);
       setLinkUrl('');
@@ -196,7 +217,7 @@ export default function StudentThreadPage() {
 
     setSending(true);
     try {
-      const { entry } = await uploadThreadFile(accessToken, user.id, file, 'file');
+      const { entry } = await uploadThreadFile(accessToken, user.id, file, 'file', activeContext?.id);
       setEntries((prev) => [...prev, entry]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
@@ -240,7 +261,7 @@ export default function StudentThreadPage() {
     setSending(true);
     try {
       const file = new File([audioBlob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
-      const { entry } = await uploadThreadFile(accessToken, user.id, file, 'audio');
+      const { entry } = await uploadThreadFile(accessToken, user.id, file, 'audio', activeContext?.id);
       setEntries((prev) => [...prev, entry]);
       setAudioBlob(null);
       setRecordingTime(0);
@@ -423,14 +444,46 @@ export default function StudentThreadPage() {
             </p>
           </div>
         ) : (
-          entries.map((entry, i) => (
-            <MessageBubble
-              key={entry.id}
-              entry={entry}
-              currentUserId={user.id}
-              showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
-            />
-          ))
+          entries.map((entry, i) => {
+            const showGroupHeader = entry.assignmentId
+              && entry.assignmentId !== entries[i - 1]?.assignmentId;
+            return (
+              <div key={entry.id}>
+                {showGroupHeader && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-2)',
+                    padding: 'var(--space-2) var(--space-3)',
+                    marginTop: 'var(--space-3)',
+                    marginBottom: 'var(--space-2)',
+                    background: 'rgba(77,166,255,0.06)',
+                    border: '1px solid rgba(77,166,255,0.15)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="7" cy="7" r="6" />
+                      <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
+                      <circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" />
+                    </svg>
+                    <span style={{
+                      fontSize: 'var(--text-xs)',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--color-info)',
+                      letterSpacing: 'var(--tracking-wide)',
+                    }}>
+                      Вопросы по заданию: {entry.assignment?.title}
+                    </span>
+                  </div>
+                )}
+                <MessageBubble
+                  entry={entry}
+                  currentUserId={user.id}
+                  showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
+                />
+              </div>
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>
@@ -441,6 +494,53 @@ export default function StudentThreadPage() {
         padding: 'var(--space-3) var(--space-4)',
         background: 'var(--color-bg-surface)',
       }}>
+        {/* Assignment context banner */}
+        {activeContext && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: 'var(--space-2) var(--space-3)',
+            marginBottom: 'var(--space-2)',
+            background: 'rgba(77,166,255,0.06)',
+            border: '1px solid rgba(77,166,255,0.15)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7" cy="7" r="6" />
+                <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
+                <circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" />
+              </svg>
+              <span style={{
+                fontSize: 'var(--text-xs)',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--color-info)',
+                letterSpacing: 'var(--tracking-wide)',
+              }}>
+                Вопрос по заданию: {activeContext.title}
+              </span>
+            </div>
+            <button
+              onClick={clearActiveContext}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-info)',
+                padding: 'var(--space-1)',
+                display: 'flex',
+              }}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        )}
+
         {/* Link inline panel */}
         {showLinkInput && (
           <div style={{
@@ -990,47 +1090,7 @@ function MessageBubble({
             {entry.type === 'text' || entry.type === 'comment' || entry.type === 'note' ? (
               <span style={{ whiteSpace: 'pre-wrap' }}>{entry.content}</span>
             ) : entry.type === 'link' ? (
-              <div>
-                {entry.content.includes('\n') ? (
-                  <>
-                    <div style={{
-                      fontSize: 'var(--text-sm)',
-                      color: 'var(--color-text-secondary)',
-                      marginBottom: 'var(--space-1)',
-                    }}>
-                      {entry.content.split('\n')[0]}
-                    </div>
-                    <a
-                      href={entry.content.split('\n')[1]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        color: 'var(--color-info)',
-                        wordBreak: 'break-all',
-                        fontSize: 'var(--text-sm)',
-                        textDecoration: 'none',
-                        borderBottom: '1px solid var(--color-info)',
-                      }}
-                    >
-                      {entry.content.split('\n')[1]}
-                    </a>
-                  </>
-                ) : (
-                  <a
-                    href={entry.content}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: 'var(--color-info)',
-                      wordBreak: 'break-all',
-                      textDecoration: 'none',
-                      borderBottom: '1px solid var(--color-info)',
-                    }}
-                  >
-                    {entry.content}
-                  </a>
-                )}
-              </div>
+              <LinkCard entry={entry} />
             ) : entry.type === 'file' ? (
               <div style={{
                 display: 'flex',
@@ -1113,31 +1173,63 @@ function MessageBubble({
             ) : null}
           </div>
 
-          {/* Timestamp */}
+          {/* Timestamp + read receipt */}
           <div style={{
-            fontSize: '10px',
-            color: 'var(--color-text-disabled)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isOwn ? 'flex-start' : 'flex-end',
+            gap: 'var(--space-1)',
             marginTop: 'var(--space-1)',
-            textAlign: isOwn ? 'left' : 'right',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: 'var(--tracking-wide)',
           }}>
-            {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+            <span style={{
+              fontSize: '10px',
+              color: 'var(--color-text-disabled)',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: 'var(--tracking-wide)',
+            }}>
+              {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {isOwn && entry.readAt && (
+              <span style={{
+                fontSize: '10px',
+                color: 'var(--color-text-disabled)',
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: 'var(--tracking-wide)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+              }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 8l4 4 9-9" />
+                  <path d="M5 8l4 4 5-5" />
+                </svg>
+                Прочитано
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Assignment link */}
+        {/* Assignment tag (pill) */}
         {entry.assignment && (
           <div style={{
             marginTop: 'var(--space-1)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 'var(--space-1)',
+            padding: 'var(--space-1) var(--space-2)',
+            background: 'rgba(77,166,255,0.06)',
+            color: 'var(--color-info)',
+            borderRadius: 'var(--radius-full)',
             fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-disabled)',
             fontFamily: 'var(--font-mono)',
             letterSpacing: 'var(--tracking-wide)',
-            paddingLeft: 'var(--space-2)',
-            paddingRight: 'var(--space-2)',
           }}>
-            К заданию: {entry.assignment.title}
+            <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="7" cy="7" r="6" />
+              <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
+              <circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+            {entry.assignment.title.length > 30 ? entry.assignment.title.slice(0, 30) + '...' : entry.assignment.title}
           </div>
         )}
       </div>
@@ -1152,5 +1244,90 @@ function BellNavIcon() {
       <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
       <path d="M8 2.5V1" />
     </svg>
+  );
+}
+
+/* ─── Link card renderer ─── */
+
+function LinkCard({ entry }: { entry: ThreadEntry }) {
+  // Support both new format (content=url, metadata.title) and legacy (content=title\nurl)
+  let url: string;
+  let title: string | undefined;
+
+  if (entry.metadata?.title) {
+    url = entry.content;
+    title = entry.metadata.title as string;
+  } else if (entry.content.includes('\n')) {
+    const parts = entry.content.split('\n');
+    title = parts[0];
+    url = parts.slice(1).join('\n');
+  } else {
+    url = entry.content;
+    title = undefined;
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 'var(--space-3)',
+        textDecoration: 'none',
+        color: 'inherit',
+        padding: 'var(--space-2) var(--space-3)',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid var(--color-info)',
+        background: 'var(--color-bg-surface)',
+        transition: 'background var(--duration-fast) var(--ease-default)',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-elevated)')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-surface)')}
+    >
+      <div style={{
+        width: 28,
+        height: 28,
+        borderRadius: 'var(--radius-sm)',
+        background: 'rgba(59,130,246,0.12)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        color: 'var(--color-info)',
+        marginTop: 2,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" />
+          <path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" />
+        </svg>
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        {title && (
+          <div style={{
+            fontSize: 'var(--text-sm)',
+            fontWeight: 'var(--font-medium)' as unknown as number,
+            color: 'var(--color-text-primary)',
+            marginBottom: 'var(--space-1)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {title}
+          </div>
+        )}
+        <div style={{
+          fontSize: 'var(--text-xs)',
+          color: 'var(--color-info)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontFamily: 'var(--font-mono)',
+        }}>
+          {url}
+        </div>
+      </div>
+    </a>
   );
 }

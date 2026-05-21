@@ -9,6 +9,7 @@ import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
 import {
   getStudentAssignments,
   updateStudentAssignment,
+  submitStudentAssignment,
   getStreams,
   type StudentAssignment,
   type Stream,
@@ -61,6 +62,10 @@ export default function StudentAssignmentsPage() {
   const [streamFilter, setStreamFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [submissionModalSaId, setSubmissionModalSaId] = useState<string | null>(null);
+  const [submissionText, setSubmissionText] = useState('');
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -94,18 +99,38 @@ export default function StudentAssignmentsPage() {
     if (accessToken && user?.role === 'student') fetchData();
   }, [accessToken, user, fetchData]);
 
-  const handleSubmit = async (saId: string) => {
-    if (!accessToken) return;
-    if (!confirm('Отправить задание на проверку?')) return;
+  const openSubmissionForm = (saId: string) => {
+    setSubmissionModalSaId(saId);
+    setSubmissionText('');
+    setSubmissionFile(null);
+    setError('');
+  };
+
+  const closeSubmissionForm = () => {
+    setSubmissionModalSaId(null);
+    setSubmissionText('');
+    setSubmissionFile(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!accessToken || !submissionModalSaId) return;
+    if (!confirm('Отправить задание на проверку? Ответ нельзя изменить после отправки.')) return;
     setError('');
     setSuccess('');
+    setSubmitting(true);
     try {
-      await updateStudentAssignment(accessToken, saId, { status: 'submitted' });
+      await submitStudentAssignment(accessToken, submissionModalSaId, {
+        answerText: submissionText || undefined,
+        file: submissionFile || undefined,
+      });
       setSuccess('Задание отправлено на проверку');
       setTimeout(() => setSuccess(''), 3000);
+      closeSubmissionForm();
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка отправки');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -497,6 +522,88 @@ export default function StudentAssignmentsPage() {
                         </div>
                       )}
 
+                      {/* Submitted answer display */}
+                      {(sa.status === 'submitted' || sa.status === 'reviewed') && sa.content && (
+                        <div style={{
+                          marginBottom: 'var(--space-4)',
+                          padding: 'var(--space-3) var(--space-4)',
+                          background: 'var(--color-bg-overlay)',
+                          borderLeft: '3px solid var(--color-info)',
+                          borderRadius: 'var(--radius-xs)',
+                        }}>
+                          <p style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-text-tertiary)',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: 'var(--tracking-wide)',
+                            textTransform: 'uppercase',
+                            marginBottom: 'var(--space-2)',
+                          }}>
+                            Ваш ответ
+                          </p>
+                          <p style={{
+                            whiteSpace: 'pre-wrap',
+                            margin: 0,
+                            fontSize: 'var(--text-sm)',
+                            lineHeight: 'var(--leading-relaxed)',
+                            color: 'var(--color-text-secondary)',
+                            fontStyle: 'italic',
+                          }}>
+                            {sa.content}
+                          </p>
+                        </div>
+                      )}
+
+                      {(sa.status === 'submitted' || sa.status === 'reviewed') && sa.fileName && (
+                        <div style={{
+                          marginBottom: 'var(--space-4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 'var(--space-3)',
+                          padding: 'var(--space-2) var(--space-3)',
+                          background: 'var(--color-bg-overlay)',
+                          borderRadius: 'var(--radius-xs)',
+                          border: '1px solid var(--color-border-subtle)',
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z" />
+                            <path d="M9 1v4h4" />
+                          </svg>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 'var(--text-sm)',
+                              color: 'var(--color-text-primary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {sa.fileName}
+                            </div>
+                            {sa.fileSize && (
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)' }}>
+                                {sa.fileSize < 1024 * 1024
+                                  ? `${Math.round(sa.fileSize / 1024)} КБ`
+                                  : `${(sa.fileSize / (1024 * 1024)).toFixed(1)} МБ`}
+                              </div>
+                            )}
+                          </div>
+                          {sa.fileSignedUrl && (
+                            <a
+                              href={sa.fileSignedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: 'var(--text-xs)',
+                                color: 'var(--color-info)',
+                                textDecoration: 'none',
+                              }}
+                            >
+                              Открыть ↗
+                            </a>
+                          )}
+                        </div>
+                      )}
+
                       <div style={{
                         display: 'flex',
                         gap: 'var(--space-5)',
@@ -520,15 +627,47 @@ export default function StudentAssignmentsPage() {
                           )}
                         </div>
 
-                        {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleSubmit(sa.id)}
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <button
+                            onClick={() => router.push(
+                              `/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`
+                            )}
+                            style={{
+                              background: 'none',
+                              border: '1px solid var(--color-info)',
+                              borderRadius: 'var(--radius-xs)',
+                              color: 'var(--color-info)',
+                              cursor: 'pointer',
+                              padding: 'var(--space-2) var(--space-3)',
+                              fontSize: 'var(--text-xs)',
+                              fontFamily: 'var(--font-sans)',
+                              fontWeight: 'var(--font-medium)' as unknown as number,
+                              letterSpacing: 'var(--tracking-wide)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 'var(--space-1)',
+                              transition: 'background var(--duration-fast) var(--ease-default)',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(77,166,255,0.08)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
                           >
-                            {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить на проверку'}
-                          </Button>
-                        )}
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="7" cy="7" r="6" />
+                              <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
+                              <circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" />
+                            </svg>
+                            Задать вопрос
+                          </button>
+                          {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => openSubmissionForm(sa.id)}
+                            >
+                              {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить на проверку'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -538,6 +677,243 @@ export default function StudentAssignmentsPage() {
           </div>
         )}
       </div>
+
+      {/* Submission Form Modal */}
+      {submissionModalSaId && (() => {
+        const modalSa = assignments.find((s) => s.id === submissionModalSaId);
+        const modalAssignment = modalSa?.assignment;
+        const isShort = modalAssignment?.type === 'short';
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: 'var(--space-4)',
+            }}
+            onClick={(e) => { if (e.target === e.currentTarget) closeSubmissionForm(); }}
+          >
+            <div style={{
+              background: 'var(--color-bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--color-border-default)',
+              width: '100%',
+              maxWidth: 520,
+              maxHeight: '90vh',
+              overflow: 'auto',
+              padding: 'var(--space-6)',
+            }}>
+              {/* Context banner */}
+              <div style={{
+                marginBottom: 'var(--space-5)',
+                padding: 'var(--space-3) var(--space-4)',
+                background: 'var(--color-bg-elevated)',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-border-subtle)',
+              }}>
+                <div style={{
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-disabled)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: 'var(--tracking-wide)',
+                  textTransform: 'uppercase',
+                  marginBottom: 'var(--space-1)',
+                }}>
+                  Сдача задания
+                </div>
+                <div style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 'var(--font-medium)' as unknown as number,
+                  color: 'var(--color-text-primary)',
+                }}>
+                  {modalAssignment?.title}
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: 'var(--space-2)',
+                  marginTop: 'var(--space-2)',
+                }}>
+                  {modalAssignment?.type && (
+                    <Badge variant="default">{TYPE_LABELS[modalAssignment.type] ?? modalAssignment.type}</Badge>
+                  )}
+                  {modalAssignment?.dueDate && (
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>
+                      Дедлайн: {new Date(modalAssignment.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Answer textarea */}
+              <div style={{ marginBottom: 'var(--space-4)' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: 'var(--tracking-wide)',
+                  textTransform: 'uppercase',
+                  marginBottom: 'var(--space-2)',
+                }}>
+                  Ваш ответ {isShort && <span style={{ color: 'var(--color-error)' }}>*</span>}
+                </label>
+                <textarea
+                  value={submissionText}
+                  onChange={(e) => setSubmissionText(e.target.value)}
+                  placeholder="Опишите вашу работу кратко…"
+                  maxLength={2000}
+                  style={{
+                    width: '100%',
+                    minHeight: 140,
+                    resize: 'none',
+                    padding: 'var(--space-3)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--color-border-default)',
+                    background: 'var(--color-bg-input)',
+                    color: 'var(--color-text-primary)',
+                    fontSize: 'var(--text-sm)',
+                    fontFamily: 'var(--font-sans)',
+                    lineHeight: 'var(--leading-relaxed)',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div style={{
+                  textAlign: 'right',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-disabled)',
+                  marginTop: 'var(--space-1)',
+                }}>
+                  {submissionText.length} / 2000
+                </div>
+              </div>
+
+              {/* File upload */}
+              <div style={{ marginBottom: 'var(--space-5)' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: 'var(--tracking-wide)',
+                  textTransform: 'uppercase',
+                  marginBottom: 'var(--space-2)',
+                }}>
+                  Файл
+                </label>
+                {submissionFile ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    padding: 'var(--space-2) var(--space-3)',
+                    background: 'var(--color-bg-overlay)',
+                    borderRadius: 'var(--radius-xs)',
+                    border: '1px solid var(--color-border-subtle)',
+                  }}>
+                    <Badge variant="default">
+                      {submissionFile.name.split('.').pop()?.toUpperCase()}
+                    </Badge>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 'var(--text-sm)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {submissionFile.name}
+                      </div>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)' }}>
+                        {submissionFile.size < 1024 * 1024
+                          ? `${Math.round(submissionFile.size / 1024)} КБ`
+                          : `${(submissionFile.size / (1024 * 1024)).toFixed(1)} МБ`}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSubmissionFile(null)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-text-disabled)',
+                        fontSize: 'var(--text-base)',
+                        padding: 'var(--space-1)',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 'var(--space-2)',
+                    padding: 'var(--space-4)',
+                    border: '2px dashed var(--color-border-default)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontSize: 'var(--text-sm)',
+                    color: 'var(--color-text-tertiary)',
+                    transition: 'border-color var(--duration-fast) var(--ease-default)',
+                  }}>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          if (f.size > 20 * 1024 * 1024) {
+                            setError('Файл не должен превышать 20 МБ');
+                            return;
+                          }
+                          setSubmissionFile(f);
+                        }
+                      }}
+                    />
+                    + Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                  </label>
+                )}
+              </div>
+
+              {/* Hint */}
+              <p style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--color-text-disabled)',
+                fontStyle: 'italic',
+                marginBottom: 'var(--space-4)',
+              }}>
+                После отправки потребуется подтверждение. Ответ нельзя изменить.
+              </p>
+
+              {/* Actions */}
+              <div style={{
+                display: 'flex',
+                gap: 'var(--space-3)',
+                justifyContent: 'flex-end',
+              }}>
+                <Button variant="secondary" size="sm" onClick={closeSubmissionForm}>
+                  Отмена
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={submitting || (isShort && !submissionText.trim())}
+                >
+                  {submitting ? 'Отправка…' : 'Сдать задание →'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </DashboardLayout>
   );
 }

@@ -23,8 +23,11 @@ import {
   getThread,
   addThreadEntry,
   uploadThreadFile,
+  updateStudentAssignment,
+  getStudentAssignments,
   type ThreadEntry,
   type ThreadEntryType,
+  type StudentAssignment,
 } from '@/lib/api';
 
 /* ─── Inline SVG icons for compose bar ──────────────────── */
