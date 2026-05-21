@@ -7,10 +7,13 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNotifications } from './notifications-context';
-import type { Notification } from './api';
+import { useAuth } from './auth-context';
+import { getNotificationLink, type Notification, type NotificationType } from './api';
 
 export function NotificationBell() {
   const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { user } = useAuth();
+  const role = (user?.role === 'admin' ? 'admin' : 'student') as 'admin' | 'student';
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +102,7 @@ export function NotificationBell() {
           unreadCount={unreadCount}
           onMarkAllRead={handleMarkAllRead}
           onClose={() => setOpen(false)}
+          role={role}
         />
       )}
     </div>
@@ -110,9 +114,10 @@ interface NotificationPanelProps {
   unreadCount: number;
   onMarkAllRead: () => Promise<void>;
   onClose: () => void;
+  role: 'admin' | 'student';
 }
 
-function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose }: NotificationPanelProps) {
+function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose, role }: NotificationPanelProps) {
   const [marking, setMarking] = useState(false);
 
   const handleMarkAllRead = async () => {
@@ -229,7 +234,7 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose 
         ) : (
           <>
             {notifications.map((n) => (
-              <NotificationItem key={n.id} notification={n} onNavigate={onClose} />
+              <NotificationItem key={n.id} notification={n} role={role} onNavigate={onClose} />
             ))}
             {notifications.length >= 50 && (
               <div
@@ -254,8 +259,9 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose 
   );
 }
 
-function NotificationItem({ notification, onNavigate }: { notification: Notification; onNavigate: () => void }) {
+function NotificationItem({ notification, role, onNavigate }: { notification: Notification; role: 'admin' | 'student'; onNavigate: () => void }) {
   const relativeTime = formatRelativeTime(notification.createdAt);
+  const linkUrl = getNotificationLink(notification, role);
 
   const content = (
     <div
@@ -265,7 +271,7 @@ function NotificationItem({ notification, onNavigate }: { notification: Notifica
         padding: 'var(--space-3) var(--space-4)',
         borderBottom: '1px solid var(--color-border-subtle)',
         background: notification.isRead ? 'transparent' : 'rgba(255,59,48,0.04)',
-        cursor: notification.linkUrl ? 'pointer' : 'default',
+        cursor: linkUrl ? 'pointer' : 'default',
         transition: 'background var(--duration-fast) var(--ease-default)',
       }}
       onMouseEnter={(e) => {
@@ -329,9 +335,9 @@ function NotificationItem({ notification, onNavigate }: { notification: Notifica
     </div>
   );
 
-  if (notification.linkUrl) {
+  if (linkUrl) {
     return (
-      <a href={notification.linkUrl} onClick={onNavigate} style={{ textDecoration: 'none', display: 'block' }}>
+      <a href={linkUrl} onClick={onNavigate} style={{ textDecoration: 'none', display: 'block' }}>
         {content}
       </a>
     );
@@ -373,18 +379,15 @@ function BellOffIcon() {
   );
 }
 
-type NotifType = Notification['type'];
-
-function NotificationTypeIcon({ type }: { type: NotifType }) {
-  const icons: Record<NotifType, string> = {
+function NotificationTypeIcon({ type }: { type: NotificationType }) {
+  const icons: Record<NotificationType, string> = {
     lesson_published: '📚',
-    assignment_added: '📋',
+    assignment_created: '📋',
     deadline_reminder: '⏰',
-    thread_reply: '💬',
+    thread_entry: '💬',
     assignment_reviewed: '✅',
-    schedule_updated: '📅',
+    schedule_entry_created: '📅',
     assignment_submitted: '📤',
-    system: '⚙️',
   };
   return (
     <span style={{ fontSize: 14, lineHeight: 1, display: 'block' }} aria-hidden>

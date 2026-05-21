@@ -25,6 +25,7 @@ const STUDENT_NAV = [
       { label: 'Задания',    href: '/dashboard/assignments',                 icon: <ClipboardIcon /> },
       { label: 'Тред',       href: '/dashboard/thread',                      icon: <ChatIcon /> },
       { label: 'Расписание', href: '/dashboard/schedule',                   icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/dashboard/notifications', icon: <BellIcon /> },
       { label: 'Профиль',   href: '/dashboard/profile',                    icon: <UserIcon /> },
       { label: 'Настройки', href: '/dashboard/settings/notifications',      icon: <BellIcon /> },
     ],

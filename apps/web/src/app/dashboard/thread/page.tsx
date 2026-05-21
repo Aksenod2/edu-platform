@@ -16,6 +16,7 @@ const STUDENT_NAV = [
       { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
       { label: 'Тред',       href: '/dashboard/thread',      icon: <ChatIcon /> },
       { label: 'Расписание', href: '/dashboard/schedule',    icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/dashboard/notifications', icon: <BellNavIcon /> },
       { label: 'Профиль',    href: '/dashboard/profile',     icon: <UserIcon /> },
     ],
   },
@@ -168,10 +169,10 @@ export default function StudentThreadPage() {
     if (!accessToken || !user || !linkUrl.trim()) return;
     setSending(true);
     try {
-      const content = linkTitle.trim() ? `${linkTitle.trim()}\n${linkUrl.trim()}` : linkUrl.trim();
       const { entry } = await addThreadEntry(accessToken, user.id, {
         type: 'link',
-        content,
+        content: linkUrl.trim(),
+        ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
       });
       setEntries((prev) => [...prev, entry]);
       setLinkUrl('');
@@ -1141,5 +1142,15 @@ function MessageBubble({
         )}
       </div>
     </div>
+  );
+}
+
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
+      <path d="M8 2.5V1" />
+    </svg>
   );
 }
