@@ -15,14 +15,25 @@ const ALL_NOTIFICATION_TYPES: NotificationType[] = [
 export async function notificationRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
-  // GET /notifications?limit=50 — last N notifications for current user
+  // GET /notifications/count?unread=true — lightweight badge counter
+  app.get('/notifications/count', async (request, reply) => {
+    const userId = request.user!.userId;
+    const { unread } = request.query as { unread?: string };
+    const where = unread === 'true' ? { userId, isRead: false } : { userId };
+    const count = await prisma.notification.count({ where });
+    return { count };
+  });
+
+  // GET /notifications?limit=50&unreadOnly=true — last N notifications for current user
   app.get('/notifications', async (request, reply) => {
     const userId = request.user!.userId;
-    const { limit } = request.query as { limit?: string };
+    const { limit, unreadOnly } = request.query as { limit?: string; unreadOnly?: string };
     const take = Math.min(Number(limit) || 50, 200);
 
+    const where = unreadOnly === 'true' ? { userId, isRead: false } : { userId };
+
     const notifications = await prisma.notification.findMany({
-      where: { userId },
+      where,
       orderBy: { createdAt: 'desc' },
       take,
     });
