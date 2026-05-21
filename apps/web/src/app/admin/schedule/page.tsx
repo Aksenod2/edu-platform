@@ -436,7 +436,11 @@ export default function SchedulePage() {
                     <>
                       <td style={{ padding: 'var(--space-3)' }}>
                         <Text size="sm" as="span">
-                          {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          {(() => {
+                            const d = entry.date.slice(0, 10);
+                            const [y, m, day] = d.split('-').map(Number);
+                            return new Date(y, (m ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+                          })()}
                         </Text>
                       </td>
                       <td style={{ padding: 'var(--space-3)' }}>

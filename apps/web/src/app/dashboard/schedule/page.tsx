@@ -29,11 +29,28 @@ const STUDENT_NAV = [
   },
 ];
 
-function isPast(dateStr: string, startTime: string): boolean {
-  const entryDate = new Date(dateStr);
+/** Парсит дату из ISO-строки как локальную (без UTC-сдвига) */
+function parseLocalDate(dateStr: string, startTime: string): Date {
+  const datePart = dateStr.slice(0, 10); // "YYYY-MM-DD"
+  const [year, month, day] = datePart.split('-').map(Number);
   const [hours, minutes] = startTime.split(':').map(Number);
-  entryDate.setHours(hours || 0, minutes || 0, 0, 0);
-  return entryDate < new Date();
+  return new Date(year, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0, 0, 0);
+}
+
+function isPast(dateStr: string, startTime: string): boolean {
+  return parseLocalDate(dateStr, startTime) < new Date();
+}
+
+/** Форматирует дату и время занятия с указанием локального часового пояса */
+function formatEntryDateTime(dateStr: string, startTime: string): string {
+  const dt = parseLocalDate(dateStr, startTime);
+  const datePart = dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  const timePart = dt.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  return `${datePart}, ${timePart}`;
 }
 
 export default function StudentSchedulePage() {
@@ -159,7 +176,7 @@ export default function StudentSchedulePage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                       <Heading level={4} size="md" style={{ margin: 0 }}>{entry.lessonTitle}</Heading>
                       <Mono size="xs" color="var(--color-text-tertiary)">
-                        {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, {entry.startTime}
+                        {formatEntryDateTime(entry.date, entry.startTime)}
                       </Mono>
                     </div>
                     {entry.notes && (
@@ -202,7 +219,7 @@ export default function StudentSchedulePage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                       <Text size="sm" weight="medium">{entry.lessonTitle}</Text>
                       <Mono size="xs" color="var(--color-text-tertiary)">
-                        {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, {entry.startTime}
+                        {formatEntryDateTime(entry.date, entry.startTime)}
                       </Mono>
                     </div>
                     {entry.notes && (
