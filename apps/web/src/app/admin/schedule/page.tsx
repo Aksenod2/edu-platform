@@ -15,10 +15,12 @@ import { ScheduleCalendar, type CalendarEntry } from '@/components/schedule-cale
 import {
   getStreams,
   getSchedule,
+  getLessons,
   createScheduleEntry,
   updateScheduleEntry,
   deleteScheduleEntry,
   type Stream,
+  type Lesson,
 } from '@/lib/api';
 
 const ALL_STREAMS = '__all__';
@@ -27,6 +29,7 @@ export default function SchedulePage() {
   const { user, accessToken } = useAuth();
 
   const [streams, setStreams] = useState<Stream[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
   const [entries, setEntries] = useState<CalendarEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,9 +42,10 @@ export default function SchedulePage() {
       const { streams: allStreams } = await getStreams(accessToken);
       setStreams(allStreams);
 
-      const results = await Promise.all(
-        allStreams.map((s) => getSchedule(accessToken, s.id)),
-      );
+      const [results, lessonResults] = await Promise.all([
+        Promise.all(allStreams.map((s) => getSchedule(accessToken, s.id))),
+        Promise.all(allStreams.map((s) => getLessons(accessToken, s.id))),
+      ]);
       const merged: CalendarEntry[] = results.flatMap((res, i) => {
         const s = allStreams[i]!;
         return res.schedule.map((e) => ({
@@ -51,6 +55,7 @@ export default function SchedulePage() {
         }));
       });
       setEntries(merged);
+      setLessons(lessonResults.flatMap((res) => res.lessons));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
@@ -65,9 +70,9 @@ export default function SchedulePage() {
 
   const handleCreate = async (data: {
     streamId: string;
+    lessonId: string;
     date: string;
     startTime: string;
-    lessonTitle: string;
     notes?: string;
     meetingUrl?: string;
   }) => {
@@ -86,7 +91,7 @@ export default function SchedulePage() {
     data: {
       date?: string;
       startTime?: string;
-      lessonTitle?: string;
+      lessonId?: string;
       notes?: string | null;
       meetingUrl?: string | null;
     },
@@ -155,6 +160,7 @@ export default function SchedulePage() {
             editable
             entries={visibleEntries}
             streams={streams}
+            lessons={lessons}
             onCreate={handleCreate}
             onUpdate={handleUpdate}
             onDelete={handleDelete}

@@ -22,7 +22,10 @@ export async function scheduleRoutes(app: FastifyInstance) {
     const entries = await prisma.scheduleEntry.findMany({
       where: { streamId },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
-      include: { stream: { select: { id: true, name: true } } },
+      include: {
+        stream: { select: { id: true, name: true } },
+        lesson: { select: { id: true, title: true } },
+      },
     });
 
     return { schedule: entries };
@@ -30,17 +33,17 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // POST /schedule — создание записи расписания (admin)
   app.post('/schedule', { onRequest: adminOnly }, async (request, reply) => {
-    const { streamId, date, startTime, lessonTitle, notes, meetingUrl } = request.body as {
+    const { streamId, date, startTime, lessonId, notes, meetingUrl } = request.body as {
       streamId: string;
       date: string;
       startTime: string;
-      lessonTitle: string;
+      lessonId: string;
       notes?: string;
       meetingUrl?: string;
     };
 
-    if (!streamId || !date || !startTime || !lessonTitle?.trim()) {
-      return reply.status(400).send({ error: 'Поля streamId, date, startTime и lessonTitle обязательны' });
+    if (!streamId || !date || !startTime || !lessonId) {
+      return reply.status(400).send({ error: 'Поля streamId, date, startTime и lessonId обязательны' });
     }
 
     const stream = await prisma.stream.findUnique({ where: { id: streamId } });
@@ -48,16 +51,28 @@ export async function scheduleRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Поток не найден' });
     }
 
+    const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+    if (lesson.streamId !== streamId) {
+      return reply.status(400).send({ error: 'Урок не принадлежит выбранному потоку' });
+    }
+
     const entry = await prisma.scheduleEntry.create({
       data: {
         streamId,
+        lessonId,
         date: new Date(date),
         startTime: startTime.trim(),
-        lessonTitle: lessonTitle.trim(),
+        lessonTitle: lesson.title,
         notes: notes?.trim() || null,
         meetingUrl: meetingUrl?.trim() || null,
       },
-      include: { stream: { select: { id: true, name: true } } },
+      include: {
+        stream: { select: { id: true, name: true } },
+        lesson: { select: { id: true, title: true } },
+      },
     });
 
     // Notify all active students about the new schedule entry
@@ -79,10 +94,10 @@ export async function scheduleRoutes(app: FastifyInstance) {
   // PATCH /schedule/:id — обновление записи расписания (admin)
   app.patch('/schedule/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { date, startTime, lessonTitle, notes, meetingUrl } = request.body as {
+    const { date, startTime, lessonId, notes, meetingUrl } = request.body as {
       date?: string;
       startTime?: string;
-      lessonTitle?: string;
+      lessonId?: string;
       notes?: string | null;
       meetingUrl?: string | null;
     };
@@ -92,8 +107,19 @@ export async function scheduleRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Запись расписания не найдена' });
     }
 
-    if (lessonTitle !== undefined && !lessonTitle.trim()) {
-      return reply.status(400).send({ error: 'Название урока не может быть пустым' });
+    let lessonTitle: string | undefined;
+    if (lessonId !== undefined) {
+      if (!lessonId) {
+        return reply.status(400).send({ error: 'Урок обязателен' });
+      }
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      if (!lesson) {
+        return reply.status(404).send({ error: 'Урок не найден' });
+      }
+      if (lesson.streamId !== existing.streamId) {
+        return reply.status(400).send({ error: 'Урок не принадлежит потоку записи' });
+      }
+      lessonTitle = lesson.title;
     }
 
     const entry = await prisma.scheduleEntry.update({
@@ -101,11 +127,14 @@ export async function scheduleRoutes(app: FastifyInstance) {
       data: {
         ...(date !== undefined && { date: new Date(date) }),
         ...(startTime !== undefined && { startTime: startTime.trim() }),
-        ...(lessonTitle !== undefined && { lessonTitle: lessonTitle.trim() }),
+        ...(lessonId !== undefined && { lessonId, lessonTitle }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
         ...(meetingUrl !== undefined && { meetingUrl: meetingUrl?.trim() || null }),
       },
-      include: { stream: { select: { id: true, name: true } } },
+      include: {
+        stream: { select: { id: true, name: true } },
+        lesson: { select: { id: true, title: true } },
+      },
     });
 
     return { entry };

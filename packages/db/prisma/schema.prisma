@@ -137,8 +137,9 @@ model Lesson {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  stream      Stream       @relation(fields: [streamId], references: [id], onDelete: Cascade)
-  assignments Assignment[]
+  stream          Stream          @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  assignments     Assignment[]
+  scheduleEntries ScheduleEntry[]
 
   @@index([streamId])
 }
@@ -246,6 +247,7 @@ model TeacherNote {
 model ScheduleEntry {
   id          String   @id @default(uuid())
   streamId    String
+  lessonId    String?
   date        DateTime @db.Date
   startTime   String
   lessonTitle String
@@ -254,9 +256,11 @@ model ScheduleEntry {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  stream Stream  @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  lesson Lesson? @relation(fields: [lessonId], references: [id], onDelete: SetNull)
 
   @@index([streamId])
+  @@index([lessonId])
 }
 
 model Notification {

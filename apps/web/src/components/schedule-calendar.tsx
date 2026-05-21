@@ -23,15 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { ScheduleEntry, Stream } from '@/lib/api';
+import type { Lesson, ScheduleEntry, Stream } from '@/lib/api';
 
 export type CalendarEntry = ScheduleEntry & { streamName?: string };
 
 interface CreateData {
   streamId: string;
+  lessonId: string;
   date: string;
   startTime: string;
-  lessonTitle: string;
   notes?: string;
   meetingUrl?: string;
 }
@@ -39,7 +39,7 @@ interface CreateData {
 interface UpdateData {
   date?: string;
   startTime?: string;
-  lessonTitle?: string;
+  lessonId?: string;
   notes?: string | null;
   meetingUrl?: string | null;
 }
@@ -48,6 +48,7 @@ interface ScheduleCalendarProps {
   entries: CalendarEntry[];
   editable?: boolean;
   streams?: Stream[];
+  lessons?: Lesson[];
   onCreate?: (data: CreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
@@ -85,6 +86,7 @@ export function ScheduleCalendar({
   entries,
   editable = false,
   streams = [],
+  lessons = [],
   onCreate,
   onUpdate,
   onDelete,
@@ -226,7 +228,7 @@ export function ScheduleCalendar({
                       className="flex flex-col rounded-sm bg-secondary px-1.5 py-1 text-left text-secondary-foreground"
                     >
                       <span className="truncate text-xs font-medium leading-tight">
-                        {e.lessonTitle}
+                        {e.lessonTitle || e.lesson?.title}
                       </span>
                       <span className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
                         {e.streamName && (
@@ -263,6 +265,7 @@ export function ScheduleCalendar({
               entries={selectedEntries}
               editable={editable}
               streams={streams}
+              lessons={lessons}
               onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
@@ -289,6 +292,7 @@ interface DayDetailProps {
   entries: CalendarEntry[];
   editable: boolean;
   streams: Stream[];
+  lessons: Lesson[];
   onCreate?: (data: CreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
@@ -299,6 +303,7 @@ function DayDetail({
   entries,
   editable,
   streams,
+  lessons,
   onCreate,
   onUpdate,
   onDelete,
@@ -323,6 +328,7 @@ function DayDetail({
             <EditForm
               key={entry.id}
               entry={entry}
+              lessons={lessons}
               onCancel={() => setEditingId(null)}
               onUpdate={onUpdate}
               onSaved={() => setEditingId(null)}
@@ -331,7 +337,7 @@ function DayDetail({
             <div key={entry.id} className="rounded-lg border bg-card p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="font-medium leading-tight">{entry.lessonTitle}</p>
+                  <p className="font-medium leading-tight">{entry.lessonTitle || entry.lesson?.title}</p>
                   {entry.streamName && (
                     <Badge variant="secondary" className="w-fit">
                       {entry.streamName}
@@ -382,6 +388,7 @@ function DayDetail({
               <CreateForm
                 defaultDate={dayKey}
                 streams={streams}
+                lessons={lessons}
                 onCreate={onCreate}
                 onCancel={() => setShowCreate(false)}
                 onCreated={() => setShowCreate(false)}
@@ -435,28 +442,34 @@ function DeleteButton({
 
 interface EditFormProps {
   entry: CalendarEntry;
+  lessons: Lesson[];
   onCancel: () => void;
   onSaved: () => void;
   onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
 }
 
-function EditForm({ entry, onCancel, onSaved, onUpdate }: EditFormProps) {
+function EditForm({ entry, lessons, onCancel, onSaved, onUpdate }: EditFormProps) {
   const [date, setDate] = useState(entry.date.slice(0, 10));
   const [startTime, setStartTime] = useState(entry.startTime);
-  const [lessonTitle, setLessonTitle] = useState(entry.lessonTitle);
+  const [lessonId, setLessonId] = useState(entry.lessonId ?? '');
   const [notes, setNotes] = useState(entry.notes || '');
   const [meetingUrl, setMeetingUrl] = useState(entry.meetingUrl || '');
   const [saving, setSaving] = useState(false);
 
+  const streamLessons = useMemo(
+    () => lessons.filter((l) => l.streamId === entry.streamId),
+    [lessons, entry.streamId],
+  );
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onUpdate || !lessonTitle.trim()) return;
+    if (!onUpdate || !lessonId) return;
     setSaving(true);
     try {
       await onUpdate(entry.id, {
         date,
         startTime,
-        lessonTitle: lessonTitle.trim(),
+        lessonId,
         notes: notes.trim() || null,
         meetingUrl: meetingUrl.trim() || null,
       });
@@ -491,14 +504,23 @@ function EditForm({ entry, onCancel, onSaved, onUpdate }: EditFormProps) {
         </Field>
       </div>
       <Field>
-        <FieldLabel htmlFor={`edit-title-${entry.id}`}>Название урока</FieldLabel>
-        <Input
-          id={`edit-title-${entry.id}`}
-          type="text"
-          value={lessonTitle}
-          onChange={(e) => setLessonTitle(e.target.value)}
-          required
-        />
+        <FieldLabel htmlFor={`edit-lesson-${entry.id}`}>Урок</FieldLabel>
+        {streamLessons.length > 0 ? (
+          <Select value={lessonId} onValueChange={setLessonId}>
+            <SelectTrigger id={`edit-lesson-${entry.id}`} className="w-full">
+              <SelectValue placeholder="Выберите урок" />
+            </SelectTrigger>
+            <SelectContent>
+              {streamLessons.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-sm text-muted-foreground">В этом потоке нет уроков</p>
+        )}
       </Field>
       <Field>
         <FieldLabel htmlFor={`edit-notes-${entry.id}`}>Тезисы</FieldLabel>
@@ -520,7 +542,7 @@ function EditForm({ entry, onCancel, onSaved, onUpdate }: EditFormProps) {
         />
       </Field>
       <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={saving || !lessonTitle.trim()}>
+        <Button type="submit" size="sm" disabled={saving || !lessonId}>
           {saving && <Loader2 className="animate-spin" />}
           Сохранить
         </Button>
@@ -535,21 +557,32 @@ function EditForm({ entry, onCancel, onSaved, onUpdate }: EditFormProps) {
 interface CreateFormProps {
   defaultDate: string;
   streams: Stream[];
+  lessons: Lesson[];
   onCreate?: (data: CreateData) => Promise<void> | void;
   onCancel: () => void;
   onCreated: () => void;
 }
 
-function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: CreateFormProps) {
+function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreated }: CreateFormProps) {
   const [streamId, setStreamId] = useState(streams[0]?.id ?? '');
   const [date, setDate] = useState(defaultDate);
   const [startTime, setStartTime] = useState('');
-  const [lessonTitle, setLessonTitle] = useState('');
+  const [lessonId, setLessonId] = useState('');
   const [notes, setNotes] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const valid = streamId && date && startTime && lessonTitle.trim();
+  const streamLessons = useMemo(
+    () => lessons.filter((l) => l.streamId === streamId),
+    [lessons, streamId],
+  );
+
+  const valid = streamId && date && startTime && lessonId;
+
+  const onStreamChange = (value: string) => {
+    setStreamId(value);
+    setLessonId('');
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -558,9 +591,9 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
     try {
       await onCreate({
         streamId,
+        lessonId,
         date,
         startTime,
-        lessonTitle: lessonTitle.trim(),
         notes: notes.trim() || undefined,
         meetingUrl: meetingUrl.trim() || undefined,
       });
@@ -575,7 +608,7 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
       <p className="text-sm font-medium">Новое занятие</p>
       <Field>
         <FieldLabel htmlFor="new-stream">Поток</FieldLabel>
-        <Select value={streamId} onValueChange={setStreamId}>
+        <Select value={streamId} onValueChange={onStreamChange}>
           <SelectTrigger id="new-stream" className="w-full">
             <SelectValue placeholder="Выберите поток" />
           </SelectTrigger>
@@ -611,15 +644,23 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
         </Field>
       </div>
       <Field>
-        <FieldLabel htmlFor="new-title">Название урока</FieldLabel>
-        <Input
-          id="new-title"
-          type="text"
-          value={lessonTitle}
-          onChange={(e) => setLessonTitle(e.target.value)}
-          placeholder="Например: Основы типографики"
-          required
-        />
+        <FieldLabel htmlFor="new-lesson">Урок</FieldLabel>
+        {streamLessons.length > 0 ? (
+          <Select value={lessonId} onValueChange={setLessonId}>
+            <SelectTrigger id="new-lesson" className="w-full">
+              <SelectValue placeholder="Выберите урок" />
+            </SelectTrigger>
+            <SelectContent>
+              {streamLessons.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-sm text-muted-foreground">В этом потоке нет уроков</p>
+        )}
       </Field>
       <Field>
         <FieldLabel htmlFor="new-notes">Тезисы</FieldLabel>

@@ -349,6 +349,7 @@ export async function deleteLesson(
 export interface ScheduleEntry {
   id: string;
   streamId: string;
+  lessonId: string | null;
   date: string;
   startTime: string;
   lessonTitle: string;
@@ -357,6 +358,7 @@ export interface ScheduleEntry {
   createdAt: string;
   updatedAt: string;
   stream?: { id: string; name: string };
+  lesson?: { id: string; title: string } | null;
 }
 
 export async function getSchedule(
@@ -372,9 +374,9 @@ export async function createScheduleEntry(
   accessToken: string,
   data: {
     streamId: string;
+    lessonId: string;
     date: string;
     startTime: string;
-    lessonTitle: string;
     notes?: string;
     meetingUrl?: string;
   },
@@ -392,7 +394,7 @@ export async function updateScheduleEntry(
   data: {
     date?: string;
     startTime?: string;
-    lessonTitle?: string;
+    lessonId?: string;
     notes?: string | null;
     meetingUrl?: string | null;
   },
