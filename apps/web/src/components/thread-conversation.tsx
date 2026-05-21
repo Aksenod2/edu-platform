@@ -48,7 +48,10 @@ function formatBytes(size: number) {
     : `${(size / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-const SUBMISSION_STATUS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+const SUBMISSION_STATUS: Record<
+  string,
+  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+> = {
   submitted: { label: 'Сдана', variant: 'default' },
   reviewed: { label: 'Принята', variant: 'secondary' },
   needs_revision: { label: 'На доработке', variant: 'destructive' },
@@ -83,6 +86,7 @@ export function ThreadConversation({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const didInitialScroll = useRef(false);
 
   const fetchThread = useCallback(async () => {
     if (!accessToken || !studentId) return;
@@ -107,9 +111,19 @@ export function ThreadConversation({
     fetchThread();
   }, [fetchThread]);
 
+  // Прокрутка к последнему сообщению: мгновенно при первой загрузке треда,
+  // плавно — при появлении новых сообщений.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries]);
+    if (loading || entries.length === 0) return;
+    const behavior: ScrollBehavior = didInitialScroll.current ? 'smooth' : 'auto';
+    bottomRef.current?.scrollIntoView({ behavior });
+    didInitialScroll.current = true;
+  }, [entries, loading]);
+
+  // Сбрасываем флаг при переключении ученика, чтобы новый тред скроллился мгновенно.
+  useEffect(() => {
+    didInitialScroll.current = false;
+  }, [studentId]);
 
   const handleSend = async () => {
     if (!accessToken || !content.trim()) return;
@@ -207,7 +221,7 @@ export function ThreadConversation({
       )}
 
       {/* Messages */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -217,47 +231,52 @@ export function ThreadConversation({
             <p className="text-sm text-muted-foreground">Тред пуст</p>
           </div>
         ) : (
-          entries.map((entry, i) => {
-            const showGroupHeader =
-              entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
-            const isSubmission =
-              entry.metadata?.submissionType === 'assignment' && entry.assignmentId;
-            const relatedSa = isSubmission
-              ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId)
-              : null;
-            const isLatestSubmission =
-              isSubmission &&
-              entry.assignmentId &&
-              latestSubmissionEntryId[entry.assignmentId] === entry.id;
+          // mt-auto прижимает ленту к низу: при малом числе сообщений они липнут
+          // к полю ввода, а при переполнении старые сообщения уходят вверх.
+          <div className="mt-auto flex flex-col gap-2">
+            {entries.map((entry, i) => {
+              const showGroupHeader =
+                entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
+              const isSubmission =
+                entry.metadata?.submissionType === 'assignment' && entry.assignmentId;
+              const relatedSa = isSubmission
+                ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId)
+                : null;
+              const isLatestSubmission =
+                isSubmission &&
+                entry.assignmentId &&
+                latestSubmissionEntryId[entry.assignmentId] === entry.id;
 
-            return (
-              <div key={entry.id}>
-                {showGroupHeader && (
-                  <div className="my-3 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {isSubmission ? 'Сданная работа' : 'Вопросы по заданию'}: {entry.assignment?.title}
-                    </span>
-                  </div>
-                )}
-                {isSubmission && relatedSa ? (
-                  <SubmissionCard
-                    entry={entry}
-                    sa={relatedSa}
-                    studentName={studentName}
-                    onAccept={() => handleReview(relatedSa.id, 'reviewed')}
-                    onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
-                    isReviewing={reviewingId === relatedSa.id}
-                    showActions={!!isLatestSubmission}
-                  />
-                ) : (
-                  <MessageBubble
-                    entry={entry}
-                    showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
-                  />
-                )}
-              </div>
-            );
-          })
+              return (
+                <div key={entry.id}>
+                  {showGroupHeader && (
+                    <div className="my-3 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {isSubmission ? 'Сданная работа' : 'Вопросы по заданию'}:{' '}
+                        {entry.assignment?.title}
+                      </span>
+                    </div>
+                  )}
+                  {isSubmission && relatedSa ? (
+                    <SubmissionCard
+                      entry={entry}
+                      sa={relatedSa}
+                      studentName={studentName}
+                      onAccept={() => handleReview(relatedSa.id, 'reviewed')}
+                      onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
+                      isReviewing={reviewingId === relatedSa.id}
+                      showActions={!!isLatestSubmission}
+                    />
+                  ) : (
+                    <MessageBubble
+                      entry={entry}
+                      showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
@@ -353,7 +372,9 @@ export function ThreadConversation({
           <Textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
+            placeholder={
+              inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'
+            }
             rows={1}
             className="max-h-40 min-h-9 flex-1 resize-none"
             onKeyDown={(e) => {
@@ -364,12 +385,7 @@ export function ThreadConversation({
             }}
           />
 
-          <Button
-            type="button"
-            size="icon"
-            disabled={sending || !hasContent}
-            onClick={handleSend}
-          >
+          <Button type="button" size="icon" disabled={sending || !hasContent} onClick={handleSend}>
             {sending ? <Loader2 className="animate-spin" /> : <Send />}
           </Button>
         </div>
@@ -469,9 +485,7 @@ function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: 
               isAdmin ? 'justify-start' : 'justify-end',
             )}
           >
-            <span>
-              {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-            </span>
+            <span>{date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
             {isAdmin &&
               (entry.readAt ? <CheckCheck className="size-3" /> : <Check className="size-3" />)}
           </div>

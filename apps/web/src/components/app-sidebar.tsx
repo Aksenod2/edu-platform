@@ -71,7 +71,7 @@ const STUDENT_NAV: NavGroup[] = [
       { label: 'Обзор', href: '/dashboard', icon: LayoutGrid },
       { label: 'Уроки', href: '/dashboard/lessons', icon: BookOpen },
       { label: 'Задания', href: '/dashboard/assignments', icon: ClipboardList },
-      { label: 'Тред', href: '/dashboard/thread', icon: MessagesSquare },
+      { label: 'Сообщения', href: '/dashboard/thread', icon: MessagesSquare },
       { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Материалы', href: '/dashboard/materials', icon: FolderOpen },
       { label: 'Профиль', href: '/dashboard/profile', icon: User },

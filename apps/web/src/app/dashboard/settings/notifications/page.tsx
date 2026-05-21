@@ -42,7 +42,7 @@ const CATEGORY_ROWS: CategoryRow[] = [
   {
     category: 'feedback',
     label: 'Обратная связь',
-    description: 'Ответы в тредах, проверка заданий',
+    description: 'Ответы в сообщениях, проверка заданий',
     roles: ['student', 'admin'],
     system: false,
   },

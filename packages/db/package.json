@@ -11,6 +11,7 @@
     "db:migrate:status": "prisma migrate status",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "db:studio": "prisma studio",
     "lint": "echo 'no lint'",
     "type-check": "tsc --noEmit"
