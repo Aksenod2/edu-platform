@@ -165,7 +165,7 @@ export default function ApiAccessPage() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
           <Text size="sm" style={{ color: 'var(--color-error)' }}>{error}</Text>
         </Card>
       )}
@@ -176,13 +176,13 @@ export default function ApiAccessPage() {
           position: 'fixed', inset: 0, zIndex: 1000,
           background: 'rgba(0,0,0,0.45)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'var(--space-4)',
+          padding: 'var(--spacing-4)',
         }}>
           <Card variant="elevated" padding="lg" style={{ width: '100%', maxWidth: 480 }}>
             {newKeyValue ? (
               <>
                 <CardHeader>
-                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-2)' }}>
+                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-2)' }}>
                     API-ключ создан
                   </Heading>
                 </CardHeader>
@@ -191,8 +191,8 @@ export default function ApiAccessPage() {
                     background: 'var(--color-warning-subtle, #fef3c7)',
                     border: '1px solid var(--color-warning, #f59e0b)',
                     borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                    marginBottom: 'var(--space-4)',
+                    padding: 'var(--spacing-3)',
+                    marginBottom: 'var(--spacing-4)',
                   }}>
                     <Text size="sm" style={{ color: 'var(--color-warning-text, #92400e)' }}>
                       Скопируйте ключ сейчас. После закрытия окна он больше не будет показан.
@@ -200,12 +200,12 @@ export default function ApiAccessPage() {
                   </div>
 
                   <div style={{
-                    display: 'flex', gap: 'var(--space-2)', alignItems: 'center',
+                    display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center',
                     background: 'var(--color-surface-raised)',
                     border: '1px solid var(--color-border)',
                     borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                    marginBottom: 'var(--space-4)',
+                    padding: 'var(--spacing-3)',
+                    marginBottom: 'var(--spacing-4)',
                   }}>
                     <Mono size="sm" style={{ flex: 1, wordBreak: 'break-all' }}>
                       {newKeyValue}
@@ -228,18 +228,18 @@ export default function ApiAccessPage() {
             ) : (
               <>
                 <CardHeader>
-                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-2)' }}>
+                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-2)' }}>
                     Новый API-ключ
                   </Heading>
                 </CardHeader>
                 <CardBody>
                   <form onSubmit={handleCreate}>
-                    <div style={{ marginBottom: 'var(--space-4)' }}>
+                    <div style={{ marginBottom: 'var(--spacing-4)' }}>
                       <label
                         htmlFor="key-name"
                         style={{
                           display: 'block',
-                          marginBottom: 'var(--space-1)',
+                          marginBottom: 'var(--spacing-1)',
                           fontFamily: 'var(--font-mono)',
                           fontSize: 'var(--text-xs)',
                           textTransform: 'uppercase',
@@ -259,7 +259,7 @@ export default function ApiAccessPage() {
                         autoFocus
                         style={{
                           width: '100%',
-                          padding: 'var(--space-2) var(--space-3)',
+                          padding: 'var(--spacing-2) var(--spacing-3)',
                           fontFamily: 'var(--font-sans)',
                           fontSize: 'var(--text-sm)',
                           border: '1px solid var(--color-border)',
@@ -270,7 +270,7 @@ export default function ApiAccessPage() {
                         }}
                       />
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--spacing-2)' }}>
                       <Button type="submit" variant="primary" size="sm" loading={creating}>
                         Создать
                       </Button>
@@ -292,13 +292,13 @@ export default function ApiAccessPage() {
       )}
 
       {/* ─── Секция 1: Управление ключами ────────────────────────── */}
-      <section style={{ marginBottom: 'var(--space-8)' }}>
-        <Heading level={2} size="xl" style={{ marginBottom: 'var(--space-4)' }}>
+      <section style={{ marginBottom: 'var(--spacing-8)' }}>
+        <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
           Активные ключи
         </Heading>
 
         {loadingKeys ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
             <Spinner size="md" />
           </div>
         ) : apiKeys.length === 0 ? (
@@ -319,7 +319,7 @@ export default function ApiAccessPage() {
                     <th
                       key={h}
                       style={{
-                        padding: 'var(--space-3) var(--space-4)',
+                        padding: 'var(--spacing-3) var(--spacing-4)',
                         textAlign: 'left',
                         color: 'var(--color-text-tertiary)',
                         fontFamily: 'var(--font-mono)',
@@ -337,20 +337,20 @@ export default function ApiAccessPage() {
               <tbody>
                 {apiKeys.map((key) => (
                   <tr key={key.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>
+                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)', color: 'var(--color-text-primary)' }}>
                       {key.name}
                     </td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                       <Mono size="sm" style={{ color: 'var(--color-text-secondary)' }}>
                         {key.keyPrefix}...
                       </Mono>
                     </td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                       <Mono size="xs" color="var(--color-text-tertiary)">
                         {new Date(key.createdAt).toLocaleDateString('ru-RU')}
                       </Mono>
                     </td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                       {key.lastUsedAt ? (
                         <Mono size="xs" color="var(--color-text-tertiary)">
                           {new Date(key.lastUsedAt).toLocaleDateString('ru-RU')}
@@ -359,7 +359,7 @@ export default function ApiAccessPage() {
                         <Badge variant="default">Не использовался</Badge>
                       )}
                     </td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                       <Button
                         variant="danger"
                         size="sm"
@@ -378,34 +378,34 @@ export default function ApiAccessPage() {
       </section>
 
       {/* ─── Секция 2: Инструкция по подключению ─────────────────── */}
-      <section style={{ marginBottom: 'var(--space-8)' }}>
+      <section style={{ marginBottom: 'var(--spacing-8)' }}>
         <Card variant="elevated" padding="lg">
           <CardHeader>
-            <Heading level={2} size="xl" style={{ marginBottom: 'var(--space-4)' }}>
+            <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
               Как подключиться к API
             </Heading>
           </CardHeader>
           <CardBody>
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--space-2)' }}>
+            <div style={{ marginBottom: 'var(--spacing-4)' }}>
+              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--spacing-2)' }}>
                 Base URL
               </Text>
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)',
                 background: 'var(--color-surface-raised)',
                 border: '1px solid var(--color-border)',
                 borderRadius: 'var(--radius-md)',
-                padding: 'var(--space-2) var(--space-3)',
+                padding: 'var(--spacing-2) var(--spacing-3)',
               }}>
                 <Mono size="sm" style={{ flex: 1 }}>{proxyBase}</Mono>
               </div>
             </div>
 
             <div>
-              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--space-2)' }}>
+              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--spacing-2)' }}>
                 Аутентификация
               </Text>
-              <Text size="sm" style={{ marginBottom: 'var(--space-2)' }}>
+              <Text size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>
                 Добавьте заголовок <Mono size="sm">Authorization</Mono> к каждому запросу:
               </Text>
               <CodeBlock>{`Authorization: Bearer ваш_api_ключ`}</CodeBlock>
@@ -415,12 +415,12 @@ export default function ApiAccessPage() {
       </section>
 
       {/* ─── Секция 3: Примеры запросов ──────────────────────────── */}
-      <section style={{ marginBottom: 'var(--space-8)' }}>
-        <Heading level={2} size="xl" style={{ marginBottom: 'var(--space-4)' }}>
+      <section style={{ marginBottom: 'var(--spacing-8)' }}>
+        <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
           Примеры запросов
         </Heading>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-4)' }}>
           <ExampleCard
             title="Список учеников"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users`}
@@ -459,7 +459,7 @@ function CodeBlock({ children }: { children: string }) {
       background: 'var(--color-surface-raised)',
       border: '1px solid var(--color-border)',
       borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-3)',
+      padding: 'var(--spacing-3)',
       overflowX: 'auto',
     }}>
       <Mono size="sm" style={{ whiteSpace: 'pre', display: 'block' }}>{children}</Mono>
@@ -471,7 +471,7 @@ function ExampleCard({ title, code }: { title: string; code: string }) {
   return (
     <Card variant="outlined" padding="md">
       <CardHeader>
-        <Text size="sm" style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>{title}</Text>
+        <Text size="sm" style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)' }}>{title}</Text>
       </CardHeader>
       <CardBody>
         <CodeBlock>{code}</CodeBlock>

@@ -1,9 +1,11 @@
 /**
- * Design Tokens — TypeScript mirror of tokens.css
+ * Design Tokens — TypeScript mirror of tailwind.css @theme
  * Атомарный уровень: N/A (foundational layer)
  *
  * Используй CSS custom properties в компонентах, этот модуль — для JS-логики
  * (e.g. charts, canvas, animations, dynamic styles)
+ *
+ * CSS подключение: import '@platform/ui/tailwind' в root layout
  */
 
 export const colors = {
@@ -105,11 +107,11 @@ export const t = {
   textSecondary: 'var(--color-text-secondary)',
   accentRed:     'var(--color-accent-red)',
   accentNeon:    'var(--color-accent-neon)',
-  // Spacing helpers
-  s1: 'var(--space-1)',
-  s2: 'var(--space-2)',
-  s3: 'var(--space-3)',
-  s4: 'var(--space-4)',
-  s6: 'var(--space-6)',
-  s8: 'var(--space-8)',
+  // Spacing helpers (Tailwind v4 --spacing-* naming)
+  s1: 'var(--spacing-1)',
+  s2: 'var(--spacing-2)',
+  s3: 'var(--spacing-3)',
+  s4: 'var(--spacing-4)',
+  s6: 'var(--spacing-6)',
+  s8: 'var(--spacing-8)',
 } as const;

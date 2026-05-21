@@ -55,13 +55,7 @@ export function Select({
   ...props
 }: SelectProps) {
   return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        width: fullWidth ? '100%' : 'auto',
-      }}
-    >
+    <div className={cn('relative inline-flex', fullWidth ? 'w-full' : 'w-auto')}>
       <select
         disabled={disabled}
         className={cn(
@@ -79,15 +73,7 @@ export function Select({
       </select>
       {/* Chevron */}
       <span
-        style={{
-          position: 'absolute',
-          right: '0.75rem',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          pointerEvents: 'none',
-          color: 'var(--color-text-tertiary)',
-          display: 'flex',
-        }}
+        className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none flex text-[var(--color-text-tertiary)]"
         aria-hidden
       >
         <svg

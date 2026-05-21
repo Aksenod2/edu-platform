@@ -135,7 +135,7 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose,
       aria-label="Уведомления"
       style={{
         position: 'absolute',
-        top: 'calc(100% + var(--space-2))',
+        top: 'calc(100% + var(--spacing-2))',
         right: 0,
         width: 360,
         maxHeight: 480,
@@ -155,7 +155,7 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: 'var(--space-3) var(--space-4)',
+          padding: 'var(--spacing-3) var(--spacing-4)',
           borderBottom: '1px solid var(--color-border-subtle)',
           flexShrink: 0,
         }}
@@ -174,7 +174,7 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose,
           {unreadCount > 0 && (
             <span
               style={{
-                marginLeft: 'var(--space-2)',
+                marginLeft: 'var(--spacing-2)',
                 color: 'var(--color-accent-red)',
               }}
             >
@@ -214,8 +214,8 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose,
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: 'var(--space-8) var(--space-4)',
-              gap: 'var(--space-3)',
+              padding: 'var(--spacing-8) var(--spacing-4)',
+              gap: 'var(--spacing-3)',
               color: 'var(--color-text-tertiary)',
             }}
           >
@@ -239,7 +239,7 @@ function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onClose,
             {notifications.length >= 50 && (
               <div
                 style={{
-                  padding: 'var(--space-3) var(--space-4)',
+                  padding: 'var(--spacing-3) var(--spacing-4)',
                   textAlign: 'center',
                   borderTop: '1px solid var(--color-border-subtle)',
                   color: 'var(--color-text-tertiary)',
@@ -267,8 +267,8 @@ function NotificationItem({ notification, role, onNavigate }: { notification: No
     <div
       style={{
         display: 'flex',
-        gap: 'var(--space-3)',
-        padding: 'var(--space-3) var(--space-4)',
+        gap: 'var(--spacing-3)',
+        padding: 'var(--spacing-3) var(--spacing-4)',
         borderBottom: '1px solid var(--color-border-subtle)',
         background: notification.isRead ? 'transparent' : 'rgba(255,59,48,0.04)',
         cursor: linkUrl ? 'pointer' : 'default',
@@ -312,7 +312,7 @@ function NotificationItem({ notification, role, onNavigate }: { notification: No
             fontSize: 'var(--text-sm)',
             color: notification.isRead ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
             lineHeight: 'var(--leading-snug)',
-            marginBottom: 'var(--space-1)',
+            marginBottom: 'var(--spacing-1)',
             overflow: 'hidden',
             display: '-webkit-box',
             WebkitLineClamp: 2,

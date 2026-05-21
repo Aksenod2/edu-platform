@@ -5,13 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Card } from '@platform/ui/molecules';
-import { FormField } from '@platform/ui/molecules';
-import { EmptyState } from '@platform/ui/molecules';
-import { Button } from '@platform/ui/atoms';
-import { Input } from '@platform/ui/atoms';
-import { Heading, Text } from '@platform/ui/atoms';
-import { Spinner } from '@platform/ui/atoms';
+import { Button, Input, Heading, Spinner, Mono } from '@platform/ui/atoms';
+import { Card, FormField, EmptyState } from '@platform/ui/molecules';
 import {
   getStreams,
   getSchedule,
@@ -75,7 +70,7 @@ export default function SchedulePage() {
       .then((data) => {
         setStreams(data.streams);
         if (data.streams.length > 0 && !selectedStreamId) {
-          setSelectedStreamId(data.streams[0].id);
+          setSelectedStreamId(data.streams[0]?.id ?? '');
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков'));
@@ -113,11 +108,7 @@ export default function SchedulePage() {
         notes: newNotes.trim() || undefined,
         meetingUrl: newMeetingUrl.trim() || undefined,
       });
-      setNewDate('');
-      setNewStartTime('');
-      setNewLessonTitle('');
-      setNewNotes('');
-      setNewMeetingUrl('');
+      setNewDate(''); setNewStartTime(''); setNewLessonTitle(''); setNewNotes(''); setNewMeetingUrl('');
       setShowCreateForm(false);
       await fetchSchedule();
     } catch (err) {
@@ -171,7 +162,7 @@ export default function SchedulePage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
       </div>
     );
@@ -180,19 +171,11 @@ export default function SchedulePage() {
   if (!user || user.role !== 'admin') return null;
 
   const streamSelector = (
-    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+    <div className="flex items-center gap-3">
       <select
         value={selectedStreamId}
         onChange={(e) => setSelectedStreamId(e.target.value)}
-        style={{
-          padding: 'var(--space-2) var(--space-3)',
-          border: '1px solid var(--color-border-default)',
-          borderRadius: 'var(--radius-xs)',
-          fontSize: 'var(--text-sm)',
-          fontFamily: 'var(--font-mono)',
-          background: 'var(--color-bg-surface)',
-          color: 'var(--color-text-primary)',
-        }}
+        className="px-3 py-2 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm font-mono bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-red)]"
       >
         {streams.length === 0 && <option value="">Нет потоков</option>}
         {streams.map((s) => (
@@ -230,16 +213,16 @@ export default function SchedulePage() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
-          <Text size="sm" color="var(--color-error)">{error}</Text>
-        </Card>
+        <div className="px-4 py-3 mb-4 rounded-[var(--radius-xs)] border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm">
+          {error}
+        </div>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
-          <Heading level={3} size="md" style={{ marginBottom: 'var(--space-4)' }}>Новое занятие</Heading>
-          <form onSubmit={handleCreate}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+        <Card variant="elevated" padding="md" className="mb-6">
+          <Heading level={3} size="md" className="mb-4">Новое занятие</Heading>
+          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 id="new-date"
                 label="Дата"
@@ -263,78 +246,60 @@ export default function SchedulePage() {
                 }}
               />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
-              <FormField
-                id="new-lesson-title"
-                label="Название урока"
-                required
-                inputProps={{
-                  type: 'text',
-                  value: newLessonTitle,
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewLessonTitle(e.target.value),
-                  placeholder: 'Например: Основы типографики',
-                  required: true,
-                }}
-              />
-              <FormField
+            <FormField
+              id="new-lesson-title"
+              label="Название урока"
+              required
+              inputProps={{
+                type: 'text',
+                value: newLessonTitle,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewLessonTitle(e.target.value),
+                placeholder: 'Например: Основы типографики',
+                required: true,
+              }}
+            />
+            <FormField id="new-notes" label="Тезисы" hint="Опционально, markdown">
+              <textarea
                 id="new-notes"
-                label="Тезисы"
-                hint="Опционально, markdown"
-              >
-                <textarea
-                  id="new-notes"
-                  value={newNotes}
-                  onChange={(e) => setNewNotes(e.target.value)}
-                  placeholder="Краткое описание того, что будет на занятии..."
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: 'var(--space-3) var(--space-4)',
-                    border: '1px solid var(--color-border-default)',
-                    borderRadius: 'var(--radius-xs)',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: 'var(--text-base)',
-                    color: 'var(--color-text-primary)',
-                    background: 'var(--color-bg-surface)',
-                    boxSizing: 'border-box',
-                    resize: 'vertical',
-                  }}
-                />
-              </FormField>
-              <FormField
-                id="new-meeting-url"
-                label="Ссылка на созвон (Zoom, Meet, ...)"
-                hint="Опционально"
-                inputProps={{
-                  type: 'url',
-                  value: newMeetingUrl,
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewMeetingUrl(e.target.value),
-                  placeholder: 'https://zoom.us/j/...',
-                }}
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Краткое описание того, что будет на занятии..."
+                rows={3}
+                className="w-full px-4 py-3 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] resize-vertical focus:outline-none focus:border-[var(--color-accent-red)]"
               />
+            </FormField>
+            <FormField
+              id="new-meeting-url"
+              label="Ссылка на созвон (Zoom, Meet, ...)"
+              hint="Опционально"
+              inputProps={{
+                type: 'url',
+                value: newMeetingUrl,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewMeetingUrl(e.target.value),
+                placeholder: 'https://zoom.us/j/...',
+              }}
+            />
+            <div>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                loading={creating}
+                disabled={!newDate || !newStartTime || !newLessonTitle.trim()}
+              >
+                Создать
+              </Button>
             </div>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              loading={creating}
-              disabled={!newDate || !newStartTime || !newLessonTitle.trim()}
-            >
-              Создать
-            </Button>
           </form>
         </Card>
       )}
 
       {loadingEntries ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+        <div className="flex justify-center py-8">
           <Spinner size="md" />
         </div>
       ) : !selectedStreamId ? (
-        <EmptyState
-          title="Выберите поток"
-          description="Выберите поток для просмотра расписания."
-        />
+        <EmptyState title="Выберите поток" description="Выберите поток для просмотра расписания." />
       ) : entries.length === 0 ? (
         <EmptyState
           title="Расписание пусто"
@@ -342,134 +307,70 @@ export default function SchedulePage() {
           action={{ label: 'Добавить занятие', onClick: () => setShowCreateForm(true) }}
         />
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-sm)',
-          }}>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Дата</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Время</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Урок</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Тезисы</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Созвон</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'right', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Действия</th>
+              <tr className="border-b border-[var(--color-border-strong)]">
+                {['Дата', 'Время', 'Урок', 'Тезисы', 'Созвон', 'Действия'].map((h) => (
+                  <th key={h} className="px-3 py-2 text-left text-[var(--color-text-tertiary)] font-mono text-xs uppercase tracking-[var(--tracking-wider)]">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                <tr key={entry.id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-surface)] transition-colors">
                   {editingId === entry.id ? (
                     <>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Input
-                          type="date"
-                          value={editDate}
-                          onChange={(e) => setEditDate(e.target.value)}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Input
-                          type="time"
-                          value={editStartTime}
-                          onChange={(e) => setEditStartTime(e.target.value)}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Input
-                          type="text"
-                          value={editLessonTitle}
-                          onChange={(e) => setEditLessonTitle(e.target.value)}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
+                      <td className="p-2"><Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} size="sm" /></td>
+                      <td className="p-2"><Input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} size="sm" /></td>
+                      <td className="p-2"><Input type="text" value={editLessonTitle} onChange={(e) => setEditLessonTitle(e.target.value)} size="sm" /></td>
+                      <td className="p-2">
                         <textarea
                           value={editNotes}
                           onChange={(e) => setEditNotes(e.target.value)}
                           rows={2}
-                          style={{
-                            width: '100%',
-                            padding: 'var(--space-2) var(--space-3)',
-                            border: '1px solid var(--color-border-default)',
-                            borderRadius: 'var(--radius-xs)',
-                            fontFamily: 'var(--font-sans)',
-                            fontSize: 'var(--text-sm)',
-                            color: 'var(--color-text-primary)',
-                            background: 'var(--color-bg-surface)',
-                            boxSizing: 'border-box',
-                            resize: 'vertical',
-                          }}
+                          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] resize-vertical focus:outline-none focus:border-[var(--color-accent-red)]"
                         />
                       </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Input
-                          type="url"
-                          value={editMeetingUrl}
-                          onChange={(e) => setEditMeetingUrl(e.target.value)}
-                          size="sm"
-                          placeholder="https://zoom.us/j/..."
-                        />
-                      </td>
-                      <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleUpdate(entry.id)}
-                            loading={saving}
-                            disabled={!editLessonTitle.trim()}
-                          >
-                            Сохранить
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
-                            Отмена
-                          </Button>
+                      <td className="p-2"><Input type="url" value={editMeetingUrl} onChange={(e) => setEditMeetingUrl(e.target.value)} size="sm" placeholder="https://..." /></td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2">
+                          <Button variant="primary" size="sm" onClick={() => handleUpdate(entry.id)} loading={saving} disabled={!editLessonTitle.trim()}>Сохранить</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Отмена</Button>
                         </div>
                       </td>
                     </>
                   ) : (
                     <>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Text size="sm" as="span">
-                          {(() => {
-                            const d = entry.date.slice(0, 10);
-                            const [y, m, day] = d.split('-').map(Number);
-                            return new Date(y, (m ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-                          })()}
-                        </Text>
+                      <td className="px-3 py-3 text-[var(--color-text-primary)] text-sm whitespace-nowrap">
+                        {(() => {
+                          const d = entry.date.slice(0, 10);
+                          const [y, m, day] = d.split('-').map(Number);
+                          return new Date(y!, (m ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+                        })()}
                       </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Text size="sm" as="span">{entry.startTime}</Text>
+                      <td className="px-3 py-3">
+                        <Mono size="xs" className="text-[var(--color-text-secondary)]">{entry.startTime}</Mono>
                       </td>
-                      <td style={{ padding: 'var(--space-3)' }}>
-                        <Text size="sm" weight="medium" as="span">{entry.lessonTitle}</Text>
+                      <td className="px-3 py-3 text-[var(--color-text-primary)] font-medium max-w-[200px]">{entry.lessonTitle}</td>
+                      <td className="px-3 py-3 max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <span className="text-[var(--color-text-tertiary)] text-xs">{entry.notes || '—'}</span>
                       </td>
-                      <td style={{ padding: 'var(--space-3)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <Text size="xs" color="tertiary" as="span">{entry.notes || '—'}</Text>
-                      </td>
-                      <td style={{ padding: 'var(--space-3)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td className="px-3 py-3">
                         {entry.meetingUrl ? (
-                          <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent-blue, #2563eb)', fontSize: 'var(--text-xs)', textDecoration: 'underline' }}>
+                          <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent-red)] hover:text-[var(--color-text-primary)] text-xs transition-colors">
                             Ссылка
                           </a>
                         ) : (
-                          <Text size="xs" color="tertiary" as="span">—</Text>
+                          <span className="text-[var(--color-text-tertiary)] text-xs">—</span>
                         )}
                       </td>
-                      <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                          <Button variant="secondary" size="sm" onClick={() => startEdit(entry)}>
-                            Редактировать
-                          </Button>
-                          <Button variant="danger" size="sm" onClick={() => handleDelete(entry.id)}>
-                            Удалить
-                          </Button>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <Button variant="secondary" size="sm" onClick={() => startEdit(entry)}>Редактировать</Button>
+                          <Button variant="danger" size="sm" onClick={() => handleDelete(entry.id)}>Удалить</Button>
                         </div>
                       </td>
                     </>
@@ -484,62 +385,9 @@ export default function SchedulePage() {
   );
 }
 
-// ─── Icons ──────────────────────────────────────────────
-
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
-    </svg>
-  );
-}
-
-function UsersIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="5" r="3" />
-      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
-      <circle cx="12" cy="4" r="2" />
-      <path d="M15 13c0-2-1-4-3-4" />
-    </svg>
-  );
-}
-
-function StreamIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 4h12M2 8h8M2 12h10" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
-    </svg>
-  );
-}
-
-
-function KeyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="6" r="3.5" />
-      <path d="M8.5 8.5l5.5 5.5M11 11l1.5 1.5" />
-    </svg>
-  );
-}
-function BellNavIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
-      <path d="M8 2.5V1" />
-    </svg>
-  );
-}
+function GridIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" /></svg>; }
+function UsersIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" /><circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" /></svg>; }
+function StreamIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M2 8h8M2 12h10" /></svg>; }
+function CalendarIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" /></svg>; }
+function KeyIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="6" r="3.5" /><path d="M8.5 8.5l5.5 5.5M11 11l1.5 1.5" /></svg>; }
+function BellNavIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" /><path d="M6.5 13a1.5 1.5 0 0 0 3 0" /><path d="M8 2.5V1" /></svg>; }

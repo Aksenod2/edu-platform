@@ -15,9 +15,10 @@
  *   - Miller's Law: группировка по статусу, не >7 на экран
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 import { Card } from '../molecules/Card';
 import { Badge } from '../atoms/Badge';
-import { Heading, Text, Mono } from '../atoms/Typography';
+import { Heading, Mono } from '../atoms/Typography';
 import { EmptyState } from '../molecules/EmptyState';
 
 export type AssignmentStatus = 'pending' | 'submitted' | 'reviewed' | 'overdue' | 'needs_revision';
@@ -68,14 +69,7 @@ export function AssignmentList({
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-      }}
-      role="list"
-    >
+    <div className="flex flex-col gap-2" role="list">
       {assignments.map((assignment) => (
         <AssignmentRow
           key={assignment.id}
@@ -103,48 +97,38 @@ function AssignmentRow({
       interactive={Boolean(onClick)}
       padding="md"
       onClick={onClick ? () => onClick(assignment) : undefined}
-      style={{
-        ...(isOverdue && {
-          borderColor: 'var(--color-error)',
-          borderLeftWidth: 2,
-        }),
-      }}
+      className={isOverdue ? 'border-l-2 border-l-[var(--color-error)]' : undefined}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
+      <div className="flex items-start gap-4">
         {/* Контент */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-1)' }}>
-            <Heading level={4} size="sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <Heading
+              level={4}
+              size="sm"
+              className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[400px]"
+            >
               {assignment.title}
             </Heading>
             {assignment.hasNewFeedback && (
               <span
-                style={{
-                  display: 'inline-block',
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: 'var(--color-accent-red)',
-                  flexShrink: 0,
-                }}
+                className="inline-block w-1.5 h-1.5 rounded-full bg-accent-red shrink-0"
                 title="Новая обратная связь"
                 aria-label="Новая обратная связь"
               />
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <div className="flex items-center gap-4 flex-wrap">
             {assignment.lessonTitle && (
-              <Mono size="xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <Mono size="xs" className="text-text-tertiary">
                 {assignment.lessonTitle}
               </Mono>
             )}
             {assignment.dueDate && (
               <Mono
                 size="xs"
-                style={{
-                  color: isOverdue ? 'var(--color-error)' : 'var(--color-text-tertiary)',
-                }}
+                className={cn(isOverdue ? 'text-error' : 'text-text-tertiary')}
               >
                 DUE {assignment.dueDate}
               </Mono>

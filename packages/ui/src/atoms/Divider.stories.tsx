@@ -105,15 +105,15 @@ export const AllStrengths: Story = {
 export const AllSpacings: Story = {
   render: () => (
     <ContextBlock>
-      <SpacingLabel>sm — var(--space-3) ≈ 12px</SpacingLabel>
+      <SpacingLabel>sm — var(--spacing-3) ≈ 12px</SpacingLabel>
       <SectionLabel>Раздел А</SectionLabel>
       <Divider strength="default" spacing="sm" />
       <SectionLabel>Раздел Б</SectionLabel>
-      <SpacingLabel>md — var(--space-6) ≈ 24px</SpacingLabel>
+      <SpacingLabel>md — var(--spacing-6) ≈ 24px</SpacingLabel>
       <SectionLabel>Раздел А</SectionLabel>
       <Divider strength="default" spacing="md" />
       <SectionLabel>Раздел Б</SectionLabel>
-      <SpacingLabel>lg — var(--space-8) ≈ 32px</SpacingLabel>
+      <SpacingLabel>lg — var(--spacing-8) ≈ 32px</SpacingLabel>
       <SectionLabel>Раздел А</SectionLabel>
       <Divider strength="default" spacing="lg" />
       <SectionLabel>Раздел Б</SectionLabel>

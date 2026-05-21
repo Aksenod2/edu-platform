@@ -71,19 +71,13 @@ export function Button({
 }
 
 function ButtonSpinner({ size }: { size: 'sm' | 'md' }) {
-  const dim = size === 'sm' ? 12 : 16;
   return (
     <span
-      style={{
-        display: 'inline-block',
-        width: dim,
-        height: dim,
-        borderRadius: '50%',
-        border: '2px solid currentColor',
-        borderTopColor: 'transparent',
-        animation: 'np-spin 0.7s linear infinite',
-        flexShrink: 0,
-      }}
+      className={cn(
+        'inline-block rounded-full border-2 border-current border-t-transparent shrink-0',
+        'animate-[np-spin_0.7s_linear_infinite]',
+        size === 'sm' ? 'w-3 h-3' : 'w-4 h-4',
+      )}
       aria-hidden
     />
   );

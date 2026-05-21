@@ -230,7 +230,7 @@ export default function NotificationSettingsPage() {
         title="Настройки уведомлений"
         subtitle="Управляйте тем, какие уведомления и по каким каналам вы получаете"
         action={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)' }}>
             {saveError && (
               <Mono size="xs" style={{ color: 'var(--color-error)' }}>{saveError}</Mono>
             )}
@@ -246,7 +246,7 @@ export default function NotificationSettingsPage() {
                 fontWeight: 700,
                 letterSpacing: 'var(--tracking-widest)',
                 textTransform: 'uppercase',
-                padding: 'var(--space-2) var(--space-4)',
+                padding: 'var(--spacing-2) var(--spacing-4)',
                 background: 'var(--color-accent-red)',
                 color: '#fff',
                 border: 'none',
@@ -265,19 +265,19 @@ export default function NotificationSettingsPage() {
       {pushStatus === 'denied' && (
         <div
           style={{
-            marginBottom: 'var(--space-6)',
-            padding: 'var(--space-4)',
+            marginBottom: 'var(--spacing-6)',
+            padding: 'var(--spacing-4)',
             background: 'var(--color-warning-dim)',
             border: '1px solid var(--color-warning)',
             borderRadius: 'var(--radius-sm)',
             display: 'flex',
-            gap: 'var(--space-3)',
+            gap: 'var(--spacing-3)',
             alignItems: 'flex-start',
           }}
         >
           <span style={{ fontSize: 16 }}>⚠️</span>
           <div>
-            <Mono size="xs" style={{ color: 'var(--color-warning)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)', display: 'block', marginBottom: 'var(--space-1)' }}>
+            <Mono size="xs" style={{ color: 'var(--color-warning)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)', display: 'block', marginBottom: 'var(--spacing-1)' }}>
               Push-уведомления заблокированы браузером
             </Mono>
             <Text size="sm" color="secondary">
@@ -288,11 +288,11 @@ export default function NotificationSettingsPage() {
       )}
 
       {/* Global toggle */}
-      <Card style={{ marginBottom: 'var(--space-6)' }}>
+      <Card style={{ marginBottom: 'var(--spacing-6)' }}>
         <CardBody>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--spacing-4)' }}>
             <div>
-              <Heading level={3} size="md" style={{ marginBottom: 'var(--space-1)' }}>
+              <Heading level={3} size="md" style={{ marginBottom: 'var(--spacing-1)' }}>
                 Глобальный переключатель
               </Heading>
               <Text size="sm" color="tertiary">
@@ -317,7 +317,7 @@ export default function NotificationSettingsPage() {
               display: 'grid',
               gridTemplateColumns: '1fr 120px 120px',
               gap: 0,
-              padding: 'var(--space-3) var(--space-4)',
+              padding: 'var(--spacing-3) var(--spacing-4)',
               borderBottom: '1px solid var(--color-border-subtle)',
               background: 'var(--color-bg-elevated)',
             }}
@@ -346,13 +346,13 @@ export default function NotificationSettingsPage() {
                   display: 'grid',
                   gridTemplateColumns: '1fr 120px 120px',
                   gap: 0,
-                  padding: 'var(--space-4)',
+                  padding: 'var(--spacing-4)',
                   borderBottom: isLast ? 'none' : '1px solid var(--color-border-subtle)',
                   background: row.system ? 'var(--color-bg-elevated)' : 'transparent',
                 }}
               >
-                <div style={{ paddingRight: 'var(--space-4)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                <div style={{ paddingRight: 'var(--spacing-4)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', marginBottom: 'var(--spacing-1)' }}>
                     <Text size="sm" style={{ fontWeight: 600 }}>{row.label}</Text>
                     {row.system && (
                       <span
@@ -375,7 +375,7 @@ export default function NotificationSettingsPage() {
                   </div>
                   <Text size="sm" color="tertiary">{row.description}</Text>
                   {row.system && (
-                    <Text size="sm" color="tertiary" style={{ marginTop: 'var(--space-1)', fontStyle: 'italic' }}>
+                    <Text size="sm" color="tertiary" style={{ marginTop: 'var(--spacing-1)', fontStyle: 'italic' }}>
                       Системные уведомления нельзя отключить
                     </Text>
                   )}
@@ -419,8 +419,8 @@ export default function NotificationSettingsPage() {
       {/* In-app note */}
       <div
         style={{
-          marginTop: 'var(--space-4)',
-          padding: 'var(--space-3) var(--space-4)',
+          marginTop: 'var(--spacing-4)',
+          padding: 'var(--spacing-3) var(--spacing-4)',
           background: 'var(--color-bg-surface)',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 'var(--radius-sm)',
@@ -445,7 +445,7 @@ interface ToggleProps {
 
 function Toggle({ checked, onChange, disabled = false, label }: ToggleProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-1)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-1)' }}>
       <button
         role="switch"
         aria-checked={checked}

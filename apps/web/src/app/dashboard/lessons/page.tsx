@@ -123,7 +123,7 @@ function StudentLessonsContent() {
                 setExpandedLessonId(null);
               }}
               style={{
-                padding: 'var(--space-2) var(--space-4)',
+                padding: 'var(--spacing-2) var(--spacing-4)',
                 background: 'var(--color-bg-surface)',
                 border: '1px solid var(--color-border-default)',
                 borderRadius: 'var(--radius-xs)',
@@ -141,7 +141,7 @@ function StudentLessonsContent() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
           <Text size="sm" color="var(--color-error)">{error}</Text>
         </Card>
       )}
@@ -149,13 +149,13 @@ function StudentLessonsContent() {
       {streams.length === 0 && !loadingData ? (
         <Text color="tertiary">Потоков пока нет.</Text>
       ) : loadingData ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
           <Spinner size="md" />
         </div>
       ) : lessons.length === 0 ? (
         <Text color="tertiary">В этом потоке пока нет доступных уроков.</Text>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
           {lessons.map((lesson) => {
             const isClosed = lesson.status === 'closed';
             const isExpanded = expandedLessonId === lesson.id;
@@ -170,14 +170,14 @@ function StudentLessonsContent() {
                 <div
                   onClick={() => !isClosed && setExpandedLessonId(isExpanded ? null : lesson.id)}
                   style={{
-                    padding: 'var(--space-4) var(--space-5)',
+                    padding: 'var(--spacing-4) var(--spacing-5)',
                     cursor: isClosed ? 'default' : 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)' }}>
                     <Heading level={3} size="md" style={{ margin: 0 }}>
                       {lesson.title}
                     </Heading>
@@ -194,11 +194,11 @@ function StudentLessonsContent() {
 
                 {isExpanded && !isClosed && (
                   <div style={{
-                    padding: '0 var(--space-5) var(--space-5)',
+                    padding: '0 var(--spacing-5) var(--spacing-5)',
                     borderTop: '1px solid var(--color-border-subtle)',
                   }}>
                     {lesson.videoUrl && (
-                      <div style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                      <div style={{ marginTop: 'var(--spacing-4)', marginBottom: 'var(--spacing-4)' }}>
                         <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
                           <Button variant="primary" size="sm">
                             Смотреть видео
@@ -208,8 +208,8 @@ function StudentLessonsContent() {
                     )}
 
                     {lesson.summary && (
-                      <div style={{ marginTop: 'var(--space-3)' }}>
-                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--space-2)' }}>Описание</Heading>
+                      <div style={{ marginTop: 'var(--spacing-3)' }}>
+                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>Описание</Heading>
                         <Text size="sm" color="secondary" style={{ whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
                           {lesson.summary}
                         </Text>
@@ -217,8 +217,8 @@ function StudentLessonsContent() {
                     )}
 
                     {lesson.notes && (
-                      <div style={{ marginTop: 'var(--space-4)' }}>
-                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--space-2)' }}>Конспект</Heading>
+                      <div style={{ marginTop: 'var(--spacing-4)' }}>
+                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>Конспект</Heading>
                         <Card variant="elevated" padding="sm">
                           <Text size="sm" color="secondary" style={{ whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
                             {lesson.notes}
@@ -228,7 +228,7 @@ function StudentLessonsContent() {
                     )}
 
                     {!lesson.videoUrl && !lesson.summary && !lesson.notes && (
-                      <Text size="sm" color="tertiary" style={{ marginTop: 'var(--space-3)', fontStyle: 'italic' }}>
+                      <Text size="sm" color="tertiary" style={{ marginTop: 'var(--spacing-3)', fontStyle: 'italic' }}>
                         Контент пока не добавлен.
                       </Text>
                     )}

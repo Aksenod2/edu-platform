@@ -38,10 +38,7 @@ export function Label({
     >
       {children}
       {required && (
-        <span
-          aria-hidden
-          style={{ color: 'var(--color-accent-red)', marginLeft: '0.25rem' }}
-        >
+        <span aria-hidden className="ml-1 text-accent-red">
           *
         </span>
       )}

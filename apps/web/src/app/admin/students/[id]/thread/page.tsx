@@ -6,6 +6,16 @@ import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner } from '@platform/ui/atoms';
+import {
+  getThread,
+  addThreadEntry,
+  uploadThreadFile,
+  updateStudentAssignment,
+  getStudentAssignments,
+  type ThreadEntry,
+  type ThreadEntryType,
+  type StudentAssignment,
+} from '@/lib/api';
 
 const ADMIN_NAV = [
   {
@@ -20,60 +30,21 @@ const ADMIN_NAV = [
     ],
   },
 ];
-import {
-  getThread,
-  addThreadEntry,
-  uploadThreadFile,
-  updateStudentAssignment,
-  getStudentAssignments,
-  type ThreadEntry,
-  type ThreadEntryType,
-  type StudentAssignment,
-} from '@/lib/api';
-
-/* ─── Inline SVG icons for compose bar ──────────────────── */
 
 function PaperclipIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.5 9.25l-7.72 7.72a4.25 4.25 0 01-6.01-6.01L11.5 3.24a2.83 2.83 0 014 4L7.78 14.96a1.42 1.42 0 01-2-2l7.22-7.22" />
-    </svg>
-  );
+  return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 9.25l-7.72 7.72a4.25 4.25 0 01-6.01-6.01L11.5 3.24a2.83 2.83 0 014 4L7.78 14.96a1.42 1.42 0 01-2-2l7.22-7.22" /></svg>;
 }
-
 function NoteIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 3h12v14H4z" />
-      <path d="M7 7h6M7 10h6M7 13h3" />
-      <path d="M4 3h12" strokeDasharray="2 2" />
-    </svg>
-  );
+  return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 3h12v14H4z" /><path d="M7 7h6M7 10h6M7 13h3" /><path d="M4 3h12" strokeDasharray="2 2" /></svg>;
 }
-
 function SendIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 10l14-7-7 14v-7H3z" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10l14-7-7 14v-7H3z" fill="currentColor" stroke="none" /></svg>;
 }
-
 function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M4 4l8 8M12 4l-8 8" />
-    </svg>
-  );
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>;
 }
-
 function LinkIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" />
-      <path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" />
-    </svg>
-  );
+  return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" /><path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" /></svg>;
 }
 
 export default function AdminStudentThreadPage() {
@@ -90,8 +61,6 @@ export default function AdminStudentThreadPage() {
   const [sending, setSending] = useState(false);
   const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-
-  // Input state
   const [inputMode, setInputMode] = useState<'comment' | 'note'>('comment');
   const [content, setContent] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
@@ -127,9 +96,7 @@ export default function AdminStudentThreadPage() {
   }, [accessToken, studentId]);
 
   useEffect(() => {
-    if (accessToken && user?.role === 'admin') {
-      fetchThread();
-    }
+    if (accessToken && user?.role === 'admin') fetchThread();
   }, [accessToken, user, fetchThread]);
 
   useEffect(() => {
@@ -147,10 +114,7 @@ export default function AdminStudentThreadPage() {
     if (!accessToken || !content.trim()) return;
     setSending(true);
     try {
-      const { entry } = await addThreadEntry(accessToken, studentId, {
-        type: inputMode as ThreadEntryType,
-        content: content.trim(),
-      });
+      const { entry } = await addThreadEntry(accessToken, studentId, { type: inputMode as ThreadEntryType, content: content.trim() });
       setEntries((prev) => [...prev, entry]);
       setContent('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -171,9 +135,7 @@ export default function AdminStudentThreadPage() {
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
       });
       setEntries((prev) => [...prev, entry]);
-      setLinkUrl('');
-      setLinkTitle('');
-      setShowLinkInput(false);
+      setLinkUrl(''); setLinkTitle(''); setShowLinkInput(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
@@ -184,12 +146,7 @@ export default function AdminStudentThreadPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !accessToken) return;
-
-    if (file.size > 50 * 1024 * 1024) {
-      setError('Файл превышает максимальный размер 50MB');
-      return;
-    }
-
+    if (file.size > 50 * 1024 * 1024) { setError('Файл превышает максимальный размер 50MB'); return; }
     setSending(true);
     try {
       const { entry } = await uploadThreadFile(accessToken, studentId, file, 'file');
@@ -207,7 +164,6 @@ export default function AdminStudentThreadPage() {
     setReviewingId(saId);
     try {
       await updateStudentAssignment(accessToken, saId, { status: newStatus });
-      // Refresh data to reflect new status
       const saData = await getStudentAssignments(accessToken, { studentId });
       setStudentAssignments(saData.studentAssignments);
     } catch (err) {
@@ -219,7 +175,7 @@ export default function AdminStudentThreadPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
       </div>
     );
@@ -227,8 +183,6 @@ export default function AdminStudentThreadPage() {
   if (!user || user.role !== 'admin') return null;
 
   const hasContent = content.trim().length > 0;
-
-  // Pre-compute the last submission entry ID per assignmentId
   const latestSubmissionEntryId: Record<string, string> = {};
   for (const e of entries) {
     if (e.metadata?.submissionType === 'assignment' && e.assignmentId) {
@@ -247,452 +201,203 @@ export default function AdminStudentThreadPage() {
       }}
       sidebar={{ sections: ADMIN_NAV }}
     >
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: 'calc(100vh - var(--header-height))',
-      maxWidth: 800,
-      margin: '0 auto',
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: 'var(--space-4) var(--space-4) var(--space-3)',
-        borderBottom: '1px solid var(--color-border-subtle)',
-      }}>
-        <button
-          onClick={() => router.push('/admin/students')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: 'var(--text-sm)',
-            color: 'var(--color-text-tertiary)',
-            marginBottom: 'var(--space-2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-1)',
-            fontFamily: 'var(--font-sans)',
-            transition: 'color var(--duration-fast) var(--ease-default)',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 2L4 7l5 5" />
-          </svg>
-          К списку учеников
-        </button>
-        <h1 style={{
-          fontSize: 'var(--text-lg)',
-          fontWeight: 'var(--font-semibold)',
-          fontFamily: 'var(--font-sans)',
-          letterSpacing: 'var(--tracking-tight)',
-          margin: 0,
-          color: 'var(--color-text-primary)',
-        }}>
-          {studentName || 'Загрузка...'}
-        </h1>
-        <p style={{
-          color: 'var(--color-text-tertiary)',
-          margin: 'var(--space-1) 0 0',
-          fontSize: 'var(--text-sm)',
-          fontFamily: 'var(--font-mono)',
-          letterSpacing: 'var(--tracking-wide)',
-          textTransform: 'uppercase',
-        }}>Тред ученика</p>
-      </div>
-
-      {/* Error toast */}
-      {error && (
-        <div style={{
-          margin: 'var(--space-3) var(--space-4) 0',
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'var(--color-error-dim)',
-          border: '1px solid var(--color-error)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--color-error)',
-          fontSize: 'var(--text-sm)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <span>{error}</span>
+      <div className="flex flex-col h-[calc(100vh-var(--header-height))] max-w-[800px] mx-auto">
+        {/* Header */}
+        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border-subtle)]">
           <button
-            onClick={() => setError('')}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--color-error)',
-              padding: 'var(--space-1)',
-              display: 'flex',
-            }}
+            onClick={() => router.push('/admin/students')}
+            className="flex items-center gap-1 mb-2 text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors font-sans"
           >
-            <CloseIcon />
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M9 2L4 7l5 5" /></svg>
+            К списку учеников
           </button>
+          <h1 className="text-lg font-bold font-sans tracking-tight text-[var(--color-text-primary)] m-0">
+            {studentName || 'Загрузка...'}
+          </h1>
+          <p className="text-[var(--color-text-tertiary)] mt-1 text-sm font-mono tracking-wide uppercase">
+            Тред ученика
+          </p>
         </div>
-      )}
 
-      {/* Messages area */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: 'var(--space-4)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-      }}>
-        {loadingData ? (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <Spinner size="lg" />
-          </div>
-        ) : entries.length === 0 ? (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 'var(--space-3)',
-          }}>
-            <p style={{
-              color: 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-            }}>
-              Тред пуст
-            </p>
-          </div>
-        ) : (
-          entries.map((entry, i) => {
-            const showGroupHeader = entry.assignmentId
-              && entry.assignmentId !== entries[i - 1]?.assignmentId;
-            const isSubmission = entry.metadata?.submissionType === 'assignment' && entry.assignmentId;
-            const relatedSa = isSubmission
-              ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId)
-              : null;
-            const isLatestSubmission = isSubmission
-              && entry.assignmentId
-              && latestSubmissionEntryId[entry.assignmentId] === entry.id;
-
-            return (
-              <div key={entry.id}>
-                {showGroupHeader && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-2)',
-                    padding: 'var(--space-2) var(--space-3)',
-                    marginTop: 'var(--space-3)',
-                    marginBottom: 'var(--space-2)',
-                    background: 'rgba(77,166,255,0.06)',
-                    border: '1px solid rgba(77,166,255,0.15)',
-                    borderRadius: 'var(--radius-sm)',
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="7" cy="7" r="6" />
-                      <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
-                      <circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" />
-                    </svg>
-                    <span style={{
-                      fontSize: 'var(--text-xs)',
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--color-info)',
-                      letterSpacing: 'var(--tracking-wide)',
-                    }}>
-                      {isSubmission ? 'Сданная работа' : 'Вопросы по заданию'}: {entry.assignment?.title}
-                    </span>
-                  </div>
-                )}
-                {isSubmission && relatedSa ? (
-                  <SubmissionThreadCard
-                    entry={entry}
-                    sa={relatedSa}
-                    studentName={studentName}
-                    onAccept={() => handleReview(relatedSa.id, 'reviewed')}
-                    onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
-                    isReviewing={reviewingId === relatedSa.id}
-                    showActions={!!isLatestSubmission}
-                  />
-                ) : (
-                  <AdminMessageBubble
-                    entry={entry}
-                    showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
-                  />
-                )}
-              </div>
-            );
-          })
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* ─── Compose bar ─── */}
-      <div style={{
-        borderTop: '1px solid var(--color-border-subtle)',
-        padding: 'var(--space-3) var(--space-4)',
-        background: 'var(--color-bg-surface)',
-      }}>
-        {/* Link input panel */}
-        {showLinkInput && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-2)',
-            padding: 'var(--space-3)',
-            marginBottom: 'var(--space-3)',
-            background: 'var(--color-bg-elevated)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border-default)',
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}>
-              <span style={{
-                fontSize: 'var(--text-xs)',
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-tertiary)',
-                letterSpacing: 'var(--tracking-wide)',
-                textTransform: 'uppercase',
-              }}>Добавить ссылку</span>
-              <button
-                onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkTitle(''); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--color-text-tertiary)',
-                  padding: 'var(--space-1)',
-                  display: 'flex',
-                }}
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <input
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="https://..."
-              autoFocus
-              style={{
-                padding: 'var(--space-2) var(--space-3)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border-default)',
-                fontSize: 'var(--text-sm)',
-                background: 'var(--color-bg-surface)',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-sans)',
-                outline: 'none',
-              }}
-              onFocus={(e) => (e.target.style.borderColor = 'var(--color-accent-red)')}
-              onBlur={(e) => (e.target.style.borderColor = 'var(--color-border-default)')}
-            />
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <input
-                value={linkTitle}
-                onChange={(e) => setLinkTitle(e.target.value)}
-                placeholder="Описание (необязательно)"
-                style={{
-                  flex: 1,
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-border-default)',
-                  fontSize: 'var(--text-sm)',
-                  background: 'var(--color-bg-surface)',
-                  color: 'var(--color-text-primary)',
-                  fontFamily: 'var(--font-sans)',
-                  outline: 'none',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = 'var(--color-accent-red)')}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--color-border-default)')}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSendLink(); }}
-              />
-              <button
-                disabled={sending || !linkUrl.trim()}
-                onClick={handleSendLink}
-                style={{
-                  background: 'var(--color-accent-red)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--color-text-primary)',
-                  padding: 'var(--space-2) var(--space-4)',
-                  fontSize: 'var(--text-xs)',
-                  fontFamily: 'var(--font-sans)',
-                  fontWeight: 'var(--font-medium)' as unknown as number,
-                  letterSpacing: 'var(--tracking-wide)',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  opacity: (sending || !linkUrl.trim()) ? 0.38 : 1,
-                }}
-              >
-                {sending ? '...' : 'Добавить'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Note mode indicator */}
-        {inputMode === 'note' && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: 'var(--space-2) var(--space-3)',
-            marginBottom: 'var(--space-2)',
-            background: 'var(--color-warning-dim)',
-            border: '1px solid var(--color-warning)',
-            borderRadius: 'var(--radius-sm)',
-          }}>
-            <span style={{
-              fontSize: 'var(--text-xs)',
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--color-warning)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-            }}>
-              Приватная заметка — ученик не увидит
-            </span>
-            <button
-              onClick={() => setInputMode('comment')}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--color-warning)',
-                padding: 'var(--space-1)',
-                display: 'flex',
-              }}
-            >
+        {/* Error toast */}
+        {error && (
+          <div className="mx-4 mt-3 px-4 py-3 bg-[var(--color-error-dim)] border border-[var(--color-error)] rounded-[var(--radius-sm)] text-[var(--color-error)] text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError('')} className="flex text-[var(--color-error)] cursor-pointer p-1 bg-transparent border-none">
               <CloseIcon />
             </button>
           </div>
         )}
 
-        {/* Main compose row */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 'var(--space-2)',
-        }}>
-          {/* Action icons */}
-          <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileUpload}
-              style={{ display: 'none' }}
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+          {loadingData ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Spinner size="lg" />
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
+              <p className="text-[var(--color-text-tertiary)] text-sm font-mono tracking-wide uppercase">Тред пуст</p>
+            </div>
+          ) : (
+            entries.map((entry, i) => {
+              const showGroupHeader = entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
+              const isSubmission = entry.metadata?.submissionType === 'assignment' && entry.assignmentId;
+              const relatedSa = isSubmission ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId) : null;
+              const isLatestSubmission = isSubmission && entry.assignmentId && latestSubmissionEntryId[entry.assignmentId] === entry.id;
+
+              return (
+                <div key={entry.id}>
+                  {showGroupHeader && (
+                    <div className="flex items-center gap-2 px-3 py-2 mt-3 mb-2 bg-[rgba(77,166,255,0.06)] border border-[rgba(77,166,255,0.15)] rounded-[var(--radius-sm)]">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="6" /><path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" /><circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" /></svg>
+                      <span className="text-xs font-mono text-[var(--color-info)] tracking-wide">
+                        {isSubmission ? 'Сданная работа' : 'Вопросы по заданию'}: {entry.assignment?.title}
+                      </span>
+                    </div>
+                  )}
+                  {isSubmission && relatedSa ? (
+                    <SubmissionThreadCard
+                      entry={entry}
+                      sa={relatedSa}
+                      studentName={studentName}
+                      onAccept={() => handleReview(relatedSa.id, 'reviewed')}
+                      onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
+                      isReviewing={reviewingId === relatedSa.id}
+                      showActions={!!isLatestSubmission}
+                    />
+                  ) : (
+                    <AdminMessageBubble
+                      entry={entry}
+                      showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
+                    />
+                  )}
+                </div>
+              );
+            })
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Compose bar */}
+        <div className="border-t border-[var(--color-border-subtle)] px-4 py-3 bg-[var(--color-bg-surface)]">
+          {/* Link input panel */}
+          {showLinkInput && (
+            <div className="flex flex-col gap-2 p-3 mb-3 bg-[var(--color-bg-elevated)] rounded-[var(--radius-md)] border border-[var(--color-border-default)]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-[var(--color-text-tertiary)] tracking-wide uppercase">Добавить ссылку</span>
+                <button
+                  onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkTitle(''); }}
+                  className="flex text-[var(--color-text-tertiary)] cursor-pointer p-1 bg-transparent border-none"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+              <input
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://..."
+                autoFocus
+                className="px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] font-sans outline-none focus:border-[var(--color-accent-red)]"
+              />
+              <div className="flex gap-2">
+                <input
+                  value={linkTitle}
+                  onChange={(e) => setLinkTitle(e.target.value)}
+                  placeholder="Описание (необязательно)"
+                  className="flex-1 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] font-sans outline-none focus:border-[var(--color-accent-red)]"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSendLink(); }}
+                />
+                <button
+                  disabled={sending || !linkUrl.trim()}
+                  onClick={handleSendLink}
+                  className="px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--color-accent-red)] text-white text-xs font-sans uppercase tracking-wide cursor-pointer border-none disabled:opacity-40"
+                >
+                  {sending ? '...' : 'Добавить'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Note mode indicator */}
+          {inputMode === 'note' && (
+            <div className="flex items-center justify-between px-3 py-2 mb-2 bg-[var(--color-warning-dim)] border border-[var(--color-warning)] rounded-[var(--radius-sm)]">
+              <span className="text-xs font-mono text-[var(--color-warning)] tracking-wide uppercase">
+                Приватная заметка — ученик не увидит
+              </span>
+              <button
+                onClick={() => setInputMode('comment')}
+                className="flex text-[var(--color-warning)] cursor-pointer p-1 bg-transparent border-none"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          )}
+
+          {/* Main compose row */}
+          <div className="flex items-end gap-2">
+            <div className="flex gap-1">
+              <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+              <IconButton title="Прикрепить файл" onClick={() => fileInputRef.current?.click()} disabled={sending}>
+                <PaperclipIcon />
+              </IconButton>
+              <IconButton
+                title="Добавить ссылку"
+                active={showLinkInput}
+                onClick={() => { setShowLinkInput(!showLinkInput); if (inputMode === 'note') setInputMode('comment'); }}
+                disabled={sending}
+              >
+                <LinkIcon />
+              </IconButton>
+              <IconButton
+                title="Приватная заметка"
+                active={inputMode === 'note'}
+                onClick={() => setInputMode(inputMode === 'note' ? 'comment' : 'note')}
+                accent={inputMode === 'note'}
+              >
+                <NoteIcon />
+              </IconButton>
+            </div>
+
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleTextareaChange}
+              placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
+              rows={1}
+              className={[
+                'flex-1 px-3 py-2 rounded-[var(--radius-lg)] border text-sm font-sans resize-none overflow-hidden outline-none leading-normal transition-colors',
+                inputMode === 'note'
+                  ? 'border-[var(--color-warning)] bg-[var(--color-warning-dim)] text-[var(--color-text-primary)]'
+                  : 'border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] focus:border-[var(--color-accent-red)]',
+              ].join(' ')}
+              style={{ minHeight: 36, maxHeight: 160 }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+              }}
             />
-            <IconButton
-              title="Прикрепить файл"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
-            >
-              <PaperclipIcon />
-            </IconButton>
 
-            <IconButton
-              title="Добавить ссылку"
-              active={showLinkInput}
-              onClick={() => { setShowLinkInput(!showLinkInput); if (inputMode === 'note') setInputMode('comment'); }}
-              disabled={sending}
+            <button
+              disabled={sending || !hasContent}
+              onClick={handleSend}
+              className={[
+                'w-9 h-9 rounded-full border-none flex items-center justify-center shrink-0 transition-colors cursor-pointer',
+                hasContent
+                  ? 'bg-[var(--color-accent-red)] text-white'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-text-disabled)] cursor-default',
+              ].join(' ')}
             >
-              <LinkIcon />
-            </IconButton>
-
-            <IconButton
-              title="Приватная заметка"
-              active={inputMode === 'note'}
-              onClick={() => setInputMode(inputMode === 'note' ? 'comment' : 'note')}
-              accent={inputMode === 'note'}
-            >
-              <NoteIcon />
-            </IconButton>
+              <SendIcon />
+            </button>
           </div>
-
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleTextareaChange}
-            placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
-            rows={1}
-            style={{
-              flex: 1,
-              padding: 'var(--space-2) var(--space-3)',
-              borderRadius: 'var(--radius-lg)',
-              border: `1px solid ${inputMode === 'note' ? 'var(--color-warning)' : 'var(--color-border-default)'}`,
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'var(--font-sans)',
-              background: inputMode === 'note' ? 'var(--color-warning-dim)' : 'var(--color-bg-elevated)',
-              color: 'var(--color-text-primary)',
-              resize: 'none',
-              overflow: 'hidden',
-              lineHeight: 'var(--leading-normal)',
-              outline: 'none',
-              minHeight: 36,
-              maxHeight: 160,
-              transition: 'border-color var(--duration-fast) var(--ease-default), background var(--duration-fast) var(--ease-default)',
-            }}
-            onFocus={(e) => {
-              if (inputMode !== 'note') e.target.style.borderColor = 'var(--color-accent-red)';
-            }}
-            onBlur={(e) => {
-              if (inputMode !== 'note') e.target.style.borderColor = 'var(--color-border-default)';
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-
-          {/* Send button */}
-          <button
-            disabled={sending || !hasContent}
-            onClick={handleSend}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 'var(--radius-full)',
-              border: 'none',
-              background: hasContent ? 'var(--color-accent-red)' : 'var(--color-bg-elevated)',
-              color: hasContent ? 'var(--color-text-primary)' : 'var(--color-text-disabled)',
-              cursor: hasContent ? 'pointer' : 'default',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'background var(--duration-fast) var(--ease-default), color var(--duration-fast) var(--ease-default)',
-            }}
-          >
-            <SendIcon />
-          </button>
         </div>
       </div>
-    </div>
     </DashboardLayout>
   );
 }
 
-/* ─── Icon button for compose bar ─── */
-
 function IconButton({
-  children,
-  title,
-  onClick,
-  disabled,
-  active,
-  accent,
+  children, title, onClick, disabled, active, accent,
 }: {
   children: React.ReactNode;
   title: string;
@@ -706,96 +411,26 @@ function IconButton({
       title={title}
       onClick={onClick}
       disabled={disabled}
-      style={{
-        width: 36,
-        height: 36,
-        borderRadius: 'var(--radius-full)',
-        border: 'none',
-        background: active
-          ? accent
-            ? 'var(--color-warning-dim)'
-            : 'var(--color-bg-overlay)'
-          : 'transparent',
-        color: accent
-          ? 'var(--color-warning)'
+      className={[
+        'w-9 h-9 rounded-full border-none flex items-center justify-center shrink-0 transition-colors',
+        disabled ? 'opacity-40 cursor-default' : 'cursor-pointer',
+        accent
+          ? 'bg-[var(--color-warning-dim)] text-[var(--color-warning)]'
           : active
-            ? 'var(--color-text-primary)'
-            : 'var(--color-text-tertiary)',
-        cursor: disabled ? 'default' : 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        opacity: disabled ? 0.38 : 1,
-        transition: 'background var(--duration-fast) var(--ease-default), color var(--duration-fast) var(--ease-default)',
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled && !active) {
-          e.currentTarget.style.background = 'var(--color-bg-overlay)';
-          e.currentTarget.style.color = 'var(--color-text-primary)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!disabled && !active) {
-          e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.color = 'var(--color-text-tertiary)';
-        }
-      }}
+            ? 'bg-[var(--color-bg-overlay)] text-[var(--color-text-primary)]'
+            : 'bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-overlay)] hover:text-[var(--color-text-primary)]',
+      ].join(' ')}
     >
       {children}
     </button>
   );
 }
 
-/* ─── Nav icons ─── */
-
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
-    </svg>
-  );
-}
-
-function UsersIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="5" r="3" />
-      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
-      <circle cx="12" cy="4" r="2" />
-      <path d="M15 13c0-2-1-4-3-4" />
-    </svg>
-  );
-}
-
-function StreamIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 4h12M2 8h8M2 12h10" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
-    </svg>
-  );
-}
-
-/* ─── Submission thread card (admin view) ─── */
-
 const SUBMISSION_STATUS_LABELS: Record<string, string> = {
   submitted: 'Сдана',
   reviewed: 'Принята',
   needs_revision: 'На доработке',
 };
-
 const SUBMISSION_STATUS_COLORS: Record<string, string> = {
   submitted: 'var(--color-success)',
   reviewed: 'var(--color-text-disabled)',
@@ -803,13 +438,7 @@ const SUBMISSION_STATUS_COLORS: Record<string, string> = {
 };
 
 function SubmissionThreadCard({
-  entry,
-  sa,
-  studentName,
-  onAccept,
-  onRequestRevision,
-  isReviewing,
-  showActions,
+  entry, sa, studentName, onAccept, onRequestRevision, isReviewing, showActions,
 }: {
   entry: ThreadEntry;
   sa: StudentAssignment;
@@ -823,145 +452,46 @@ function SubmissionThreadCard({
   const statusColor = SUBMISSION_STATUS_COLORS[sa.status] || 'var(--color-text-disabled)';
 
   return (
-    <div style={{
-      maxWidth: '85%',
-      alignSelf: 'flex-start',
-      marginTop: 'var(--space-4)',
-      marginLeft: 'calc(32px + var(--space-2))',
-    }}>
-      <div style={{
-        border: '1px solid var(--color-success)',
-        borderRadius: 'var(--radius-lg)',
-        overflow: 'hidden',
-        background: 'var(--color-bg-surface)',
-      }}>
+    <div className="max-w-[85%] self-start mt-4 ml-[calc(32px+0.5rem)]">
+      <div className="border border-[var(--color-success)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--color-bg-surface)]">
         {/* Header */}
-        <div style={{
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(0, 200, 83, 0.06)',
-          borderBottom: '1px solid var(--color-border-subtle)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-3)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--space-1)',
-              padding: 'var(--space-1) var(--space-2)',
-              borderRadius: 'var(--radius-full)',
-              fontSize: 'var(--text-xs)',
-              fontWeight: 'var(--font-semibold)' as unknown as number,
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-              color: statusColor,
-              background: `color-mix(in srgb, ${statusColor} 10%, transparent)`,
-              border: `1px solid ${statusColor}`,
-            }}>
+        <div className="px-4 py-3 bg-[rgba(0,200,83,0.06)] border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-mono font-semibold tracking-wide uppercase border"
+              style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 10%, transparent)`, borderColor: statusColor }}
+            >
               {sa.status === 'submitted' && (
-                <span style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: statusColor,
-                  animation: 'pulse 2s infinite',
-                }} />
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: statusColor }} />
               )}
               {SUBMISSION_STATUS_LABELS[sa.status] || sa.status}
             </span>
-            <span style={{
-              fontSize: 'var(--text-sm)',
-              fontWeight: 'var(--font-medium)' as unknown as number,
-              color: 'var(--color-text-primary)',
-            }}>
-              {entry.assignment?.title}
-            </span>
+            <span className="text-sm font-medium text-[var(--color-text-primary)]">{entry.assignment?.title}</span>
           </div>
-          <span style={{
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-disabled)',
-            fontFamily: 'var(--font-mono)',
-          }}>
+          <span className="text-xs text-[var(--color-text-disabled)] font-mono">
             {date.toLocaleString('ru-RU', { day: 'numeric', month: 'short' })} · {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
 
         {/* Body */}
-        <div style={{ padding: 'var(--space-4)' }}>
-          {/* Student name */}
-          <div style={{
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-tertiary)',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: 'var(--tracking-wide)',
-            marginBottom: 'var(--space-2)',
-          }}>
-            Студент: {studentName}
-          </div>
+        <div className="p-4">
+          <div className="text-xs text-[var(--color-text-tertiary)] font-mono tracking-wide mb-2">Студент: {studentName}</div>
 
-          {/* Answer text */}
           {sa.content && (
-            <div style={{
-              padding: 'var(--space-3)',
-              background: 'var(--color-bg-overlay)',
-              borderLeft: '3px solid var(--color-info)',
-              borderRadius: 'var(--radius-xs)',
-              marginBottom: 'var(--space-3)',
-            }}>
-              <p style={{
-                whiteSpace: 'pre-wrap',
-                margin: 0,
-                fontSize: 'var(--text-sm)',
-                lineHeight: 'var(--leading-relaxed)',
-                color: 'var(--color-text-secondary)',
-                fontStyle: 'italic',
-              }}>
-                {sa.content}
-              </p>
+            <div className="p-3 bg-[var(--color-bg-overlay)] border-l-[3px] border-[var(--color-info)] rounded-[var(--radius-xs)] mb-3">
+              <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed text-[var(--color-text-secondary)] italic">{sa.content}</p>
             </div>
           )}
 
-          {/* Attached file */}
           {sa.fileName && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-3)',
-              padding: 'var(--space-2) var(--space-3)',
-              background: 'var(--color-bg-overlay)',
-              borderRadius: 'var(--radius-xs)',
-              border: '1px solid var(--color-border-subtle)',
-              marginBottom: 'var(--space-3)',
-            }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-default)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                color: 'var(--color-text-tertiary)',
-              }}>
+            <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] rounded-[var(--radius-xs)] border border-[var(--color-border-subtle)] mb-3">
+              <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] flex items-center justify-center shrink-0 text-[var(--color-text-tertiary)]">
                 <PaperclipIcon />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 'var(--text-sm)',
-                  fontWeight: 'var(--font-medium)' as unknown as number,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {sa.fileName}
-                </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap text-[var(--color-text-primary)]">{sa.fileName}</div>
                 {sa.fileSize && (
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>
+                  <span className="text-xs text-[var(--color-text-tertiary)]">
                     {sa.fileSize < 1024 * 1024
                       ? `${Math.round(sa.fileSize / 1024)} КБ`
                       : `${(sa.fileSize / (1024 * 1024)).toFixed(1)} МБ`}
@@ -969,90 +499,38 @@ function SubmissionThreadCard({
                 )}
               </div>
               {sa.fileSignedUrl && (
-                <a
-                  href={sa.fileSignedUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    fontSize: 'var(--text-xs)',
-                    color: 'var(--color-info)',
-                    textDecoration: 'none',
-                    fontFamily: 'var(--font-mono)',
-                    letterSpacing: 'var(--tracking-wide)',
-                    textTransform: 'uppercase',
-                  }}
-                >
+                <a href={sa.fileSignedUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-[var(--color-info)] no-underline font-mono tracking-wide uppercase">
                   Открыть ↗
                 </a>
               )}
             </div>
           )}
 
-          {/* Action buttons — only on the latest submission entry */}
           {showActions && sa.status === 'submitted' && (
-            <div style={{
-              display: 'flex',
-              gap: 'var(--space-2)',
-              marginTop: 'var(--space-3)',
-              paddingTop: 'var(--space-3)',
-              borderTop: '1px solid var(--color-border-subtle)',
-            }}>
+            <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--color-border-subtle)]">
               <button
                 onClick={onAccept}
                 disabled={isReviewing}
-                style={{
-                  flex: 1,
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-success)',
-                  background: 'rgba(0, 200, 83, 0.08)',
-                  color: 'var(--color-success)',
-                  cursor: isReviewing ? 'default' : 'pointer',
-                  fontSize: 'var(--text-sm)',
-                  fontWeight: 'var(--font-medium)' as unknown as number,
-                  fontFamily: 'var(--font-sans)',
-                  opacity: isReviewing ? 0.5 : 1,
-                  transition: 'background var(--duration-fast) var(--ease-default)',
-                }}
+                className="flex-1 py-2 px-3 rounded-[var(--radius-sm)] border border-[var(--color-success)] bg-[rgba(0,200,83,0.08)] text-[var(--color-success)] text-sm font-sans cursor-pointer disabled:opacity-50 transition-colors"
               >
                 {isReviewing ? '…' : 'Принять'}
               </button>
               <button
                 onClick={onRequestRevision}
                 disabled={isReviewing}
-                style={{
-                  flex: 1,
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-error)',
-                  background: 'rgba(255, 77, 77, 0.08)',
-                  color: 'var(--color-error)',
-                  cursor: isReviewing ? 'default' : 'pointer',
-                  fontSize: 'var(--text-sm)',
-                  fontWeight: 'var(--font-medium)' as unknown as number,
-                  fontFamily: 'var(--font-sans)',
-                  opacity: isReviewing ? 0.5 : 1,
-                  transition: 'background var(--duration-fast) var(--ease-default)',
-                }}
+                className="flex-1 py-2 px-3 rounded-[var(--radius-sm)] border border-[var(--color-error)] bg-[rgba(255,77,77,0.08)] text-[var(--color-error)] text-sm font-sans cursor-pointer disabled:opacity-50 transition-colors"
               >
                 {isReviewing ? '…' : 'На доработке'}
               </button>
             </div>
           )}
 
-          {/* Status badge for already reviewed */}
           {(sa.status === 'reviewed' || sa.status === 'needs_revision') && (
-            <div style={{
-              marginTop: 'var(--space-2)',
-              fontSize: 'var(--text-xs)',
-              color: SUBMISSION_STATUS_COLORS[sa.status],
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-            }}>
+            <div className="mt-2 text-xs font-mono tracking-wide uppercase" style={{ color: statusColor }}>
               {SUBMISSION_STATUS_LABELS[sa.status]}
               {sa.reviewedAt && (
-                <span style={{ color: 'var(--color-text-disabled)', marginLeft: 'var(--space-2)' }}>
+                <span className="ml-2 text-[var(--color-text-disabled)]">
                   {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
                 </span>
               )}
@@ -1064,195 +542,88 @@ function SubmissionThreadCard({
   );
 }
 
-/* ─── Chat message bubble (admin view) ─── */
+function PaperclipIconSm() {
+  return <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 9.25l-7.72 7.72a4.25 4.25 0 01-6.01-6.01L11.5 3.24a2.83 2.83 0 014 4L7.78 14.96a1.42 1.42 0 01-2-2l7.22-7.22" /></svg>;
+}
 
-function AdminMessageBubble({
-  entry,
-  showAuthor,
-}: {
-  entry: ThreadEntry;
-  showAuthor: boolean;
-}) {
+function AdminMessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: boolean }) {
   const isAdmin = entry.author.role === 'admin';
   const isNote = entry.type === 'note';
   const date = new Date(entry.createdAt);
+  const initials = entry.author.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
-  const initials = entry.author.name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const avatarColor = isNote
+    ? 'bg-[var(--color-warning-dim)] border-[var(--color-warning)] text-[var(--color-warning)]'
+    : isAdmin
+      ? 'bg-[var(--color-accent-red-dim)] border-[var(--color-accent-red)] text-[var(--color-accent-red)]'
+      : 'bg-[var(--color-bg-overlay)] border-[var(--color-border-default)] text-[var(--color-text-secondary)]';
+
+  const bubbleBg = isNote
+    ? 'bg-[var(--color-warning-dim)] border-[var(--color-warning)] border-dashed'
+    : isAdmin
+      ? 'bg-[var(--color-bg-overlay)] border-[var(--color-border-default)]'
+      : 'bg-[var(--color-bg-elevated)] border-[var(--color-border-default)]';
+
+  const bubbleRadius = isAdmin
+    ? 'rounded-[var(--radius-xl)_var(--radius-xl)_var(--radius-xs)_var(--radius-xl)]'
+    : 'rounded-[var(--radius-xl)_var(--radius-xl)_var(--radius-xl)_var(--radius-xs)]';
+
+  const nameColor = isNote
+    ? 'text-[var(--color-warning)]'
+    : isAdmin
+      ? 'text-[var(--color-accent-red)]'
+      : 'text-[var(--color-text-tertiary)]';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: isAdmin ? 'row-reverse' : 'row',
-        alignItems: 'flex-end',
-        gap: 'var(--space-2)',
-        marginTop: showAuthor ? 'var(--space-4)' : 'var(--space-1)',
-        maxWidth: '85%',
-        alignSelf: isAdmin ? 'flex-end' : 'flex-start',
-      }}
-    >
-      {/* Avatar */}
+    <div className={[
+      'flex items-end gap-2 max-w-[85%]',
+      showAuthor ? 'mt-4' : 'mt-1',
+      isAdmin ? 'flex-row-reverse self-end' : 'flex-row self-start',
+    ].join(' ')}>
       {showAuthor ? (
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 'var(--radius-full)',
-            background: isNote
-              ? 'var(--color-warning-dim)'
-              : isAdmin
-                ? 'var(--color-accent-red-dim)'
-                : 'var(--color-bg-overlay)',
-            border: `1px solid ${
-              isNote
-                ? 'var(--color-warning)'
-                : isAdmin
-                  ? 'var(--color-accent-red)'
-                  : 'var(--color-border-default)'
-            }`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 'var(--text-xs)',
-            fontFamily: 'var(--font-mono)',
-            fontWeight: 'var(--font-bold)',
-            color: isNote
-              ? 'var(--color-warning)'
-              : isAdmin
-                ? 'var(--color-accent-red)'
-                : 'var(--color-text-secondary)',
-            flexShrink: 0,
-            letterSpacing: 'var(--tracking-wide)',
-          }}
-        >
+        <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-mono font-bold shrink-0 tracking-wide ${avatarColor}`}>
           {initials}
         </div>
       ) : (
-        <div style={{ width: 32, flexShrink: 0 }} />
+        <div className="w-8 shrink-0" />
       )}
 
-      {/* Bubble */}
-      <div style={{ minWidth: 0 }}>
+      <div className="min-w-0">
         {showAuthor && (
-          <div
-            style={{
-              fontSize: 'var(--text-xs)',
-              fontFamily: 'var(--font-mono)',
-              color: isNote
-                ? 'var(--color-warning)'
-                : isAdmin
-                  ? 'var(--color-accent-red)'
-                  : 'var(--color-text-tertiary)',
-              marginBottom: 'var(--space-1)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-              textAlign: isAdmin ? 'right' : 'left',
-              paddingLeft: isAdmin ? 0 : 'var(--space-2)',
-              paddingRight: isAdmin ? 'var(--space-2)' : 0,
-            }}
-          >
+          <div className={[
+            'text-xs font-mono tracking-wide uppercase mb-1',
+            nameColor,
+            isAdmin ? 'text-right pr-2' : 'text-left pl-2',
+          ].join(' ')}>
             {entry.author.name}
-            {isNote && (
-              <span style={{ marginLeft: 'var(--space-2)', color: 'var(--color-warning)' }}>
-                заметка
-              </span>
-            )}
+            {isNote && <span className="ml-2 text-[var(--color-warning)]">заметка</span>}
           </div>
         )}
 
-        <div
-          style={{
-            padding: 'var(--space-3) var(--space-4)',
-            borderRadius: isAdmin
-              ? 'var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl)'
-              : 'var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-xs)',
-            background: isNote
-              ? 'var(--color-warning-dim)'
-              : isAdmin
-                ? 'var(--color-bg-overlay)'
-                : 'var(--color-bg-elevated)',
-            border: `1px solid ${
-              isNote
-                ? 'var(--color-warning)'
-                : 'var(--color-border-default)'
-            }`,
-            ...(isNote && {
-              borderStyle: 'dashed' as const,
-            }),
-          }}
-        >
-          <div style={{
-            fontSize: 'var(--text-sm)',
-            lineHeight: 'var(--leading-normal)',
-            color: 'var(--color-text-primary)',
-            wordBreak: 'break-word',
-          }}>
+        <div className={`px-4 py-3 border ${bubbleBg} ${bubbleRadius}`}>
+          <div className="text-sm leading-normal text-[var(--color-text-primary)] break-words">
             {['text', 'comment', 'note'].includes(entry.type) ? (
-              <span style={{ whiteSpace: 'pre-wrap' }}>{entry.content}</span>
+              <span className="whitespace-pre-wrap">{entry.content}</span>
             ) : entry.type === 'link' ? (
               <AdminLinkCard entry={entry} />
             ) : entry.type === 'file' ? (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-3)',
-              }}>
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--color-bg-overlay)',
-                  border: '1px solid var(--color-border-default)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  color: 'var(--color-text-tertiary)',
-                }}>
-                  <PaperclipIcon />
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-[var(--radius-sm)] bg-[var(--color-bg-overlay)] border border-[var(--color-border-default)] flex items-center justify-center shrink-0 text-[var(--color-text-tertiary)]">
+                  <PaperclipIconSm />
                 </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 'var(--text-sm)',
-                    fontWeight: 'var(--font-medium)' as unknown as number,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap text-[var(--color-text-primary)]">
                     {entry.metadata?.fileName || entry.content}
                   </div>
-                  <div style={{
-                    display: 'flex',
-                    gap: 'var(--space-3)',
-                    alignItems: 'center',
-                  }}>
+                  <div className="flex items-center gap-3">
                     {entry.metadata?.size && (
-                      <span style={{
-                        fontSize: 'var(--text-xs)',
-                        color: 'var(--color-text-tertiary)',
-                      }}>
+                      <span className="text-xs text-[var(--color-text-tertiary)]">
                         {(entry.metadata.size / 1024 / 1024).toFixed(1)} МБ
                       </span>
                     )}
                     {entry.metadata?.url && (
-                      <a
-                        href={entry.metadata.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          fontSize: 'var(--text-xs)',
-                          color: 'var(--color-info)',
-                          textDecoration: 'none',
-                          fontFamily: 'var(--font-mono)',
-                          letterSpacing: 'var(--tracking-wide)',
-                          textTransform: 'uppercase',
-                        }}
-                      >
+                      <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-[var(--color-info)] no-underline font-mono tracking-wide uppercase">
                         Скачать
                       </a>
                     )}
@@ -1262,52 +633,21 @@ function AdminMessageBubble({
             ) : entry.type === 'audio' ? (
               <div>
                 {entry.metadata?.url ? (
-                  <audio
-                    controls
-                    src={entry.metadata.url}
-                    style={{
-                      maxWidth: '100%',
-                      height: 36,
-                      borderRadius: 'var(--radius-sm)',
-                    }}
-                  />
+                  <audio controls src={entry.metadata.url} className="max-w-full h-9 rounded-[var(--radius-sm)]" />
                 ) : (
-                  <span style={{ color: 'var(--color-text-tertiary)' }}>Аудиозапись</span>
+                  <span className="text-[var(--color-text-tertiary)]">Аудиозапись</span>
                 )}
               </div>
             ) : null}
           </div>
 
-          {/* Timestamp + read receipt */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: isAdmin ? 'flex-start' : 'flex-end',
-            gap: 'var(--space-1)',
-            marginTop: 'var(--space-1)',
-          }}>
-            <span style={{
-              fontSize: '10px',
-              color: 'var(--color-text-disabled)',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: 'var(--tracking-wide)',
-            }}>
+          <div className={`flex items-center gap-1 mt-1 ${isAdmin ? 'justify-start' : 'justify-end'}`}>
+            <span className="text-[10px] text-[var(--color-text-disabled)] font-mono tracking-wide">
               {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
             </span>
             {isAdmin && entry.readAt && (
-              <span style={{
-                fontSize: '10px',
-                color: 'var(--color-text-disabled)',
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: 'var(--tracking-wide)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-              }}>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 8l4 4 9-9" />
-                  <path d="M5 8l4 4 5-5" />
-                </svg>
+              <span className="text-[10px] text-[var(--color-text-disabled)] font-mono tracking-wide flex items-center gap-[2px]">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 8l4 4 9-9" /><path d="M5 8l4 4 5-5" /></svg>
                 Прочитано
               </span>
             )}
@@ -1315,24 +655,8 @@ function AdminMessageBubble({
         </div>
 
         {entry.assignment && (
-          <div style={{
-            marginTop: 'var(--space-1)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 'var(--space-1)',
-            padding: 'var(--space-1) var(--space-2)',
-            background: 'rgba(77,166,255,0.06)',
-            color: 'var(--color-info)',
-            borderRadius: 'var(--radius-full)',
-            fontSize: 'var(--text-xs)',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: 'var(--tracking-wide)',
-          }}>
-            <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="7" cy="7" r="6" />
-              <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
-              <circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" />
-            </svg>
+          <div className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-[rgba(77,166,255,0.06)] text-[var(--color-info)] rounded-full text-xs font-mono tracking-wide">
+            <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="6" /><path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" /><circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" /></svg>
             {entry.assignment.title.length > 30 ? entry.assignment.title.slice(0, 30) + '...' : entry.assignment.title}
           </div>
         )}
@@ -1341,32 +665,9 @@ function AdminMessageBubble({
   );
 }
 
-
-function KeyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="6" r="3.5" />
-      <path d="M8.5 8.5l5.5 5.5M11 11l1.5 1.5" />
-    </svg>
-  );
-}
-function BellNavIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
-      <path d="M8 2.5V1" />
-    </svg>
-  );
-}
-
-/* ─── Link card renderer (admin thread) ─── */
-
 function AdminLinkCard({ entry }: { entry: ThreadEntry }) {
-  // Support both new format (content=url, metadata.title) and legacy (content=title\nurl)
   let url: string;
   let title: string | undefined;
-
   if (entry.metadata?.title) {
     url = entry.content;
     title = entry.metadata.title as string;
@@ -1384,63 +685,25 @@ function AdminLinkCard({ entry }: { entry: ThreadEntry }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 'var(--space-3)',
-        textDecoration: 'none',
-        color: 'inherit',
-        padding: 'var(--space-2) var(--space-3)',
-        borderRadius: 'var(--radius-sm)',
-        border: '1px solid var(--color-info)',
-        background: 'var(--color-bg-surface)',
-        transition: 'background var(--duration-fast) var(--ease-default)',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-elevated)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-surface)')}
+      className="flex items-start gap-3 no-underline text-inherit px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-info)] bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-elevated)] transition-colors"
     >
-      <div style={{
-        width: 28,
-        height: 28,
-        borderRadius: 'var(--radius-sm)',
-        background: 'rgba(59,130,246,0.12)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        color: 'var(--color-info)',
-        marginTop: 2,
-      }}>
+      <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[rgba(59,130,246,0.12)] flex items-center justify-center shrink-0 text-[var(--color-info)] mt-0.5">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" />
           <path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" />
         </svg>
       </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        {title && (
-          <div style={{
-            fontSize: 'var(--text-sm)',
-            fontWeight: 'var(--font-medium)' as unknown as number,
-            color: 'var(--color-text-primary)',
-            marginBottom: 'var(--space-1)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {title}
-          </div>
-        )}
-        <div style={{
-          fontSize: 'var(--text-xs)',
-          color: 'var(--color-info)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          fontFamily: 'var(--font-mono)',
-        }}>
-          {url}
-        </div>
+      <div className="min-w-0 flex-1">
+        {title && <div className="text-sm font-medium text-[var(--color-text-primary)] mb-1 overflow-hidden text-ellipsis whitespace-nowrap">{title}</div>}
+        <div className="text-xs text-[var(--color-info)] overflow-hidden text-ellipsis whitespace-nowrap font-mono">{url}</div>
       </div>
     </a>
   );
 }
+
+function GridIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" /></svg>; }
+function UsersIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" /><circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" /></svg>; }
+function StreamIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M2 8h8M2 12h10" /></svg>; }
+function CalendarIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" /></svg>; }
+function KeyIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="6" r="3.5" /><path d="M8.5 8.5l5.5 5.5M11 11l1.5 1.5" /></svg>; }
+function BellNavIcon() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" /><path d="M6.5 13a1.5 1.5 0 0 0 3 0" /><path d="M8 2.5V1" /></svg>; }

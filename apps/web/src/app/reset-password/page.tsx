@@ -83,7 +83,7 @@ function ResetPasswordForm() {
     >
       <form
         onSubmit={handleSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}
       >
         {error && <ErrorAlert message={error} />}
 
@@ -142,7 +142,7 @@ function ErrorAlert({ message }: { message: string }) {
   return (
     <div
       style={{
-        padding: 'var(--space-3) var(--space-4)',
+        padding: 'var(--spacing-3) var(--spacing-4)',
         background: 'var(--color-error-dim)',
         border: '1px solid var(--color-error)',
         borderRadius: 'var(--radius-xs)',
@@ -184,7 +184,7 @@ function SuccessIcon() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        margin: '0 auto var(--space-6)',
+        margin: '0 auto var(--spacing-6)',
         color: 'var(--color-success)',
       }}
     >
@@ -211,7 +211,7 @@ function PageSpinner() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 'var(--space-8)',
+        padding: 'var(--spacing-8)',
       }}
     >
       <div

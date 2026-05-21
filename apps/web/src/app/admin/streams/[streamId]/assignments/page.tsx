@@ -339,7 +339,7 @@ export default function AssignmentsPage() {
       }}
       sidebar={{ sections: ADMIN_NAV }}
     >
-    <div style={{ padding: 'var(--space-4)', maxWidth: 1000 }}>
+    <div style={{ padding: 'var(--spacing-4)', maxWidth: 1000 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <Button

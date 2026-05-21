@@ -153,16 +153,16 @@ export default function StreamsPage() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
           <Text size="sm" color="var(--color-error)">{error}</Text>
         </Card>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
-          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-4)' }}>Новый поток</Heading>
+        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--spacing-6)' }}>
+          <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-4)' }}>Новый поток</Heading>
           <form onSubmit={handleCreate}>
-            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 'var(--spacing-3)', alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
                 <FormField
                   id="new-stream-name"
@@ -185,7 +185,7 @@ export default function StreamsPage() {
       )}
 
       {loadingStreams ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
           <Spinner size="md" />
         </div>
       ) : streams.length === 0 ? (
@@ -201,16 +201,16 @@ export default function StreamsPage() {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
                 {['Название', 'Статус', 'Создан', 'Действия'].map((h) => (
-                  <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
+                  <th key={h} style={{ padding: 'var(--spacing-3) var(--spacing-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {streams.map((stream) => (
                 <tr key={stream.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>
+                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)', color: 'var(--color-text-primary)' }}>
                     {editingId === stream.id ? (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center' }}>
                         <Input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
@@ -239,19 +239,19 @@ export default function StreamsPage() {
                       <Text size="sm" weight="medium" as="span">{stream.name}</Text>
                     )}
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                     <Badge variant={stream.status === 'active' ? 'success' : 'error'}>
                       {stream.status === 'active' ? 'Активный' : 'Архивный'}
                     </Badge>
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                     <Mono size="xs" color="var(--color-text-tertiary)">
                       {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
                     </Mono>
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                     {editingId !== stream.id && (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 'var(--spacing-2)', flexWrap: 'wrap' }}>
                         <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/lessons`)}>
                           Уроки
                         </Button>

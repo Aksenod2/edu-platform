@@ -860,7 +860,7 @@ function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: b
           </div>
         )}
         <div style={{
-          padding: 'var(--space-3) var(--space-4)',
+          padding: 'var(--spacing-3) var(--spacing-4)',
           borderRadius: isAdmin
             ? 'var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl)'
             : 'var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-xs)',

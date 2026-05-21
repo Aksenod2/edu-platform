@@ -8,7 +8,7 @@
  * - organisms: Header, Sidebar, StudentCard, AssignmentList
  * - templates: DashboardLayout, AuthLayout
  *
- * Подключение CSS-токенов: import '@platform/ui/styles' в root layout
+ * Подключение CSS-токенов: import '@platform/ui/tailwind' в root layout
  */
 
 // Утилиты

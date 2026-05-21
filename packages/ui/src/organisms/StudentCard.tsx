@@ -13,6 +13,7 @@
  * Дизайн-линзы: Proximity (группировка данных), Kano (must-have = имя + статус)
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 import { Card } from '../molecules/Card';
 import { Avatar } from '../atoms/Avatar';
 import { Badge } from '../atoms/Badge';
@@ -55,29 +56,33 @@ export function StudentCard({ student, onClick, compact = false }: StudentCardPr
       onClick={onClick ? () => onClick(student) : undefined}
     >
       {/* Верхняя строка: аватар + имя + статус */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+      <div className="flex items-start gap-3">
         <Avatar
           name={student.name}
           src={student.avatarSrc}
           size={compact ? 'sm' : 'md'}
         />
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <Heading level={4} size="md" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Heading
+              level={4}
+              size="md"
+              className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+            >
               {student.name}
             </Heading>
             <Badge variant={badgeVariant}>{badgeLabel}</Badge>
           </div>
 
           {student.email && !compact && (
-            <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', marginTop: 'var(--space-1)' }}>
+            <Mono size="xs" className="text-text-tertiary mt-1">
               {student.email}
             </Mono>
           )}
 
           {student.stream && (
-            <Text size="xs" color="tertiary" style={{ marginTop: compact ? 0 : 'var(--space-1)' }}>
+            <Text size="xs" color="tertiary" className={cn(!compact && 'mt-1')}>
               {student.stream}
             </Text>
           )}
@@ -86,25 +91,15 @@ export function StudentCard({ student, onClick, compact = false }: StudentCardPr
 
       {/* Прогресс + последняя активность */}
       {!compact && (hasProgress || student.lastActivity) && (
-        <div
-          style={{
-            marginTop: 'var(--space-4)',
-            paddingTop: 'var(--space-4)',
-            borderTop: '1px solid var(--color-border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 'var(--space-4)',
-          }}
-        >
+        <div className="mt-4 pt-4 border-t border-border-subtle flex items-center justify-between gap-4">
           {hasProgress && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-              <Mono size="xs" style={{ color: 'var(--color-text-tertiary)' }}>TASKS</Mono>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-1)' }}>
-                <Mono size="base" style={{ color: 'var(--color-accent-neon)', fontWeight: 700 }}>
+            <div className="flex flex-col gap-1">
+              <Mono size="xs" className="text-text-tertiary">TASKS</Mono>
+              <div className="flex items-baseline gap-1">
+                <Mono size="base" className="text-accent-neon font-bold">
                   {student.completedTasks}
                 </Mono>
-                <Mono size="xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <Mono size="xs" className="text-text-tertiary">
                   / {student.totalTasks}
                 </Mono>
               </div>
@@ -113,9 +108,9 @@ export function StudentCard({ student, onClick, compact = false }: StudentCardPr
           )}
 
           {student.lastActivity && (
-            <div style={{ textAlign: 'right' }}>
-              <Mono size="xs" style={{ color: 'var(--color-text-tertiary)' }}>LAST SEEN</Mono>
-              <Mono size="xs" style={{ color: 'var(--color-text-secondary)', marginTop: 'var(--space-1)', display: 'block' }}>
+            <div className="text-right">
+              <Mono size="xs" className="text-text-tertiary">LAST SEEN</Mono>
+              <Mono size="xs" className="text-text-secondary mt-1 block">
                 {student.lastActivity}
               </Mono>
             </div>
@@ -129,22 +124,10 @@ export function StudentCard({ student, onClick, compact = false }: StudentCardPr
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const percent = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
-    <div
-      style={{
-        width: 80,
-        height: 2,
-        background: 'var(--color-border-default)',
-        borderRadius: 0,
-        overflow: 'hidden',
-      }}
-    >
+    <div className="w-20 h-0.5 bg-border-default rounded-none overflow-hidden">
       <div
-        style={{
-          width: `${percent}%`,
-          height: '100%',
-          background: 'var(--color-accent-neon)',
-          transition: 'width var(--duration-slow) var(--ease-out)',
-        }}
+        className="h-full bg-accent-neon transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]"
+        style={{ width: `${percent}%` }}
       />
     </div>
   );

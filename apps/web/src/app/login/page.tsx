@@ -39,11 +39,11 @@ export default function LoginPage() {
 
   return (
     <AuthLayout title="Вход" subtitle="Введите свои данные для доступа">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
         {error && (
           <div
             style={{
-              padding: 'var(--space-3) var(--space-4)',
+              padding: 'var(--spacing-3) var(--spacing-4)',
               background: 'var(--color-error-dim)',
               border: '1px solid var(--color-error)',
               borderRadius: 'var(--radius-xs)',
@@ -81,7 +81,7 @@ export default function LoginPage() {
               autoComplete: 'current-password',
             }}
           />
-          <div style={{ marginTop: 'var(--space-2)', textAlign: 'right' }}>
+          <div style={{ marginTop: 'var(--spacing-2)', textAlign: 'right' }}>
             <a
               href="/forgot-password"
               style={{

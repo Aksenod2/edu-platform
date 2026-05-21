@@ -2,7 +2,7 @@
  * Divider — Атом (migrated to shadcn Separator)
  * Atomic level: Atom
  *
- * Токены: --color-border-subtle, --color-border-default, --color-border-strong
+ * Токены: bg-border-subtle, bg-border-default, bg-border-strong (Tailwind v4)
  * Nothing Phone: 1px строгий разделитель без декора
  *
  * @uses @radix-ui/react-separator (shadcn Separator primitive)
@@ -19,16 +19,22 @@ export interface DividerProps {
   style?: React.CSSProperties;
 }
 
-const strengthVars: Record<NonNullable<DividerProps['strength']>, string> = {
-  subtle:  'var(--color-border-subtle)',
-  default: 'var(--color-border-default)',
-  strong:  'var(--color-border-strong)',
+const strengthClass: Record<NonNullable<DividerProps['strength']>, string> = {
+  subtle:  'bg-border-subtle',
+  default: 'bg-border-default',
+  strong:  'bg-border-strong',
 };
 
-const spacingVars: Record<NonNullable<DividerProps['spacing']>, string> = {
-  sm: 'var(--space-3)',
-  md: 'var(--space-6)',
-  lg: 'var(--space-8)',
+const spacingHClass: Record<NonNullable<DividerProps['spacing']>, string> = {
+  sm: 'my-3',
+  md: 'my-6',
+  lg: 'my-8',
+};
+
+const spacingVClass: Record<NonNullable<DividerProps['spacing']>, string> = {
+  sm: 'mx-3',
+  md: 'mx-6',
+  lg: 'mx-8',
 };
 
 export function Divider({
@@ -38,13 +44,8 @@ export function Divider({
   className,
   style,
 }: DividerProps) {
-  const color = strengthVars[strength];
-  const space = spacingVars[spacing];
+  const spacingClass = orientation === 'horizontal' ? spacingHClass[spacing] : spacingVClass[spacing];
 
-  // Inline styles для background и margin — осознанное решение:
-  // значения — это CSS-переменные из дизайн-токенов (динамические),
-  // которые нельзя передать статическими Tailwind-классами без JIT-сафлистинга.
-  // Компоновка (h-px/w-px, self-stretch) идёт через cn().
   return (
     <SeparatorPrimitive.Root
       orientation={orientation}
@@ -52,15 +53,11 @@ export function Divider({
       className={cn(
         'shrink-0',
         orientation === 'horizontal' ? 'h-px w-full' : 'w-px self-stretch',
+        strengthClass[strength],
+        spacingClass,
         className,
       )}
-      style={{
-        background: color,
-        ...(orientation === 'horizontal'
-          ? { marginBlock: space }
-          : { marginInline: space }),
-        ...style,
-      }}
+      style={style}
     />
   );
 }

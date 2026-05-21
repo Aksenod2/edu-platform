@@ -10,7 +10,6 @@
     "./molecules": "./src/molecules/index.ts",
     "./organisms": "./src/organisms/index.ts",
     "./templates": "./src/templates/index.ts",
-    "./styles": "./src/tokens/tokens.css",
     "./tailwind": "./src/tokens/tailwind.css",
     "./lib/utils": "./src/lib/utils.ts"
   },

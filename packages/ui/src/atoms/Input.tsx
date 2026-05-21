@@ -40,50 +40,27 @@ export function Input({
   const hasLeft = Boolean(leftElement);
   const hasRight = Boolean(rightElement);
 
+  // pl-10/pr-10 = 2.5rem = 40px = calc(12px*2 + 16px icon) — equivalent to old calc(var(--space-3)*2+16px)
   const inputClass = cn(
     sizeClass[size],
     error && 'border-[var(--color-error)] focus-visible:border-[var(--color-error)] focus-visible:ring-[var(--color-error)]',
     !fullWidth && 'w-auto',
-    hasLeft && 'pl-[calc(var(--space-3,0.75rem)*2+16px)]',
-    hasRight && 'pr-[calc(var(--space-3,0.75rem)*2+16px)]',
+    hasLeft && 'pl-10',
+    hasRight && 'pr-10',
     className,
   );
 
   if (leftElement || rightElement) {
     return (
-      <div
-        style={{
-          position: 'relative',
-          display: 'inline-flex',
-          alignItems: 'center',
-          width: fullWidth ? '100%' : 'auto',
-        }}
-      >
+      <div className={cn('relative inline-flex items-center', fullWidth ? 'w-full' : 'w-auto')}>
         {leftElement && (
-          <span
-            style={{
-              position: 'absolute',
-              left: '0.75rem',
-              color: 'var(--color-text-tertiary)',
-              display: 'flex',
-              alignItems: 'center',
-              pointerEvents: 'none',
-            }}
-          >
+          <span className="absolute left-3 flex items-center pointer-events-none text-[var(--color-text-tertiary)]">
             {leftElement}
           </span>
         )}
         <ShadcnInput disabled={disabled} className={inputClass} {...props} />
         {rightElement && (
-          <span
-            style={{
-              position: 'absolute',
-              right: '0.75rem',
-              color: 'var(--color-text-tertiary)',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
+          <span className="absolute right-3 flex items-center text-[var(--color-text-tertiary)]">
             {rightElement}
           </span>
         )}
