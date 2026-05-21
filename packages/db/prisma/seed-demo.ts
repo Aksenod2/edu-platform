@@ -190,9 +190,41 @@ async function main() {
     ],
   });
 
+  // ── Сообщения (тред) ─────────────────────────────────────────────────────
+  // Тред с последней репликой от студента — чтобы инбокс «Сообщения» и фильтр
+  // «Ждут ответа» были наполнены. Тред привязан к студенту (не к потоку),
+  // поэтому пересоздаём его записи отдельно (idempotent).
+  const thread = await prisma.thread.upsert({
+    where: { studentId: student.id },
+    update: {},
+    create: { studentId: student.id },
+  });
+  await prisma.threadEntry.deleteMany({ where: { threadId: thread.id } });
+  const HOUR = 60 * 60 * 1000;
+  await prisma.threadEntry.createMany({
+    data: [
+      {
+        threadId: thread.id,
+        authorId: teacher.id,
+        type: 'comment',
+        content: 'Привет! Если будут вопросы по урокам или заданиям — пиши сюда.',
+        createdAt: new Date(Date.now() - 2 * HOUR),
+        readAt: new Date(Date.now() - 1.5 * HOUR),
+      },
+      {
+        threadId: thread.id,
+        authorId: student.id,
+        type: 'text',
+        content: 'Здравствуйте! Не до конца понял, как оформить CJM — можно пример?',
+        createdAt: new Date(Date.now() - 0.5 * HOUR),
+        readAt: null,
+      },
+    ],
+  });
+
   console.log(
     `Demo seed готов: поток «${STREAM_NAME}» — 4 урока (3 опубликовано, 1 черновик), ` +
-      `2 задания, 3 записи расписания. Студент: ${student.email}`,
+      `2 задания, 3 записи расписания, тред с вопросом от студента. Студент: ${student.email}`,
   );
 }
 
