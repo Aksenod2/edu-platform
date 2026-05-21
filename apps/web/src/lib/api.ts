@@ -951,6 +951,69 @@ export async function revokeApiKey(accessToken: string, id: string): Promise<{ m
   });
 }
 
+// Admin dashboard stats
+
+export interface AdminStats {
+  students: {
+    total: number;
+    active: number;
+    blocked: number;
+    newThisWeek: number;
+    pendingOnboarding: number;
+    questionnaireIncomplete: number;
+  };
+  streams: {
+    active: number;
+    archived: number;
+  };
+  assignments: {
+    byStatus: {
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      needs_revision: number;
+    };
+    awaitingReview: number;
+  };
+  schedule: {
+    thisWeek: number;
+    upcoming: Array<{
+      id: string;
+      date: string;
+      startTime: string;
+      lessonTitle: string;
+      streamId: string;
+      streamName: string;
+      meetingUrl: string | null;
+    }>;
+  };
+  attention: {
+    submissionsToReview: Array<{
+      studentAssignmentId: string;
+      studentId: string;
+      studentName: string;
+      assignmentTitle: string;
+      submittedAt: string | null;
+    }>;
+    unansweredThreads: Array<{
+      studentId: string;
+      studentName: string;
+      lastEntryAt: string;
+    }>;
+    onboarding: Array<{
+      studentId: string;
+      studentName: string;
+      reason: 'invite_pending' | 'questionnaire_incomplete';
+    }>;
+  };
+}
+
+export async function getAdminStats(accessToken: string): Promise<AdminStats> {
+  return request('/stats', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export async function uploadThreadFile(
   accessToken: string,
   studentId: string,
