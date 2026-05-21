@@ -12,8 +12,10 @@ export async function threadRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
   // GET /threads/:studentId — chronological feed of entries
+  // Query params: ?assignmentId=X to filter by assignment context
   app.get('/threads/:studentId', async (request, reply) => {
     const { studentId } = request.params as { studentId: string };
+    const { assignmentId } = request.query as { assignmentId?: string };
     const user = request.user!;
 
     // Students can only see their own thread
@@ -46,6 +48,8 @@ export async function threadRoutes(app: FastifyInstance) {
         threadId: thread.id,
         // Students cannot see "note" entries (admin-only notes)
         ...(user.role === 'student' ? { type: { not: 'note' as ThreadEntryType } } : {}),
+        // Optional: filter by assignment context
+        ...(assignmentId ? { assignmentId } : {}),
       },
       include: {
         author: { select: { id: true, name: true, role: true } },

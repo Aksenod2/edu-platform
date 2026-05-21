@@ -10,8 +10,10 @@ import {
   getStudentAssignments,
   submitStudentAssignment,
   getStreams,
+  getThread,
   type StudentAssignment,
   type Stream,
+  type ThreadEntry,
 } from '@/lib/api';
 
 const STUDENT_NAV = [
@@ -61,6 +63,8 @@ export default function StudentAssignmentsPage() {
   const [streamFilter, setStreamFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // assignmentId → last teacher comment entry for that assignment
+  const [assignmentFeedback, setAssignmentFeedback] = useState<Record<string, ThreadEntry | null>>({});
   const [submissionModalSaId, setSubmissionModalSaId] = useState<string | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
@@ -97,6 +101,30 @@ export default function StudentAssignmentsPage() {
   useEffect(() => {
     if (accessToken && user?.role === 'student') fetchData();
   }, [accessToken, user, fetchData]);
+
+  // Load teacher feedback (type=comment from admin) for a reviewed assignment
+  const loadAssignmentFeedback = useCallback(async (assignmentId: string) => {
+    if (!accessToken || !user || assignmentId in assignmentFeedback) return;
+    try {
+      const data = await getThread(accessToken, user.id, assignmentId);
+      // Find last admin comment entry for this assignment
+      const adminComments = data.entries.filter(
+        (e) => e.type === 'comment' && e.author.role === 'admin' && e.assignmentId === assignmentId,
+      );
+      const last = adminComments.length > 0 ? adminComments[adminComments.length - 1] : null;
+      setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: last }));
+    } catch {
+      setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: null }));
+    }
+  }, [accessToken, user, assignmentFeedback]);
+
+  const handleToggleExpand = (saId: string, assignmentId: string | undefined, isReviewed: boolean) => {
+    const nextExpanded = expandedId === saId ? null : saId;
+    setExpandedId(nextExpanded);
+    if (nextExpanded && isReviewed && assignmentId) {
+      loadAssignmentFeedback(assignmentId);
+    }
+  };
 
   const openSubmissionForm = (saId: string) => {
     setSubmissionModalSaId(saId);
@@ -357,7 +385,7 @@ export default function StudentAssignmentsPage() {
                 >
                   {/* Card header — clickable */}
                   <button
-                    onClick={() => setExpandedId(isExpanded ? null : sa.id)}
+                    onClick={() => handleToggleExpand(sa.id, a?.id, sa.status === 'reviewed')}
                     aria-expanded={isExpanded}
                     style={{
                       width: '100%',
@@ -494,6 +522,67 @@ export default function StudentAssignmentsPage() {
                         </p>
                       )}
 
+                      {a?.materials && a.materials.length > 0 && (
+                        <div style={{ marginBottom: 'var(--space-4)' }}>
+                          <p style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-text-tertiary)',
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: 'var(--tracking-wide)',
+                            textTransform: 'uppercase',
+                            marginBottom: 'var(--space-2)',
+                          }}>
+                            Материалы
+                          </p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                            {a.materials.map((m, i) => (
+                              <a
+                                key={i}
+                                href={m.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download={m.type === 'file' ? m.name : undefined}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 'var(--space-2)',
+                                  padding: 'var(--space-2) var(--space-3)',
+                                  background: 'var(--color-bg-overlay)',
+                                  border: '1px solid var(--color-border-subtle)',
+                                  borderRadius: 'var(--radius-xs)',
+                                  color: 'var(--color-accent)',
+                                  textDecoration: 'none',
+                                  fontSize: 'var(--text-sm)',
+                                }}
+                              >
+                                {m.type === 'file' ? (
+                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                    <path d="M8 1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z" />
+                                    <path d="M8 1v4h4" />
+                                    <path d="M5 9l2 2 2-2M7 11V6" />
+                                  </svg>
+                                ) : (
+                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                    <path d="M6 3H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
+                                    <path d="M9 1h4v4" />
+                                    <path d="M14 1L7 8" />
+                                  </svg>
+                                )}
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                                {m.type === 'file' && m.size && (
+                                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)', flexShrink: 0 }}>
+                                    {Math.round(m.size / 1024)}KB
+                                  </span>
+                                )}
+                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)', flexShrink: 0, fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
+                                  {m.type === 'file' ? 'Скачать' : 'Открыть'}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {a?.tags && a.tags.length > 0 && (
                         <div style={{
                           display: 'flex',
@@ -602,6 +691,118 @@ export default function StudentAssignmentsPage() {
                           )}
                         </div>
                       )}
+
+                      {/* Feedback block for reviewed assignments */}
+                      {sa.status === 'reviewed' && a?.id && (() => {
+                        const feedback = assignmentFeedback[a.id];
+                        if (feedback === undefined) return null; // still loading
+                        if (feedback === null) return null; // no feedback yet
+                        return (
+                          <div style={{
+                            marginBottom: 'var(--space-4)',
+                            padding: 'var(--space-4)',
+                            background: 'rgba(57,255,20,0.04)',
+                            border: '1px solid rgba(57,255,20,0.2)',
+                            borderRadius: 'var(--radius-sm)',
+                          }}>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 'var(--space-2)',
+                              marginBottom: 'var(--space-3)',
+                            }}>
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-success)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M2 2h10v7H5l-3 3V2z"/>
+                                <path d="M4.5 5h5M4.5 7.5h3"/>
+                              </svg>
+                              <span style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 'var(--text-xs)',
+                                letterSpacing: 'var(--tracking-wide)',
+                                textTransform: 'uppercase',
+                                color: 'var(--color-success)',
+                              }}>
+                                Фидбек учителя
+                              </span>
+                              <span style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 'var(--text-xs)',
+                                color: 'var(--color-text-disabled)',
+                                marginLeft: 'auto',
+                              }}>
+                                {new Date(feedback.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} · {feedback.author.name}
+                              </span>
+                            </div>
+                            <p style={{
+                              fontSize: 'var(--text-sm)',
+                              color: 'var(--color-text-secondary)',
+                              lineHeight: '1.6',
+                              whiteSpace: 'pre-wrap',
+                              margin: 0,
+                            }}>
+                              {feedback.content}
+                            </p>
+                            <div style={{
+                              display: 'flex',
+                              gap: 'var(--space-3)',
+                              marginTop: 'var(--space-3)',
+                              paddingTop: 'var(--space-3)',
+                              borderTop: '1px solid rgba(57,255,20,0.12)',
+                            }}>
+                              <button
+                                onClick={() => router.push(
+                                  `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`
+                                )}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--color-info)',
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 'var(--text-xs)',
+                                  letterSpacing: 'var(--tracking-wide)',
+                                  textTransform: 'uppercase',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 'var(--space-1)',
+                                  padding: 0,
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                                  <path d="M2 2h8v6H4.5l-2.5 2V2z"/>
+                                </svg>
+                                Открыть в треде
+                              </button>
+                              <button
+                                onClick={() => router.push(
+                                  `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`
+                                )}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--color-text-tertiary)',
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 'var(--text-xs)',
+                                  letterSpacing: 'var(--tracking-wide)',
+                                  textTransform: 'uppercase',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 'var(--space-1)',
+                                  padding: 0,
+                                  marginLeft: 'auto',
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                                  <path d="M2 2h8v6H4.5l-2.5 2V2z"/>
+                                  <path d="M4 4.5h4M4 6.5h2.5"/>
+                                </svg>
+                                Ответить
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div style={{
                         display: 'flex',

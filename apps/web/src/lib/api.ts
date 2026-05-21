@@ -752,8 +752,10 @@ export interface ThreadResponse {
 export async function getThread(
   accessToken: string,
   studentId: string,
+  assignmentId?: string,
 ): Promise<ThreadResponse> {
-  return request(`/threads/${studentId}`, {
+  const qs = assignmentId ? `?assignmentId=${encodeURIComponent(assignmentId)}` : '';
+  return request(`/threads/${studentId}${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
