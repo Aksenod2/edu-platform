@@ -126,6 +126,13 @@ export async function acceptInvite(
   });
 }
 
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return request('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
 // Streams API
 
 export interface Stream {

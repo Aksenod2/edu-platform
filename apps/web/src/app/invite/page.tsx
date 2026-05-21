@@ -2,9 +2,10 @@
 
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { acceptInvite } from '@/lib/api';
-import { Button, Input } from '@platform/ui/atoms';
 import { AuthLayout } from '@platform/ui/templates';
+import { FormField } from '@platform/ui/molecules';
+import { Button, Text } from '@platform/ui/atoms';
+import { acceptInvite } from '@/lib/api';
 
 function InviteForm() {
   const searchParams = useSearchParams();
@@ -43,19 +44,21 @@ function InviteForm() {
 
   if (!token) {
     return (
-      <AuthLayout title="Ошибка">
-        <p style={{ color: 'var(--color-accent-red)' }}>Ссылка приглашения невалидна.</p>
+      <AuthLayout title="Ошибка" subtitle="Ссылка приглашения недействительна">
+        <div style={{ textAlign: 'center' }}>
+          <BackToLoginLink />
+        </div>
       </AuthLayout>
     );
   }
 
   if (success) {
     return (
-      <AuthLayout title="Готово!">
-        <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-4)' }}>
-          Регистрация завершена. Теперь вы можете войти.
-        </p>
-        <a href="/login" style={{ color: 'var(--color-accent-red)' }}>Перейти на страницу входа</a>
+      <AuthLayout title="Готово!" subtitle="Регистрация завершена. Теперь вы можете войти.">
+        <div style={{ textAlign: 'center' }}>
+          <SuccessIcon />
+          <BackToLoginLink label="ПЕРЕЙТИ КО ВХОДУ →" />
+        </div>
       </AuthLayout>
     );
   }
@@ -63,43 +66,45 @@ function InviteForm() {
   return (
     <AuthLayout
       title="Регистрация"
-      subtitle="Установите пароль для входа на платформу."
+      subtitle="Установите пароль для входа на платформу"
     >
-      {error && (
-        <div style={{ padding: '8px 12px', background: '#fee', color: '#c00', borderRadius: 4, marginBottom: 16, userSelect: 'text', cursor: 'text' }}>
-          {error}
-        </div>
-      )}
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}
+      >
+        {error && <ErrorAlert message={error} />}
 
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Пароль</label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>Подтвердите пароль</label>
-          <Input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-          />
-        </div>
-        <Button
-          type="submit"
-          variant="primary"
-          fullWidth
-          loading={loading}
-          disabled={loading}
-        >
-          {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+        <FormField
+          id="password"
+          label="Пароль"
+          required
+          inputProps={{
+            type: 'password',
+            value: password,
+            onChange: (e) => setPassword(e.target.value),
+            required: true,
+            minLength: 6,
+            autoComplete: 'new-password',
+          }}
+        />
+
+        <FormField
+          id="confirmPassword"
+          label="Подтвердите пароль"
+          required
+          error={confirmPassword && confirmPassword !== password ? 'Пароли не совпадают' : undefined}
+          inputProps={{
+            type: 'password',
+            value: confirmPassword,
+            onChange: (e) => setConfirmPassword(e.target.value),
+            required: true,
+            minLength: 6,
+            autoComplete: 'new-password',
+          }}
+        />
+
+        <Button type="submit" variant="primary" fullWidth loading={loading} disabled={loading}>
+          {loading ? 'РЕГИСТРАЦИЯ...' : 'ЗАРЕГИСТРИРОВАТЬСЯ'}
         </Button>
       </form>
     </AuthLayout>
@@ -108,12 +113,104 @@ function InviteForm() {
 
 export default function InvitePage() {
   return (
-    <Suspense fallback={
-      <AuthLayout>
-        <p style={{ color: 'var(--color-text-tertiary)', textAlign: 'center' }}>Загрузка...</p>
-      </AuthLayout>
-    }>
+    <Suspense
+      fallback={
+        <AuthLayout title="Загрузка...">
+          <PageSpinner />
+        </AuthLayout>
+      }
+    >
       <InviteForm />
     </Suspense>
+  );
+}
+
+function ErrorAlert({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        padding: 'var(--space-3) var(--space-4)',
+        background: 'var(--color-error-dim)',
+        border: '1px solid var(--color-error)',
+        borderRadius: 'var(--radius-xs)',
+        userSelect: 'text',
+        cursor: 'text',
+      }}
+    >
+      <Text size="sm" color="var(--color-error)">{message}</Text>
+    </div>
+  );
+}
+
+function BackToLoginLink({ label = '← ВЕРНУТЬСЯ КО ВХОДУ' }: { label?: string }) {
+  return (
+    <a
+      href="/login"
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 'var(--text-xs)',
+        color: 'var(--color-text-tertiary)',
+        textDecoration: 'none',
+        letterSpacing: 'var(--tracking-wide)',
+        textTransform: 'uppercase',
+      }}
+    >
+      {label}
+    </a>
+  );
+}
+
+function SuccessIcon() {
+  return (
+    <div
+      style={{
+        width: 48,
+        height: 48,
+        borderRadius: 'var(--radius-full)',
+        border: '2px solid var(--color-success)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0 auto var(--space-6)',
+        color: 'var(--color-success)',
+      }}
+    >
+      <svg
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    </div>
+  );
+}
+
+function PageSpinner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'var(--space-8)',
+      }}
+    >
+      <div
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          border: '2px solid var(--color-border-default)',
+          borderTopColor: 'var(--color-accent-red)',
+          animation: 'np-spin 0.7s linear infinite',
+        }}
+      />
+    </div>
   );
 }

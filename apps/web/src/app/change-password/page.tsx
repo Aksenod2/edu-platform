@@ -3,7 +3,8 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthLayout } from '@platform/ui/templates';
-import { Input, Button, Label } from '@platform/ui/atoms';
+import { FormField } from '@platform/ui/molecules';
+import { Button, Text } from '@platform/ui/atoms';
 import { useAuth } from '@/lib/auth-context';
 import { changePassword } from '@/lib/api';
 
@@ -19,21 +20,7 @@ export default function ChangePasswordPage() {
   if (loading) {
     return (
       <AuthLayout title="Загрузка...">
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 'var(--space-8)',
-        }}>
-          <div style={{
-            width: 24,
-            height: 24,
-            borderRadius: '50%',
-            border: '2px solid var(--color-border-default)',
-            borderTopColor: 'var(--color-accent-red)',
-            animation: 'np-spin 0.7s linear infinite',
-          }} />
-        </div>
+        <PageSpinner />
       </AuthLayout>
     );
   }
@@ -78,78 +65,99 @@ export default function ChangePasswordPage() {
           : 'Введите текущий пароль и задайте новый'
       }
     >
-      <form onSubmit={handleSubmit}>
-        {error && (
-          <div style={{
-            padding: 'var(--space-3) var(--space-4)',
-            background: 'var(--color-error-dim)',
-            border: '1px solid var(--color-error)',
-            borderRadius: 'var(--radius-xs)',
-            marginBottom: 'var(--space-5)',
-            color: 'var(--color-error)',
-            fontSize: 'var(--text-sm)',
-            userSelect: 'text',
-          }}>
-            {error}
-          </div>
-        )}
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}
+      >
+        {error && <ErrorAlert message={error} />}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
-          <div>
-            <Label htmlFor="currentPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
-              Текущий пароль
-            </Label>
-            <Input
-              id="currentPassword"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
-          </div>
+        <FormField
+          id="currentPassword"
+          label="Текущий пароль"
+          required
+          inputProps={{
+            type: 'password',
+            value: currentPassword,
+            onChange: (e) => setCurrentPassword(e.target.value),
+            required: true,
+            autoComplete: 'current-password',
+          }}
+        />
 
-          <div>
-            <Label htmlFor="newPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
-              Новый пароль
-            </Label>
-            <Input
-              id="newPassword"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={6}
-              autoComplete="new-password"
-            />
-          </div>
+        <FormField
+          id="newPassword"
+          label="Новый пароль"
+          required
+          inputProps={{
+            type: 'password',
+            value: newPassword,
+            onChange: (e) => setNewPassword(e.target.value),
+            required: true,
+            minLength: 6,
+            autoComplete: 'new-password',
+          }}
+        />
 
-          <div>
-            <Label htmlFor="confirmPassword" required style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
-              Подтвердите новый пароль
-            </Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              minLength={6}
-              autoComplete="new-password"
-              error={!!(confirmPassword && confirmPassword !== newPassword)}
-            />
-          </div>
-        </div>
+        <FormField
+          id="confirmPassword"
+          label="Подтвердите новый пароль"
+          required
+          error={confirmPassword && confirmPassword !== newPassword ? 'Пароли не совпадают' : undefined}
+          inputProps={{
+            type: 'password',
+            value: confirmPassword,
+            onChange: (e) => setConfirmPassword(e.target.value),
+            required: true,
+            minLength: 6,
+            autoComplete: 'new-password',
+          }}
+        />
 
-        <Button
-          type="submit"
-          variant="primary"
-          fullWidth
-          loading={submitting}
-        >
-          Сменить пароль
+        <Button type="submit" variant="primary" fullWidth loading={submitting}>
+          {submitting ? 'СОХРАНЕНИЕ...' : 'СМЕНИТЬ ПАРОЛЬ'}
         </Button>
       </form>
     </AuthLayout>
+  );
+}
+
+function ErrorAlert({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        padding: 'var(--space-3) var(--space-4)',
+        background: 'var(--color-error-dim)',
+        border: '1px solid var(--color-error)',
+        borderRadius: 'var(--radius-xs)',
+        userSelect: 'text',
+        cursor: 'text',
+      }}
+    >
+      <Text size="sm" color="var(--color-error)">{message}</Text>
+    </div>
+  );
+}
+
+function PageSpinner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'var(--space-8)',
+      }}
+    >
+      <div
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          border: '2px solid var(--color-border-default)',
+          borderTopColor: 'var(--color-accent-red)',
+          animation: 'np-spin 0.7s linear infinite',
+        }}
+      />
+    </div>
   );
 }
