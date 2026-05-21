@@ -1,9 +1,11 @@
 // In the browser, use the same-origin proxy (/api-proxy) to avoid CORS
 // and cross-origin cookie issues. On the server (SSR), call the API directly.
+// API_URL is a runtime variable (no NEXT_PUBLIC_ prefix): it is read at
+// container start, so the API address can change without rebuilding the image.
 const API_URL =
   typeof window !== 'undefined'
     ? '/api-proxy'
-    : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    : process.env.API_URL || 'http://localhost:4000';
 
 interface AuthResponse {
   accessToken: string;

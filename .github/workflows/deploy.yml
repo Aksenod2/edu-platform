@@ -10,11 +10,12 @@ name: Сборка и деплой образов
 #    (если пакеты GHCR приватные — сделать их public ИЛИ добавить в Render
 #     Registry Credentials для ghcr.io: логин = GitHub-username, пароль = PAT с read:packages.)
 # 2. Сохранить ВСЕ env-переменные сервисов (DATABASE_URL, JWT_SECRET, S3_*, SMTP_*,
-#    CORS_ORIGIN, PORT, HOST у api; NEXT_PUBLIC_API_URL у web) — они не зависят от источника сборки.
+#    CORS_ORIGIN, PORT, HOST у api; API_URL у web) — они не зависят от источника сборки.
 # 3. Создать Deploy Hook у каждого сервиса и добавить URL'ы в Secrets репозитория:
 #      RENDER_DEPLOY_HOOK_API, RENDER_DEPLOY_HOOK_WEB
-# 4. (web) Задать переменную репозитория NEXT_PUBLIC_API_URL (Settings → Variables)
-#    — она встраивается в образ на этапе сборки.
+# 4. Рантайм-переменные на сервисах Render (меняются БЕЗ пересборки образа):
+#      web: API_URL     = https://<platform-api>.onrender.com
+#      api: CORS_ORIGIN = https://<platform-web>.onrender.com
 
 on:
   push:
@@ -67,8 +68,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
 
   deploy:
     needs: build

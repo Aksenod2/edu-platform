@@ -53,5 +53,5 @@ services:
     dockerfilePath: ./apps/web/Dockerfile
     dockerContext: .
     envVars:
-      - key: NEXT_PUBLIC_API_URL
+      - key: API_URL
         sync: false
