@@ -75,8 +75,7 @@ export function Header({ user, onLogout, platformName = 'PLATFORM', notification
 function DotMatrixLogo() {
   return (
     <div
-      className="grid gap-0.5"
-      style={{ gridTemplateColumns: 'repeat(3, 3px)' }}
+      className="grid grid-cols-[repeat(3,3px)] gap-0.5"
       aria-hidden
     >
       {[1, 1, 1, 1, 0, 1, 1, 1, 1].map((on, i) => (
