@@ -300,7 +300,7 @@ export async function userRoutes(app: FastifyInstance) {
         include: { assignment: { select: { title: true } } },
         orderBy: { createdAt: 'asc' },
       }),
-      prisma.thread.findUnique({
+      prisma.conversation.findUnique({
         where: { studentId: id },
         include: { entries: { orderBy: { createdAt: 'asc' } } },
       }),

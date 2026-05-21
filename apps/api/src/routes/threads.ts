@@ -36,8 +36,9 @@ export async function threadRoutes(app: FastifyInstance) {
     // Threads of non-deleted students that have at least one entry.
     // Pull the newest entry (author role + preview) per thread, plus the count
     // of unread student-authored entries (readAt null = not yet read by admin).
-    const threads = await prisma.thread.findMany({
+    const threads = await prisma.conversation.findMany({
       where: {
+        type: 'student',
         student: { deletedAt: null },
         entries: { some: {} },
       },
@@ -67,8 +68,8 @@ export async function threadRoutes(app: FastifyInstance) {
       .map((t) => {
         const last = t.entries[0]!;
         return {
-          studentId: t.studentId,
-          studentName: t.student.name,
+          studentId: t.studentId!,
+          studentName: t.student?.name ?? '',
           lastEntryAt: last.createdAt,
           lastEntryPreview: previewForEntry(last.type, last.content),
           lastEntryAuthorRole: last.author.role,
@@ -105,20 +106,20 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Ученик не найден' });
     }
 
-    // Find or auto-create thread for student
-    let thread = await prisma.thread.findUnique({
+    // Find or auto-create conversation for student
+    let thread = await prisma.conversation.findUnique({
       where: { studentId },
     });
 
     if (!thread) {
-      thread = await prisma.thread.create({
-        data: { studentId },
+      thread = await prisma.conversation.create({
+        data: { studentId, type: 'student' },
       });
     }
 
-    const entries = await prisma.threadEntry.findMany({
+    const entries = await prisma.conversationEntry.findMany({
       where: {
-        threadId: thread.id,
+        conversationId: thread.id,
         // Students cannot see "note" entries (admin-only notes)
         ...(user.role === 'student' ? { type: { not: 'note' as ThreadEntryType } } : {}),
         // Optional: filter by assignment context
@@ -138,7 +139,7 @@ export async function threadRoutes(app: FastifyInstance) {
       .map((e) => e.id);
 
     if (unreadFromOtherParty.length > 0) {
-      await prisma.threadEntry.updateMany({
+      await prisma.conversationEntry.updateMany({
         where: { id: { in: unreadFromOtherParty } },
         data: { readAt: now },
       });
@@ -180,12 +181,12 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
     }
 
-    const entry = await prisma.threadEntry.findUnique({
+    const entry = await prisma.conversationEntry.findUnique({
       where: { id: entryId },
-      include: { thread: { select: { studentId: true } } },
+      include: { conversation: { select: { studentId: true } } },
     });
 
-    if (!entry || entry.thread.studentId !== studentId) {
+    if (!entry || entry.conversation.studentId !== studentId) {
       return reply.status(404).send({ error: 'Запись не найдена' });
     }
 
@@ -198,7 +199,7 @@ export async function threadRoutes(app: FastifyInstance) {
       return { entry: { id: entry.id, readAt: entry.readAt } };
     }
 
-    const updated = await prisma.threadEntry.update({
+    const updated = await prisma.conversationEntry.update({
       where: { id: entryId },
       data: { readAt: new Date() },
       select: { id: true, readAt: true },
@@ -226,10 +227,10 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Ученик не найден' });
     }
 
-    // Find or auto-create thread
-    let thread = await prisma.thread.findUnique({ where: { studentId } });
+    // Find or auto-create conversation
+    let thread = await prisma.conversation.findUnique({ where: { studentId } });
     if (!thread) {
-      thread = await prisma.thread.create({ data: { studentId } });
+      thread = await prisma.conversation.create({ data: { studentId, type: 'student' } });
     }
 
     const contentType = request.headers['content-type'] || '';
@@ -272,14 +273,14 @@ export async function threadRoutes(app: FastifyInstance) {
       }
     }
 
-    const entry = await prisma.threadEntry.create({
+    const entry = await prisma.conversationEntry.create({
       data: {
-        threadId: thread.id,
+        conversationId: thread.id,
         authorId: user.userId,
         type: body.type,
         content: body.content,
         assignmentId: body.assignmentId || null,
-        metadata: (body.metadata ?? undefined) as Parameters<typeof prisma.threadEntry.create>[0]['data']['metadata'],
+        metadata: (body.metadata ?? undefined) as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata'],
       },
       include: {
         author: { select: { id: true, name: true, role: true } },
@@ -295,7 +296,7 @@ export async function threadRoutes(app: FastifyInstance) {
         type: 'thread_entry',
         title: 'Новое сообщение от преподавателя',
         body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
-        metadata: { threadId: thread.id, entryId: entry.id },
+        metadata: { conversationId: thread.id, entryId: entry.id },
       }).catch(() => {});
     } else {
       // Student wrote — notify all admins
@@ -310,7 +311,7 @@ export async function threadRoutes(app: FastifyInstance) {
           type: 'thread_entry',
           title: `Новое сообщение от ${authorName}`,
           body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
-          metadata: { threadId: thread.id, entryId: entry.id, studentId },
+          metadata: { conversationId: thread.id, entryId: entry.id, studentId },
         }).catch(() => {});
       }
     }
@@ -322,7 +323,7 @@ export async function threadRoutes(app: FastifyInstance) {
 async function handleMultipartEntry(
   request: import('fastify').FastifyRequest,
   reply: import('fastify').FastifyReply,
-  threadId: string,
+  conversationId: string,
   user: { userId: string; role: string },
   studentId: string,
 ): Promise<unknown> {
@@ -378,9 +379,9 @@ async function handleMultipartEntry(
 
   const uploaded = await uploadFile(fileBuffer, fileName, fileMimeType);
 
-  const entry = await prisma.threadEntry.create({
+  const entry = await prisma.conversationEntry.create({
     data: {
-      threadId,
+      conversationId,
       authorId: user.userId,
       type: entryType,
       content: fileName,
@@ -405,7 +406,7 @@ async function handleMultipartEntry(
       type: 'thread_entry',
       title: 'Новый файл от преподавателя',
       body: `Загружен файл: ${fileName}`,
-      metadata: { threadId, entryId: entry.id },
+      metadata: { conversationId, entryId: entry.id },
     }).catch(() => {});
   } else {
     const admins = await prisma.user.findMany({
@@ -418,7 +419,7 @@ async function handleMultipartEntry(
         type: 'thread_entry',
         title: `Новый файл от ${entry.author.name}`,
         body: `Загружен файл: ${fileName}`,
-        metadata: { threadId, entryId: entry.id, studentId },
+        metadata: { conversationId, entryId: entry.id, studentId },
       }).catch(() => {});
     }
   }

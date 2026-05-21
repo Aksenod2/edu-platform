@@ -145,8 +145,12 @@ export interface Stream {
   shared?: boolean;
 }
 
-export async function getStreams(accessToken: string): Promise<{ streams: Stream[] }> {
-  return request('/streams', {
+export async function getStreams(
+  accessToken: string,
+  options?: { mine?: boolean },
+): Promise<{ streams: Stream[] }> {
+  const qs = options?.mine ? '?mine=true' : '';
+  return request(`/streams${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
@@ -345,8 +349,11 @@ export interface Lesson {
 export async function getLessons(
   accessToken: string,
   streamId: string,
+  options?: { mine?: boolean },
 ): Promise<{ lessons: Lesson[] }> {
-  return request(`/lessons?streamId=${encodeURIComponent(streamId)}`, {
+  const params = new URLSearchParams({ streamId });
+  if (options?.mine) params.set('mine', 'true');
+  return request(`/lessons?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

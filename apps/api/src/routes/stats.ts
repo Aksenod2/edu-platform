@@ -85,8 +85,9 @@ export async function statsRoutes(app: FastifyInstance) {
       // attention.unansweredThreads — latest entry per thread; keep threads whose
       // latest entry was authored by the student (awaiting teacher reply).
       // Fetch threads with their newest entry + author role.
-      prisma.thread.findMany({
+      prisma.conversation.findMany({
         where: {
+          type: 'student',
           student: { deletedAt: null },
           entries: { some: {} },
         },
@@ -159,8 +160,8 @@ export async function statsRoutes(app: FastifyInstance) {
     const unansweredThreads = latestThreadEntries
       .filter((t) => t.entries[0] && t.entries[0].author.role === 'student')
       .map((t) => ({
-        studentId: t.studentId,
-        studentName: t.student.name,
+        studentId: t.studentId!,
+        studentName: t.student?.name ?? '',
         lastEntryAt: t.entries[0].createdAt,
       }))
       .sort((a, b) => b.lastEntryAt.getTime() - a.lastEntryAt.getTime())

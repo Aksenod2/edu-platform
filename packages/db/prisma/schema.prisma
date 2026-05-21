@@ -44,6 +44,12 @@ enum ThreadEntryType {
   note
 }
 
+enum ConversationType {
+  student
+  staff
+  stream
+}
+
 enum NotificationType {
   lesson_published
   assignment_created
@@ -72,8 +78,9 @@ model User {
 
   refreshTokens           RefreshToken[]
   studentAssignments      StudentAssignment[]
-  thread                  Thread?
-  threadEntries           ThreadEntry[]            @relation("AuthoredEntries")
+  studentConversation     Conversation?
+  authoredEntries         ConversationEntry[]      @relation("AuthoredEntries")
+  conversationReads       ConversationRead[]
   studentProfile          StudentProfile?
   teacherNotes            TeacherNote[]            @relation("AuthoredNotes")
   studentNotes            TeacherNote[]            @relation("StudentNotes")
@@ -125,6 +132,7 @@ model Stream {
   assignments     Assignment[]
   scheduleEntries ScheduleEntry[]
   enrollments     StreamEnrollment[]
+  conversation    Conversation?
 }
 
 model StreamEnrollment {
@@ -193,7 +201,7 @@ model Assignment {
   lesson             Lesson?             @relation(fields: [lessonId], references: [id], onDelete: SetNull)
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
-  threadEntries      ThreadEntry[]
+  conversationEntries ConversationEntry[]
 
   @@index([streamId])
   @@index([lessonId])
@@ -221,32 +229,49 @@ model StudentAssignment {
   @@index([studentId])
 }
 
-model Thread {
-  id        String   @id @default(uuid())
-  studentId String   @unique
-  createdAt DateTime @default(now())
+model Conversation {
+  id        String           @id @default(uuid())
+  type      ConversationType
+  studentId String?          @unique
+  streamId  String?          @unique
+  createdAt DateTime         @default(now())
 
-  student User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  entries ThreadEntry[]
+  student User?               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  stream  Stream?             @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  entries ConversationEntry[]
+  reads   ConversationRead[]
 }
 
-model ThreadEntry {
-  id           String          @id @default(uuid())
-  threadId     String
-  authorId     String
-  type         ThreadEntryType @default(text)
-  content      String
-  metadata     Json?
-  assignmentId String?
-  createdAt    DateTime        @default(now())
-  readAt       DateTime?
+model ConversationEntry {
+  id             String          @id @default(uuid())
+  conversationId String
+  authorId       String
+  type           ThreadEntryType @default(text)
+  content        String
+  metadata       Json?
+  assignmentId   String?
+  createdAt      DateTime        @default(now())
+  readAt         DateTime?
 
-  thread     Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  author     User        @relation("AuthoredEntries", fields: [authorId], references: [id], onDelete: Cascade)
-  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User         @relation("AuthoredEntries", fields: [authorId], references: [id], onDelete: Cascade)
+  assignment   Assignment?  @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
 
-  @@index([threadId])
+  @@index([conversationId])
   @@index([authorId])
+}
+
+model ConversationRead {
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
 }
 
 model StudentProfile {
