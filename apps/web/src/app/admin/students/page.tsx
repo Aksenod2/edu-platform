@@ -29,11 +29,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -73,7 +74,7 @@ export default function StudentsPage() {
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -109,7 +110,7 @@ export default function StudentsPage() {
       await createStudent(accessToken, newEmail, newName);
       setNewEmail('');
       setNewName('');
-      setShowCreateForm(false);
+      setCreateOpen(false);
       showMessage('Ученик создан');
       await fetchStudents();
     } catch (err) {
@@ -170,39 +171,17 @@ export default function StudentsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Ученики</h1>
           <p className="text-sm text-muted-foreground">Управление учениками</p>
         </div>
-        <Button
-          variant={showCreateForm ? 'outline' : 'default'}
-          onClick={() => setShowCreateForm(!showCreateForm)}
-        >
-          {showCreateForm ? (
-            'Отмена'
-          ) : (
-            <>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button>
               <Plus />
               Создать ученика
-            </>
-          )}
-        </Button>
-      </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription className="break-all">{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {actionMessage && (
-        <Alert>
-          <AlertDescription className="break-all">{actionMessage}</AlertDescription>
-        </Alert>
-      )}
-
-      {showCreateForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Новый ученик</CardTitle>
-          </CardHeader>
-          <CardContent>
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Новый ученик</DialogTitle>
+            </DialogHeader>
             <form onSubmit={handleCreate}>
               <FieldGroup>
                 <Field>
@@ -233,8 +212,20 @@ export default function StudentsPage() {
                 </Field>
               </FieldGroup>
             </form>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription className="break-all">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {actionMessage && (
+        <Alert>
+          <AlertDescription className="break-all">{actionMessage}</AlertDescription>
+        </Alert>
       )}
 
       <div className="relative max-w-sm">
