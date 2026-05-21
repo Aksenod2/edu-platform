@@ -458,7 +458,7 @@ export default function StudentAssignmentsPage() {
                                     )
                                   }
                                 >
-                                  Открыть в треде
+                                  Открыть в сообщениях
                                 </Button>
                               </div>
                             </div>

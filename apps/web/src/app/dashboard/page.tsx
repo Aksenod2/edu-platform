@@ -14,7 +14,7 @@ import {
 const QUICK_LINKS = [
   { title: 'Уроки', description: 'Видеозаписи, конспекты, материалы', href: '/dashboard/lessons' },
   { title: 'Задания', description: 'Назначенные задания и их статусы', href: '/dashboard/assignments' },
-  { title: 'Тред', description: 'Записи, файлы, обратная связь', href: '/dashboard/thread' },
+  { title: 'Сообщения', description: 'Записи, файлы, обратная связь', href: '/dashboard/thread' },
   { title: 'Расписание', description: 'Предстоящие занятия и сроки', href: '/dashboard/schedule' },
   { title: 'Профиль', description: 'Анкета и контактные данные', href: '/dashboard/profile' },
 ];

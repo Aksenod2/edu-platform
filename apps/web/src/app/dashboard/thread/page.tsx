@@ -53,6 +53,7 @@ export default function StudentThreadPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const didInitialScroll = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function StudentThreadPage() {
       const data = await getThread(accessToken, user.id);
       setEntries(data.entries);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки треда');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки сообщений');
     } finally {
       setLoadingData(false);
     }
@@ -87,9 +88,13 @@ export default function StudentThreadPage() {
     if (accessToken && user?.role === 'student') fetchThread();
   }, [accessToken, user, fetchThread]);
 
+  // Прокрутка к последнему сообщению: мгновенно при первой загрузке, плавно — при новых.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries]);
+    if (loadingData || entries.length === 0) return;
+    const behavior: ScrollBehavior = didInitialScroll.current ? 'smooth' : 'auto';
+    bottomRef.current?.scrollIntoView({ behavior });
+    didInitialScroll.current = true;
+  }, [entries, loadingData]);
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setTextContent(e.target.value);
@@ -222,14 +227,14 @@ export default function StudentThreadPage() {
           <ArrowLeft className="size-4" />
           Назад
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Мой тред</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Сообщения</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Записи, файлы и обратная связь
         </p>
       </div>
 
       {/* Messages */}
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4">
+      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
         {loadingData ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -239,31 +244,34 @@ export default function StudentThreadPage() {
             <div className="flex size-12 items-center justify-center rounded-full border-2 text-muted-foreground">
               <MessageSquare className="size-6" />
             </div>
-            <p className="text-sm font-medium text-muted-foreground">Тред пуст</p>
+            <p className="text-sm font-medium text-muted-foreground">Пока нет сообщений</p>
             <p className="text-sm text-muted-foreground">Напишите первое сообщение</p>
           </div>
         ) : (
-          entries.map((entry, i) => {
-            const showGroupHeader =
-              entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
-            return (
-              <div key={entry.id}>
-                {showGroupHeader && (
-                  <div className="mb-2 mt-3 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
-                    <HelpCircle className="size-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      Вопросы по заданию: {entry.assignment?.title}
-                    </span>
-                  </div>
-                )}
-                <MessageBubble
-                  entry={entry}
-                  currentUserId={user?.id ?? ''}
-                  showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
-                />
-              </div>
-            );
-          })
+          // mt-auto прижимает ленту к низу: при малом числе сообщений они липнут к полю ввода.
+          <div className="mt-auto flex flex-col gap-2">
+            {entries.map((entry, i) => {
+              const showGroupHeader =
+                entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
+              return (
+                <div key={entry.id}>
+                  {showGroupHeader && (
+                    <div className="mb-2 mt-3 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+                      <HelpCircle className="size-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        Вопросы по заданию: {entry.assignment?.title}
+                      </span>
+                    </div>
+                  )}
+                  <MessageBubble
+                    entry={entry}
+                    currentUserId={user?.id ?? ''}
+                    showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
+                  />
+                </div>
+              );
+            })}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

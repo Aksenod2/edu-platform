@@ -454,7 +454,7 @@ export default function AssignmentDetailPage({
                   onClick={() => router.push(`/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
                 >
                   <MessageCircle className="size-3.5" />
-                  Открыть тред для этого задания
+                  Открыть в сообщениях
                 </Button>
               </div>
             )}
