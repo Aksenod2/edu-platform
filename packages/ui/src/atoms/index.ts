@@ -26,8 +26,8 @@ export type { DividerProps } from './Divider';
 export { Spinner } from './Spinner';
 export type { SpinnerProps, SpinnerSize } from './Spinner';
 
-export { Avatar } from './Avatar';
-export type { AvatarProps, AvatarSize } from './Avatar';
+export { Avatar, AvatarRoot, AvatarImage, AvatarFallback } from './Avatar';
+export type { AvatarProps, AvatarSize, AvatarRootProps, AvatarImageProps, AvatarFallbackProps } from './Avatar';
 
 export { Select } from './Select';
 export type { SelectProps, SelectSize } from './Select';

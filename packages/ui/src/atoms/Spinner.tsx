@@ -2,69 +2,61 @@
  * Spinner — Атом
  * Atomic level: Atom
  *
- * Токены: --color-accent-red, --color-border-default
+ * Мигрирован на Tailwind v4 animate-spin (CMP-226).
+ * Убрана зависимость от np-spin keyframe.
  * Размеры: sm (16px), md (24px), lg (40px)
  *
  * Nothing Phone: геометрическая вращающаяся окружность, нет мягкости
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 
 export type SpinnerSize = 'sm' | 'md' | 'lg';
 
 export interface SpinnerProps {
   size?: SpinnerSize;
+  /** Цвет акцентной дуги (CSS color). По умолчанию — var(--color-accent-red). */
   color?: string;
   label?: string;
+  className?: string;
 }
 
-const dimMap: Record<SpinnerSize, number> = {
-  sm: 16,
-  md: 24,
-  lg: 40,
+const sizeClasses: Record<SpinnerSize, string> = {
+  sm: 'size-4',   // 16px
+  md: 'size-6',   // 24px
+  lg: 'size-10',  // 40px
 };
 
-const strokeMap: Record<SpinnerSize, number> = {
-  sm: 2,
-  md: 2,
-  lg: 3,
+const strokeClasses: Record<SpinnerSize, string> = {
+  sm: 'border-2',
+  md: 'border-2',
+  lg: 'border-[3px]',
 };
 
-export function Spinner({ size = 'md', color, label = 'Загрузка...' }: SpinnerProps) {
-  const dim = dimMap[size];
-  const stroke = strokeMap[size];
-
+export function Spinner({ size = 'md', color, label = 'Загрузка...', className }: SpinnerProps) {
   return (
     <span
       role="status"
       aria-label={label}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: dim,
-        height: dim,
-        flexShrink: 0,
-      }}
+      className={cn(
+        'inline-flex items-center justify-center shrink-0',
+        sizeClasses[size],
+        className,
+      )}
     >
       <span
-        style={{
-          display: 'block',
-          width: dim,
-          height: dim,
-          borderRadius: '50%',
-          border: `${stroke}px solid var(--color-border-default)`,
-          borderTopColor: color ?? 'var(--color-accent-red)',
-          animation: 'np-spin 0.7s linear infinite',
-        }}
+        className={cn(
+          'block rounded-full animate-spin',
+          'border-border-default',
+          sizeClasses[size],
+          strokeClasses[size],
+        )}
+        style={
+          color
+            ? { borderTopColor: color }
+            : { borderTopColor: 'var(--color-accent-red)' }
+        }
       />
     </span>
   );
 }
-
-/**
- * Keyframe CSS — добавь в globals.css или tokens.css:
- *
- * @keyframes np-spin {
- *   to { transform: rotate(360deg); }
- * }
- */

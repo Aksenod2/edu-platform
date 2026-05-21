@@ -2,39 +2,128 @@
  * Avatar — Атом
  * Atomic level: Atom
  *
- * Токены: --color-bg-elevated, --color-border-default, --color-accent-red
+ * Мигрирован на shadcn/Tailwind v4 (CMP-226).
+ * Экспортирует: AvatarRoot, AvatarImage, AvatarFallback (shadcn-style primitives)
+ * и удобный wrapper Avatar с полным prop-API.
+ *
  * Состояния: image, initials, anonymous
- * Размеры: xs (24), sm (32), md (40), lg (56), xl (80)
+ * Размеры: xs (24px), sm (32px), md (40px), lg (56px), xl (80px)
  *
  * Nothing Phone: строгий квадрат (не круг) — геометрическая идентификация
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+
+// ─── Shadcn-style primitives ────────────────────────────────────────
+
+export interface AvatarRootProps {
+  size?: AvatarSize;
+  className?: string;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+}
+
+const sizeClasses: Record<AvatarSize, string> = {
+  xs: 'size-6',   // 24px
+  sm: 'size-8',   // 32px
+  md: 'size-10',  // 40px
+  lg: 'size-14',  // 56px
+  xl: 'size-20',  // 80px
+};
+
+export function AvatarRoot({ size = 'md', className, style, children }: AvatarRootProps) {
+  return (
+    <span
+      className={cn(
+        'relative inline-flex items-center justify-center shrink-0',
+        'bg-bg-elevated border border-border-default rounded-xs overflow-hidden',
+        sizeClasses[size],
+        className,
+      )}
+      style={style}
+    >
+      {children}
+    </span>
+  );
+}
+
+export interface AvatarImageProps {
+  src: string;
+  alt?: string;
+  className?: string;
+}
+
+export function AvatarImage({ src, alt = 'Avatar', className }: AvatarImageProps) {
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={cn('w-full h-full object-cover', className)}
+    />
+  );
+}
+
+export interface AvatarFallbackProps {
+  size?: AvatarSize;
+  className?: string;
+  children?: React.ReactNode;
+}
+
+const fallbackFontClasses: Record<AvatarSize, string> = {
+  xs: 'text-xs',
+  sm: 'text-sm',
+  md: 'text-base',
+  lg: 'text-lg',
+  xl: 'text-xl',
+};
+
+export function AvatarFallback({ size = 'md', className, children }: AvatarFallbackProps) {
+  return (
+    <span
+      className={cn(
+        'font-mono font-bold tracking-wide text-text-secondary select-none',
+        fallbackFontClasses[size],
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+// ─── Online indicator ───────────────────────────────────────────────
+
+interface OnlineIndicatorProps {
+  online: boolean;
+  size: AvatarSize;
+}
+
+function OnlineIndicator({ online, size }: OnlineIndicatorProps) {
+  return (
+    <span
+      className={cn(
+        'absolute bottom-0.5 right-0.5 rounded-full border border-bg-base',
+        size === 'xs' ? 'size-1' : 'size-[6px]',
+        online ? 'bg-success' : 'bg-text-tertiary',
+      )}
+      aria-hidden
+    />
+  );
+}
+
+// ─── Convenience wrapper (backward-compatible API) ──────────────────
 
 export interface AvatarProps {
   src?: string;
   name?: string;
   size?: AvatarSize;
   online?: boolean;
+  className?: string;
+  /** @deprecated Используй className; оставлен для обратной совместимости */
   style?: React.CSSProperties;
 }
-
-const dimMap: Record<AvatarSize, number> = {
-  xs: 24,
-  sm: 32,
-  md: 40,
-  lg: 56,
-  xl: 80,
-};
-
-const fontMap: Record<AvatarSize, string> = {
-  xs: 'var(--text-xs)',
-  sm: 'var(--text-sm)',
-  md: 'var(--text-base)',
-  lg: 'var(--text-lg)',
-  xl: 'var(--text-xl)',
-};
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -42,62 +131,17 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function Avatar({ src, name, size = 'md', online, style }: AvatarProps) {
-  const dim = dimMap[size];
+export function Avatar({ src, name, size = 'md', online, className, style }: AvatarProps) {
   const initials = name ? getInitials(name) : '?';
 
   return (
-    <span
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: dim,
-        height: dim,
-        background: 'var(--color-bg-elevated)',
-        border: '1px solid var(--color-border-default)',
-        borderRadius: 'var(--radius-xs)',
-        flexShrink: 0,
-        overflow: 'hidden',
-        ...style,
-      }}
-    >
+    <AvatarRoot size={size} className={className} style={style}>
       {src ? (
-        <img
-          src={src}
-          alt={name ?? 'Avatar'}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
+        <AvatarImage src={src} alt={name ?? 'Avatar'} />
       ) : (
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: fontMap[size],
-            fontWeight: 700,
-            letterSpacing: 'var(--tracking-wide)',
-            color: 'var(--color-text-secondary)',
-            userSelect: 'none',
-          }}
-        >
-          {initials}
-        </span>
+        <AvatarFallback size={size}>{initials}</AvatarFallback>
       )}
-      {online !== undefined && (
-        <span
-          style={{
-            position: 'absolute',
-            bottom: 2,
-            right: 2,
-            width: size === 'xs' ? 4 : 6,
-            height: size === 'xs' ? 4 : 6,
-            borderRadius: '50%',
-            background: online ? 'var(--color-success)' : 'var(--color-text-tertiary)',
-            border: '1px solid var(--color-bg-base)',
-          }}
-          aria-hidden
-        />
-      )}
-    </span>
+      {online !== undefined && <OnlineIndicator online={online} size={size} />}
+    </AvatarRoot>
   );
 }

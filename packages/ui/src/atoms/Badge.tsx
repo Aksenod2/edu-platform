@@ -2,13 +2,15 @@
  * Badge — Атом
  * Atomic level: Atom
  *
- * Токены: --color-accent-red, --color-accent-neon, semantic colors
- * Состояния: default, dot
+ * Мигрирован на shadcn/Tailwind v4 (CMP-226).
+ * Токены через @theme: bg-bg-elevated, text-success, etc.
  * Варианты: default, success, warning, error, info, accent
+ * Dot-mode: inline индикатор состояния (6px circle)
  *
  * Nothing Phone: монохромная основа, точечный цвет = сигнал
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 
 export type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'info' | 'accent';
 
@@ -16,56 +18,46 @@ export interface BadgeProps {
   variant?: BadgeVariant;
   dot?: boolean;
   children?: React.ReactNode;
+  className?: string;
+  /** @deprecated Используй className; оставлен для обратной совместимости */
   style?: React.CSSProperties;
 }
 
-const variantStyles: Record<BadgeVariant, { bg: string; color: string; border: string }> = {
-  default: {
-    bg: 'var(--color-bg-elevated)',
-    color: 'var(--color-text-secondary)',
-    border: 'var(--color-border-default)',
-  },
-  success: {
-    bg: 'var(--color-success-dim)',
-    color: 'var(--color-success)',
-    border: 'transparent',
-  },
-  warning: {
-    bg: 'var(--color-warning-dim)',
-    color: 'var(--color-warning)',
-    border: 'transparent',
-  },
-  error: {
-    bg: 'var(--color-error-dim)',
-    color: 'var(--color-error)',
-    border: 'transparent',
-  },
-  info: {
-    bg: 'var(--color-info-dim)',
-    color: 'var(--color-info)',
-    border: 'transparent',
-  },
-  accent: {
-    bg: 'var(--color-accent-red)',
-    color: '#FFFFFF',
-    border: 'transparent',
-  },
+const variantClasses: Record<BadgeVariant, string> = {
+  default: 'bg-bg-elevated text-text-secondary border-border-default',
+  success:  'bg-success-dim text-success border-transparent',
+  warning:  'bg-warning-dim text-warning border-transparent',
+  error:    'bg-error-dim text-error border-transparent',
+  info:     'bg-info-dim text-info border-transparent',
+  accent:   'bg-accent-red text-white border-transparent',
 };
 
-export function Badge({ variant = 'default', dot = false, children, style }: BadgeProps) {
-  const v = variantStyles[variant];
+const dotColorClasses: Record<BadgeVariant, string> = {
+  default: 'bg-text-secondary',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  error:   'bg-error',
+  info:    'bg-info',
+  accent:  'bg-accent-red',
+};
 
+export function Badge({
+  variant = 'default',
+  dot = false,
+  children,
+  className,
+  style,
+}: BadgeProps) {
   if (dot) {
     return (
       <span
-        style={{
-          display: 'inline-block',
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: v.color,
-          ...style,
-        }}
+        className={cn(
+          'inline-block rounded-full shrink-0',
+          'w-[6px] h-[6px]',
+          dotColorClasses[variant],
+          className,
+        )}
+        style={style}
         aria-hidden
       />
     );
@@ -73,23 +65,15 @@ export function Badge({ variant = 'default', dot = false, children, style }: Bad
 
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 'var(--space-1)',
-        padding: '2px var(--space-2)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 'var(--text-xs)',
-        fontWeight: 700,
-        letterSpacing: 'var(--tracking-wider)',
-        textTransform: 'uppercase',
-        borderRadius: 'var(--radius-xs)',
-        border: `1px solid ${v.border}`,
-        background: v.bg,
-        color: v.color,
-        whiteSpace: 'nowrap',
-        ...style,
-      }}
+      className={cn(
+        'inline-flex items-center gap-1',
+        'px-2 py-0.5',
+        'font-mono text-xs font-bold tracking-wider uppercase',
+        'rounded-xs border whitespace-nowrap',
+        variantClasses[variant],
+        className,
+      )}
+      style={style}
     >
       {children}
     </span>
