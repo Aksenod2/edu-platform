@@ -12,7 +12,7 @@ import {
 } from '@/lib/api';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card } from '@platform/ui/molecules';
-import { Heading, Text, Mono, Spinner, Badge, Divider, Select } from '@platform/ui/atoms';
+import { Button, Heading, Text, Mono, Spinner, Badge, Divider, Select } from '@platform/ui/atoms';
 
 const STUDENT_NAV = [
   {
@@ -165,6 +165,15 @@ export default function StudentSchedulePage() {
                       <Text size="sm" color="secondary" style={{ marginTop: 'var(--space-2)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
                         {entry.notes}
                       </Text>
+                    )}
+                    {entry.meetingUrl && (
+                      <div style={{ marginTop: 'var(--space-3)' }}>
+                        <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                          <Button variant="primary" size="sm">
+                            Присоединиться
+                          </Button>
+                        </a>
+                      </div>
                     )}
                   </Card>
                 ))}

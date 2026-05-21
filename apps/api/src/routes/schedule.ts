@@ -30,12 +30,13 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // POST /schedule — создание записи расписания (admin)
   app.post('/schedule', { onRequest: adminOnly }, async (request, reply) => {
-    const { streamId, date, startTime, lessonTitle, notes } = request.body as {
+    const { streamId, date, startTime, lessonTitle, notes, meetingUrl } = request.body as {
       streamId: string;
       date: string;
       startTime: string;
       lessonTitle: string;
       notes?: string;
+      meetingUrl?: string;
     };
 
     if (!streamId || !date || !startTime || !lessonTitle?.trim()) {
@@ -54,6 +55,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
         startTime: startTime.trim(),
         lessonTitle: lessonTitle.trim(),
         notes: notes?.trim() || null,
+        meetingUrl: meetingUrl?.trim() || null,
       },
       include: { stream: { select: { id: true, name: true } } },
     });
@@ -77,11 +79,12 @@ export async function scheduleRoutes(app: FastifyInstance) {
   // PATCH /schedule/:id — обновление записи расписания (admin)
   app.patch('/schedule/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { date, startTime, lessonTitle, notes } = request.body as {
+    const { date, startTime, lessonTitle, notes, meetingUrl } = request.body as {
       date?: string;
       startTime?: string;
       lessonTitle?: string;
       notes?: string | null;
+      meetingUrl?: string | null;
     };
 
     const existing = await prisma.scheduleEntry.findUnique({ where: { id } });
@@ -100,6 +103,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
         ...(startTime !== undefined && { startTime: startTime.trim() }),
         ...(lessonTitle !== undefined && { lessonTitle: lessonTitle.trim() }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
+        ...(meetingUrl !== undefined && { meetingUrl: meetingUrl?.trim() || null }),
       },
       include: { stream: { select: { id: true, name: true } } },
     });

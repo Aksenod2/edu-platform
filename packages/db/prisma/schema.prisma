@@ -32,6 +32,7 @@ enum StudentAssignmentStatus {
   assigned
   submitted
   reviewed
+  needs_revision
 }
 
 enum ThreadEntryType {
@@ -225,6 +226,7 @@ model ScheduleEntry {
   startTime   String
   lessonTitle String
   notes       String?
+  meetingUrl  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -50,6 +50,7 @@ export default function SchedulePage() {
   const [newStartTime, setNewStartTime] = useState('');
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [newNotes, setNewNotes] = useState('');
+  const [newMeetingUrl, setNewMeetingUrl] = useState('');
   const [creating, setCreating] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function SchedulePage() {
   const [editStartTime, setEditStartTime] = useState('');
   const [editLessonTitle, setEditLessonTitle] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editMeetingUrl, setEditMeetingUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -107,11 +109,13 @@ export default function SchedulePage() {
         startTime: newStartTime,
         lessonTitle: newLessonTitle.trim(),
         notes: newNotes.trim() || undefined,
+        meetingUrl: newMeetingUrl.trim() || undefined,
       });
       setNewDate('');
       setNewStartTime('');
       setNewLessonTitle('');
       setNewNotes('');
+      setNewMeetingUrl('');
       setShowCreateForm(false);
       await fetchSchedule();
     } catch (err) {
@@ -127,6 +131,7 @@ export default function SchedulePage() {
     setEditStartTime(entry.startTime);
     setEditLessonTitle(entry.lessonTitle);
     setEditNotes(entry.notes || '');
+    setEditMeetingUrl(entry.meetingUrl || '');
   };
 
   const handleUpdate = async (id: string) => {
@@ -139,6 +144,7 @@ export default function SchedulePage() {
         startTime: editStartTime,
         lessonTitle: editLessonTitle.trim(),
         notes: editNotes.trim() || null,
+        meetingUrl: editMeetingUrl.trim() || null,
       });
       setEditingId(null);
       await fetchSchedule();
@@ -293,6 +299,17 @@ export default function SchedulePage() {
                   }}
                 />
               </FormField>
+              <FormField
+                id="new-meeting-url"
+                label="Ссылка на созвон (Zoom, Meet, ...)"
+                hint="Опционально"
+                inputProps={{
+                  type: 'url',
+                  value: newMeetingUrl,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewMeetingUrl(e.target.value),
+                  placeholder: 'https://zoom.us/j/...',
+                }}
+              />
             </div>
             <Button
               type="submit"
@@ -336,6 +353,7 @@ export default function SchedulePage() {
                 <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Время</th>
                 <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Урок</th>
                 <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Тезисы</th>
+                <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Созвон</th>
                 <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'right', color: 'var(--color-text-tertiary)', fontWeight: 500, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>Действия</th>
               </tr>
             </thead>
@@ -387,6 +405,15 @@ export default function SchedulePage() {
                           }}
                         />
                       </td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <Input
+                          type="url"
+                          value={editMeetingUrl}
+                          onChange={(e) => setEditMeetingUrl(e.target.value)}
+                          size="sm"
+                          placeholder="https://zoom.us/j/..."
+                        />
+                      </td>
                       <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
                           <Button
@@ -419,6 +446,15 @@ export default function SchedulePage() {
                       </td>
                       <td style={{ padding: 'var(--space-3)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <Text size="xs" color="tertiary" as="span">{entry.notes || '—'}</Text>
+                      </td>
+                      <td style={{ padding: 'var(--space-3)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.meetingUrl ? (
+                          <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent-blue, #2563eb)', fontSize: 'var(--text-xs)', textDecoration: 'underline' }}>
+                            Ссылка
+                          </a>
+                        ) : (
+                          <Text size="xs" color="tertiary" as="span">—</Text>
+                        )}
                       </td>
                       <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>

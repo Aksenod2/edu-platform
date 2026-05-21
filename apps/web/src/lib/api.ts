@@ -187,6 +187,7 @@ export interface Student {
   inviteToken?: string | null;
   inviteExpiresAt?: string | null;
   deletedAt?: string | null;
+  submittedCount?: number;
 }
 
 export async function getStudents(
@@ -345,6 +346,7 @@ export interface ScheduleEntry {
   startTime: string;
   lessonTitle: string;
   notes: string | null;
+  meetingUrl: string | null;
   createdAt: string;
   updatedAt: string;
   stream?: { id: string; name: string };
@@ -367,6 +369,7 @@ export async function createScheduleEntry(
     startTime: string;
     lessonTitle: string;
     notes?: string;
+    meetingUrl?: string;
   },
 ): Promise<{ entry: ScheduleEntry }> {
   return request('/schedule', {
@@ -384,6 +387,7 @@ export async function updateScheduleEntry(
     startTime?: string;
     lessonTitle?: string;
     notes?: string | null;
+    meetingUrl?: string | null;
   },
 ): Promise<{ entry: ScheduleEntry }> {
   return request(`/schedule/${id}`, {
@@ -426,7 +430,7 @@ export interface StudentAssignment {
   id: string;
   assignmentId: string;
   studentId: string;
-  status: 'assigned' | 'submitted' | 'reviewed';
+  status: 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
   submittedAt: string | null;
   reviewedAt: string | null;
   createdAt: string;
@@ -437,9 +441,10 @@ export interface StudentAssignment {
 
 export async function getAssignments(
   accessToken: string,
-  streamId: string,
+  streamId?: string,
 ): Promise<{ assignments: Assignment[] }> {
-  return request(`/assignments?streamId=${encodeURIComponent(streamId)}`, {
+  const qs = streamId ? `?streamId=${encodeURIComponent(streamId)}` : '';
+  return request(`/assignments${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
@@ -515,11 +520,12 @@ export async function assignAssignment(
 
 export async function getStudentAssignments(
   accessToken: string,
-  params?: { streamId?: string; status?: string },
+  params?: { streamId?: string; status?: string; studentId?: string },
 ): Promise<{ studentAssignments: StudentAssignment[] }> {
   const query = new URLSearchParams();
   if (params?.streamId) query.set('streamId', params.streamId);
   if (params?.status) query.set('status', params.status);
+  if (params?.studentId) query.set('studentId', params.studentId);
   const qs = query.toString();
   return request(`/student-assignments${qs ? '?' + qs : ''}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -663,21 +669,22 @@ export async function addThreadEntry(
 
 // Notifications API
 
+export type NotificationType =
+  | 'lesson_published'
+  | 'assignment_created'
+  | 'deadline_reminder'
+  | 'thread_entry'
+  | 'assignment_submitted'
+  | 'assignment_reviewed'
+  | 'schedule_entry_created';
+
 export interface Notification {
   id: string;
   userId: string;
-  type:
-    | 'lesson_published'
-    | 'assignment_added'
-    | 'deadline_reminder'
-    | 'thread_reply'
-    | 'assignment_reviewed'
-    | 'schedule_updated'
-    | 'assignment_submitted'
-    | 'system';
+  type: NotificationType;
   title: string;
-  bodyText: string;
-  linkUrl: string;
+  body: string;
+  metadata: Record<string, string> | null;
   isRead: boolean;
   createdAt: string;
 }
@@ -707,6 +714,16 @@ export async function getNotifications(
   });
 }
 
+export async function markNotificationRead(
+  accessToken: string,
+  id: string,
+): Promise<{ notification: Notification }> {
+  return request(`/notifications/${id}/read`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export async function markAllNotificationsRead(
   accessToken: string,
 ): Promise<{ message: string }> {
@@ -714,6 +731,38 @@ export async function markAllNotificationsRead(
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+}
+
+/**
+ * Вычисляет ссылку на источник уведомления по типу и metadata.
+ */
+export function getNotificationLink(
+  notification: Notification,
+  role: 'student' | 'admin',
+): string | null {
+  const m = notification.metadata;
+  if (!m) return null;
+
+  switch (notification.type) {
+    case 'assignment_created':
+    case 'deadline_reminder':
+      return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
+    case 'assignment_submitted':
+      if (role === 'admin' && m.studentId) return `/admin/students/${m.studentId}`;
+      return '/admin/assignments';
+    case 'assignment_reviewed':
+      return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
+    case 'thread_entry':
+      if (role === 'student') return '/dashboard/thread';
+      if (m.studentId) return `/admin/students/${m.studentId}/thread`;
+      return '/admin/students';
+    case 'lesson_published':
+      return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
+    case 'schedule_entry_created':
+      return role === 'student' ? '/dashboard/schedule' : '/admin/schedule';
+    default:
+      return null;
+  }
 }
 
 export async function getNotificationPreferences(
