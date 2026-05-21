@@ -32,12 +32,14 @@ const STATUS_LABELS: Record<string, string> = {
   assigned: 'Назначено',
   submitted: 'Отправлено',
   reviewed: 'Проверено',
+  needs_revision: 'На доработке',
 };
 
-const STATUS_VARIANT: Record<string, 'warning' | 'info' | 'success'> = {
+const STATUS_VARIANT: Record<string, 'warning' | 'info' | 'success' | 'error'> = {
   assigned: 'warning',
   submitted: 'info',
   reviewed: 'success',
+  needs_revision: 'error',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -241,6 +243,7 @@ export default function StudentAssignmentsPage() {
             <option value="assigned">Назначено</option>
             <option value="submitted">Отправлено</option>
             <option value="reviewed">Проверено</option>
+            <option value="needs_revision">На доработке</option>
           </Select>
 
           {(streamFilter || statusFilter) && (
@@ -369,6 +372,9 @@ export default function StudentAssignmentsPage() {
                         </Badge>
                         {a?.type && (
                           <Badge variant="default">{TYPE_LABELS[a.type] ?? a.type}</Badge>
+                        )}
+                        {a && !a.groupId && (
+                          <Badge variant="accent">Индивидуальное</Badge>
                         )}
                         {a?.stream && (
                           <span style={{
@@ -513,13 +519,13 @@ export default function StudentAssignmentsPage() {
                           )}
                         </div>
 
-                        {sa.status === 'assigned' && (
+                        {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
                           <Button
                             variant="primary"
                             size="sm"
                             onClick={() => handleSubmit(sa.id)}
                           >
-                            Отправить на проверку
+                            {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить на проверку'}
                           </Button>
                         )}
                       </div>
