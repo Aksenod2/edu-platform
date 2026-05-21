@@ -114,7 +114,7 @@ export default function AdminSettingsPage() {
             <span className="font-sans text-xs text-[var(--color-text-tertiary)]">
               Настройки уведомлений для пользователей — в карточках учеников
             </span>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/notifications')}>
+            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/students')}>
               Перейти
             </Button>
           </div>
