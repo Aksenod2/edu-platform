@@ -8,6 +8,7 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
+import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,13 +16,30 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function ApiAccessPage() {
   const { accessToken } = useAuth();
 
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loadingKeys, setLoadingKeys] = useState(true);
-  const [error, setError] = useState('');
 
   // Создание ключа
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -31,9 +49,7 @@ export default function ApiAccessPage() {
 
   // Отзыв ключа
   const [revoking, setRevoking] = useState<string | null>(null);
-
-  // Копирование
-  const [copied, setCopied] = useState(false);
+  const [keyToRevoke, setKeyToRevoke] = useState<ApiKey | null>(null);
 
   const [baseUrl, setBaseUrl] = useState('');
 
@@ -49,9 +65,8 @@ export default function ApiAccessPage() {
     try {
       const data = await getApiKeys(accessToken);
       setApiKeys(data.apiKeys);
-      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки ключей');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки ключей');
     } finally {
       setLoadingKeys(false);
     }
@@ -71,7 +86,7 @@ export default function ApiAccessPage() {
       setNewKeyName('');
       await fetchKeys();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка создания ключа');
+      toast.error(err instanceof Error ? err.message : 'Ошибка создания ключа');
       setShowCreateModal(false);
     } finally {
       setCreating(false);
@@ -80,13 +95,12 @@ export default function ApiAccessPage() {
 
   const handleRevoke = async (key: ApiKey) => {
     if (!accessToken) return;
-    if (!confirm(`Отозвать ключ «${key.name}»? Это действие необратимо.`)) return;
     setRevoking(key.id);
     try {
       await revokeApiKey(accessToken, key.id);
       await fetchKeys();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отзыва ключа');
+      toast.error(err instanceof Error ? err.message : 'Ошибка отзыва ключа');
     } finally {
       setRevoking(null);
     }
@@ -95,8 +109,7 @@ export default function ApiAccessPage() {
   const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.success('Ключ скопирован');
     } catch {
       // fallback — select the text
     }
@@ -124,12 +137,6 @@ export default function ApiAccessPage() {
         </Button>
       </div>
 
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
       {/* ─── Модальное окно создания ключа ───────────────────────── */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45">
@@ -151,12 +158,12 @@ export default function ApiAccessPage() {
                       {newKeyValue}
                     </span>
                     <Button
-                      variant={copied ? 'secondary' : 'ghost'}
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleCopy(newKeyValue)}
                       className="shrink-0"
                     >
-                      {copied ? 'Скопировано' : 'Копировать'}
+                      Копировать
                     </Button>
                   </div>
 
@@ -206,6 +213,27 @@ export default function ApiAccessPage() {
         </div>
       )}
 
+      {/* ─── Подтверждение отзыва ключа ───────────────────────────── */}
+      <AlertDialog open={!!keyToRevoke} onOpenChange={(open) => { if (!open) setKeyToRevoke(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отозвать ключ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {keyToRevoke && `Ключ «${keyToRevoke.name}» будет отозван. Это действие необратимо.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (keyToRevoke) handleRevoke(keyToRevoke); }}
+            >
+              Отозвать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ─── Секция 1: Управление ключами ────────────────────────── */}
       <section className="mb-8">
         <h2 className="text-xl font-bold mb-4">Активные ключи</h2>
@@ -221,37 +249,32 @@ export default function ApiAccessPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b">
-                  {['Название', 'Префикс ключа', 'Создан', 'Последнее использование', ''].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider whitespace-nowrap"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Название</TableHead>
+                  <TableHead>Префикс ключа</TableHead>
+                  <TableHead>Создан</TableHead>
+                  <TableHead>Последнее использование</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {apiKeys.map((key) => (
-                  <tr key={key.id} className="border-b">
-                    <td className="px-4 py-3 text-foreground">
-                      {key.name}
-                    </td>
-                    <td className="px-4 py-3">
+                  <TableRow key={key.id}>
+                    <TableCell className="font-medium">{key.name}</TableCell>
+                    <TableCell>
                       <span className="font-mono text-xs text-muted-foreground">
                         {key.keyPrefix}...
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       <span className="font-mono text-xs text-muted-foreground">
                         {new Date(key.createdAt).toLocaleDateString('ru-RU')}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       {key.lastUsedAt ? (
                         <span className="font-mono text-xs text-muted-foreground">
                           {new Date(key.lastUsedAt).toLocaleDateString('ru-RU')}
@@ -259,22 +282,22 @@ export default function ApiAccessPage() {
                       ) : (
                         <Badge variant="outline">Не использовался</Badge>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="text-right">
                       <Button
                         variant="destructive"
                         size="sm"
                         disabled={revoking === key.id}
-                        onClick={() => handleRevoke(key)}
+                        onClick={() => setKeyToRevoke(key)}
                       >
                         {revoking === key.id && <Loader2 className="animate-spin" />}
                         Отозвать
                       </Button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>
@@ -322,21 +345,16 @@ export default function ApiAccessPage() {
             <CardTitle>Основные эндпоинты</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b">
-                    {['Метод', 'Путь', 'Описание'].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Метод</TableHead>
+                    <TableHead>Путь</TableHead>
+                    <TableHead>Описание</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {([
                     ['GET', '/users', 'Список учеников'],
                     ['GET', '/users/:id', 'Карточка ученика'],
@@ -353,18 +371,18 @@ export default function ApiAccessPage() {
                     ['GET', '/stats', 'Сводная статистика'],
                     ['GET', '/files/*', 'Скачать файл (по подписи или админским Bearer)'],
                   ] as const).map(([method, path, desc]) => (
-                    <tr key={`${method} ${path}`} className="border-b align-top">
-                      <td className="px-3 py-2">
+                    <TableRow key={`${method} ${path}`} className="align-top">
+                      <TableCell>
                         <Badge variant="outline" className="font-mono text-[11px]">{method}</Badge>
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <code className="font-mono text-xs whitespace-nowrap">{path}</code>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">{desc}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{desc}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
