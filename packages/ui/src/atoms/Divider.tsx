@@ -41,6 +41,10 @@ export function Divider({
   const color = strengthVars[strength];
   const space = spacingVars[spacing];
 
+  // Inline styles для background и margin — осознанное решение:
+  // значения — это CSS-переменные из дизайн-токенов (динамические),
+  // которые нельзя передать статическими Tailwind-классами без JIT-сафлистинга.
+  // Компоновка (h-px/w-px, self-stretch) идёт через cn().
   return (
     <SeparatorPrimitive.Root
       orientation={orientation}
