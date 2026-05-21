@@ -25,6 +25,7 @@ const ADMIN_NAV = [
       { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
       { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
       { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
     ],
   },
 ];
@@ -232,7 +233,14 @@ export default function StudentsPage() {
             <tbody>
               {students.map((s) => (
                 <tr key={s.id} style={{ borderBottom: '1px solid var(--color-border-subtle)', opacity: s.deletedAt ? 0.4 : 1 }}>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>{s.name}</td>
+                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>
+                    {s.name}
+                    {!!s.submittedCount && s.submittedCount > 0 && (
+                      <Badge variant="warning" style={{ marginLeft: 'var(--space-2)' }}>
+                        {s.submittedCount} ждут проверки
+                      </Badge>
+                    )}
+                  </td>
                   <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
                     <Mono size="xs">{s.email}</Mono>
                   </td>
@@ -321,6 +329,16 @@ function SearchIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="7" cy="7" r="4" /><path d="M10 10l4 4" />
+    </svg>
+  );
+}
+
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
+      <path d="M8 2.5V1" />
     </svg>
   );
 }

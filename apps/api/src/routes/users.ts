@@ -43,11 +43,16 @@ export async function userRoutes(app: FastifyInstance) {
         inviteToken: true,
         inviteExpiresAt: true,
         deletedAt: true,
+        _count: {
+          select: {
+            studentAssignments: { where: { status: 'submitted' } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return { users };
+    return { users: users.map((u) => ({ ...u, submittedCount: u._count.studentAssignments, _count: undefined })) };
   });
 
   // POST /users — create student

@@ -15,6 +15,7 @@ const ADMIN_NAV = [
       { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
       { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
       { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
     ],
   },
 ];
@@ -996,6 +997,16 @@ function SendIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
       <path d="M3 10l14-7-7 14v-7H3z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
+      <path d="M8 2.5V1" />
     </svg>
   );
 }

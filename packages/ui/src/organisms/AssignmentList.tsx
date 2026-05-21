@@ -20,7 +20,7 @@ import { Badge } from '../atoms/Badge';
 import { Heading, Text, Mono } from '../atoms/Typography';
 import { EmptyState } from '../molecules/EmptyState';
 
-export type AssignmentStatus = 'pending' | 'submitted' | 'reviewed' | 'overdue';
+export type AssignmentStatus = 'pending' | 'submitted' | 'reviewed' | 'overdue' | 'needs_revision';
 
 export interface Assignment {
   id: string;
@@ -44,10 +44,11 @@ const statusConfig: Record<AssignmentStatus, {
   label: string;
   variant: 'default' | 'success' | 'warning' | 'error' | 'info';
 }> = {
-  pending:   { label: 'TO DO',      variant: 'default' },
-  submitted: { label: 'SUBMITTED',  variant: 'info' },
-  reviewed:  { label: 'REVIEWED',   variant: 'success' },
-  overdue:   { label: 'OVERDUE',    variant: 'error' },
+  pending:         { label: 'TO DO',           variant: 'default' },
+  submitted:       { label: 'SUBMITTED',       variant: 'info' },
+  reviewed:        { label: 'REVIEWED',        variant: 'success' },
+  overdue:         { label: 'OVERDUE',         variant: 'error' },
+  needs_revision:  { label: 'НА ДОРАБОТКЕ',   variant: 'warning' },
 };
 
 export function AssignmentList({
