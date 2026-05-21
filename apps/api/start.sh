@@ -1,12 +1,23 @@
 #!/bin/sh
 
 # Run Prisma migrations and seed in the background so the server can start immediately.
-# This allows Render's health check to pass within the 60-second window.
+# This lets the platform health check pass within its startup window.
 (
   cd /app/packages/db
 
-  # Baseline: if _prisma_migrations does not exist, mark initial migration as already applied.
-  if ! npx prisma migrate status 2>&1 | grep -q "Database schema is up to date"; then
+  # Returns 0 if the given table exists in the connected database.
+  table_exists() {
+    printf 'SELECT 1 FROM "%s" LIMIT 1;\n' "$1" \
+      | npx prisma db execute --schema=prisma/schema.prisma --stdin >/dev/null 2>&1
+  }
+
+  # Baseline 0_init ONLY when adopting an existing schema: the app tables are
+  # already present (e.g. a DB created via `db push`) but Prisma has no
+  # migration history yet. On a FRESH database both conditions are false, so
+  # `migrate deploy` below runs 0_init and creates the full schema. Recording
+  # 0_init as applied without running it on a fresh DB would skip table
+  # creation and break every later migration.
+  if table_exists User && ! table_exists _prisma_migrations; then
     npx prisma migrate resolve --applied 0_init 2>/dev/null || true
   fi
 

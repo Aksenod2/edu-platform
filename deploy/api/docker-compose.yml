@@ -1,0 +1,18 @@
+# Timeweb App Platform — сервис API (режим Docker Compose).
+#
+# В панели Timeweb при создании приложения:
+#   Тип            → Docker Compose
+#   Репозиторий    → Aksenod2/edu-platform, ветка main
+#   Путь к проекту → deploy/api
+#
+# context: ../.. — сборка идёт из КОРНЯ репозитория (Dockerfile тянет
+# pnpm-lock.yaml и пакеты из корня монорепо). Переменные окружения
+# (DATABASE_URL, JWT_SECRET, API_BASE_URL, CORS_ORIGIN, SMTP_*) задаются
+# в панели Timeweb — см. deploy/TIMEWEB.md.
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "4000:4000"
