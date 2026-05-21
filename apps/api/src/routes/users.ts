@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
+import { getFileUrl } from '../lib/s3.js';
 
 const INVITE_TOKEN_TTL_HOURS = 72;
 
@@ -258,5 +259,96 @@ export async function userRoutes(app: FastifyInstance) {
     await prisma.refreshToken.deleteMany({ where: { userId: id } });
 
     return { tempPassword, message: 'Пароль сброшен. Передайте временный пароль ученику.' };
+  });
+
+  // GET /users/:id/export — aggregated JSON dump of a student's data (admin only).
+  // File URLs are signed so a CLI can download each file (the admin Bearer also
+  // works directly against /files/*).
+  app.get('/users/:id/export', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const student = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        isActive: true,
+        studentProfile: true,
+      },
+    });
+
+    if (!student || student.role !== 'student') {
+      return reply.status(404).send({ error: 'Ученик не найден' });
+    }
+
+    const [studentAssignments, thread] = await Promise.all([
+      prisma.studentAssignment.findMany({
+        where: { studentId: id },
+        include: { assignment: { select: { title: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.thread.findUnique({
+        where: { studentId: id },
+        include: { entries: { orderBy: { createdAt: 'asc' } } },
+      }),
+    ]);
+
+    // Collect file keys (de-duplicated) along with display names.
+    const fileMap = new Map<string, string>();
+
+    const assignments = await Promise.all(
+      studentAssignments.map(async (sa) => {
+        let fileUrl: string | null = null;
+        if (sa.fileUrl) {
+          fileUrl = await getFileUrl(sa.fileUrl);
+          if (!fileMap.has(sa.fileUrl)) {
+            fileMap.set(sa.fileUrl, sa.fileName ?? sa.fileUrl);
+          }
+        }
+        const { assignment, ...rest } = sa;
+        return {
+          ...rest,
+          assignmentTitle: assignment.title,
+          status: sa.status,
+          fileUrl,
+        };
+      }),
+    );
+
+    const threadEntries = thread?.entries ?? [];
+    const threadExport = await Promise.all(
+      threadEntries.map(async (entry) => {
+        let fileUrl: string | null = null;
+        const meta = (entry.metadata ?? null) as Record<string, unknown> | null;
+        const s3Key = meta?.s3Key as string | undefined;
+        if (s3Key) {
+          fileUrl = await getFileUrl(s3Key);
+          if (!fileMap.has(s3Key)) {
+            fileMap.set(s3Key, (meta?.fileName as string | undefined) ?? s3Key);
+          }
+        }
+        return { ...entry, fileUrl };
+      }),
+    );
+
+    const files = await Promise.all(
+      [...fileMap.entries()].map(async ([key, name]) => ({
+        key,
+        name,
+        signedUrl: await getFileUrl(key),
+      })),
+    );
+
+    const { studentProfile, role: _role, ...studentFields } = student;
+
+    return {
+      student: { ...studentFields, profile: studentProfile ?? null },
+      assignments,
+      thread: threadExport,
+      files,
+    };
   });
 }

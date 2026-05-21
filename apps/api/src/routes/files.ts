@@ -1,13 +1,79 @@
-import type { FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@platform/db';
+import { verifyFileSignature } from '../lib/s3.js';
+import { verifyAccessToken } from '../lib/jwt.js';
+
+/**
+ * Resolve a Bearer token (JWT or `sk_` API key) to an admin user.
+ * Returns true only if the request carries valid admin credentials.
+ * Does not send a reply — callers decide how to respond.
+ */
+async function isAdminBearer(request: FastifyRequest): Promise<boolean> {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const token = authHeader.slice(7);
+
+  if (token.startsWith('sk_')) {
+    const keyHash = createHash('sha256').update(token).digest('hex');
+    const apiKey = await prisma.apiKey.findUnique({
+      where: { keyHash },
+      include: { user: true },
+    });
+
+    if (!apiKey || apiKey.revokedAt !== null) {
+      return false;
+    }
+    if (!apiKey.user.isActive || apiKey.user.deletedAt !== null) {
+      return false;
+    }
+
+    // Fire-and-forget: update lastUsedAt
+    prisma.apiKey
+      .update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } })
+      .catch(() => {});
+
+    return apiKey.user.role === 'admin';
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    return payload.role === 'admin';
+  } catch {
+    return false;
+  }
+}
 
 export async function fileRoutes(app: FastifyInstance) {
-  // GET /files/:key - serve file from PostgreSQL storage
+  // GET /files/:key - serve file from PostgreSQL storage.
+  // Access is granted if EITHER:
+  //   (a) the query carries a valid, non-expired signature, OR
+  //   (b) the request carries a valid admin Bearer token (JWT or `sk_` API key).
   app.get('/files/*', async (request, reply) => {
     const key = (request.params as Record<string, string>)['*'];
 
     if (!key) {
       return reply.status(400).send({ error: 'File key required' });
+    }
+
+    const { exp, sig } = request.query as { exp?: string; sig?: string };
+
+    // (a) Signature first — never 401 before this check.
+    let authorized = false;
+    if (exp && sig) {
+      authorized = verifyFileSignature(key, exp, sig);
+    }
+
+    // (b) Fall back to admin Bearer credentials.
+    if (!authorized) {
+      authorized = await isAdminBearer(request);
+    }
+
+    if (!authorized) {
+      return reply.status(401).send({ error: 'Доступ запрещён' });
     }
 
     const file = await prisma.fileStorage.findUnique({
@@ -22,7 +88,7 @@ export async function fileRoutes(app: FastifyInstance) {
       .header('Content-Type', file.mimeType)
       .header('Content-Length', file.size)
       .header('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`)
-      .header('Cache-Control', 'public, max-age=3600')
+      .header('Cache-Control', 'private, max-age=3600')
       .send(Buffer.from(file.data));
   });
 }
