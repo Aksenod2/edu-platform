@@ -1,0 +1,20 @@
+# Timeweb App Platform — сервис Web (Next.js, режим Docker Compose).
+#
+# В панели Timeweb при создании приложения:
+#   Тип            → Docker Compose
+#   Репозиторий    → Aksenod2/edu-platform, ветка main
+#   Путь к проекту → deploy/web
+#
+# ВАЖНО: NEXT_PUBLIC_API_URL зашивается в бандл НА ЭТАПЕ СБОРКИ, поэтому
+# передаётся как build-arg. Значение (публичный HTTPS-адрес API-аппа)
+# задаётся переменной окружения в панели Timeweb и подставляется сюда
+# через ${NEXT_PUBLIC_API_URL}. Сначала задеплойте API, затем web.
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    ports:
+      - "3000:3000"
