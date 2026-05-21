@@ -20,7 +20,7 @@ import { threadRoutes } from './routes/threads.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { pushSubscriptionRoutes } from './routes/push-subscriptions.js';
 import { apiKeyRoutes } from './routes/api-keys.js';
-import { ensureBucketExists } from './lib/s3.js';
+import { fileRoutes } from './routes/files.js';
 import { startCronJobs } from './lib/cron.js';
 
 const app = Fastify({ logger: true });
@@ -59,6 +59,7 @@ await app.register(threadRoutes);
 await app.register(notificationRoutes);
 await app.register(pushSubscriptionRoutes);
 await app.register(apiKeyRoutes);
+await app.register(fileRoutes);
 
 app.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };
@@ -80,10 +81,7 @@ try {
   process.exit(1);
 }
 
-// Init S3 bucket in background - non-fatal, server is already running
-ensureBucketExists().catch((err) => {
-  app.log.warn({ err }, 'S3 bucket init failed - uploads will fail until MinIO is available');
-});
+// File storage uses PostgreSQL - no bucket init needed
 
 // Start cron jobs: deadline reminders & notification cleanup
 startCronJobs();

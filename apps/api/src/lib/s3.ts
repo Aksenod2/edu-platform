@@ -1,33 +1,16 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  CreateBucketCommand,
-  HeadBucketCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { prisma } from '@platform/db';
 import crypto from 'node:crypto';
 
-const s3 = new S3Client({
-  endpoint: process.env.S3_ENDPOINT || 'http://localhost:9000',
-  region: process.env.S3_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY || 'minioadmin',
-    secretAccessKey: process.env.S3_SECRET_KEY || 'minioadmin',
-  },
-  forcePathStyle: true,
-});
-
-const BUCKET = process.env.S3_BUCKET || 'platform-uploads';
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+const API_BASE_URL =
+  process.env.API_BASE_URL ||
+  (process.env.RENDER_EXTERNAL_URL
+    ? `https://${process.env.RENDER_EXTERNAL_URL}`
+    : `http://localhost:${process.env.PORT || 4000}`);
+
 export async function ensureBucketExists(): Promise<void> {
-  try {
-    await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
-  } catch {
-    await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
-    console.log(`S3 bucket '${BUCKET}' created`);
-  }
+  // No-op: PostgreSQL storage needs no bucket initialization
 }
 
 export async function uploadFile(
@@ -43,25 +26,25 @@ export async function uploadFile(
   const ext = originalName.includes('.') ? originalName.split('.').pop() : '';
   const key = `${folder}/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: mimeType,
-    }),
-  );
+  await prisma.fileStorage.create({
+    data: {
+      key,
+      data: Uint8Array.from(buffer),
+      mimeType,
+      fileName: originalName,
+      size: buffer.length,
+    },
+  });
 
   return {
     key,
-    url: `/${BUCKET}/${key}`,
+    url: `/files/${encodeURIComponent(key)}`,
     size: buffer.length,
   };
 }
 
 export async function getFileUrl(key: string): Promise<string> {
-  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
-  return getSignedUrl(s3, command, { expiresIn: 3600 });
+  return `${API_BASE_URL}/files/${encodeURIComponent(key)}`;
 }
 
 export { MAX_FILE_SIZE };

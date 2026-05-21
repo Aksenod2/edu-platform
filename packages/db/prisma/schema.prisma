@@ -302,3 +302,15 @@ model PushSubscription {
 
   @@index([userId])
 }
+
+model FileStorage {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  data      Bytes
+  mimeType  String
+  fileName  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@index([key])
+}
