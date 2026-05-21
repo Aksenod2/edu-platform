@@ -218,7 +218,7 @@ export default function StudentProfilePage() {
     setError('');
     try {
       await assignAssignment(accessToken, selectedAssignmentId, { studentId });
-      setAssignSuccess('Задание назначено');
+      setAssignSuccess(`Задание назначено ${data?.student?.name || ''}`);
       setShowAssignModal(false);
       setSelectedAssignmentId('');
       await fetchAssignments();
@@ -339,10 +339,22 @@ export default function StudentProfilePage() {
       <div style={{ padding: 'var(--space-4) var(--space-4) 0', maxWidth: 900, width: '100%', margin: '0 auto' }}>
         <a href="/admin/students" style={{ color: 'var(--color-text-tertiary)', textDecoration: 'none', fontSize: 'var(--text-sm)' }}>← К списку учеников</a>
 
-        <h1 style={{ marginTop: 8, marginBottom: 4, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-semibold)' }}>{student.name}</h1>
-        <p style={{ color: 'var(--color-text-tertiary)', margin: 0, fontSize: 'var(--text-sm)' }}>
-          {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 8, marginBottom: 4, gap: 'var(--space-3)' }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, marginBottom: 4, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-semibold)' }}>{student.name}</h1>
+            <p style={{ color: 'var(--color-text-tertiary)', margin: 0, fontSize: 'var(--text-sm)' }}>
+              {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexShrink: 0 }}>
+            {assignSuccess && (
+              <span style={{ color: '#4CAF50', fontSize: 'var(--text-sm)', whiteSpace: 'nowrap' }}>{assignSuccess}</span>
+            )}
+            <Button variant="primary" size="sm" onClick={handleOpenAssignModal}>
+              + Назначить задание
+            </Button>
+          </div>
+        </div>
 
         {/* Summary stats — visible when assignments are loaded */}
         {assignments.length > 0 && (
@@ -366,6 +378,58 @@ export default function StudentProfilePage() {
           }}>
             <span>{error}</span>
             <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16 }}>×</button>
+          </div>
+        )}
+
+        {/* Assign modal — shown above tabs regardless of active tab */}
+        {showAssignModal && (
+          <div style={{
+            background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)',
+            borderRadius: 8, padding: 16, marginTop: 'var(--space-3)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <strong>Назначить задание ученику {student.name}</strong>
+              <button onClick={() => setShowAssignModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--color-text-tertiary)' }}>×</button>
+            </div>
+            {loadingAllAssignments ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spinner size="md" /></div>
+            ) : allAssignments.length === 0 ? (
+              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-sm)' }}>Нет доступных заданий. Создайте задание в разделе потока.</p>
+            ) : (
+              <>
+                <select
+                  value={selectedAssignmentId}
+                  onChange={(e) => setSelectedAssignmentId(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 4,
+                    border: '1px solid var(--color-border-default)',
+                    background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
+                    fontSize: 'var(--text-sm)', marginBottom: 12,
+                  }}
+                >
+                  <option value="">Выберите задание...</option>
+                  {allAssignments.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleAssignToStudent}
+                    disabled={!selectedAssignmentId}
+                    loading={assigning}
+                  >
+                    Назначить
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
+                    Отмена
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -482,68 +546,6 @@ export default function StudentProfilePage() {
 
         {activeTab === 'assignments' && (
           <div style={{ padding: 'var(--space-4)' }}>
-            {/* Assign button + success message */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-              <Button variant="primary" size="sm" onClick={handleOpenAssignModal}>
-                + Назначить задание
-              </Button>
-              {assignSuccess && (
-                <span style={{ color: '#4CAF50', fontSize: 'var(--text-sm)' }}>{assignSuccess}</span>
-              )}
-            </div>
-
-            {/* Assign modal */}
-            {showAssignModal && (
-              <div style={{
-                background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)',
-                borderRadius: 8, padding: 16, marginBottom: 'var(--space-4)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <strong>Назначить задание ученику</strong>
-                  <button onClick={() => setShowAssignModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--color-text-tertiary)' }}>×</button>
-                </div>
-                {loadingAllAssignments ? (
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spinner size="md" /></div>
-                ) : allAssignments.length === 0 ? (
-                  <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-sm)' }}>Нет доступных заданий. Создайте задание в разделе потока.</p>
-                ) : (
-                  <>
-                    <select
-                      value={selectedAssignmentId}
-                      onChange={(e) => setSelectedAssignmentId(e.target.value)}
-                      style={{
-                        width: '100%', padding: '8px 12px', borderRadius: 4,
-                        border: '1px solid var(--color-border-default)',
-                        background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
-                        fontSize: 'var(--text-sm)', marginBottom: 12,
-                      }}
-                    >
-                      <option value="">Выберите задание...</option>
-                      {allAssignments.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
-                        </option>
-                      ))}
-                    </select>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={handleAssignToStudent}
-                        disabled={!selectedAssignmentId}
-                        loading={assigning}
-                      >
-                        Назначить
-                      </Button>
-                      <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
-                        Отмена
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
             {/* Status filter */}
             <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
               {[
