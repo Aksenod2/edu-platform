@@ -6,13 +6,14 @@ import { useAuth } from '@/lib/auth-context';
 import { useNotifications } from '@/lib/notifications-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Spinner } from '@platform/ui/atoms';
+import { Spinner, Badge } from '@platform/ui/atoms';
 import {
   getNotificationLink,
   markNotificationRead,
   type Notification,
   type NotificationType,
 } from '@/lib/api';
+import { cn } from '@platform/ui/lib/utils';
 
 const ADMIN_NAV = [
   {
@@ -22,8 +23,20 @@ const ADMIN_NAV = [
       { label: 'Ученики',      href: '/admin/students',      icon: <UsersIcon /> },
       { label: 'Потоки',       href: '/admin/streams',       icon: <StreamIcon /> },
       { label: 'Расписание',   href: '/admin/schedule',      icon: <CalendarIcon /> },
+    ],
+  },
+  {
+    label: 'Контент',
+    items: [
+      { label: 'Материалы',    href: '/admin/materials',     icon: <FolderIcon /> },
+    ],
+  },
+  {
+    label: 'Система',
+    items: [
       { label: 'Уведомления',  href: '/admin/notifications', icon: <BellNavIcon /> },
-      { label: 'API-доступ', href: '/admin/api-access', icon: <KeyIcon /> },
+      { label: 'API-ключи',    href: '/admin/api-keys',      icon: <KeyIcon /> },
+      { label: 'Настройки',    href: '/admin/settings',      icon: <SettingsIcon /> },
     ],
   },
 ];
@@ -40,15 +53,18 @@ export default function AdminNotificationsPage() {
     if (!loading && user?.mustChangePassword) router.push('/change-password');
   }, [user, loading, router]);
 
-  const handleNotificationClick = useCallback(async (notification: Notification) => {
-    if (!accessToken) return;
-    if (!notification.isRead) {
-      await markNotificationRead(accessToken, notification.id);
-      refresh();
-    }
-    const link = getNotificationLink(notification, 'admin');
-    if (link) router.push(link);
-  }, [accessToken, router, refresh]);
+  const handleNotificationClick = useCallback(
+    async (notification: Notification) => {
+      if (!accessToken) return;
+      if (!notification.isRead) {
+        await markNotificationRead(accessToken, notification.id);
+        refresh();
+      }
+      const link = getNotificationLink(notification, 'admin');
+      if (link) router.push(link);
+    },
+    [accessToken, router, refresh],
+  );
 
   const handleMarkAllRead = useCallback(async () => {
     await markAllRead();
@@ -56,7 +72,7 @@ export default function AdminNotificationsPage() {
 
   if (loading || nLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
       </div>
     );
@@ -69,7 +85,10 @@ export default function AdminNotificationsPage() {
       currentPath={pathname}
       header={{
         user: { name: user.name, role: 'admin' },
-        onLogout: async () => { await logout(); router.push('/login'); },
+        onLogout: async () => {
+          await logout();
+          router.push('/login');
+        },
         platformName: 'PLATFORM ADMIN',
         notificationBell: <NotificationBell />,
       }}
@@ -78,62 +97,59 @@ export default function AdminNotificationsPage() {
       <PageHeader
         title="Уведомления"
         subtitle={unreadCount > 0 ? `${unreadCount} непрочитанных` : 'Все прочитаны'}
+        action={
+          unreadCount > 0 ? (
+            <button
+              onClick={handleMarkAllRead}
+              className={cn(
+                'font-mono text-xs font-bold tracking-widest uppercase',
+                'text-[var(--color-text-tertiary)]',
+                'bg-transparent border border-[var(--color-border-default)]',
+                'px-3 py-2 cursor-pointer',
+                'hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-secondary)]',
+                'transition-colors duration-[var(--duration-fast)]',
+              )}
+            >
+              Отметить все прочитанными
+            </button>
+          ) : undefined
+        }
       />
 
-      {unreadCount > 0 && (
-        <div style={{ marginBottom: 'var(--space-4)' }}>
-          <button
-            onClick={handleMarkAllRead}
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 'var(--text-xs)',
-              fontWeight: 700,
-              letterSpacing: 'var(--tracking-wider)',
-              textTransform: 'uppercase',
-              color: 'var(--color-text-tertiary)',
-              background: 'none',
-              border: '1px solid var(--color-border-default)',
-              padding: 'var(--space-2) var(--space-3)',
-              cursor: 'pointer',
-            }}
-          >
-            ОТМЕТИТЬ ВСЕ ПРОЧИТАННЫМИ
-          </button>
+      {/* Stats row */}
+      <div className="flex gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Всего:</span>
+          <span className="font-mono text-xs font-bold text-[var(--color-text-primary)]">{notifications.length}</span>
         </div>
-      )}
+        {unreadCount > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">
+              Непрочитанных:
+            </span>
+            <Badge variant="error">{unreadCount}</Badge>
+          </div>
+        )}
+      </div>
 
       {notifications.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 'var(--space-12) var(--space-4)',
-            gap: 'var(--space-3)',
-            color: 'var(--color-text-tertiary)',
-          }}
-        >
-          <span style={{ fontSize: 32, opacity: 0.3 }}>🔔</span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 'var(--text-xs)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-            }}
-          >
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <span className="text-4xl opacity-20" aria-hidden>
+            🔔
+          </span>
+          <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">
             Нет уведомлений
           </span>
         </div>
       ) : (
-        <div style={{ border: '1px solid var(--color-border-subtle)' }}>
-          {notifications.map((n) => (
+        <div className="border border-[var(--color-border-subtle)]">
+          {notifications.map((n, idx) => (
             <NotificationRow
               key={n.id}
               notification={n}
               onClick={() => handleNotificationClick(n)}
               role="admin"
+              isLast={idx === notifications.length - 1}
             />
           ))}
         </div>
@@ -146,96 +162,61 @@ function NotificationRow({
   notification,
   onClick,
   role,
+  isLast,
 }: {
   notification: Notification;
   onClick: () => void;
   role: 'admin' | 'student';
+  isLast: boolean;
 }) {
   const linkUrl = getNotificationLink(notification, role);
 
   return (
     <div
       onClick={onClick}
-      role={linkUrl ? 'link' : undefined}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 'var(--space-3)',
-        padding: 'var(--space-3) var(--space-4)',
-        borderBottom: '1px solid var(--color-border-subtle)',
-        background: notification.isRead ? 'transparent' : 'rgba(255,59,48,0.04)',
-        cursor: linkUrl ? 'pointer' : 'default',
-        transition: 'background var(--duration-fast) var(--ease-default)',
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.background = 'var(--color-bg-elevated)';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.background = notification.isRead
-          ? 'transparent'
-          : 'rgba(255,59,48,0.04)';
-      }}
+      role={linkUrl ? 'button' : undefined}
+      tabIndex={linkUrl ? 0 : undefined}
+      className={cn(
+        'flex items-start gap-3 px-4 py-3',
+        !isLast && 'border-b border-[var(--color-border-subtle)]',
+        notification.isRead ? 'bg-transparent' : 'bg-[var(--color-accent-red-dim)]',
+        linkUrl && 'cursor-pointer',
+        'hover:bg-[var(--color-bg-elevated)]',
+        'transition-colors duration-[var(--duration-fast)]',
+        'group',
+      )}
     >
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <span style={{ fontSize: 16, lineHeight: 1, display: 'block' }} aria-hidden>
+      {/* Icon + unread dot */}
+      <div className="shrink-0 pt-0.5 flex flex-col items-center gap-1">
+        <span className="text-base leading-none" aria-hidden>
           {NOTIFICATION_ICONS[notification.type] ?? '🔔'}
         </span>
-        {!notification.isRead && (
-          <span
-            style={{
-              display: 'block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--color-accent-red)',
-              margin: '4px auto 0',
-            }}
-          />
-        )}
+        {!notification.isRead && <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent-red)]" />}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* Content */}
+      <div className="flex-1 min-w-0">
         <p
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-sm)',
-            fontWeight: notification.isRead ? 400 : 600,
-            color: notification.isRead ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-            lineHeight: 'var(--leading-snug)',
-            marginBottom: 'var(--space-1)',
-          }}
+          className={cn(
+            'text-sm leading-snug mb-1',
+            notification.isRead
+              ? 'font-normal text-[var(--color-text-secondary)]'
+              : 'font-semibold text-[var(--color-text-primary)]',
+          )}
         >
           {notification.title}
         </p>
-        <p
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-tertiary)',
-            lineHeight: 'var(--leading-snug)',
-            marginBottom: 'var(--space-1)',
-            overflow: 'hidden',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-          }}
-        >
+        <p className="text-xs text-[var(--color-text-tertiary)] leading-snug mb-1 line-clamp-2">
           {notification.body}
         </p>
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--color-text-tertiary)',
-            letterSpacing: 'var(--tracking-wide)',
-          }}
-        >
+        <span className="font-mono text-[10px] text-[var(--color-text-tertiary)] tracking-wide">
           {formatRelativeTime(notification.createdAt)}
         </span>
       </div>
 
+      {/* Arrow */}
       {linkUrl && (
-        <div style={{ flexShrink: 0, paddingTop: 4, color: 'var(--color-text-tertiary)' }}>
+        <div className="shrink-0 pt-1 text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M4 2l4 4-4 4" />
           </svg>
@@ -269,19 +250,25 @@ function formatRelativeTime(isoString: string): string {
   return new Date(isoString).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
 function GridIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
+      <rect x="1" y="1" width="5" height="5" />
+      <rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" />
+      <rect x="10" y="10" width="5" height="5" />
     </svg>
   );
 }
 function UsersIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
-      <circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" />
+      <circle cx="6" cy="5" r="3" />
+      <path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" />
+      <path d="M15 13c0-2-1-4-3-4" />
     </svg>
   );
 }
@@ -295,11 +282,27 @@ function StreamIcon() {
 function CalendarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
+      <rect x="1" y="3" width="14" height="12" />
+      <path d="M1 7h14M5 1v4M11 1v4" />
     </svg>
   );
 }
-
+function FolderIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M1 4a1 1 0 011-1h4l2 2h6a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4z" />
+    </svg>
+  );
+}
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
+      <path d="M8 2.5V1" />
+    </svg>
+  );
+}
 function KeyIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -308,11 +311,11 @@ function KeyIcon() {
     </svg>
   );
 }
-function BellNavIcon() {
+function SettingsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" /><path d="M8 2.5V1" />
+      <circle cx="8" cy="8" r="2.5" />
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
     </svg>
   );
 }
