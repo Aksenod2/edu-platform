@@ -623,6 +623,18 @@ export async function assignAssignment(
   });
 }
 
+export async function assignAssignmentToStream(
+  accessToken: string,
+  assignmentId: string,
+  streamId: string,
+): Promise<{ assigned: number }> {
+  return request(`/assignments/${assignmentId}/assign-stream`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ streamId }),
+  });
+}
+
 export async function getStudentAssignments(
   accessToken: string,
   params?: { streamId?: string; status?: string; studentId?: string },

@@ -47,6 +47,7 @@ import {
   updateAssignment,
   deleteAssignment,
   assignAssignment,
+  assignAssignmentToStream,
   uploadAssignmentMaterial,
   getStreams,
   getLessons,
@@ -294,6 +295,22 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка назначения');
+    }
+  };
+
+  const handleAssignStream = async (assignmentId: string) => {
+    if (!accessToken) return;
+    try {
+      const { assigned } = await assignAssignmentToStream(accessToken, assignmentId, streamId);
+      setAssigningId(null);
+      setAssignStudentId('');
+      toast.success(`Выдано: ${assigned}`);
+      await fetchData();
+      if (viewingId === assignmentId) {
+        await loadStudentAssignments(assignmentId);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка выдачи');
     }
   };
 
@@ -648,8 +665,8 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                           >
                             Назначить ученику
                           </Button>
-                          <Button variant="secondary" onClick={() => handleAssign(a.id, undefined, streamId)}>
-                            Назначить всем
+                          <Button variant="secondary" onClick={() => handleAssignStream(a.id)}>
+                            Выдать всему потоку
                           </Button>
                           <Button variant="ghost" onClick={() => setAssigningId(null)}>
                             Отмена

@@ -170,14 +170,14 @@ export async function lessonRoutes(app: FastifyInstance) {
       data,
     });
 
-    // Notify all students when lesson is published
+    // Notify only students enrolled in the lesson's stream when published
     if (body.status === 'published' && existing.status !== 'published') {
-      const students = await prisma.user.findMany({
-        where: { role: 'student', isActive: true, deletedAt: null },
-        select: { id: true },
+      const enrollments = await prisma.streamEnrollment.findMany({
+        where: { streamId: lesson.streamId },
+        select: { userId: true },
       });
       notifyMany(
-        students.map((s) => s.id),
+        enrollments.map((e) => e.userId),
         'lesson_published',
         'Новый урок опубликован',
         `Урок «${lesson.title}» доступен для просмотра`,

@@ -147,17 +147,17 @@ export async function assignmentRoutes(app: FastifyInstance) {
       },
     });
 
-    // Notify all active students about new assignment
-    const students = await prisma.user.findMany({
-      where: { role: 'student', isActive: true, deletedAt: null },
-      select: { id: true },
+    // Notify only students enrolled in the assignment's stream
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: { streamId: body.streamId },
+      select: { userId: true },
     });
     notifyMany(
-      students.map((s) => s.id),
+      enrollments.map((e) => e.userId),
       'assignment_created',
       'Новое задание',
       `Добавлено задание «${assignment.title}»`,
-      { assignmentId: assignment.id },
+      { assignmentId: assignment.id, streamId: body.streamId },
     ).catch(() => {});
 
     return reply.status(201).send({ assignment });
@@ -346,6 +346,56 @@ export async function assignmentRoutes(app: FastifyInstance) {
     }
 
     return reply.status(400).send({ error: 'Укажите studentId или groupId' });
+  });
+
+  // POST /assignments/:assignmentId/assign-stream — назначить задание всем студентам потока (admin)
+  app.post('/assignments/:assignmentId/assign-stream', { onRequest: adminOnly }, async (request, reply) => {
+    const { assignmentId } = request.params as { assignmentId: string };
+    const { streamId } = request.body as { streamId?: string };
+
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    const assignment = await prisma.assignment.findUnique({ where: { id: assignmentId } });
+    if (!assignment) {
+      return reply.status(404).send({ error: 'Задание не найдено' });
+    }
+
+    if (assignment.streamId !== streamId) {
+      return reply.status(400).send({ error: 'Задание не принадлежит указанному потоку' });
+    }
+
+    // Студенты, зачисленные на поток
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: { streamId },
+      select: { userId: true },
+    });
+    const studentIds = enrollments.map((e) => e.userId);
+
+    if (studentIds.length === 0) {
+      return reply.send({ assigned: 0 });
+    }
+
+    const result = await prisma.studentAssignment.createMany({
+      data: studentIds.map((studentId) => ({
+        assignmentId,
+        studentId,
+        status: 'assigned' as const,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Уведомляем только зачисленных студентов о новом задании
+    notifyMany(
+      studentIds,
+      'assignment_created',
+      'Новое задание',
+      `Вам назначено задание «${assignment.title}»`,
+      { assignmentId: assignment.id, streamId },
+    ).catch(() => {});
+
+    return reply.send({ assigned: result.count });
   });
 
   // GET /students/:id/assignments-summary — сводная статистика по статусам для ученика (admin)

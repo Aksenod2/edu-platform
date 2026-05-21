@@ -81,13 +81,13 @@ export async function scheduleRoutes(app: FastifyInstance) {
       },
     });
 
-    // Notify all active students about the new schedule entry
-    const students = await prisma.user.findMany({
-      where: { role: 'student', isActive: true, deletedAt: null },
-      select: { id: true },
+    // Notify only students enrolled in this stream about the new schedule entry
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: { streamId: entry.streamId },
+      select: { userId: true },
     });
     notifyMany(
-      students.map((s) => s.id),
+      enrollments.map((e) => e.userId),
       'schedule_entry_created',
       'Новое занятие в расписании',
       `${entry.lessonTitle} — ${new Date(entry.date).toLocaleDateString('ru-RU')} в ${entry.startTime}`,
