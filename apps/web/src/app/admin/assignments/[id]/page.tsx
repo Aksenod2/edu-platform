@@ -10,8 +10,10 @@ import {
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Button, Badge, Spinner, Mono } from '@platform/ui/atoms';
+import { ChevronLeft, Link2, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const statusLabels: Record<string, string> = {
   assigned: 'Назначено',
@@ -20,11 +22,11 @@ const statusLabels: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const statusVariants: Record<string, 'warning' | 'info' | 'success' | 'error'> = {
-  assigned: 'warning',
-  submitted: 'info',
-  reviewed: 'success',
-  needs_revision: 'error',
+const statusVariants: Record<string, 'default' | 'secondary' | 'destructive'> = {
+  assigned: 'secondary',
+  submitted: 'secondary',
+  reviewed: 'default',
+  needs_revision: 'destructive',
 };
 
 export default function AssignmentDetailPage() {
@@ -84,73 +86,77 @@ export default function AssignmentDetailPage() {
       <div className="mb-4">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] text-sm font-mono uppercase tracking-[var(--tracking-wider)] transition-colors duration-[var(--duration-fast)]"
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground text-sm font-mono uppercase tracking-wider transition-colors"
         >
-          <ChevronLeftIcon />
+          <ChevronLeft className="size-4" />
           Назад
         </button>
       </div>
 
-      <PageHeader
-        title={loadingData ? '...' : (assignment?.title ?? 'Задание')}
-        subtitle={assignment?.stream ? `Поток: ${assignment.stream.name}` : undefined}
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{loadingData ? '...' : (assignment?.title ?? 'Задание')}</h1>
+          {assignment?.stream && (
+            <p className="text-sm text-muted-foreground">{`Поток: ${assignment.stream.name}`}</p>
+          )}
+        </div>
+      </div>
 
       {error && (
-        <div className="px-4 py-3 mb-4 rounded-[var(--radius-xs)] border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm font-sans">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {loadingData ? (
         <div className="flex justify-center py-8">
-          <Spinner size="md" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : !assignment ? (
-        <div className="text-[var(--color-text-tertiary)] text-sm font-sans">Задание не найдено.</div>
+        <div className="text-muted-foreground text-sm">Задание не найдено.</div>
       ) : (
         <div className="flex flex-col gap-6">
           {/* Assignment meta card */}
-          <div className="rounded-[var(--radius-xs)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6">
+          <div className="rounded-md border bg-card p-6">
             <div className="flex flex-wrap gap-6">
               <div className="flex flex-col gap-1">
-                <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)]">
+                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                   Тип
-                </Mono>
-                <span className="text-[var(--color-text-primary)] text-sm font-sans">{typeLabel}</span>
+                </span>
+                <span className="text-foreground text-sm">{typeLabel}</span>
               </div>
               {dueDateStr && (
                 <div className="flex flex-col gap-1">
-                  <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)]">
+                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                     Дедлайн
-                  </Mono>
-                  <span className="text-[var(--color-text-primary)] text-sm font-sans">{dueDateStr}</span>
+                  </span>
+                  <span className="text-foreground text-sm">{dueDateStr}</span>
                 </div>
               )}
               {assignment.lesson && (
                 <div className="flex flex-col gap-1">
-                  <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)]">
+                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                     Урок
-                  </Mono>
-                  <span className="text-[var(--color-text-primary)] text-sm font-sans">{assignment.lesson.title}</span>
+                  </span>
+                  <span className="text-foreground text-sm">{assignment.lesson.title}</span>
                 </div>
               )}
               <div className="flex flex-col gap-1">
-                <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)]">
+                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                   Студентов
-                </Mono>
-                <Mono size="xs" className="text-[var(--color-text-primary)]">
+                </span>
+                <span className="font-mono text-xs text-foreground">
                   {studentAssignments.length}
-                </Mono>
+                </span>
               </div>
             </div>
 
             {assignment.description && (
-              <div className="mt-4 pt-4 border-t border-[var(--color-border-subtle)]">
-                <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)] mb-2">
+              <div className="mt-4 pt-4 border-t">
+                <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
                   Описание
-                </Mono>
-                <p className="text-[var(--color-text-secondary)] text-sm font-sans leading-relaxed">
+                </span>
+                <p className="text-muted-foreground text-sm leading-relaxed">
                   {assignment.description}
                 </p>
               </div>
@@ -161,7 +167,7 @@ export default function AssignmentDetailPage() {
                 {assignment.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 rounded-[var(--radius-xs)] border border-[var(--color-border-default)] text-[var(--color-text-tertiary)] text-xs font-mono uppercase"
+                    className="px-2 py-0.5 rounded-md border text-muted-foreground text-xs font-mono uppercase"
                   >
                     {tag}
                   </span>
@@ -170,10 +176,10 @@ export default function AssignmentDetailPage() {
             )}
 
             {assignment.materials.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-[var(--color-border-subtle)]">
-                <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-wider)] mb-2">
+              <div className="mt-4 pt-4 border-t">
+                <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
                   Материалы
-                </Mono>
+                </span>
                 <div className="flex flex-col gap-1">
                   {assignment.materials.map((m, i) => (
                     <a
@@ -181,9 +187,9 @@ export default function AssignmentDetailPage() {
                       href={m.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-[var(--color-accent-red)] hover:text-[var(--color-text-primary)] text-sm font-sans transition-colors duration-[var(--duration-fast)]"
+                      className="flex items-center gap-2 text-foreground hover:text-muted-foreground text-sm transition-colors"
                     >
-                      <LinkIcon />
+                      <Link2 className="size-4" />
                       {m.name}
                     </a>
                   ))}
@@ -194,25 +200,25 @@ export default function AssignmentDetailPage() {
 
           {/* Student assignments table */}
           <div>
-            <Mono size="xs" className="text-[var(--color-text-tertiary)] uppercase tracking-[var(--tracking-widest)] mb-4">
+            <span className="block font-mono text-xs text-muted-foreground uppercase tracking-widest mb-4">
               Студенты
-            </Mono>
+            </span>
 
             {studentAssignments.length === 0 ? (
-              <div className="rounded-[var(--radius-xs)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-6 py-8 text-center">
-                <p className="text-[var(--color-text-tertiary)] text-sm font-sans">
+              <div className="rounded-md border bg-card px-6 py-8 text-center">
+                <p className="text-muted-foreground text-sm">
                   Задание ещё не назначено ни одному студенту.
                 </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse font-sans text-sm">
+                <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="border-b border-[var(--color-border-strong)]">
+                    <tr className="border-b">
                       {['Студент', 'Статус', 'Отправлено', 'Действия'].map((h) => (
                         <th
                           key={h}
-                          className="px-4 py-3 text-left text-[var(--color-text-tertiary)] font-mono text-xs uppercase tracking-[var(--tracking-wider)]"
+                          className="px-4 py-3 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider"
                         >
                           {h}
                         </th>
@@ -223,25 +229,25 @@ export default function AssignmentDetailPage() {
                     {studentAssignments.map((sa) => (
                       <tr
                         key={sa.id}
-                        className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-surface)] transition-colors duration-[var(--duration-fast)]"
+                        className="border-b hover:bg-card transition-colors"
                       >
                         <td className="px-4 py-3">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[var(--color-text-primary)] font-medium">
+                            <span className="text-foreground font-medium">
                               {sa.student?.name ?? '—'}
                             </span>
-                            <span className="text-[var(--color-text-tertiary)] text-xs font-mono">
+                            <span className="text-muted-foreground text-xs font-mono">
                               {sa.student?.email ?? ''}
                             </span>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant={statusVariants[sa.status] ?? 'warning'}>
+                          <Badge variant={statusVariants[sa.status] ?? 'secondary'}>
                             {statusLabels[sa.status] ?? sa.status}
                           </Badge>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-[var(--color-text-secondary)] text-xs font-mono">
+                          <span className="text-muted-foreground text-xs font-mono">
                             {sa.submittedAt
                               ? new Date(sa.submittedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
                               : '—'}
@@ -261,19 +267,20 @@ export default function AssignmentDetailPage() {
                             {sa.status === 'submitted' && (
                               <>
                                 <Button
-                                  variant="primary"
                                   size="sm"
-                                  loading={updatingId === sa.id}
+                                  disabled={updatingId === sa.id}
                                   onClick={() => handleStatusChange(sa.id, 'reviewed')}
                                 >
+                                  {updatingId === sa.id && <Loader2 className="animate-spin" />}
                                   Принять
                                 </Button>
                                 <Button
                                   variant="secondary"
                                   size="sm"
-                                  loading={updatingId === sa.id}
+                                  disabled={updatingId === sa.id}
                                   onClick={() => handleStatusChange(sa.id, 'needs_revision')}
                                 >
+                                  {updatingId === sa.id && <Loader2 className="animate-spin" />}
                                   На доработку
                                 </Button>
                               </>
@@ -290,22 +297,5 @@ export default function AssignmentDetailPage() {
         </div>
       )}
     </>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M9 2L4 7l5 5" />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 8a3 3 0 004.24 0l2-2A3 3 0 008 1.76L6.75 3" />
-      <path d="M8 6a3 3 0 00-4.24 0l-2 2A3 3 0 005.76 12.24L7 11" />
-    </svg>
   );
 }

@@ -8,9 +8,12 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Button, Spinner, Badge } from '@platform/ui/atoms';
-import { cn } from '@platform/ui/lib/utils';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ApiKeysPage() {
   const { accessToken } = useAuth();
@@ -101,41 +104,42 @@ export default function ApiKeysPage() {
 
   return (
     <>
-      <PageHeader
-        title="API-ключи"
-        subtitle="Управление ключами для внешних интеграций"
-        action={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => { setShowCreateModal(true); setNewKeyValue(null); }}
-          >
-            + Создать ключ
-          </Button>
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">API-ключи</h1>
+          <p className="text-sm text-muted-foreground">Управление ключами для внешних интеграций</p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => { setShowCreateModal(true); setNewKeyValue(null); }}
+        >
+          + Создать ключ
+        </Button>
+      </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 border border-[var(--color-error)] bg-[var(--color-error-dim)] font-mono text-xs text-[var(--color-error)]">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="w-full max-w-md bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] p-6">
+          <div className="w-full max-w-md bg-muted border p-6 rounded-md">
             {newKeyValue ? (
               <>
-                <h3 className="font-mono text-sm font-bold tracking-widest uppercase text-[var(--color-text-primary)] mb-4">
+                <h3 className="font-mono text-sm font-bold tracking-widest uppercase text-foreground mb-4">
                   API-ключ создан
                 </h3>
-                <div className="mb-4 px-3 py-3 bg-[var(--color-warning-dim)] border border-[var(--color-warning)] font-sans text-xs text-[var(--color-warning)]">
-                  Скопируйте ключ сейчас. После закрытия окна он больше не будет показан.
-                </div>
-                <div className="flex items-center gap-2 mb-4 px-3 py-3 bg-[var(--color-bg-surface)] border border-[var(--color-border-default)]">
-                  <code className="flex-1 font-mono text-xs text-[var(--color-text-primary)] break-all">
+                <Alert className="mb-4">
+                  <AlertDescription>
+                    Скопируйте ключ сейчас. После закрытия окна он больше не будет показан.
+                  </AlertDescription>
+                </Alert>
+                <div className="flex items-center gap-2 mb-4 px-3 py-3 bg-card border rounded-md">
+                  <code className="flex-1 font-mono text-xs text-foreground break-all">
                     {newKeyValue}
                   </code>
                   <Button
@@ -147,24 +151,19 @@ export default function ApiKeysPage() {
                     {copied ? '✓' : 'Копировать'}
                   </Button>
                 </div>
-                <Button variant="primary" size="sm" onClick={closeNewKey}>
+                <Button size="sm" onClick={closeNewKey}>
                   Закрыть
                 </Button>
               </>
             ) : (
               <>
-                <h3 className="font-mono text-sm font-bold tracking-widest uppercase text-[var(--color-text-primary)] mb-4">
+                <h3 className="font-mono text-sm font-bold tracking-widest uppercase text-foreground mb-4">
                   Новый API-ключ
                 </h3>
                 <form onSubmit={handleCreate}>
-                  <div className="mb-4">
-                    <label
-                      htmlFor="key-name"
-                      className="block mb-1 font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)]"
-                    >
-                      Название ключа
-                    </label>
-                    <input
+                  <div className="flex flex-col gap-2 mb-4">
+                    <Label htmlFor="key-name">Название ключа</Label>
+                    <Input
                       id="key-name"
                       type="text"
                       value={newKeyName}
@@ -172,17 +171,11 @@ export default function ApiKeysPage() {
                       placeholder="Например: Интеграция с CRM"
                       required
                       autoFocus
-                      className={cn(
-                        'w-full px-3 py-2',
-                        'font-sans text-sm',
-                        'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]',
-                        'border border-[var(--color-border-default)]',
-                        'focus:outline-none focus:border-[var(--color-accent-red)]',
-                      )}
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button type="submit" variant="primary" size="sm" loading={creating}>
+                    <Button type="submit" size="sm" disabled={creating}>
+                      {creating && <Loader2 className="animate-spin" />}
                       Создать
                     </Button>
                     <Button
@@ -203,20 +196,20 @@ export default function ApiKeysPage() {
 
       {/* Keys table */}
       <section className="mb-8">
-        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-[var(--color-text-tertiary)] mb-4">
+        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-muted-foreground mb-4">
           Активные ключи
         </h2>
 
         {loadingKeys ? (
           <div className="flex justify-center py-12">
-            <Spinner size="md" />
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : apiKeys.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 border border-[var(--color-border-subtle)] gap-3">
-            <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground border rounded-md">
+            <span className="font-mono text-xs uppercase tracking-wider">
               Нет активных API-ключей
             </span>
-            <span className="font-sans text-xs text-[var(--color-text-tertiary)]">
+            <span className="text-sm">
               Создайте первый ключ с помощью кнопки выше
             </span>
           </div>
@@ -224,11 +217,11 @@ export default function ApiKeysPage() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border-strong)]">
+                <tr className="border-b">
                   {['Название', 'Префикс ключа', 'Создан', 'Последнее использование', ''].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] whitespace-nowrap"
+                      className="px-4 py-3 text-left font-mono text-xs uppercase tracking-widest text-muted-foreground whitespace-nowrap"
                     >
                       {h}
                     </th>
@@ -237,36 +230,37 @@ export default function ApiKeysPage() {
               </thead>
               <tbody>
                 {apiKeys.map((key) => (
-                  <tr key={key.id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-elevated)] transition-colors">
-                    <td className="px-4 py-3 text-[var(--color-text-primary)] font-sans text-sm">
+                  <tr key={key.id} className="border-b hover:bg-muted transition-colors">
+                    <td className="px-4 py-3 text-foreground text-sm">
                       {key.name}
                     </td>
                     <td className="px-4 py-3">
-                      <code className="font-mono text-xs text-[var(--color-text-secondary)]">
+                      <code className="font-mono text-xs text-muted-foreground">
                         {key.keyPrefix}...
                       </code>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-[var(--color-text-tertiary)]">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {new Date(key.createdAt).toLocaleDateString('ru-RU')}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       {key.lastUsedAt ? (
-                        <span className="font-mono text-xs text-[var(--color-text-tertiary)]">
+                        <span className="font-mono text-xs text-muted-foreground">
                           {new Date(key.lastUsedAt).toLocaleDateString('ru-RU')}
                         </span>
                       ) : (
-                        <Badge variant="default">Не использовался</Badge>
+                        <Badge variant="outline">Не использовался</Badge>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         size="sm"
-                        loading={revoking === key.id}
+                        disabled={revoking === key.id}
                         onClick={() => handleRevoke(key)}
                       >
+                        {revoking === key.id && <Loader2 className="animate-spin" />}
                         Отозвать
                       </Button>
                     </td>
@@ -280,28 +274,28 @@ export default function ApiKeysPage() {
 
       {/* Connection guide */}
       <section className="mb-8">
-        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-[var(--color-text-tertiary)] mb-4">
+        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-muted-foreground mb-4">
           Подключение к API
         </h2>
-        <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5">
+        <div className="border bg-card p-5 rounded-md">
           <div className="mb-4">
-            <p className="font-mono text-xs uppercase tracking-wider text-[var(--color-text-tertiary)] mb-2">
+            <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-2">
               Base URL
             </p>
-            <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]">
-              <code className="font-mono text-xs text-[var(--color-text-primary)] flex-1">{proxyBase}</code>
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md">
+              <code className="font-mono text-xs text-foreground flex-1">{proxyBase}</code>
             </div>
           </div>
 
           <div>
-            <p className="font-mono text-xs uppercase tracking-wider text-[var(--color-text-tertiary)] mb-2">
+            <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-2">
               Аутентификация
             </p>
-            <p className="font-sans text-sm text-[var(--color-text-secondary)] mb-2">
-              Добавьте заголовок <code className="font-mono text-xs bg-[var(--color-bg-elevated)] px-1">Authorization</code> к каждому запросу:
+            <p className="text-sm text-muted-foreground mb-2">
+              Добавьте заголовок <code className="font-mono text-xs bg-muted px-1">Authorization</code> к каждому запросу:
             </p>
-            <div className="px-3 py-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]">
-              <code className="font-mono text-xs text-[var(--color-text-primary)] whitespace-pre">
+            <div className="px-3 py-3 bg-muted border rounded-md">
+              <code className="font-mono text-xs text-foreground whitespace-pre">
                 {`Authorization: Bearer ваш_api_ключ`}
               </code>
             </div>
@@ -311,7 +305,7 @@ export default function ApiKeysPage() {
 
       {/* API examples */}
       <section className="mb-8">
-        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-[var(--color-text-tertiary)] mb-4">
+        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-muted-foreground mb-4">
           Примеры запросов
         </h2>
         <div className="flex flex-col gap-3">
@@ -322,14 +316,14 @@ export default function ApiKeysPage() {
             { title: 'Профиль ученика',        code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/profiles/ID` },
             { title: 'Лента ученика',          code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/threads/ID` },
           ].map(({ title, code }) => (
-            <div key={title} className="border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
-              <div className="px-4 py-2 border-b border-[var(--color-border-subtle)]">
-                <span className="font-mono text-xs font-bold tracking-wider uppercase text-[var(--color-text-secondary)]">
+            <div key={title} className="border bg-card rounded-md">
+              <div className="px-4 py-2 border-b">
+                <span className="font-mono text-xs font-bold tracking-wider uppercase text-muted-foreground">
                   {title}
                 </span>
               </div>
               <div className="px-4 py-3 overflow-x-auto">
-                <code className="font-mono text-xs text-[var(--color-text-primary)] whitespace-pre">
+                <code className="font-mono text-xs text-foreground whitespace-pre">
                   {code}
                 </code>
               </div>

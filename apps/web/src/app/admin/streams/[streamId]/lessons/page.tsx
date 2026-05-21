@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Button, Badge } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getLessons,
   createLesson,
@@ -40,10 +50,10 @@ const statusLabels: Record<string, string> = {
   closed: 'Закрыт',
 };
 
-const statusBadgeVariant: Record<string, 'warning' | 'success' | 'error'> = {
-  draft: 'warning',
-  published: 'success',
-  closed: 'error',
+const statusBadgeVariant: Record<string, 'secondary' | 'default' | 'destructive'> = {
+  draft: 'secondary',
+  published: 'default',
+  closed: 'destructive',
 };
 
 export default function LessonsPage() {
@@ -179,12 +189,12 @@ export default function LessonsPage() {
             Уроки{stream ? `: ${stream.name}` : ''}
           </h1>
           {stream?.status === 'archived' && (
-            <Badge variant="error">Архивный поток</Badge>
+            <Badge variant="destructive">Архивный поток</Badge>
           )}
         </div>
         {stream?.status !== 'archived' && (
           <Button
-            variant="primary"
+            variant="default"
             onClick={showForm ? closeForm : openCreate}
           >
             {showForm && !editingId ? 'Отмена' : 'Добавить урок'}
@@ -193,9 +203,9 @@ export default function LessonsPage() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: 'var(--color-error-dim)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-xs)', marginBottom: 16, color: 'var(--color-error)', userSelect: 'text', cursor: 'text' }}>
-          {error}
-        </div>
+        <Alert variant="destructive" style={{ marginBottom: 16 }}>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {showForm && (
@@ -271,15 +281,19 @@ export default function LessonsPage() {
             {editingId && (
               <div style={{ width: 160 }}>
                 <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Статус</label>
-                <select
+                <Select
                   value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value as LessonFormData['status'] })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
+                  onValueChange={(v) => setForm({ ...form, status: v as LessonFormData['status'] })}
                 >
-                  <option value="draft">Черновик</option>
-                  <option value="published">Опубликован</option>
-                  <option value="closed">Закрыт</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Черновик</SelectItem>
+                    <SelectItem value="published">Опубликован</SelectItem>
+                    <SelectItem value="closed">Закрыт</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -287,10 +301,10 @@ export default function LessonsPage() {
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
               type="submit"
-              variant="primary"
-              disabled={!form.title.trim()}
-              loading={submitting}
+              variant="default"
+              disabled={submitting || !form.title.trim()}
             >
+              {submitting && <Loader2 className="animate-spin" />}
               {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
             </Button>
             <Button
@@ -352,7 +366,7 @@ export default function LessonsPage() {
                         Редактировать
                       </Button>
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         size="sm"
                         onClick={() => handleDelete(lesson.id)}
                       >

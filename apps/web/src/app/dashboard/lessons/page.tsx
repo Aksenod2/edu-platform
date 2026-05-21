@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -9,12 +10,17 @@ import {
   type Stream,
   type Lesson,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card, CardBody } from '@platform/ui/molecules';
-import { Button } from '@platform/ui/atoms';
-import { Badge } from '@platform/ui/atoms';
-import { Heading, Text, Mono } from '@platform/ui/atoms';
-import { Spinner } from '@platform/ui/atoms';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 function StudentLessonsContent() {
   const { user, accessToken } = useAuth();
@@ -69,51 +75,47 @@ function StudentLessonsContent() {
 
   return (
     <>
-      <PageHeader
-        title="Уроки"
-        subtitle="Видеозаписи, конспекты, материалы"
-        action={
-          streams.length > 1 ? (
-            <select
-              value={selectedStreamId || ''}
-              onChange={(e) => {
-                setSelectedStreamId(e.target.value);
-                setExpandedLessonId(null);
-              }}
-              style={{
-                padding: 'var(--spacing-2) var(--spacing-4)',
-                background: 'var(--color-bg-surface)',
-                border: '1px solid var(--color-border-default)',
-                borderRadius: 'var(--radius-xs)',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Уроки</h1>
+          <p className="text-sm text-muted-foreground">Видеозаписи, конспекты, материалы</p>
+        </div>
+        {streams.length > 1 ? (
+          <Select
+            value={selectedStreamId || ''}
+            onValueChange={(value) => {
+              setSelectedStreamId(value);
+              setExpandedLessonId(null);
+            }}
+          >
+            <SelectTrigger className="w-full max-w-[200px]">
+              <SelectValue placeholder="Поток" />
+            </SelectTrigger>
+            <SelectContent>
               {streams.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
-            </select>
-          ) : undefined
-        }
-      />
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
-          <Text size="sm" color="var(--color-error)">{error}</Text>
-        </Card>
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {streams.length === 0 && !loadingData ? (
-        <Text color="tertiary">Потоков пока нет.</Text>
+        <p className="text-sm text-muted-foreground">Потоков пока нет.</p>
       ) : loadingData ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
-          <Spinner size="md" />
+        <div className="flex justify-center py-8">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : lessons.length === 0 ? (
-        <Text color="tertiary">В этом потоке пока нет доступных уроков.</Text>
+        <p className="text-sm text-muted-foreground">В этом потоке пока нет доступных уроков.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
+        <div className="flex flex-col gap-3">
           {lessons.map((lesson) => {
             const isClosed = lesson.status === 'closed';
             const isExpanded = expandedLessonId === lesson.id;
@@ -121,44 +123,35 @@ function StudentLessonsContent() {
             return (
               <Card
                 key={lesson.id}
-                variant="default"
-                padding="none"
+                className="p-0"
                 style={{ opacity: isClosed ? 0.5 : 1 }}
               >
                 <div
                   onClick={() => !isClosed && setExpandedLessonId(isExpanded ? null : lesson.id)}
-                  style={{
-                    padding: 'var(--spacing-4) var(--spacing-5)',
-                    cursor: isClosed ? 'default' : 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
+                  className="flex items-center justify-between px-5 py-4"
+                  style={{ cursor: isClosed ? 'default' : 'pointer' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)' }}>
-                    <Heading level={3} size="md" style={{ margin: 0 }}>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold tracking-tight">
                       {lesson.title}
-                    </Heading>
+                    </h3>
                     {isClosed && (
-                      <Badge variant="error">Недоступен</Badge>
+                      <Badge variant="destructive">Недоступен</Badge>
                     )}
                   </div>
                   {!isClosed && (
-                    <Mono size="xs" color="var(--color-text-tertiary)">
+                    <span className="font-mono text-xs text-muted-foreground">
                       {isExpanded ? '▲' : '▼'}
-                    </Mono>
+                    </span>
                   )}
                 </div>
 
                 {isExpanded && !isClosed && (
-                  <div style={{
-                    padding: '0 var(--spacing-5) var(--spacing-5)',
-                    borderTop: '1px solid var(--color-border-subtle)',
-                  }}>
+                  <div className="border-t px-5 pb-5">
                     {lesson.videoUrl && (
-                      <div style={{ marginTop: 'var(--spacing-4)', marginBottom: 'var(--spacing-4)' }}>
-                        <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-                          <Button variant="primary" size="sm">
+                      <div className="mt-4 mb-4">
+                        <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer" className="no-underline">
+                          <Button size="sm">
                             Смотреть видео
                           </Button>
                         </a>
@@ -166,29 +159,31 @@ function StudentLessonsContent() {
                     )}
 
                     {lesson.summary && (
-                      <div style={{ marginTop: 'var(--spacing-3)' }}>
-                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>Описание</Heading>
-                        <Text size="sm" color="secondary" style={{ whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
+                      <div className="mt-3">
+                        <h4 className="mb-2 text-lg font-semibold tracking-tight">Описание</h4>
+                        <p className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
                           {lesson.summary}
-                        </Text>
+                        </p>
                       </div>
                     )}
 
                     {lesson.notes && (
-                      <div style={{ marginTop: 'var(--spacing-4)' }}>
-                        <Heading level={4} size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>Конспект</Heading>
-                        <Card variant="elevated" padding="sm">
-                          <Text size="sm" color="secondary" style={{ whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
-                            {lesson.notes}
-                          </Text>
+                      <div className="mt-4">
+                        <h4 className="mb-2 text-lg font-semibold tracking-tight">Конспект</h4>
+                        <Card className="bg-muted">
+                          <CardContent>
+                            <p className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                              {lesson.notes}
+                            </p>
+                          </CardContent>
                         </Card>
                       </div>
                     )}
 
                     {!lesson.videoUrl && !lesson.summary && !lesson.notes && (
-                      <Text size="sm" color="tertiary" style={{ marginTop: 'var(--spacing-3)', fontStyle: 'italic' }}>
+                      <p className="mt-3 text-sm italic text-muted-foreground">
                         Контент пока не добавлен.
-                      </Text>
+                      </p>
                     )}
                   </div>
                 )}
@@ -204,8 +199,8 @@ function StudentLessonsContent() {
 export default function StudentLessonsPage() {
   return (
     <Suspense fallback={
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <Spinner size="lg" />
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     }>
       <StudentLessonsContent />

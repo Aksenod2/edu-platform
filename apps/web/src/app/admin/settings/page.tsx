@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PageHeader } from '@platform/ui/templates';
-import { Button, Badge } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@platform/ui/lib/utils';
 
 interface SettingRow {
@@ -45,7 +45,7 @@ function SettingsSection({
           >
             <span className="font-sans text-sm text-[var(--color-text-secondary)]">{row.label}</span>
             <div className="flex items-center gap-2">
-              {row.badge && <Badge variant="default">{row.badge}</Badge>}
+              {row.badge && <Badge variant="outline">{row.badge}</Badge>}
               <span
                 className={cn(
                   'text-sm',
@@ -73,10 +73,12 @@ export default function AdminSettingsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Настройки"
-        subtitle="Системная конфигурация платформы"
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Настройки</h1>
+          <p className="text-sm text-muted-foreground">Системная конфигурация платформы</p>
+        </div>
+      </div>
 
       <SettingsSection
         title="Платформа"
@@ -167,7 +169,7 @@ export default function AdminSettingsPage() {
                 Необратимое удаление всех данных. Доступно только через прямой доступ к БД.
               </p>
             </div>
-            <Badge variant="error">Только для суперадмина</Badge>
+            <Badge variant="destructive">Только для суперадмина</Badge>
           </div>
         </div>
       </section>

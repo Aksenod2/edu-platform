@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Spinner } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -32,7 +32,7 @@ export default function Home() {
         background: 'var(--color-bg-base)',
       }}
     >
-      <Spinner size="lg" />
+      <Loader2 className="size-8 animate-spin text-muted-foreground" />
     </div>
   );
 }

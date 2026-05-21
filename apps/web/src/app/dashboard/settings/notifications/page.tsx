@@ -9,9 +9,10 @@ import {
   type NotificationPreference,
   type NotificationCategory,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card, CardBody } from '@platform/ui/molecules';
-import { Mono, Text, Heading } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface CategoryRow {
   category: NotificationCategory;
@@ -190,78 +191,50 @@ export default function NotificationSettingsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Настройки уведомлений"
-        subtitle="Управляйте тем, какие уведомления и по каким каналам вы получаете"
-        action={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)' }}>
-            {saveError && (
-              <Mono size="xs" style={{ color: 'var(--color-error)' }}>{saveError}</Mono>
-            )}
-            {saveSuccess && (
-              <Mono size="xs" style={{ color: 'var(--color-success)' }}>СОХРАНЕНО</Mono>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-xs)',
-                fontWeight: 700,
-                letterSpacing: 'var(--tracking-widest)',
-                textTransform: 'uppercase',
-                padding: 'var(--spacing-2) var(--spacing-4)',
-                background: 'var(--color-accent-red)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 'var(--radius-xs)',
-                cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.6 : 1,
-              }}
-            >
-              {saving ? 'СОХРАНЕНИЕ...' : 'СОХРАНИТЬ'}
-            </button>
-          </div>
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Настройки уведомлений</h1>
+          <p className="text-sm text-muted-foreground">Управляйте тем, какие уведомления и по каким каналам вы получаете</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {saveError && (
+            <span className="font-mono text-xs text-destructive">{saveError}</span>
+          )}
+          {saveSuccess && (
+            <span className="font-mono text-xs text-muted-foreground">СОХРАНЕНО</span>
+          )}
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            {saving ? 'СОХРАНЕНИЕ...' : 'СОХРАНИТЬ'}
+          </Button>
+        </div>
+      </div>
 
       {/* Web Push status banner */}
       {pushStatus === 'denied' && (
-        <div
-          style={{
-            marginBottom: 'var(--spacing-6)',
-            padding: 'var(--spacing-4)',
-            background: 'var(--color-warning-dim)',
-            border: '1px solid var(--color-warning)',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            gap: 'var(--spacing-3)',
-            alignItems: 'flex-start',
-          }}
-        >
-          <span style={{ fontSize: 16 }}>⚠️</span>
-          <div>
-            <Mono size="xs" style={{ color: 'var(--color-warning)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)', display: 'block', marginBottom: 'var(--spacing-1)' }}>
+        <Alert className="mb-6 mt-4">
+          <AlertDescription className="flex flex-col gap-1">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider">
               Push-уведомления заблокированы браузером
-            </Mono>
-            <Text size="sm" color="secondary">
+            </span>
+            <span className="text-sm text-muted-foreground">
               Вы ранее отклонили разрешение на push-уведомления. Чтобы включить их, зайдите в настройки браузера → сайт → Уведомления → «Разрешить».
-            </Text>
-          </div>
-        </div>
+            </span>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Global toggle */}
-      <Card style={{ marginBottom: 'var(--spacing-6)' }}>
-        <CardBody>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--spacing-4)' }}>
+      <Card className="mb-6 mt-4">
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <Heading level={3} size="md" style={{ marginBottom: 'var(--spacing-1)' }}>
+              <h3 className="mb-1 text-lg font-semibold tracking-tight">
                 Глобальный переключатель
-              </Heading>
-              <Text size="sm" color="tertiary">
+              </h3>
+              <p className="text-sm text-muted-foreground">
                 Отключить все email и push уведомления одновременно (in-app остаётся активным)
-              </Text>
+              </p>
             </div>
             <Toggle
               checked={!globalOff}
@@ -269,12 +242,12 @@ export default function NotificationSettingsPage() {
               label={globalOff ? 'ВЫКЛ' : 'ВКЛ'}
             />
           </div>
-        </CardBody>
+        </CardContent>
       </Card>
 
       {/* Matrix table */}
       <Card>
-        <CardBody>
+        <CardContent className="p-0">
           {/* Header row */}
           <div
             style={{
@@ -286,15 +259,15 @@ export default function NotificationSettingsPage() {
               background: 'var(--color-bg-elevated)',
             }}
           >
-            <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)' }}>
+            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Категория
-            </Mono>
-            <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', textAlign: 'center' }}>
+            </span>
+            <span className="text-center font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Email
-            </Mono>
-            <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', textAlign: 'center' }}>
+            </span>
+            <span className="text-center font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Push
-            </Mono>
+            </span>
           </div>
 
           {visibleRows.map((row, idx) => {
@@ -317,7 +290,7 @@ export default function NotificationSettingsPage() {
               >
                 <div style={{ paddingRight: 'var(--spacing-4)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', marginBottom: 'var(--spacing-1)' }}>
-                    <Text size="sm" style={{ fontWeight: 600 }}>{row.label}</Text>
+                    <p className="text-sm font-semibold text-foreground">{row.label}</p>
                     {row.system && (
                       <span
                         style={{
@@ -337,11 +310,11 @@ export default function NotificationSettingsPage() {
                       </span>
                     )}
                   </div>
-                  <Text size="sm" color="tertiary">{row.description}</Text>
+                  <p className="text-sm text-muted-foreground">{row.description}</p>
                   {row.system && (
-                    <Text size="sm" color="tertiary" style={{ marginTop: 'var(--spacing-1)', fontStyle: 'italic' }}>
+                    <p className="mt-1 text-sm italic text-muted-foreground">
                       Системные уведомления нельзя отключить
-                    </Text>
+                    </p>
                   )}
                 </div>
 
@@ -361,10 +334,10 @@ export default function NotificationSettingsPage() {
                   {row.system ? (
                     <Toggle checked={true} disabled label="ВКЛ" />
                   ) : pushStatus === 'denied' ? (
-                    <div style={{ textAlign: 'center' }}>
-                      <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
+                    <div className="text-center">
+                      <span className="font-mono text-xs uppercase text-muted-foreground">
                         ЗАБЛОК.
-                      </Mono>
+                      </span>
                     </div>
                   ) : (
                     <Toggle
@@ -377,22 +350,14 @@ export default function NotificationSettingsPage() {
               </div>
             );
           })}
-        </CardBody>
+        </CardContent>
       </Card>
 
       {/* In-app note */}
-      <div
-        style={{
-          marginTop: 'var(--spacing-4)',
-          padding: 'var(--spacing-3) var(--spacing-4)',
-          background: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-subtle)',
-          borderRadius: 'var(--radius-sm)',
-        }}
-      >
-        <Mono size="xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <div className="mt-4 rounded-sm border bg-card px-4 py-3">
+        <span className="font-mono text-xs text-muted-foreground">
           * In-app уведомления (колокольчик) всегда активны и не могут быть отключены — они гарантируют доступ к важным событиям платформы.
-        </Mono>
+        </span>
       </div>
     </>
   );
@@ -446,9 +411,9 @@ function Toggle({ checked, onChange, disabled = false, label }: ToggleProps) {
         />
       </button>
       {label && (
-        <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', fontSize: 9, letterSpacing: 'var(--tracking-wider)', textTransform: 'uppercase' }}>
+        <span className="font-mono uppercase tracking-wider text-muted-foreground" style={{ fontSize: 9 }}>
           {label}
-        </Mono>
+        </span>
       )}
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Spinner } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
 import {
   getThread,
   addThreadEntry,
@@ -192,7 +192,7 @@ export default function AdminStudentThreadPage() {
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
           {loadingData ? (
             <div className="flex-1 flex items-center justify-center">
-              <Spinner size="lg" />
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           ) : entries.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3">

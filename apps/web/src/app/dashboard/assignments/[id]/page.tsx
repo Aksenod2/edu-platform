@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Spinner, Button, Badge } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   getStudentAssignments,
   submitStudentAssignment,
@@ -20,11 +23,11 @@ const STATUS_LABELS: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const STATUS_VARIANT: Record<string, 'warning' | 'info' | 'success' | 'error'> = {
-  assigned: 'warning',
-  submitted: 'info',
-  reviewed: 'success',
-  needs_revision: 'error',
+const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  assigned: 'secondary',
+  submitted: 'secondary',
+  reviewed: 'default',
+  needs_revision: 'destructive',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -117,7 +120,7 @@ export default function AssignmentDetailPage({
   if (loadingData) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -141,9 +144,9 @@ export default function AssignmentDetailPage({
         </Link>
 
         {error && !sa && (
-          <div className="px-4 py-3 border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm mb-6">
-            {error}
-          </div>
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {sa && (
@@ -154,8 +157,8 @@ export default function AssignmentDetailPage({
                 <Badge variant={STATUS_VARIANT[sa.status] ?? 'default'}>
                   {STATUS_LABELS[sa.status]}
                 </Badge>
-                {a?.type && <Badge variant="default">{TYPE_LABELS[a.type] ?? a.type}</Badge>}
-                {a && !a.groupId && <Badge variant="accent">Индивидуальное</Badge>}
+                {a?.type && <Badge variant="outline">{TYPE_LABELS[a.type] ?? a.type}</Badge>}
+                {a && !a.groupId && <Badge variant="secondary">Индивидуальное</Badge>}
               </div>
               <h1 className="font-sans text-2xl font-semibold tracking-tight text-[var(--color-text-primary)] mb-2">
                 {a?.title ?? '—'}
@@ -349,21 +352,20 @@ export default function AssignmentDetailPage({
 
             {/* Alerts */}
             {error && (
-              <div className="flex justify-between items-center px-4 py-3 mb-4 border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm">
-                <span>{error}</span>
-                <button onClick={() => setError('')} className="bg-transparent border-0 cursor-pointer text-[var(--color-error)] text-base leading-none">×</button>
-              </div>
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
             {success && (
-              <div className="px-4 py-3 mb-4 border border-[var(--color-success)] bg-[var(--color-success-dim)] text-[var(--color-success)] text-sm">
-                {success}
-              </div>
+              <Alert className="mb-4">
+                <AlertDescription>{success}</AlertDescription>
+              </Alert>
             )}
 
             {/* Submission form */}
             {(sa.status === 'assigned' || sa.status === 'needs_revision') && !showForm && (
               <div className="flex gap-3">
-                <Button variant="primary" onClick={() => setShowForm(true)}>
+                <Button onClick={() => setShowForm(true)}>
                   {sa.status === 'needs_revision' ? 'Пересдать задание' : 'Сдать задание'}
                 </Button>
                 <Button
@@ -405,7 +407,7 @@ export default function AssignmentDetailPage({
                   </label>
                   {submissionFile ? (
                     <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
-                      <Badge variant="default">
+                      <Badge variant="outline">
                         {submissionFile.name.split('.').pop()?.toUpperCase()}
                       </Badge>
                       <div className="flex-1 min-w-0">
@@ -457,7 +459,6 @@ export default function AssignmentDetailPage({
 
                 <div className="flex gap-3">
                   <Button
-                    variant="primary"
                     onClick={handleSubmit}
                     disabled={submitting || (isShort && !submissionText.trim())}
                   >

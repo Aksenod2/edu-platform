@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Spinner, Button, Badge, Mono } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 import {
   getProfile,
@@ -34,11 +44,11 @@ const STATUS_LABELS: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const STATUS_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'error' | 'accent' | 'default'> = {
-  assigned: 'info',
-  submitted: 'warning',
-  reviewed: 'success',
-  needs_revision: 'accent',
+const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  assigned: 'secondary',
+  submitted: 'secondary',
+  reviewed: 'default',
+  needs_revision: 'secondary',
 };
 
 export default function StudentProfilePage() {
@@ -267,7 +277,7 @@ export default function StudentProfilePage() {
   if (loadingProfile) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -275,8 +285,10 @@ export default function StudentProfilePage() {
   if (error && !data) {
     return (
       <div className="p-4">
-        <a href="/admin/students" className="text-text-tertiary no-underline text-sm">← К списку учеников</a>
-        <p className="text-error mt-4">{error}</p>
+        <a href="/admin/students" className="text-muted-foreground no-underline text-sm">← К списку учеников</a>
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -304,22 +316,22 @@ export default function StudentProfilePage() {
 
         {/* ── Header ── */}
         <div className="px-4 pt-4 max-w-[900px] w-full mx-auto">
-          <a href="/admin/students" className="text-text-tertiary no-underline text-sm hover:text-text-secondary transition-colors">
+          <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
             ← К списку учеников
           </a>
 
           <div className="flex items-start justify-between mt-2 mb-1 gap-3">
             <div className="min-w-0">
-              <h1 className="m-0 mb-1 text-xl font-semibold text-text-primary">{student.name}</h1>
-              <p className="text-text-tertiary m-0 text-sm">
+              <h1 className="m-0 mb-1 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
+              <p className="text-muted-foreground m-0 text-sm">
                 {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
               {assignSuccess && (
-                <Mono size="xs" className="text-success whitespace-nowrap">{assignSuccess}</Mono>
+                <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">{assignSuccess}</span>
               )}
-              <Button variant="primary" size="sm" onClick={handleOpenAssignModal}>
+              <Button size="sm" onClick={handleOpenAssignModal}>
                 + Назначить задание
               </Button>
             </div>
@@ -327,57 +339,53 @@ export default function StudentProfilePage() {
 
           {/* Error banner */}
           {error && (
-            <div className="flex justify-between items-center px-3 py-2 mt-3 rounded-xs border border-error bg-error-dim text-sm text-error">
-              <span>{error}</span>
-              <button
-                onClick={() => setError('')}
-                className="bg-transparent border-0 cursor-pointer text-error text-base ml-2"
-              >
-                ×
-              </button>
-            </div>
+            <Alert variant="destructive" className="mt-3">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {/* Assign modal */}
           {showAssignModal && (
-            <div className="mt-3 p-4 rounded-sm border border-border-default bg-bg-elevated">
+            <div className="mt-3 p-4 rounded-sm border bg-muted">
               <div className="flex justify-between items-center mb-3">
-                <strong className="text-text-primary text-sm">
+                <strong className="text-foreground text-sm">
                   Назначить задание ученику {student.name}
                 </strong>
                 <button
                   onClick={() => setShowAssignModal(false)}
-                  className="bg-transparent border-0 cursor-pointer text-text-tertiary text-lg leading-none"
+                  className="bg-transparent border-0 cursor-pointer text-muted-foreground text-lg leading-none"
                 >
                   ×
                 </button>
               </div>
               {loadingAllAssignments ? (
-                <div className="flex justify-center p-4"><Spinner size="md" /></div>
+                <div className="flex justify-center p-4"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
               ) : allAssignments.length === 0 ? (
-                <p className="text-text-tertiary text-sm">Нет доступных заданий. Создайте задание в разделе потока.</p>
+                <p className="text-muted-foreground text-sm">Нет доступных заданий. Создайте задание в разделе потока.</p>
               ) : (
                 <>
-                  <select
+                  <Select
                     value={selectedAssignmentId}
-                    onChange={(e) => setSelectedAssignmentId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xs border border-border-default bg-bg-surface text-text-primary text-sm mb-3"
+                    onValueChange={setSelectedAssignmentId}
                   >
-                    <option value="">Выберите задание...</option>
-                    {allAssignments.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-full mb-3">
+                      <SelectValue placeholder="Выберите задание..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allAssignments.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <div className="flex gap-2">
                     <Button
-                      variant="primary"
                       size="sm"
                       onClick={handleAssignToStudent}
-                      disabled={!selectedAssignmentId}
-                      loading={assigning}
+                      disabled={!selectedAssignmentId || assigning}
                     >
+                      {assigning && <Loader2 className="animate-spin" />}
                       Назначить
                     </Button>
                     <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
@@ -422,75 +430,76 @@ export default function StudentProfilePage() {
 
               {/* Анкета */}
               <section>
-                <h2 className="text-xl font-semibold text-text-primary mb-3">Анкета (Задание №0)</h2>
+                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3">Анкета (Задание №0)</h2>
                 {profile ? (
-                  <div className="bg-bg-elevated border border-border-default rounded-sm p-4">
+                  <div className="bg-muted border rounded-sm p-4">
                     <div className="mb-3">
-                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Резюме</Mono>
-                      <p className="mt-1 text-sm text-text-primary whitespace-pre-wrap">{profile.resume || '—'}</p>
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Резюме</span>
+                      <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{profile.resume || '—'}</p>
                     </div>
                     <div className="mb-3">
-                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Портфолио</Mono>
-                      <p className="mt-1 text-sm text-text-primary">{profile.portfolio || '—'}</p>
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Портфолио</span>
+                      <p className="mt-1 text-sm text-foreground">{profile.portfolio || '—'}</p>
                     </div>
                     <div className="mb-3">
-                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Контакты</Mono>
-                      <p className="mt-1 text-sm text-text-primary">
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Контакты</span>
+                      <p className="mt-1 text-sm text-foreground">
                         {profile.contacts
                           ? `Email: ${(profile.contacts as { email?: string; telegram?: string }).email || '—'}, Telegram: ${(profile.contacts as { email?: string; telegram?: string }).telegram || '—'}`
                           : '—'}
                       </p>
                     </div>
                     <div className="mb-3">
-                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Направление</Mono>
-                      <p className="mt-1 text-sm text-text-primary">{profile.direction || '—'}</p>
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Направление</span>
+                      <p className="mt-1 text-sm text-foreground">{profile.direction || '—'}</p>
                     </div>
                     {profile.questionnaireCompletedAt ? (
-                      <Mono size="xs" className="text-success">
+                      <span className="block font-mono text-xs text-muted-foreground">
                         Заполнена: {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
-                      </Mono>
+                      </span>
                     ) : (
-                      <Mono size="xs" className="text-error">Анкета не заполнена</Mono>
+                      <span className="block font-mono text-xs text-destructive">Анкета не заполнена</span>
                     )}
                   </div>
                 ) : (
-                  <p className="text-text-tertiary text-sm">Ученик ещё не заполнил анкету.</p>
+                  <p className="text-muted-foreground text-sm">Ученик ещё не заполнил анкету.</p>
                 )}
               </section>
 
               {/* Заметки преподавателя */}
               <section className="mt-8">
-                <h2 className="text-xl font-semibold text-text-primary mb-3">Наблюдения преподавателя</h2>
+                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3">Наблюдения преподавателя</h2>
                 <form onSubmit={handleAddNote} className="mb-5">
                   <textarea
                     value={noteContent}
                     onChange={(e) => setNoteContent(e.target.value)}
                     placeholder="Добавить наблюдение или заметку..."
                     rows={3}
-                    className="w-full px-3 py-2 mb-2 border border-border-default rounded-xs bg-bg-elevated text-text-primary text-sm font-sans resize-none"
+                    className="w-full px-3 py-2 mb-2 border rounded-xs bg-muted text-foreground text-sm font-sans resize-none"
                   />
                   <div className="flex items-center gap-3">
-                    <Button type="submit" variant="primary" disabled={!noteContent.trim()} loading={savingNote}>
+                    <Button type="submit" disabled={!noteContent.trim() || savingNote}>
+                      {savingNote && <Loader2 className="animate-spin" />}
                       {savingNote ? 'Сохранение...' : 'Добавить заметку'}
                     </Button>
                     {noteMessage && (
-                      <Mono size="xs" className="text-success">{noteMessage}</Mono>
+                      <span className="font-mono text-xs text-muted-foreground">{noteMessage}</span>
                     )}
                   </div>
                 </form>
                 {notes && notes.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {notes.map((note: TeacherNote) => (
-                      <div key={note.id} className="bg-bg-elevated border border-border-default rounded-xs p-3">
-                        <p className="m-0 text-sm text-text-primary whitespace-pre-wrap">{note.content}</p>
-                        <Mono size="xs" className="mt-2 text-text-tertiary block">
+                      <div key={note.id} className="bg-muted border rounded-xs p-3">
+                        <p className="m-0 text-sm text-foreground whitespace-pre-wrap">{note.content}</p>
+                        <span className="block font-mono text-xs mt-2 text-muted-foreground">
                           {note.author.name} — {new Date(note.createdAt).toLocaleString('ru-RU')}
-                        </Mono>
+                        </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-text-tertiary text-sm">Заметок пока нет.</p>
+                  <p className="text-muted-foreground text-sm">Заметок пока нет.</p>
                 )}
               </section>
             </div>
@@ -504,7 +513,7 @@ export default function StudentProfilePage() {
                 <div className="grid gap-3 mb-4 p-3 bg-bg-elevated border border-border-default rounded-sm [grid-template-columns:repeat(auto-fit,minmax(110px,1fr))]">
                   {loadingSummary && !assignmentsSummary ? (
                     <div className="col-span-full flex justify-center p-2">
-                      <Spinner size="sm" />
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
                     </div>
                   ) : assignmentsSummary ? (
                     <>
@@ -544,18 +553,18 @@ export default function StudentProfilePage() {
               </div>
 
               {loadingAssignments ? (
-                <div className="flex justify-center p-8"><Spinner size="lg" /></div>
+                <div className="flex justify-center p-8"><Loader2 className="size-8 animate-spin text-muted-foreground" /></div>
               ) : filteredAssignments.length === 0 ? (
-                <p className="text-text-tertiary text-center py-8">
+                <p className="text-muted-foreground text-center py-8">
                   {assignments.length === 0 ? 'Заданий пока нет.' : 'Нет заданий с выбранным фильтром.'}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="border-b-2 border-border-default">
+                      <tr className="border-b-2">
                         {['Задание', 'Статус', 'Поток', 'Выдано', 'Срок сдачи', 'Действия'].map((h) => (
-                          <th key={h} className="px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-text-tertiary">
+                          <th key={h} className="px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-muted-foreground">
                             {h}
                           </th>
                         ))}
@@ -565,34 +574,33 @@ export default function StudentProfilePage() {
                       {filteredAssignments.map((sa) => {
                         const isOverdue = sa.status !== 'reviewed' && sa.assignment?.dueDate && new Date(sa.assignment.dueDate) < now;
                         return (
-                          <tr key={sa.id} className="border-b border-border-subtle hover:bg-bg-surface transition-colors">
-                            <td className="px-3 py-2.5 text-text-primary">{sa.assignment?.title || '—'}</td>
+                          <tr key={sa.id} className="border-b hover:bg-muted transition-colors">
+                            <td className="px-3 py-2.5 text-foreground">{sa.assignment?.title || '—'}</td>
                             <td className="px-3 py-2.5">
                               <span className="inline-flex items-center gap-1.5">
-                                <Badge variant={STATUS_VARIANT[sa.status] || 'default'}>
+                                <Badge variant={STATUS_VARIANT[sa.status] || 'outline'}>
                                   {STATUS_LABELS[sa.status] || sa.status}
                                 </Badge>
-                                {isOverdue && <Badge variant="error">Просрочено</Badge>}
+                                {isOverdue && <Badge variant="destructive">Просрочено</Badge>}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 text-text-secondary">{sa.assignment?.stream?.name || '—'}</td>
+                            <td className="px-3 py-2.5 text-muted-foreground">{sa.assignment?.stream?.name || '—'}</td>
                             <td className="px-3 py-2.5">
-                              <Mono size="xs" className="text-text-tertiary">
+                              <span className="font-mono text-xs text-muted-foreground">
                                 {new Date(sa.createdAt).toLocaleDateString('ru-RU')}
-                              </Mono>
+                              </span>
                             </td>
                             <td className="px-3 py-2.5">
-                              <Mono size="xs" className="text-text-tertiary">
+                              <span className="font-mono text-xs text-muted-foreground">
                                 {sa.assignment?.dueDate
                                   ? new Date(sa.assignment.dueDate).toLocaleDateString('ru-RU')
                                   : '—'}
-                              </Mono>
+                              </span>
                             </td>
                             <td className="px-3 py-2.5">
                               {sa.status === 'submitted' && (
                                 <div className="flex gap-1.5">
                                   <Button
-                                    variant="primary"
                                     size="sm"
                                     onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
                                     disabled={updatingId === sa.id}
@@ -610,13 +618,13 @@ export default function StudentProfilePage() {
                                 </div>
                               )}
                               {sa.status === 'assigned' && (
-                                <Mono size="xs" className="text-text-disabled">—</Mono>
+                                <span className="font-mono text-xs text-muted-foreground">—</span>
                               )}
                               {sa.status === 'needs_revision' && (
-                                <Mono size="xs" className="text-accent-red">↩ Ожидает пересдачи</Mono>
+                                <span className="font-mono text-xs text-muted-foreground">↩ Ожидает пересдачи</span>
                               )}
                               {sa.status === 'reviewed' && (
-                                <Mono size="xs" className="text-success">✓ Проверено</Mono>
+                                <span className="font-mono text-xs text-muted-foreground">✓ Проверено</span>
                               )}
                             </td>
                           </tr>
@@ -636,11 +644,11 @@ export default function StudentProfilePage() {
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
                 {loadingThread ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <Spinner size="lg" />
+                    <Loader2 className="size-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : threadEntries.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <Mono size="sm" className="text-text-tertiary uppercase tracking-wide">Тред пуст</Mono>
+                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Тред пуст</span>
                   </div>
                 ) : (
                   threadEntries.map((entry, i) => (
@@ -658,9 +666,9 @@ export default function StudentProfilePage() {
               <div className="border-t border-border-subtle px-4 py-3 bg-bg-surface">
                 {inputMode === 'note' && (
                   <div className="flex items-center justify-between px-3 py-2 mb-2 bg-warning-dim border border-warning rounded-sm">
-                    <Mono size="xs" className="text-warning uppercase tracking-wide">
+                    <span className="font-mono text-xs text-warning uppercase tracking-wide">
                       Приватная заметка — ученик не увидит
-                    </Mono>
+                    </span>
                     <button
                       onClick={() => setInputMode('comment')}
                       className="bg-transparent border-0 cursor-pointer text-warning p-1 flex"
@@ -848,9 +856,9 @@ function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: b
           </div>
         </div>
         {entry.assignment && (
-          <Mono size="xs" className="mt-1 text-text-disabled block">
+          <span className="block font-mono text-xs mt-1 text-muted-foreground">
             К заданию: {entry.assignment.title}
-          </Mono>
+          </span>
         )}
       </div>
     </div>

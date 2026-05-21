@@ -10,9 +10,13 @@ import {
   archiveStream,
   type Stream,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card, FormField } from '@platform/ui/molecules';
-import { Button, Input, Badge, Heading, Text, Mono, Spinner } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function StreamsPage() {
   const { user, accessToken } = useAuth();
@@ -97,58 +101,63 @@ export default function StreamsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Потоки"
-        subtitle="Учебные группы и их уроки"
-        action={
-          <Button
-            variant={showCreateForm ? 'ghost' : 'primary'}
-            size="sm"
-            onClick={() => setShowCreateForm(!showCreateForm)}
-          >
-            {showCreateForm ? 'Отмена' : 'Создать поток'}
-          </Button>
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Потоки</h1>
+          <p className="text-sm text-muted-foreground">Учебные группы и их уроки</p>
+        </div>
+        <Button
+          variant={showCreateForm ? 'ghost' : 'default'}
+          size="sm"
+          onClick={() => setShowCreateForm(!showCreateForm)}
+        >
+          {showCreateForm ? 'Отмена' : 'Создать поток'}
+        </Button>
+      </div>
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
-          <Text size="sm" color="var(--color-error)">{error}</Text>
-        </Card>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--spacing-6)' }}>
-          <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-4)' }}>Новый поток</Heading>
-          <form onSubmit={handleCreate}>
-            <div style={{ display: 'flex', gap: 'var(--spacing-3)', alignItems: 'flex-end' }}>
-              <div style={{ flex: 1 }}>
-                <FormField
-                  id="new-stream-name"
-                  label="Название потока"
-                  required
-                  inputProps={{
-                    placeholder: 'Например: Поток #1',
-                    value: newName,
-                    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value),
-                    autoFocus: true,
-                  }}
-                />
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Новый поток</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreate}>
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Field>
+                    <FieldLabel htmlFor="new-stream-name">Название потока</FieldLabel>
+                    <Input
+                      id="new-stream-name"
+                      placeholder="Например: Поток #1"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                  </Field>
+                </div>
+                <Button type="submit" variant="default" disabled={creating || !newName.trim()}>
+                  {creating && <Loader2 className="animate-spin" />}
+                  Создать
+                </Button>
               </div>
-              <Button type="submit" variant="primary" size="md" loading={creating} disabled={!newName.trim()}>
-                Создать
-              </Button>
-            </div>
-          </form>
+            </form>
+          </CardContent>
         </Card>
       )}
 
       {loadingStreams ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
-          <Spinner size="md" />
+        <div className="flex justify-center py-8">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : streams.length === 0 ? (
-        <Text color="tertiary">Потоков пока нет. Создайте первый поток.</Text>
+        <p className="text-sm text-muted-foreground">Потоков пока нет. Создайте первый поток.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{
@@ -173,17 +182,16 @@ export default function StreamsPage() {
                         <Input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          size="sm"
                           autoFocus
                           style={{ maxWidth: 250 }}
                         />
                         <Button
-                          variant="primary"
+                          variant="default"
                           size="sm"
                           onClick={() => handleUpdate(stream.id)}
-                          loading={saving}
-                          disabled={!editName.trim()}
+                          disabled={saving || !editName.trim()}
                         >
+                          {saving && <Loader2 className="animate-spin" />}
                           Сохранить
                         </Button>
                         <Button
@@ -195,18 +203,18 @@ export default function StreamsPage() {
                         </Button>
                       </div>
                     ) : (
-                      <Text size="sm" weight="medium" as="span">{stream.name}</Text>
+                      <span className="text-sm font-medium">{stream.name}</span>
                     )}
                   </td>
                   <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                    <Badge variant={stream.status === 'active' ? 'success' : 'error'}>
+                    <Badge variant={stream.status === 'active' ? 'default' : 'destructive'}>
                       {stream.status === 'active' ? 'Активный' : 'Архивный'}
                     </Badge>
                   </td>
                   <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                    <Mono size="xs" color="var(--color-text-tertiary)">
+                    <span className="font-mono text-xs text-muted-foreground">
                       {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
-                    </Mono>
+                    </span>
                   </td>
                   <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
                     {editingId !== stream.id && (
@@ -221,7 +229,7 @@ export default function StreamsPage() {
                           Редактировать
                         </Button>
                         {stream.status === 'active' && (
-                          <Button variant="danger" size="sm" onClick={() => handleArchive(stream.id)}>
+                          <Button variant="destructive" size="sm" onClick={() => handleArchive(stream.id)}>
                             Архивировать
                           </Button>
                         )}

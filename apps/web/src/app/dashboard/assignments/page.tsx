@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getStudentAssignments,
   submitStudentAssignment,
@@ -22,11 +32,11 @@ const STATUS_LABELS: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const STATUS_VARIANT: Record<string, 'warning' | 'info' | 'success' | 'error'> = {
-  assigned: 'warning',
-  submitted: 'info',
-  reviewed: 'success',
-  needs_revision: 'error',
+const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  assigned: 'secondary',
+  submitted: 'secondary',
+  reviewed: 'default',
+  needs_revision: 'destructive',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -170,49 +180,49 @@ export default function StudentAssignmentsPage() {
 
         {/* Alerts */}
         {error && (
-          <div className="flex justify-between items-center px-4 py-3 mb-4 border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm select-text">
-            <span>{error}</span>
-            <button
-              onClick={() => setError('')}
-              className="bg-transparent border-0 cursor-pointer text-[var(--color-error)] text-base leading-none"
-            >
-              ×
-            </button>
-          </div>
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
         {success && (
-          <div className="px-4 py-3 mb-4 border border-[var(--color-success)] bg-[var(--color-success-dim)] text-[var(--color-success)] text-sm">
-            {success}
-          </div>
+          <Alert className="mb-4">
+            <AlertDescription>{success}</AlertDescription>
+          </Alert>
         )}
 
         {/* Filters */}
         <div className="flex gap-3 mb-5 flex-wrap">
           <Select
-            value={streamFilter}
-            onChange={(e) => setStreamFilter(e.target.value)}
-            fullWidth={false}
-            style={{ minWidth: 160 }}
+            value={streamFilter || 'all'}
+            onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}
           >
-            <option value="">Все потоки</option>
-            {streams.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
+            <SelectTrigger className="min-w-40">
+              <SelectValue placeholder="Все потоки" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все потоки</SelectItem>
+              {streams.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
 
           <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            fullWidth={false}
-            style={{ minWidth: 160 }}
+            value={statusFilter || 'all'}
+            onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}
           >
-            <option value="">Все статусы</option>
-            <option value="assigned">Назначено</option>
-            <option value="submitted">Отправлено</option>
-            <option value="reviewed">Проверено</option>
-            <option value="needs_revision">На доработке</option>
+            <SelectTrigger className="min-w-40">
+              <SelectValue placeholder="Все статусы" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все статусы</SelectItem>
+              <SelectItem value="assigned">Назначено</SelectItem>
+              <SelectItem value="submitted">Отправлено</SelectItem>
+              <SelectItem value="reviewed">Проверено</SelectItem>
+              <SelectItem value="needs_revision">На доработке</SelectItem>
+            </SelectContent>
           </Select>
 
           {(streamFilter || statusFilter) && (
@@ -242,7 +252,7 @@ export default function StudentAssignmentsPage() {
         {/* Content */}
         {loadingData ? (
           <div className="flex justify-center py-16">
-            <Spinner size="lg" />
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : assignments.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 border border-dashed border-[var(--color-border-default)]">
@@ -287,9 +297,9 @@ export default function StudentAssignmentsPage() {
                           {STATUS_LABELS[sa.status]}
                         </Badge>
                         {a?.type && (
-                          <Badge variant="default">{TYPE_LABELS[a.type] ?? a.type}</Badge>
+                          <Badge variant="outline">{TYPE_LABELS[a.type] ?? a.type}</Badge>
                         )}
-                        {a && !a.groupId && <Badge variant="accent">Индивидуальное</Badge>}
+                        {a && !a.groupId && <Badge variant="secondary">Индивидуальное</Badge>}
                         {a?.stream && (
                           <span className="font-mono text-xs tracking-wide text-[var(--color-text-tertiary)]">
                             {a.stream.name}
@@ -575,7 +585,6 @@ export default function StudentAssignmentsPage() {
                           </button>
                           {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
                             <Button
-                              variant="primary"
                               size="sm"
                               onClick={() => openSubmissionForm(sa.id)}
                             >
@@ -617,7 +626,7 @@ export default function StudentAssignmentsPage() {
                   </div>
                   <div className="flex gap-2 mt-2">
                     {modalAssignment?.type && (
-                      <Badge variant="default">
+                      <Badge variant="outline">
                         {TYPE_LABELS[modalAssignment.type] ?? modalAssignment.type}
                       </Badge>
                     )}
@@ -655,7 +664,7 @@ export default function StudentAssignmentsPage() {
                   </label>
                   {submissionFile ? (
                     <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
-                      <Badge variant="default">
+                      <Badge variant="outline">
                         {submissionFile.name.split('.').pop()?.toUpperCase()}
                       </Badge>
                       <div className="flex-1 min-w-0">
@@ -706,7 +715,6 @@ export default function StudentAssignmentsPage() {
                     Отмена
                   </Button>
                   <Button
-                    variant="primary"
                     size="sm"
                     onClick={handleSubmit}
                     disabled={submitting || (isShort && !submissionText.trim())}

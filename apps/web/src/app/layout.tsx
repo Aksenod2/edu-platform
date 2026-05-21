@@ -5,7 +5,7 @@ import { PushManager } from '@/lib/push-manager';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Platform',
+  title: 'OCHOBA',
   description: 'Платформа для обмена заданиями и обратной связью',
 };
 

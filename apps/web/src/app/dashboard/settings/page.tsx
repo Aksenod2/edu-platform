@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { PageHeader } from '@platform/ui/templates';
 
 interface SettingCard {
   title: string;
@@ -36,10 +35,14 @@ export default function StudentSettingsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Настройки"
-        subtitle="Управление аккаунтом и предпочтениями"
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Настройки</h1>
+          <p className="text-sm text-muted-foreground">
+            Управление аккаунтом и предпочтениями
+          </p>
+        </div>
+      </div>
 
       {/* Account info strip */}
       <div className="mb-8 px-5 py-4 border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] flex items-center gap-4">

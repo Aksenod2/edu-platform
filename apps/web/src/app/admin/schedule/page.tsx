@@ -2,9 +2,20 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { PageHeader } from '@platform/ui/templates';
-import { Button, Input, Heading, Spinner, Mono } from '@platform/ui/atoms';
-import { Card, FormField, EmptyState } from '@platform/ui/molecules';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getStreams,
   getSchedule,
@@ -138,20 +149,24 @@ export default function SchedulePage() {
 
   const streamSelector = (
     <div className="flex items-center gap-3">
-      <select
+      <Select
         value={selectedStreamId}
-        onChange={(e) => setSelectedStreamId(e.target.value)}
-        className="px-3 py-2 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm font-mono bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent-red)]"
+        onValueChange={setSelectedStreamId}
+        disabled={streams.length === 0}
       >
-        {streams.length === 0 && <option value="">Нет потоков</option>}
-        {streams.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name} {s.status === 'archived' ? '(архив)' : ''}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Нет потоков" />
+        </SelectTrigger>
+        <SelectContent>
+          {streams.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {s.name} {s.status === 'archived' ? '(архив)' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Button
-        variant={showCreateForm ? 'ghost' : 'primary'}
+        variant={showCreateForm ? 'ghost' : 'default'}
         size="sm"
         onClick={() => setShowCreateForm(!showCreateForm)}
         disabled={!selectedStreamId}
@@ -163,106 +178,113 @@ export default function SchedulePage() {
 
   return (
     <>
-      <PageHeader
-        title="Расписание"
-        subtitle="Управление расписанием занятий"
-        action={streamSelector}
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Расписание</h1>
+          <p className="text-sm text-muted-foreground">Управление расписанием занятий</p>
+        </div>
+        {streamSelector}
+      </div>
 
       {error && (
-        <div className="px-4 py-3 mb-4 rounded-[var(--radius-xs)] border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" className="mb-6">
-          <Heading level={3} size="md" className="mb-4">Новое занятие</Heading>
-          <form onSubmit={handleCreate} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                id="new-date"
-                label="Дата"
-                required
-                inputProps={{
-                  type: 'date',
-                  value: newDate,
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewDate(e.target.value),
-                  required: true,
-                }}
-              />
-              <FormField
-                id="new-time"
-                label="Время начала"
-                required
-                inputProps={{
-                  type: 'time',
-                  value: newStartTime,
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewStartTime(e.target.value),
-                  required: true,
-                }}
-              />
-            </div>
-            <FormField
-              id="new-lesson-title"
-              label="Название урока"
-              required
-              inputProps={{
-                type: 'text',
-                value: newLessonTitle,
-                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewLessonTitle(e.target.value),
-                placeholder: 'Например: Основы типографики',
-                required: true,
-              }}
-            />
-            <FormField id="new-notes" label="Тезисы" hint="Опционально, markdown">
-              <textarea
-                id="new-notes"
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                placeholder="Краткое описание того, что будет на занятии..."
-                rows={3}
-                className="w-full px-4 py-3 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] resize-vertical focus:outline-none focus:border-[var(--color-accent-red)]"
-              />
-            </FormField>
-            <FormField
-              id="new-meeting-url"
-              label="Ссылка на созвон (Zoom, Meet, ...)"
-              hint="Опционально"
-              inputProps={{
-                type: 'url',
-                value: newMeetingUrl,
-                onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewMeetingUrl(e.target.value),
-                placeholder: 'https://zoom.us/j/...',
-              }}
-            />
-            <div>
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                loading={creating}
-                disabled={!newDate || !newStartTime || !newLessonTitle.trim()}
-              >
-                Создать
-              </Button>
-            </div>
-          </form>
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Новое занятие</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel htmlFor="new-date">Дата</FieldLabel>
+                  <Input
+                    id="new-date"
+                    type="date"
+                    value={newDate}
+                    onChange={(e) => setNewDate(e.target.value)}
+                    required
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="new-time">Время начала</FieldLabel>
+                  <Input
+                    id="new-time"
+                    type="time"
+                    value={newStartTime}
+                    onChange={(e) => setNewStartTime(e.target.value)}
+                    required
+                  />
+                </Field>
+              </div>
+              <Field>
+                <FieldLabel htmlFor="new-lesson-title">Название урока</FieldLabel>
+                <Input
+                  id="new-lesson-title"
+                  type="text"
+                  value={newLessonTitle}
+                  onChange={(e) => setNewLessonTitle(e.target.value)}
+                  placeholder="Например: Основы типографики"
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="new-notes">Тезисы</FieldLabel>
+                <Textarea
+                  id="new-notes"
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="Краткое описание того, что будет на занятии..."
+                  rows={3}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="new-meeting-url">Ссылка на созвон (Zoom, Meet, ...)</FieldLabel>
+                <Input
+                  id="new-meeting-url"
+                  type="url"
+                  value={newMeetingUrl}
+                  onChange={(e) => setNewMeetingUrl(e.target.value)}
+                  placeholder="https://zoom.us/j/..."
+                />
+              </Field>
+              <div>
+                <Button
+                  type="submit"
+                  variant="default"
+                  size="sm"
+                  disabled={creating || !newDate || !newStartTime || !newLessonTitle.trim()}
+                >
+                  {creating && <Loader2 className="animate-spin" />}
+                  Создать
+                </Button>
+              </div>
+            </form>
+          </CardContent>
         </Card>
       )}
 
       {loadingEntries ? (
         <div className="flex justify-center py-8">
-          <Spinner size="md" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : !selectedStreamId ? (
-        <EmptyState title="Выберите поток" description="Выберите поток для просмотра расписания." />
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+          <p className="text-foreground font-medium">Выберите поток</p>
+          <p>Выберите поток для просмотра расписания.</p>
+        </div>
       ) : entries.length === 0 ? (
-        <EmptyState
-          title="Расписание пусто"
-          description="Расписание пока пусто. Добавьте первое занятие."
-          action={{ label: 'Добавить занятие', onClick: () => setShowCreateForm(true) }}
-        />
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+          <p className="text-foreground font-medium">Расписание пусто</p>
+          <p>Расписание пока пусто. Добавьте первое занятие.</p>
+          <Button variant="default" size="sm" onClick={() => setShowCreateForm(true)}>
+            Добавить занятие
+          </Button>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -280,21 +302,20 @@ export default function SchedulePage() {
                 <tr key={entry.id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-surface)] transition-colors">
                   {editingId === entry.id ? (
                     <>
-                      <td className="p-2"><Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} size="sm" /></td>
-                      <td className="p-2"><Input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} size="sm" /></td>
-                      <td className="p-2"><Input type="text" value={editLessonTitle} onChange={(e) => setEditLessonTitle(e.target.value)} size="sm" /></td>
+                      <td className="p-2"><Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} /></td>
+                      <td className="p-2"><Input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} /></td>
+                      <td className="p-2"><Input type="text" value={editLessonTitle} onChange={(e) => setEditLessonTitle(e.target.value)} /></td>
                       <td className="p-2">
-                        <textarea
+                        <Textarea
                           value={editNotes}
                           onChange={(e) => setEditNotes(e.target.value)}
                           rows={2}
-                          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-[var(--radius-xs)] text-sm bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] resize-vertical focus:outline-none focus:border-[var(--color-accent-red)]"
                         />
                       </td>
-                      <td className="p-2"><Input type="url" value={editMeetingUrl} onChange={(e) => setEditMeetingUrl(e.target.value)} size="sm" placeholder="https://..." /></td>
+                      <td className="p-2"><Input type="url" value={editMeetingUrl} onChange={(e) => setEditMeetingUrl(e.target.value)} placeholder="https://..." /></td>
                       <td className="p-2">
                         <div className="flex items-center gap-2">
-                          <Button variant="primary" size="sm" onClick={() => handleUpdate(entry.id)} loading={saving} disabled={!editLessonTitle.trim()}>Сохранить</Button>
+                          <Button variant="default" size="sm" onClick={() => handleUpdate(entry.id)} disabled={saving || !editLessonTitle.trim()}>{saving && <Loader2 className="animate-spin" />}Сохранить</Button>
                           <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Отмена</Button>
                         </div>
                       </td>
@@ -309,7 +330,7 @@ export default function SchedulePage() {
                         })()}
                       </td>
                       <td className="px-3 py-3">
-                        <Mono size="xs" className="text-[var(--color-text-secondary)]">{entry.startTime}</Mono>
+                        <span className="font-mono text-xs text-muted-foreground">{entry.startTime}</span>
                       </td>
                       <td className="px-3 py-3 text-[var(--color-text-primary)] font-medium max-w-[200px]">{entry.lessonTitle}</td>
                       <td className="px-3 py-3 max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
@@ -327,7 +348,7 @@ export default function SchedulePage() {
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           <Button variant="secondary" size="sm" onClick={() => startEdit(entry)}>Редактировать</Button>
-                          <Button variant="danger" size="sm" onClick={() => handleDelete(entry.id)}>Удалить</Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleDelete(entry.id)}>Удалить</Button>
                         </div>
                       </td>
                     </>

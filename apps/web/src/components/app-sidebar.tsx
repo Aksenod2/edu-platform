@@ -107,7 +107,7 @@ export function AppSidebar({
             <SidebarMenuButton asChild size="lg">
               <Link href={rootHref}>
                 <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold tracking-tight">PLATFORM</span>
+                  <span className="font-semibold tracking-tight">OCHOBA</span>
                   <span className="text-xs text-muted-foreground">
                     {role === 'admin' ? 'Админ-панель' : 'Кабинет'}
                   </span>

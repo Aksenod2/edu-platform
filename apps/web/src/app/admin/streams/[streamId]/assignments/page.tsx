@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Button, Badge} from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getAssignments,
   createAssignment,
@@ -53,10 +63,10 @@ const saStatusLabels: Record<string, string> = {
   reviewed: 'Проверено',
 };
 
-const saStatusBadgeVariant: Record<string, 'warning' | 'info' | 'success'> = {
-  assigned: 'warning',
-  submitted: 'info',
-  reviewed: 'success',
+const saStatusBadgeVariant: Record<string, 'secondary' | 'default'> = {
+  assigned: 'secondary',
+  submitted: 'secondary',
+  reviewed: 'default',
 };
 
 export default function AssignmentsPage() {
@@ -315,7 +325,7 @@ export default function AssignmentsPage() {
         </div>
         {stream?.status !== 'archived' && (
           <Button
-            variant="primary"
+            variant="default"
             onClick={showForm ? closeForm : openCreate}
           >
             {showForm && !editingId ? 'Отмена' : 'Добавить задание'}
@@ -324,9 +334,9 @@ export default function AssignmentsPage() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: 'var(--color-error-dim)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-xs)', marginBottom: 16, color: 'var(--color-error)', userSelect: 'text', cursor: 'text' }}>
-          {error}
-        </div>
+        <Alert variant="destructive" style={{ marginBottom: 16 }}>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {showForm && (
@@ -359,28 +369,36 @@ export default function AssignmentsPage() {
           <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Тип</label>
-              <select
+              <Select
                 value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value as 'short' | 'long' })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
+                onValueChange={(v) => setForm({ ...form, type: v as 'short' | 'long' })}
               >
-                <option value="short">Короткое</option>
-                <option value="long">Длинное</option>
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="short">Короткое</SelectItem>
+                  <SelectItem value="long">Длинное</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Урок (опционально)</label>
-              <select
-                value={form.lessonId}
-                onChange={(e) => setForm({ ...form, lessonId: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
+              <Select
+                value={form.lessonId || '__none__'}
+                onValueChange={(v) => setForm({ ...form, lessonId: v === '__none__' ? '' : v })}
               >
-                <option value="">— Без привязки —</option>
-                {lessons.map((l) => (
-                  <option key={l.id} value={l.id}>{l.title}</option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="— Без привязки —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Без привязки —</SelectItem>
+                  {lessons.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div style={{ flex: 1 }}>
@@ -485,10 +503,10 @@ export default function AssignmentsPage() {
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
               type="submit"
-              variant="primary"
-              disabled={!form.title.trim()}
-              loading={submitting}
+              variant="default"
+              disabled={submitting || !form.title.trim()}
             >
+              {submitting && <Loader2 className="animate-spin" />}
               {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
             </Button>
             <Button
@@ -533,7 +551,7 @@ export default function AssignmentsPage() {
                     )}
                   </td>
                   <td style={{ padding: '12px' }}>
-                    <Badge variant="default">{typeLabels[a.type]}</Badge>
+                    <Badge variant="outline">{typeLabels[a.type]}</Badge>
                   </td>
                   <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
                     {a.lesson?.title || '—'}
@@ -549,7 +567,7 @@ export default function AssignmentsPage() {
                   <td style={{ padding: '12px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       <Button
-                        variant={viewingId === a.id ? 'primary' : 'ghost'}
+                        variant={viewingId === a.id ? 'default' : 'ghost'}
                         size="sm"
                         onClick={() => handleView(a.id)}
                       >
@@ -570,7 +588,7 @@ export default function AssignmentsPage() {
                         Ред.
                       </Button>
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         size="sm"
                         onClick={() => handleDelete(a.id)}
                       >
@@ -585,18 +603,21 @@ export default function AssignmentsPage() {
                   <tr key={`assign-${a.id}`}>
                     <td colSpan={6} style={{ padding: '12px 12px 16px', background: '#f0f8ff', borderBottom: '1px solid #cce5ff' }}>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select
+                        <Select
                           value={assignStudentId}
-                          onChange={(e) => setAssignStudentId(e.target.value)}
-                          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13 }}
+                          onValueChange={setAssignStudentId}
                         >
-                          <option value="">— Выбрать ученика —</option>
-                          {students.map((s) => (
-                            <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
-                          ))}
-                        </select>
+                          <SelectTrigger style={{ minWidth: 220 }}>
+                            <SelectValue placeholder="— Выбрать ученика —" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {students.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button
-                          variant="primary"
+                          variant="default"
                           disabled={!assignStudentId}
                           onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
                         >
@@ -631,16 +652,20 @@ export default function AssignmentsPage() {
                       )}
                       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                         <strong style={{ fontSize: 13 }}>Назначения:</strong>
-                        <select
-                          value={statusFilter}
-                          onChange={(e) => setStatusFilter(e.target.value)}
-                          style={{ padding: '2px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 12 }}
+                        <Select
+                          value={statusFilter || '__all__'}
+                          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : v)}
                         >
-                          <option value="">Все статусы</option>
-                          <option value="assigned">Назначено</option>
-                          <option value="submitted">Отправлено</option>
-                          <option value="reviewed">Проверено</option>
-                        </select>
+                          <SelectTrigger style={{ minWidth: 160 }}>
+                            <SelectValue placeholder="Все статусы" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__all__">Все статусы</SelectItem>
+                            <SelectItem value="assigned">Назначено</SelectItem>
+                            <SelectItem value="submitted">Отправлено</SelectItem>
+                            <SelectItem value="reviewed">Проверено</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       {loadingSA ? (
                         <p style={{ fontSize: 13 }}>Загрузка...</p>

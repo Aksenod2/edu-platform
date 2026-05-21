@@ -8,9 +8,13 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card, CardHeader, CardBody } from '@platform/ui/molecules';
-import { Button, Heading, Text, Mono, Spinner, Badge } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ApiAccessPage() {
   const { accessToken } = useAuth();
@@ -107,106 +111,70 @@ export default function ApiAccessPage() {
 
   return (
     <>
-      <PageHeader
-        title="API-доступ"
-        subtitle="Управление API-ключами и документация по интеграции"
-        action={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => { setShowCreateModal(true); setNewKeyValue(null); }}
-          >
-            Создать API-ключ
-          </Button>
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">API-доступ</h1>
+          <p className="text-sm text-muted-foreground">Управление API-ключами и документация по интеграции</p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => { setShowCreateModal(true); setNewKeyValue(null); }}
+        >
+          Создать API-ключ
+        </Button>
+      </div>
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
-          <Text size="sm" style={{ color: 'var(--color-error)' }}>{error}</Text>
-        </Card>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* ─── Модальное окно создания ключа ───────────────────────── */}
       {showCreateModal && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(0,0,0,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'var(--spacing-4)',
-        }}>
-          <Card variant="elevated" padding="lg" style={{ width: '100%', maxWidth: 480 }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45">
+          <Card className="w-full max-w-md">
             {newKeyValue ? (
               <>
                 <CardHeader>
-                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-2)' }}>
-                    API-ключ создан
-                  </Heading>
+                  <CardTitle>API-ключ создан</CardTitle>
                 </CardHeader>
-                <CardBody>
-                  <div style={{
-                    background: 'var(--color-warning-subtle, #fef3c7)',
-                    border: '1px solid var(--color-warning, #f59e0b)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--spacing-3)',
-                    marginBottom: 'var(--spacing-4)',
-                  }}>
-                    <Text size="sm" style={{ color: 'var(--color-warning-text, #92400e)' }}>
+                <CardContent>
+                  <Alert className="mb-4">
+                    <AlertDescription>
                       Скопируйте ключ сейчас. После закрытия окна он больше не будет показан.
-                    </Text>
-                  </div>
+                    </AlertDescription>
+                  </Alert>
 
-                  <div style={{
-                    display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center',
-                    background: 'var(--color-surface-raised)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--spacing-3)',
-                    marginBottom: 'var(--spacing-4)',
-                  }}>
-                    <Mono size="sm" style={{ flex: 1, wordBreak: 'break-all' }}>
+                  <div className="flex items-center gap-2 mb-4 px-3 py-3 bg-muted border rounded-md">
+                    <span className="flex-1 font-mono text-xs break-all">
                       {newKeyValue}
-                    </Mono>
+                    </span>
                     <Button
                       variant={copied ? 'secondary' : 'ghost'}
                       size="sm"
                       onClick={() => handleCopy(newKeyValue)}
-                      style={{ flexShrink: 0 }}
+                      className="shrink-0"
                     >
                       {copied ? 'Скопировано' : 'Копировать'}
                     </Button>
                   </div>
 
-                  <Button variant="primary" size="sm" onClick={closeNewKey}>
+                  <Button size="sm" onClick={closeNewKey}>
                     Закрыть
                   </Button>
-                </CardBody>
+                </CardContent>
               </>
             ) : (
               <>
                 <CardHeader>
-                  <Heading level={3} size="lg" style={{ marginBottom: 'var(--spacing-2)' }}>
-                    Новый API-ключ
-                  </Heading>
+                  <CardTitle>Новый API-ключ</CardTitle>
                 </CardHeader>
-                <CardBody>
+                <CardContent>
                   <form onSubmit={handleCreate}>
-                    <div style={{ marginBottom: 'var(--spacing-4)' }}>
-                      <label
-                        htmlFor="key-name"
-                        style={{
-                          display: 'block',
-                          marginBottom: 'var(--spacing-1)',
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 'var(--text-xs)',
-                          textTransform: 'uppercase',
-                          letterSpacing: 'var(--tracking-wider)',
-                          color: 'var(--color-text-tertiary)',
-                        }}
-                      >
-                        Название ключа
-                      </label>
-                      <input
+                    <div className="flex flex-col gap-2 mb-4">
+                      <Label htmlFor="key-name">Название ключа</Label>
+                      <Input
                         id="key-name"
                         type="text"
                         value={newKeyName}
@@ -214,21 +182,11 @@ export default function ApiAccessPage() {
                         placeholder="Например: Интеграция с CRM"
                         required
                         autoFocus
-                        style={{
-                          width: '100%',
-                          padding: 'var(--spacing-2) var(--spacing-3)',
-                          fontFamily: 'var(--font-sans)',
-                          fontSize: 'var(--text-sm)',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: 'var(--radius-md)',
-                          background: 'var(--color-surface)',
-                          color: 'var(--color-text-primary)',
-                          boxSizing: 'border-box',
-                        }}
                       />
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--spacing-2)' }}>
-                      <Button type="submit" variant="primary" size="sm" loading={creating}>
+                    <div className="flex gap-2">
+                      <Button type="submit" size="sm" disabled={creating}>
+                        {creating && <Loader2 className="animate-spin" />}
                         Создать
                       </Button>
                       <Button
@@ -241,7 +199,7 @@ export default function ApiAccessPage() {
                       </Button>
                     </div>
                   </form>
-                </CardBody>
+                </CardContent>
               </>
             )}
           </Card>
@@ -249,42 +207,28 @@ export default function ApiAccessPage() {
       )}
 
       {/* ─── Секция 1: Управление ключами ────────────────────────── */}
-      <section style={{ marginBottom: 'var(--spacing-8)' }}>
-        <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
-          Активные ключи
-        </Heading>
+      <section className="mb-8">
+        <h2 className="text-xl font-bold mb-4">Активные ключи</h2>
 
         {loadingKeys ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
-            <Spinner size="md" />
+          <div className="flex justify-center py-8">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : apiKeys.length === 0 ? (
-          <Card variant="outlined" padding="md">
-            <Text color="tertiary">Нет активных API-ключей. Создайте первый ключ с помощью кнопки выше.</Text>
+          <Card>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">Нет активных API-ключей. Создайте первый ключ с помощью кнопки выше.</p>
+            </CardContent>
           </Card>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--text-sm)',
-            }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
+                <tr className="border-b">
                   {['Название', 'Префикс ключа', 'Создан', 'Последнее использование', ''].map((h) => (
                     <th
                       key={h}
-                      style={{
-                        padding: 'var(--spacing-3) var(--spacing-4)',
-                        textAlign: 'left',
-                        color: 'var(--color-text-tertiary)',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 'var(--text-xs)',
-                        textTransform: 'uppercase',
-                        letterSpacing: 'var(--tracking-wider)',
-                        whiteSpace: 'nowrap',
-                      }}
+                      className="px-4 py-3 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider whitespace-nowrap"
                     >
                       {h}
                     </th>
@@ -293,36 +237,37 @@ export default function ApiAccessPage() {
               </thead>
               <tbody>
                 {apiKeys.map((key) => (
-                  <tr key={key.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)', color: 'var(--color-text-primary)' }}>
+                  <tr key={key.id} className="border-b">
+                    <td className="px-4 py-3 text-foreground">
                       {key.name}
                     </td>
-                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                      <Mono size="sm" style={{ color: 'var(--color-text-secondary)' }}>
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {key.keyPrefix}...
-                      </Mono>
+                      </span>
                     </td>
-                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                      <Mono size="xs" color="var(--color-text-tertiary)">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {new Date(key.createdAt).toLocaleDateString('ru-RU')}
-                      </Mono>
+                      </span>
                     </td>
-                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
+                    <td className="px-4 py-3">
                       {key.lastUsedAt ? (
-                        <Mono size="xs" color="var(--color-text-tertiary)">
+                        <span className="font-mono text-xs text-muted-foreground">
                           {new Date(key.lastUsedAt).toLocaleDateString('ru-RU')}
-                        </Mono>
+                        </span>
                       ) : (
-                        <Badge variant="default">Не использовался</Badge>
+                        <Badge variant="outline">Не использовался</Badge>
                       )}
                     </td>
-                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
+                    <td className="px-4 py-3">
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         size="sm"
-                        loading={revoking === key.id}
+                        disabled={revoking === key.id}
                         onClick={() => handleRevoke(key)}
                       >
+                        {revoking === key.id && <Loader2 className="animate-spin" />}
                         Отозвать
                       </Button>
                     </td>
@@ -335,49 +280,39 @@ export default function ApiAccessPage() {
       </section>
 
       {/* ─── Секция 2: Инструкция по подключению ─────────────────── */}
-      <section style={{ marginBottom: 'var(--spacing-8)' }}>
-        <Card variant="elevated" padding="lg">
+      <section className="mb-8">
+        <Card>
           <CardHeader>
-            <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
-              Как подключиться к API
-            </Heading>
+            <CardTitle>Как подключиться к API</CardTitle>
           </CardHeader>
-          <CardBody>
-            <div style={{ marginBottom: 'var(--spacing-4)' }}>
-              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--spacing-2)' }}>
+          <CardContent>
+            <div className="mb-4">
+              <p className="text-sm text-muted-foreground mb-2">
                 Base URL
-              </Text>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)',
-                background: 'var(--color-surface-raised)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                padding: 'var(--spacing-2) var(--spacing-3)',
-              }}>
-                <Mono size="sm" style={{ flex: 1 }}>{proxyBase}</Mono>
+              </p>
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md">
+                <span className="font-mono text-xs flex-1">{proxyBase}</span>
               </div>
             </div>
 
             <div>
-              <Text size="sm" color="secondary" style={{ marginBottom: 'var(--spacing-2)' }}>
+              <p className="text-sm text-muted-foreground mb-2">
                 Аутентификация
-              </Text>
-              <Text size="sm" style={{ marginBottom: 'var(--spacing-2)' }}>
-                Добавьте заголовок <Mono size="sm">Authorization</Mono> к каждому запросу:
-              </Text>
+              </p>
+              <p className="text-sm mb-2">
+                Добавьте заголовок <span className="font-mono text-xs">Authorization</span> к каждому запросу:
+              </p>
               <CodeBlock>{`Authorization: Bearer ваш_api_ключ`}</CodeBlock>
             </div>
-          </CardBody>
+          </CardContent>
         </Card>
       </section>
 
       {/* ─── Секция 3: Примеры запросов ──────────────────────────── */}
-      <section style={{ marginBottom: 'var(--spacing-8)' }}>
-        <Heading level={2} size="xl" style={{ marginBottom: 'var(--spacing-4)' }}>
-          Примеры запросов
-        </Heading>
+      <section className="mb-8">
+        <h2 className="text-xl font-bold mb-4">Примеры запросов</h2>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-4)' }}>
+        <div className="flex flex-col gap-4">
           <ExampleCard
             title="Список учеников"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users`}
@@ -412,27 +347,21 @@ export default function ApiAccessPage() {
 
 function CodeBlock({ children }: { children: string }) {
   return (
-    <div style={{
-      background: 'var(--color-surface-raised)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--spacing-3)',
-      overflowX: 'auto',
-    }}>
-      <Mono size="sm" style={{ whiteSpace: 'pre', display: 'block' }}>{children}</Mono>
+    <div className="bg-muted border rounded-md p-3 overflow-x-auto">
+      <span className="font-mono text-xs whitespace-pre block">{children}</span>
     </div>
   );
 }
 
 function ExampleCard({ title, code }: { title: string; code: string }) {
   return (
-    <Card variant="outlined" padding="md">
+    <Card>
       <CardHeader>
-        <Text size="sm" style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)' }}>{title}</Text>
+        <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
-      <CardBody>
+      <CardContent>
         <CodeBlock>{code}</CodeBlock>
-      </CardBody>
+      </CardContent>
     </Card>
   );
 }

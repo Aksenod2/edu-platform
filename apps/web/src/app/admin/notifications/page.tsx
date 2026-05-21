@@ -4,8 +4,8 @@ import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useNotifications } from '@/lib/notifications-context';
-import { PageHeader } from '@platform/ui/templates';
-import { Badge } from '@platform/ui/atoms';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   getNotificationLink,
   markNotificationRead,
@@ -38,27 +38,19 @@ export default function AdminNotificationsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Уведомления"
-        subtitle={unreadCount > 0 ? `${unreadCount} непрочитанных` : 'Все прочитаны'}
-        action={
-          unreadCount > 0 ? (
-            <button
-              onClick={handleMarkAllRead}
-              className={cn(
-                'font-mono text-xs font-bold tracking-widest uppercase',
-                'text-[var(--color-text-tertiary)]',
-                'bg-transparent border border-[var(--color-border-default)]',
-                'px-3 py-2 cursor-pointer',
-                'hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-secondary)]',
-                'transition-colors duration-[var(--duration-fast)]',
-              )}
-            >
-              Отметить все прочитанными
-            </button>
-          ) : undefined
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Уведомления</h1>
+          <p className="text-sm text-muted-foreground">
+            {unreadCount > 0 ? `${unreadCount} непрочитанных` : 'Все прочитаны'}
+          </p>
+        </div>
+        {unreadCount > 0 && (
+          <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
+            Отметить все прочитанными
+          </Button>
+        )}
+      </div>
 
       {/* Stats row */}
       <div className="flex gap-4 mb-6">
@@ -71,7 +63,7 @@ export default function AdminNotificationsPage() {
             <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">
               Непрочитанных:
             </span>
-            <Badge variant="error">{unreadCount}</Badge>
+            <Badge variant="destructive">{unreadCount}</Badge>
           </div>
         )}
       </div>

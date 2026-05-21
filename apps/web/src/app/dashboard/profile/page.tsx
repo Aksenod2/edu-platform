@@ -2,9 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { Loader2 } from 'lucide-react';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Button, Input, Textarea } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfilePage() {
   const { user, accessToken, setUser } = useAuth();
@@ -99,10 +102,12 @@ export default function ProfilePage() {
 
   return (
     <>
-      <PageHeader
-        title={isCompleted ? 'Мой профиль' : 'Анкета (Задание №0)'}
-        subtitle={isCompleted ? 'Ваши контактные и профессиональные данные' : 'Заполните для начала обучения'}
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{isCompleted ? 'Мой профиль' : 'Анкета (Задание №0)'}</h1>
+          <p className="text-sm text-muted-foreground">{isCompleted ? 'Ваши контактные и профессиональные данные' : 'Заполните для начала обучения'}</p>
+        </div>
+      </div>
 
       {/* Avatar + status strip */}
       <div className="flex items-center gap-4 mb-8 p-5 border border-[var(--color-border-default)] bg-[var(--color-bg-surface)]">
@@ -140,19 +145,19 @@ export default function ProfilePage() {
 
       {/* Error */}
       {error && (
-        <div className="mb-6 px-4 py-3 border border-[var(--color-error)] bg-[var(--color-error-dim)] flex items-center justify-between gap-3">
-          <p className="font-sans text-sm text-[var(--color-error)]">{error}</p>
-          <button onClick={() => setError('')} className="flex-shrink-0 text-[var(--color-error)] hover:opacity-70 transition-opacity">
+        <Alert variant="destructive" className="mb-6 flex items-center justify-between gap-3">
+          <AlertDescription>{error}</AlertDescription>
+          <button onClick={() => setError('')} className="flex-shrink-0 hover:opacity-70 transition-opacity">
             <CloseIcon />
           </button>
-        </div>
+        </Alert>
       )}
 
       {/* Success */}
       {message && (
-        <div className="mb-6 px-4 py-3 border border-[var(--color-success)] bg-[var(--color-success-dim)]">
-          <p className="font-sans text-sm text-[var(--color-success)]">{message}</p>
-        </div>
+        <Alert className="mb-6">
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
       )}
 
       {/* Form */}
@@ -235,7 +240,8 @@ export default function ProfilePage() {
 
         {/* Submit */}
         <div className="flex items-center justify-between pt-2">
-          <Button type="submit" variant="primary" size="lg" loading={saving}>
+          <Button type="submit" size="lg" disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
             {saving ? 'Сохранение...' : isCompleted ? 'Обновить профиль' : 'Отправить анкету'}
           </Button>
           {isCompleted && profile?.questionnaireCompletedAt && (

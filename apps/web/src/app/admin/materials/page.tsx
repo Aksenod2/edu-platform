@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { PageHeader } from '@platform/ui/templates';
-import { Spinner, Badge } from '@platform/ui/atoms';
+import { Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { getStreams, getAssignments, type Stream, type Assignment, type AssignmentMaterial } from '@/lib/api';
 import { cn } from '@platform/ui/lib/utils';
 
@@ -96,10 +98,12 @@ export default function MaterialsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Материалы"
-        subtitle="Все файлы и ссылки, прикреплённые к заданиям"
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Материалы</h1>
+          <p className="text-sm text-muted-foreground">Все файлы и ссылки, прикреплённые к заданиям</p>
+        </div>
+      </div>
 
       {/* Stats */}
       <div className="flex gap-6 mb-6">
@@ -109,29 +113,25 @@ export default function MaterialsPage() {
           { label: 'Ссылок', value: urlCount },
         ].map(({ label, value }) => (
           <div key={label} className="flex items-center gap-2">
-            <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">{label}:</span>
-            <span className="font-mono text-xs font-bold text-[var(--color-text-primary)]">{value}</span>
+            <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">{label}:</span>
+            <span className="font-mono text-xs font-bold text-foreground">{value}</span>
           </div>
         ))}
       </div>
 
       {/* Filters */}
       <div className="flex gap-3 mb-5">
-        <select
-          value={streamFilter}
-          onChange={(e) => setStreamFilter(e.target.value)}
-          className={cn(
-            'font-mono text-xs px-3 py-2',
-            'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]',
-            'border border-[var(--color-border-default)]',
-            'focus:outline-none focus:border-[var(--color-accent-red)]',
-          )}
-        >
-          <option value="">Все потоки</option>
-          {streams.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        <Select value={streamFilter || 'all'} onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-full max-w-xs">
+            <SelectValue placeholder="Все потоки" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все потоки</SelectItem>
+            {streams.map((s) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex">
           {(['all', 'file', 'url'] as const).map((t) => (
             <button
@@ -139,12 +139,12 @@ export default function MaterialsPage() {
               onClick={() => setTypeFilter(t)}
               className={cn(
                 'font-mono text-xs px-3 py-2 uppercase tracking-wider',
-                'border border-[var(--color-border-default)]',
+                'border',
                 '-ml-px first:ml-0',
-                'transition-colors duration-[var(--duration-fast)]',
+                'transition-colors',
                 typeFilter === t
-                  ? 'bg-[var(--color-text-primary)] text-[var(--color-text-inverse)] border-[var(--color-text-primary)]'
-                  : 'bg-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground',
               )}
             >
               {t === 'all' ? 'Все' : t === 'file' ? 'Файлы' : 'Ссылки'}
@@ -154,19 +154,19 @@ export default function MaterialsPage() {
       </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 border border-[var(--color-error)] bg-[var(--color-error-dim)] font-mono text-xs text-[var(--color-error)]">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {loadingData ? (
         <div className="flex justify-center py-12">
-          <Spinner size="md" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : filteredRows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 border border-[var(--color-border-subtle)] gap-3">
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground border rounded-md">
           <span className="text-3xl opacity-20" aria-hidden>📁</span>
-          <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">
+          <span className="font-mono text-xs uppercase tracking-wider">
             Материалы не найдены
           </span>
         </div>
@@ -174,11 +174,11 @@ export default function MaterialsPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-[var(--color-border-strong)]">
+              <tr className="border-b">
                 {['Тип', 'Название', 'Задание', 'Поток', 'Размер'].map((h) => (
                   <th
                     key={h}
-                    className="px-4 py-3 text-left font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] whitespace-nowrap"
+                    className="px-4 py-3 text-left font-mono text-xs uppercase tracking-widest text-muted-foreground whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -192,10 +192,10 @@ export default function MaterialsPage() {
                 return (
                   <tr
                     key={idx}
-                    className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-elevated)] transition-colors group"
+                    className="border-b hover:bg-muted transition-colors group"
                   >
                     <td className="px-4 py-3">
-                      <Badge variant={row.material.type === 'file' ? 'default' : 'info'}>
+                      <Badge variant={row.material.type === 'file' ? 'outline' : 'secondary'}>
                         {typeLabel}
                       </Badge>
                     </td>
@@ -205,7 +205,7 @@ export default function MaterialsPage() {
                           href={row.material.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-sans text-sm text-[var(--color-accent-red)] hover:underline truncate block"
+                          className="text-sm text-foreground hover:underline truncate block"
                         >
                           {row.material.name}
                         </a>
@@ -214,24 +214,24 @@ export default function MaterialsPage() {
                           href={row.material.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-sans text-sm text-[var(--color-text-primary)] hover:text-[var(--color-accent-red)] truncate block"
+                          className="text-sm text-foreground hover:text-muted-foreground truncate block"
                         >
                           {row.material.name}
                         </a>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-sans text-sm text-[var(--color-text-secondary)] truncate max-w-[200px] block">
+                      <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
                         {row.assignment.title}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-[var(--color-text-tertiary)]">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {row.stream.name}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-[var(--color-text-tertiary)]">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {formatSize(row.material.size)}
                       </span>
                     </td>

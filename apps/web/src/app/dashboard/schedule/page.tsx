@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -8,9 +9,18 @@ import {
   type Stream,
   type ScheduleEntry,
 } from '@/lib/api';
-import { PageHeader } from '@platform/ui/templates';
-import { Card } from '@platform/ui/molecules';
-import { Button, Heading, Text, Mono, Spinner, Badge, Divider, Select } from '@platform/ui/atoms';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /** Парсит дату из ISO-строки как локальную (без UTC-сдвига) */
 function parseLocalDate(dateStr: string, startTime: string): Date {
@@ -81,75 +91,75 @@ export default function StudentSchedulePage() {
 
   return (
     <>
-      <PageHeader
-        title="Расписание"
-        subtitle="Предстоящие занятия и сроки"
-        action={
-          streams.length > 1 ? (
-            <Select
-              value={selectedStreamId}
-              onChange={(e) => setSelectedStreamId(e.target.value)}
-              fullWidth={false}
-              style={{ minWidth: 160 }}
-            >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Расписание</h1>
+          <p className="text-sm text-muted-foreground">Предстоящие занятия и сроки</p>
+        </div>
+        {streams.length > 1 ? (
+          <Select value={selectedStreamId} onValueChange={setSelectedStreamId}>
+            <SelectTrigger className="w-full max-w-[200px]">
+              <SelectValue placeholder="Поток" />
+            </SelectTrigger>
+            <SelectContent>
               {streams.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
-            </Select>
-          ) : undefined
-        }
-      />
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
-          <Text size="sm" color="var(--color-error)">{error}</Text>
-        </Card>
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {loadingEntries ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
-          <Spinner size="md" />
+        <div className="flex justify-center py-8">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : entries.length === 0 ? (
-        <Text color="tertiary">Расписание пока не заполнено.</Text>
+        <p className="text-sm text-muted-foreground">Расписание пока не заполнено.</p>
       ) : (
         <>
           {upcomingEntries.length > 0 && (
-            <section style={{ marginBottom: 'var(--spacing-8)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)', marginBottom: 'var(--spacing-4)' }}>
-                <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-accent-red)' }}>
+            <section className="mb-8">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="font-mono text-xs uppercase tracking-widest text-foreground">
                   Предстоящие занятия
-                </Mono>
-                <Badge variant="accent">{upcomingEntries.length}</Badge>
+                </span>
+                <Badge variant="secondary">{upcomingEntries.length}</Badge>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
+              <div className="flex flex-col gap-3">
                 {upcomingEntries.map((entry) => (
                   <Card
                     key={entry.id}
-                    variant="default"
-                    padding="sm"
                     style={{ borderLeft: '2px solid var(--color-accent-red)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
-                      <Heading level={4} size="md" style={{ margin: 0 }}>{entry.lessonTitle}</Heading>
-                      <Mono size="xs" color="var(--color-text-tertiary)">
-                        {formatEntryDateTime(entry.date, entry.startTime)}
-                      </Mono>
-                    </div>
-                    {entry.notes && (
-                      <Text size="sm" color="secondary" style={{ marginTop: 'var(--spacing-2)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
-                        {entry.notes}
-                      </Text>
-                    )}
-                    {entry.meetingUrl && (
-                      <div style={{ marginTop: 'var(--spacing-3)' }}>
-                        <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-                          <Button variant="primary" size="sm">
-                            Присоединиться
-                          </Button>
-                        </a>
+                    <CardContent>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h4 className="text-lg font-semibold tracking-tight">{entry.lessonTitle}</h4>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {formatEntryDateTime(entry.date, entry.startTime)}
+                        </span>
                       </div>
-                    )}
+                      {entry.notes && (
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                          {entry.notes}
+                        </p>
+                      )}
+                      {entry.meetingUrl && (
+                        <div className="mt-3">
+                          <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" className="no-underline">
+                            <Button size="sm">
+                              Присоединиться
+                            </Button>
+                          </a>
+                        </div>
+                      )}
+                    </CardContent>
                   </Card>
                 ))}
               </div>
@@ -157,33 +167,33 @@ export default function StudentSchedulePage() {
           )}
 
           {upcomingEntries.length > 0 && pastEntries.length > 0 && (
-            <Divider spacing="md" />
+            <Separator className="my-4" />
           )}
 
           {pastEntries.length > 0 && (
             <section>
-              <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--spacing-4)', display: 'block' }}>
+              <span className="mb-4 block font-mono text-xs uppercase tracking-widest text-muted-foreground">
                 Прошедшие занятия
-              </Mono>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
+              </span>
+              <div className="flex flex-col gap-2">
                 {pastEntries.map((entry) => (
                   <Card
                     key={entry.id}
-                    variant="outlined"
-                    padding="sm"
                     style={{ opacity: 0.6, borderLeft: '2px solid var(--color-border-subtle)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
-                      <Text size="sm" weight="medium">{entry.lessonTitle}</Text>
-                      <Mono size="xs" color="var(--color-text-tertiary)">
-                        {formatEntryDateTime(entry.date, entry.startTime)}
-                      </Mono>
-                    </div>
-                    {entry.notes && (
-                      <Text size="xs" color="tertiary" style={{ marginTop: 'var(--spacing-1)', whiteSpace: 'pre-wrap' }}>
-                        {entry.notes}
-                      </Text>
-                    )}
+                    <CardContent>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">{entry.lessonTitle}</p>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {formatEntryDateTime(entry.date, entry.startTime)}
+                        </span>
+                      </div>
+                      {entry.notes && (
+                        <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+                          {entry.notes}
+                        </p>
+                      )}
+                    </CardContent>
                   </Card>
                 ))}
               </div>
