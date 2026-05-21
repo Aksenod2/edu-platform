@@ -1,88 +1,64 @@
-/* Nothing Phone Design System — Global Styles */
-/* Tailwind CSS v4 + design tokens from @platform/ui */
+@import "tailwindcss";
 @import '@platform/ui/tailwind';
 @source '../../../../packages/ui/src';
 
-/* shadcn/ui standard CSS variables — mapped to Nothing Phone tokens */
-/* Required for shadcn/ui components in apps/web/src/components/ui/ */
+/* shadcn/ui light theme (zinc) — standard from ui.shadcn.com */
 :root {
-  --background: 0 0% 0%;            /* #000000 bg-base */
-  --foreground: 0 0% 100%;          /* #FFFFFF text-primary */
-  --card: 0 0% 5%;                  /* #0D0D0D bg-surface */
-  --card-foreground: 0 0% 100%;
-  --popover: 0 0% 5%;
-  --popover-foreground: 0 0% 100%;
-  --primary: 0 100% 50%;            /* #FF0000 accent-red */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 9%;             /* #161616 bg-elevated */
-  --secondary-foreground: 0 0% 100%;
-  --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 38%;     /* #606060 text-tertiary */
-  --accent: 0 0% 9%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 100% 50%;        /* #FF0000 error/accent-red */
-  --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 16%;               /* #2A2A2A border-default */
-  --input: 0 0% 16%;
-  --ring: 0 100% 50%;               /* #FF0000 focus ring */
-  --radius: 0.25rem;                /* --radius-xs */
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 240 5.9% 10%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 240 5.9% 10%;
+  --radius: 0.5rem;
 }
 
-/* Spinner keyframe — used by Button (loading) and Spinner atom */
-@keyframes np-spin {
-  to { transform: rotate(360deg); }
+.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 240 5.9% 10%;
+  --secondary: 240 3.7% 15.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --accent: 240 3.7% 15.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --ring: 240 4.9% 83.9%;
 }
 
-/* Pulse animation for audio recording indicator */
-@keyframes np-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+/* Base styles */
+* {
+  border-color: hsl(var(--border));
 }
 
-/* Focus styles enhancement for interactive cards */
-[role="button"]:focus-visible {
-  outline: 2px solid var(--color-accent-red);
-  outline-offset: 2px;
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
-}
-
-/* Custom scrollbar — Nothing Phone monochrome */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: var(--color-bg-base);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
-  border-radius: 0;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-tertiary);
-}
-
-/* Input focus — on-brand red border */
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: none;
-  border-color: var(--color-accent-red) !important;
-  box-shadow: 0 0 0 1px var(--color-accent-red);
-}
-
-/* Selection */
-::selection {
-  background: var(--color-accent-red-dim);
-  color: var(--color-text-primary);
-}
-
-/* Placeholder */
-::placeholder {
-  color: var(--color-text-tertiary);
-  font-family: var(--font-sans);
 }
