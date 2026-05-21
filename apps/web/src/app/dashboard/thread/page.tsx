@@ -2,8 +2,28 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import {
+  Loader2,
+  ArrowLeft,
+  X,
+  Paperclip,
+  Link2,
+  Mic,
+  Send,
+  Square,
+  MessageSquare,
+  HelpCircle,
+  CheckCheck,
+  FileText,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { cn } from '@platform/ui/lib/utils';
 import {
   getThread,
   addThreadEntry,
@@ -17,7 +37,6 @@ export default function StudentThreadPage() {
 
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
 
   const [activeContext, setActiveContext] = useState<{ id: string; title: string } | null>(null);
@@ -57,9 +76,8 @@ export default function StudentThreadPage() {
     try {
       const data = await getThread(accessToken, user.id);
       setEntries(data.entries);
-      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки треда');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки треда');
     } finally {
       setLoadingData(false);
     }
@@ -93,7 +111,7 @@ export default function StudentThreadPage() {
       setTextContent('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отправки');
+      toast.error(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
       setSending(false);
     }
@@ -114,7 +132,7 @@ export default function StudentThreadPage() {
       setLinkTitle('');
       setShowLinkInput(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отправки');
+      toast.error(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
       setSending(false);
     }
@@ -123,13 +141,13 @@ export default function StudentThreadPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !accessToken || !user) return;
-    if (file.size > 50 * 1024 * 1024) { setError('Файл превышает максимальный размер 50MB'); return; }
+    if (file.size > 50 * 1024 * 1024) { toast.error('Файл превышает максимальный размер 50MB'); return; }
     setSending(true);
     try {
       const { entry } = await uploadThreadFile(accessToken, user.id, file, 'file', activeContext?.id);
       setEntries((prev) => [...prev, entry]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
     } finally {
       setSending(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -153,7 +171,7 @@ export default function StudentThreadPage() {
       setRecordingTime(0);
       timerRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
     } catch {
-      setError('Нет доступа к микрофону');
+      toast.error('Нет доступа к микрофону');
     }
   };
 
@@ -173,7 +191,7 @@ export default function StudentThreadPage() {
       setAudioBlob(null);
       setRecordingTime(0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки аудио');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки аудио');
     } finally {
       setSending(false);
     }
@@ -189,258 +207,215 @@ export default function StudentThreadPage() {
   const hasText = textContent.trim().length > 0;
 
   return (
-    <>
-      <div
-        className="flex flex-col"
-        style={{ height: 'calc(100vh - var(--header-height))', maxWidth: 800, margin: '0 auto' }}
-      >
-        {/* Page header */}
-        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border-subtle)]">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-1 mb-2 font-sans text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors duration-150 bg-transparent border-0 cursor-pointer p-0"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 2L4 7l5 5" />
-            </svg>
-            Назад
-          </button>
-          <h1 className="font-sans text-lg font-semibold text-[var(--color-text-primary)] tracking-tight m-0">
-            Мой тред
-          </h1>
-          <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wide mt-1 m-0">
-            Записи · файлы · обратная связь
-          </p>
-        </div>
+    <div
+      className="mx-auto flex w-full max-w-[800px] flex-col"
+      style={{ height: 'calc(100vh - var(--header-height))' }}
+    >
+      {/* Page header */}
+      <div className="border-b px-4 pb-3 pt-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="mb-2 -ml-2 h-auto px-2 py-1 text-muted-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Назад
+        </Button>
+        <h1 className="text-2xl font-bold tracking-tight">Мой тред</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Записи, файлы и обратная связь
+        </p>
+      </div>
 
-        {/* Error toast */}
-        {error && (
-          <div className="mx-4 mt-3 px-4 py-3 bg-[var(--color-error-dim)] border border-[var(--color-error)] flex justify-between items-center gap-3">
-            <span className="font-sans text-sm text-[var(--color-error)]">{error}</span>
-            <button onClick={() => setError('')} className="flex text-[var(--color-error)] bg-transparent border-0 cursor-pointer p-1 hover:opacity-70">
-              <CloseIcon />
-            </button>
+      {/* Messages */}
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4">
+        {loadingData ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full border-2 text-muted-foreground">
+              <MessageSquare className="size-6" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">Тред пуст</p>
+            <p className="text-sm text-muted-foreground">Напишите первое сообщение</p>
+          </div>
+        ) : (
+          entries.map((entry, i) => {
+            const showGroupHeader =
+              entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
+            return (
+              <div key={entry.id}>
+                {showGroupHeader && (
+                  <div className="mb-2 mt-3 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+                    <HelpCircle className="size-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      Вопросы по заданию: {entry.assignment?.title}
+                    </span>
+                  </div>
+                )}
+                <MessageBubble
+                  entry={entry}
+                  currentUserId={user?.id ?? ''}
+                  showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
+                />
+              </div>
+            );
+          })
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Compose bar */}
+      <div className="border-t bg-card px-4 py-3">
+        {/* Context banner */}
+        {activeContext && (
+          <div className="mb-2 flex items-center justify-between rounded-md border bg-muted px-3 py-2">
+            <div className="flex items-center gap-2">
+              <HelpCircle className="size-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                Вопрос по заданию: {activeContext.title}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={clearActiveContext}
+              className="text-muted-foreground"
+            >
+              <X className="size-4" />
+            </Button>
           </div>
         )}
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
-          {loadingData ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        {/* Link panel */}
+        {showLinkInput && (
+          <div className="mb-3 flex flex-col gap-2 rounded-md border bg-muted p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Добавить ссылку</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkTitle(''); }}
+                className="text-muted-foreground"
+              >
+                <X className="size-4" />
+              </Button>
             </div>
-          ) : entries.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3">
-              <div className="w-12 h-12 rounded-full border-2 border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-text-tertiary)]">
-                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M2 2h12v9H5l-3 3V2z" /><path d="M5 6h6M5 9h3" />
-                </svg>
-              </div>
-              <p className="font-mono text-sm text-[var(--color-text-tertiary)] uppercase tracking-wide">
-                Тред пуст
-              </p>
-              <p className="font-sans text-sm text-[var(--color-text-disabled)]">
-                Напишите первое сообщение
-              </p>
-            </div>
-          ) : (
-            entries.map((entry, i) => {
-              const showGroupHeader =
-                entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
-              return (
-                <div key={entry.id}>
-                  {showGroupHeader && (
-                    <div className="flex items-center gap-2 px-3 py-2 mt-3 mb-2 bg-[rgba(77,166,255,0.06)] border border-[rgba(77,166,255,0.15)]">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="7" cy="7" r="6" />
-                        <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
-                        <circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" />
-                      </svg>
-                      <span className="font-mono text-xs text-[var(--color-info)] tracking-wide">
-                        Вопросы по заданию: {entry.assignment?.title}
-                      </span>
-                    </div>
-                  )}
-                  <MessageBubble
-                    entry={entry}
-                    currentUserId={user?.id ?? ''}
-                    showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
-                  />
-                </div>
-              );
-            })
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Compose bar */}
-        <div className="border-t border-[var(--color-border-subtle)] px-4 py-3 bg-[var(--color-bg-surface)]">
-          {/* Context banner */}
-          {activeContext && (
-            <div className="flex items-center justify-between px-3 py-2 mb-2 bg-[rgba(77,166,255,0.06)] border border-[rgba(77,166,255,0.15)]">
-              <div className="flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="7" cy="7" r="6" />
-                  <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
-                  <circle cx="7" cy="10.5" r="0.5" fill="var(--color-info)" stroke="none" />
-                </svg>
-                <span className="font-mono text-xs text-[var(--color-info)] tracking-wide">
-                  Вопрос по заданию: {activeContext.title}
-                </span>
-              </div>
-              <button onClick={clearActiveContext} className="flex text-[var(--color-info)] bg-transparent border-0 cursor-pointer p-1 hover:opacity-70">
-                <CloseIcon />
-              </button>
-            </div>
-          )}
-
-          {/* Link panel */}
-          {showLinkInput && (
-            <div className="flex flex-col gap-2 p-3 mb-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]">
-              <div className="flex justify-between items-center">
-                <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wide">Добавить ссылку</span>
-                <button onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkTitle(''); }} className="flex text-[var(--color-text-tertiary)] bg-transparent border-0 cursor-pointer p-1 hover:opacity-70">
-                  <CloseIcon />
-                </button>
-              </div>
-              <input
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                placeholder="https://..."
-                autoFocus
-                className="w-full px-3 py-2 bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] text-[var(--color-text-primary)] font-sans text-sm placeholder:text-[var(--color-text-disabled)] focus:outline-none focus:border-[var(--color-accent-red)]"
-              />
-              <div className="flex gap-2">
-                <input
-                  value={linkTitle}
-                  onChange={(e) => setLinkTitle(e.target.value)}
-                  placeholder="Описание (необязательно)"
-                  className="flex-1 px-3 py-2 bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] text-[var(--color-text-primary)] font-sans text-sm placeholder:text-[var(--color-text-disabled)] focus:outline-none focus:border-[var(--color-accent-red)]"
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSendLink(); }}
-                />
-                <button
-                  disabled={sending || !linkUrl.trim()}
-                  onClick={handleSendLink}
-                  className="px-4 py-2 bg-[var(--color-accent-red)] text-white font-mono text-xs uppercase tracking-wide cursor-pointer disabled:opacity-40 disabled:cursor-default border-0"
-                >
-                  {sending ? '...' : 'Добавить'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Audio overlay */}
-          {(isRecording || audioBlob) && (
-            <div className="flex items-center gap-3 p-3 mb-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]">
-              {isRecording ? (
-                <>
-                  <span className="inline-block w-2 h-2 rounded-full bg-[var(--color-accent-red)] animate-[np-pulse_1.5s_ease-in-out_infinite]" />
-                  <span className="font-mono text-sm text-[var(--color-accent-red)] tracking-wide flex-1">
-                    {formatTime(recordingTime)}
-                  </span>
-                  <button
-                    onClick={stopRecording}
-                    className="flex items-center gap-2 px-3 py-2 bg-[var(--color-accent-red-dim)] border border-[var(--color-accent-red)] text-[var(--color-accent-red)] font-mono text-xs uppercase tracking-wide cursor-pointer"
-                  >
-                    <StopIcon /> Стоп
-                  </button>
-                </>
-              ) : audioBlob ? (
-                <>
-                  <span className="font-mono text-sm text-[var(--color-text-secondary)] flex-1 tracking-wide">
-                    Запись {formatTime(recordingTime)}
-                  </span>
-                  <button
-                    onClick={cancelAudio}
-                    className="px-3 py-2 border border-[var(--color-border-default)] text-[var(--color-text-tertiary)] font-mono text-xs uppercase tracking-wide cursor-pointer bg-transparent"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    disabled={sending}
-                    onClick={sendAudio}
-                    className="px-4 py-2 bg-[var(--color-accent-red)] text-white font-mono text-xs uppercase tracking-wide cursor-pointer disabled:opacity-40 border-0"
-                  >
-                    {sending ? '...' : 'Отправить'}
-                  </button>
-                </>
-              ) : null}
-            </div>
-          )}
-
-          {/* Main compose row */}
-          <div className="flex items-end gap-2">
-            <div className="flex gap-1">
-              <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
-              <ComposeIconBtn title="Прикрепить файл" onClick={() => fileInputRef.current?.click()} disabled={sending}>
-                <PaperclipIcon />
-              </ComposeIconBtn>
-              <ComposeIconBtn title="Добавить ссылку" active={showLinkInput} onClick={() => setShowLinkInput(!showLinkInput)} disabled={sending}>
-                <LinkIcon />
-              </ComposeIconBtn>
-              <ComposeIconBtn title="Записать аудио" active={isRecording} accent={isRecording} onClick={isRecording ? stopRecording : startRecording} disabled={sending || !!audioBlob}>
-                <MicIcon />
-              </ComposeIconBtn>
-            </div>
-
-            <textarea
-              ref={textareaRef}
-              value={textContent}
-              onChange={handleTextareaChange}
-              placeholder="Сообщение..."
-              rows={1}
-              className="flex-1 px-3 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)] font-sans text-sm resize-none overflow-hidden leading-normal focus:outline-none focus:border-[var(--color-accent-red)] transition-colors duration-150 placeholder:text-[var(--color-text-disabled)]"
-              style={{ minHeight: 36, maxHeight: 160 }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendText();
-                }
-              }}
+            <Input
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              placeholder="https://..."
+              autoFocus
             />
-
-            <button
-              disabled={sending || !hasText}
-              onClick={handleSendText}
-              className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center border-0 transition-colors duration-150 ${hasText ? 'bg-[var(--color-accent-red)] text-white cursor-pointer' : 'bg-[var(--color-bg-elevated)] text-[var(--color-text-disabled)] cursor-default'}`}
-            >
-              <SendIcon />
-            </button>
+            <div className="flex gap-2">
+              <Input
+                value={linkTitle}
+                onChange={(e) => setLinkTitle(e.target.value)}
+                placeholder="Описание (необязательно)"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSendLink(); }}
+              />
+              <Button disabled={sending || !linkUrl.trim()} onClick={handleSendLink}>
+                {sending ? <Loader2 className="size-4 animate-spin" /> : 'Добавить'}
+              </Button>
+            </div>
           </div>
+        )}
+
+        {/* Audio overlay */}
+        {(isRecording || audioBlob) && (
+          <div className="mb-3 flex items-center gap-3 rounded-md border bg-muted p-3">
+            {isRecording ? (
+              <>
+                <span className="inline-block size-2 animate-pulse rounded-full bg-destructive" />
+                <span className="flex-1 text-sm font-medium text-destructive">
+                  {formatTime(recordingTime)}
+                </span>
+                <Button variant="destructive" size="sm" onClick={stopRecording}>
+                  <Square className="size-4" /> Стоп
+                </Button>
+              </>
+            ) : audioBlob ? (
+              <>
+                <span className="flex-1 text-sm text-muted-foreground">
+                  Запись {formatTime(recordingTime)}
+                </span>
+                <Button variant="outline" size="sm" onClick={cancelAudio}>
+                  Отмена
+                </Button>
+                <Button size="sm" disabled={sending} onClick={sendAudio}>
+                  {sending ? <Loader2 className="size-4 animate-spin" /> : 'Отправить'}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        )}
+
+        {/* Main compose row */}
+        <div className="flex items-end gap-2">
+          <div className="flex gap-1">
+            <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Прикрепить файл"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              className="text-muted-foreground"
+            >
+              <Paperclip className="size-5" />
+            </Button>
+            <Button
+              variant={showLinkInput ? 'secondary' : 'ghost'}
+              size="icon"
+              title="Добавить ссылку"
+              onClick={() => setShowLinkInput(!showLinkInput)}
+              disabled={sending}
+              className={cn(!showLinkInput && 'text-muted-foreground')}
+            >
+              <Link2 className="size-5" />
+            </Button>
+            <Button
+              variant={isRecording ? 'destructive' : 'ghost'}
+              size="icon"
+              title="Записать аудио"
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={sending || !!audioBlob}
+              className={cn(!isRecording && 'text-muted-foreground')}
+            >
+              <Mic className="size-5" />
+            </Button>
+          </div>
+
+          <Textarea
+            ref={textareaRef}
+            value={textContent}
+            onChange={handleTextareaChange}
+            placeholder="Сообщение..."
+            rows={1}
+            className="min-h-9 resize-none overflow-hidden"
+            style={{ maxHeight: 160 }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendText();
+              }
+            }}
+          />
+
+          <Button
+            size="icon"
+            className="shrink-0 rounded-full"
+            disabled={sending || !hasText}
+            onClick={handleSendText}
+          >
+            <Send className="size-5" />
+          </Button>
         </div>
       </div>
-    </>
-  );
-}
-
-/* ─── Compose icon button ─── */
-function ComposeIconBtn({
-  children, title, onClick, disabled, active, accent,
-}: {
-  children: React.ReactNode;
-  title: string;
-  onClick: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center border-0 transition-colors duration-150 ${
-        disabled ? 'opacity-40 cursor-default' : 'cursor-pointer'
-      } ${
-        active
-          ? accent
-            ? 'bg-[var(--color-accent-red-dim)] text-[var(--color-accent-red)]'
-            : 'bg-[var(--color-bg-overlay)] text-[var(--color-text-primary)]'
-          : 'bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-overlay)] hover:text-[var(--color-text-primary)]'
-      }`}
-    >
-      {children}
-    </button>
+    </div>
   );
 }
 
@@ -461,69 +436,70 @@ function MessageBubble({
 
   return (
     <div
-      className={`flex items-end gap-2 ${showAuthor ? 'mt-4' : 'mt-1'}`}
-      style={{
-        flexDirection: isOwn ? 'row-reverse' : 'row',
-        maxWidth: '85%',
-        alignSelf: isOwn ? 'flex-end' : 'flex-start',
-      }}
+      className={cn(
+        'flex max-w-[85%] items-end gap-2',
+        showAuthor ? 'mt-4' : 'mt-1',
+        isOwn ? 'flex-row-reverse self-end' : 'flex-row self-start',
+      )}
     >
       {showAuthor ? (
-        <div
-          className={`w-8 h-8 rounded-full flex flex-shrink-0 items-center justify-center font-mono text-xs font-bold tracking-wide ${
-            isAdmin
-              ? 'bg-[var(--color-accent-red-dim)] border border-[var(--color-accent-red)] text-[var(--color-accent-red)]'
-              : 'bg-[var(--color-bg-overlay)] border border-[var(--color-border-default)] text-[var(--color-text-secondary)]'
-          }`}
-        >
-          {initials}
-        </div>
+        <Avatar className="size-8 shrink-0">
+          <AvatarFallback
+            className={cn(
+              'text-xs font-bold',
+              isAdmin
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {initials}
+          </AvatarFallback>
+        </Avatar>
       ) : (
-        <div className="w-8 flex-shrink-0" />
+        <div className="w-8 shrink-0" />
       )}
 
       <div className="min-w-0">
         {showAuthor && (
           <div
-            className={`font-mono text-xs uppercase tracking-wide mb-1 ${isAdmin ? 'text-[var(--color-accent-red)]' : 'text-[var(--color-text-tertiary)]'}`}
-            style={{ textAlign: isOwn ? 'right' : 'left', paddingLeft: isOwn ? 0 : 8, paddingRight: isOwn ? 8 : 0 }}
+            className={cn(
+              'mb-1 text-xs font-medium text-muted-foreground',
+              isOwn ? 'pr-2 text-right' : 'pl-2 text-left',
+            )}
           >
             {entry.author.name}
-            {isAdmin && <span className="text-[var(--color-text-disabled)] ml-2">Преп.</span>}
+            {isAdmin && <span className="ml-2 text-muted-foreground">Преп.</span>}
           </div>
         )}
 
         <div
-          className={`px-4 py-3 border ${
-            isAdmin && !isOwn
-              ? 'bg-[var(--color-accent-red-dim)] border-[var(--color-accent-red)]'
-              : isOwn
-                ? 'bg-[var(--color-bg-overlay)] border-[var(--color-border-default)]'
-                : 'bg-[var(--color-bg-elevated)] border-[var(--color-border-default)]'
-          }`}
+          className={cn(
+            'rounded-md px-4 py-3',
+            isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+          )}
         >
-          <div className="font-sans text-sm text-[var(--color-text-primary)] break-words leading-normal">
+          <div className="break-words text-sm leading-normal">
             {entry.type === 'text' || entry.type === 'comment' || entry.type === 'note' ? (
               <span className="whitespace-pre-wrap">{entry.content}</span>
             ) : entry.type === 'link' ? (
-              <LinkCard entry={entry} />
+              <LinkCard entry={entry} isOwn={isOwn} />
             ) : entry.type === 'file' ? (
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 flex-shrink-0 border border-[var(--color-border-default)] bg-[var(--color-bg-overlay)] flex items-center justify-center text-[var(--color-text-tertiary)]">
-                  <PaperclipIcon />
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md border">
+                  <FileText className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="font-sans text-sm font-medium truncate">
+                  <div className="truncate text-sm font-medium">
                     {entry.metadata?.fileName || entry.content}
                   </div>
-                  <div className="flex gap-3 items-center">
+                  <div className="flex items-center gap-3">
                     {entry.metadata?.size && (
-                      <span className="font-sans text-xs text-[var(--color-text-tertiary)]">
+                      <span className={cn('text-xs', isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
                         {(entry.metadata.size / 1024 / 1024).toFixed(1)} МБ
                       </span>
                     )}
                     {entry.metadata?.url && (
-                      <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-[var(--color-info)] uppercase tracking-wide no-underline hover:underline">
+                      <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium underline-offset-2 hover:underline">
                         Скачать
                       </a>
                     )}
@@ -533,23 +509,21 @@ function MessageBubble({
             ) : entry.type === 'audio' ? (
               <div>
                 {entry.metadata?.url ? (
-                  <audio controls src={entry.metadata.url} className="max-w-full h-9" />
+                  <audio controls src={entry.metadata.url} className="h-9 max-w-full" />
                 ) : (
-                  <span className="text-[var(--color-text-tertiary)]">Аудиозапись</span>
+                  <span className={cn(isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground')}>Аудиозапись</span>
                 )}
               </div>
             ) : null}
           </div>
 
-          <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'justify-start' : 'justify-end'}`}>
-            <span className="font-mono text-[10px] text-[var(--color-text-disabled)] tracking-wide">
+          <div className={cn('mt-1 flex items-center gap-1', isOwn ? 'justify-start' : 'justify-end')}>
+            <span className={cn('text-[10px]', isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
               {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
             </span>
             {isOwn && entry.readAt && (
-              <span className="font-mono text-[10px] text-[var(--color-text-disabled)] flex items-center gap-0.5 tracking-wide">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 8l4 4 9-9" /><path d="M5 8l4 4 5-5" />
-                </svg>
+              <span className="flex items-center gap-0.5 text-[10px] text-primary-foreground/70">
+                <CheckCheck className="size-3" />
                 Прочитано
               </span>
             )}
@@ -557,14 +531,10 @@ function MessageBubble({
         </div>
 
         {entry.assignment && (
-          <div className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-[rgba(77,166,255,0.06)] text-[var(--color-info)] font-mono text-xs tracking-wide rounded-full">
-            <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="7" cy="7" r="6" />
-              <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
-              <circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" />
-            </svg>
+          <Badge variant="secondary" className="mt-1 gap-1 font-normal">
+            <HelpCircle className="size-2.5" />
             {entry.assignment.title.length > 30 ? entry.assignment.title.slice(0, 30) + '...' : entry.assignment.title}
-          </div>
+          </Badge>
         )}
       </div>
     </div>
@@ -572,7 +542,7 @@ function MessageBubble({
 }
 
 /* ─── Link card ─── */
-function LinkCard({ entry }: { entry: ThreadEntry }) {
+function LinkCard({ entry }: { entry: ThreadEntry; isOwn: boolean }) {
   let url: string;
   let title: string | undefined;
 
@@ -593,65 +563,17 @@ function LinkCard({ entry }: { entry: ThreadEntry }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-start gap-3 no-underline text-current p-3 border border-[var(--color-info)] bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-elevated)] transition-colors duration-150"
+      className={cn(
+        'flex items-start gap-3 rounded-md border bg-card p-3 text-foreground no-underline transition-colors hover:bg-muted',
+      )}
     >
-      <div className="w-7 h-7 flex-shrink-0 bg-[rgba(59,130,246,0.12)] flex items-center justify-center text-[var(--color-info)] mt-0.5">
-        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" />
-          <path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" />
-        </svg>
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <Link2 className="size-3.5" />
       </div>
       <div className="min-w-0 flex-1">
-        {title && <div className="font-sans text-sm font-medium text-[var(--color-text-primary)] mb-1 truncate">{title}</div>}
-        <div className="font-mono text-xs text-[var(--color-info)] truncate">{url}</div>
+        {title && <div className="mb-1 truncate text-sm font-medium text-foreground">{title}</div>}
+        <div className="truncate text-xs text-muted-foreground">{url}</div>
       </div>
     </a>
-  );
-}
-
-/* ─── Compose icons ─── */
-function PaperclipIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.5 9.25l-7.72 7.72a4.25 4.25 0 01-6.01-6.01L11.5 3.24a2.83 2.83 0 014 4L7.78 14.96a1.42 1.42 0 01-2-2l7.22-7.22" />
-    </svg>
-  );
-}
-function LinkIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8.5 11.5a4 4 0 005.66 0l2.5-2.5a4 4 0 00-5.66-5.66l-1.25 1.25" />
-      <path d="M11.5 8.5a4 4 0 00-5.66 0l-2.5 2.5a4 4 0 005.66 5.66l1.25-1.25" />
-    </svg>
-  );
-}
-function MicIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="7" y="2" width="6" height="10" rx="3" />
-      <path d="M4 10a6 6 0 0012 0" />
-      <path d="M10 16v2M7 18h6" />
-    </svg>
-  );
-}
-function SendIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-      <path d="M3 10l14-7-7 14v-7H3z" />
-    </svg>
-  );
-}
-function StopIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <rect x="3" y="3" width="10" height="10" rx="2" />
-    </svg>
-  );
-}
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M4 4l8 8M12 4l-8 8" />
-    </svg>
   );
 }
