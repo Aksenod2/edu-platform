@@ -55,14 +55,3 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         sync: false
-
-  - type: web
-    name: platform-storybook
-    plan: free
-    runtime: static
-    buildCommand: npm i -g pnpm@9 && pnpm install --frozen-lockfile && pnpm --filter @platform/ui build-storybook
-    staticPublishPath: ./packages/ui/storybook-static
-    headers:
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
