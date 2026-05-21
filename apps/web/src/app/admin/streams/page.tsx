@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export default function StreamsPage() {
+  const router = useRouter();
   const { user, accessToken } = useAuth();
 
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -232,11 +234,27 @@ export default function StreamsPage() {
               filteredStreams.map((stream) => (
                 <TableRow
                   key={stream.id}
-                  className={stream.status === 'archived' ? 'opacity-50' : undefined}
+                  className={
+                    editingId === stream.id
+                      ? stream.status === 'archived'
+                        ? 'opacity-50'
+                        : undefined
+                      : `cursor-pointer hover:bg-muted/50${
+                          stream.status === 'archived' ? ' opacity-50' : ''
+                        }`
+                  }
+                  onClick={
+                    editingId === stream.id
+                      ? undefined
+                      : () => router.push(`/admin/streams/${stream.id}`)
+                  }
                 >
                   <TableCell>
                     {editingId === stream.id ? (
-                      <div className="flex items-center gap-2">
+                      <div
+                        className="flex items-center gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
@@ -276,7 +294,10 @@ export default function StreamsPage() {
                   <TableCell className="text-muted-foreground tabular-nums">
                     {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {editingId !== stream.id && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
