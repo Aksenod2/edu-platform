@@ -1,13 +1,15 @@
 /**
- * Input — Атом
+ * Input — Атом (обёртка над shadcn Input)
  * Atomic level: Atom
  *
- * Токены: --color-bg-surface, --color-border-default, --color-text-primary
- * Состояния: default, focus, error, disabled, readonly
+ * Сохраняет исходный prop API (size, error, leftElement, rightElement, fullWidth).
+ * Внутри использует shadcn/ui Input с Tailwind-классами.
  *
- * Nothing Phone: строгий прямоугольник, 1px граница, красный focus ring
+ * Состояния error передаются через className (border-[var(--color-error)]).
  */
 import React from 'react';
+import { ShadcnInput } from '../components/ui/input';
+import { cn } from '../lib/utils';
 
 export type InputSize = 'sm' | 'md' | 'lg';
 
@@ -19,10 +21,10 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   fullWidth?: boolean;
 }
 
-const sizeMap: Record<InputSize, { height: string; fontSize: string; padding: string }> = {
-  sm: { height: '28px', fontSize: 'var(--text-sm)', padding: '0 var(--space-3)' },
-  md: { height: '36px', fontSize: 'var(--text-base)', padding: '0 var(--space-4)' },
-  lg: { height: '44px', fontSize: 'var(--text-base)', padding: '0 var(--space-5)' },
+const sizeClass: Record<InputSize, string> = {
+  sm: 'h-7 text-sm px-3',
+  md: 'h-9 text-base px-4',
+  lg: 'h-11 text-base px-5',
 };
 
 export function Input({
@@ -32,11 +34,20 @@ export function Input({
   rightElement,
   fullWidth = true,
   disabled,
-  style,
+  className,
   ...props
 }: InputProps) {
   const hasLeft = Boolean(leftElement);
   const hasRight = Boolean(rightElement);
+
+  const inputClass = cn(
+    sizeClass[size],
+    error && 'border-[var(--color-error)] focus-visible:border-[var(--color-error)] focus-visible:ring-[var(--color-error)]',
+    !fullWidth && 'w-auto',
+    hasLeft && 'pl-[calc(var(--space-3,0.75rem)*2+16px)]',
+    hasRight && 'pr-[calc(var(--space-3,0.75rem)*2+16px)]',
+    className,
+  );
 
   if (leftElement || rightElement) {
     return (
@@ -52,7 +63,7 @@ export function Input({
           <span
             style={{
               position: 'absolute',
-              left: 'var(--space-3)',
+              left: '0.75rem',
               color: 'var(--color-text-tertiary)',
               display: 'flex',
               alignItems: 'center',
@@ -62,22 +73,12 @@ export function Input({
             {leftElement}
           </span>
         )}
-        <input
-          {...props}
-          disabled={disabled}
-          style={{
-            ...inputBaseStyle(size, error, disabled),
-            width: '100%',
-            ...(hasLeft && { paddingLeft: 'calc(var(--space-3) * 2 + 16px)' }),
-            ...(hasRight && { paddingRight: 'calc(var(--space-3) * 2 + 16px)' }),
-            ...style,
-          }}
-        />
+        <ShadcnInput disabled={disabled} className={inputClass} {...props} />
         {rightElement && (
           <span
             style={{
               position: 'absolute',
-              right: 'var(--space-3)',
+              right: '0.75rem',
               color: 'var(--color-text-tertiary)',
               display: 'flex',
               alignItems: 'center',
@@ -90,39 +91,5 @@ export function Input({
     );
   }
 
-  return (
-    <input
-      {...props}
-      disabled={disabled}
-      style={{
-        ...inputBaseStyle(size, error, disabled),
-        ...(fullWidth && { width: '100%' }),
-        ...style,
-      }}
-    />
-  );
-}
-
-function inputBaseStyle(
-  size: InputSize,
-  error: boolean,
-  disabled?: boolean
-): React.CSSProperties {
-  const { height, fontSize, padding } = sizeMap[size];
-  return {
-    height,
-    fontSize,
-    padding,
-    fontFamily: 'var(--font-sans)',
-    background: 'var(--color-bg-surface)',
-    border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-border-default)'}`,
-    borderRadius: 'var(--radius-xs)',
-    color: 'var(--color-text-primary)',
-    outline: 'none',
-    transition: 'border-color var(--duration-fast) var(--ease-default)',
-    ...(disabled && {
-      opacity: 0.38,
-      cursor: 'not-allowed',
-    }),
-  };
+  return <ShadcnInput disabled={disabled} className={inputClass} {...props} />;
 }

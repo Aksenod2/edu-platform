@@ -31,6 +31,17 @@ export type { AvatarProps, AvatarSize } from './Avatar';
 
 export { Select } from './Select';
 export type { SelectProps, SelectSize } from './Select';
+// Shadcn/Radix Select sub-components
+export {
+  SelectRoot,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+} from './Select';
 
 export { Textarea } from './Textarea';
 export type { TextareaProps } from './Textarea';

@@ -1,11 +1,15 @@
 /**
- * Label — Атом
+ * Label — Атом (обёртка над shadcn Label)
  * Atomic level: Atom
  *
- * Токены: --color-text-secondary, --text-sm, --font-medium
- * Состояния: default, required, disabled
+ * Сохраняет исходный prop API (required, disabled, size).
+ * Внутри использует shadcn/ui Label (Radix LabelPrimitive) с Tailwind-классами.
  */
+'use client';
+
 import React from 'react';
+import { ShadcnLabel } from '../components/ui/label';
+import { cn } from '../lib/utils';
 
 export interface LabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
   required?: boolean;
@@ -18,34 +22,29 @@ export function Label({
   disabled,
   size = 'md',
   children,
-  style,
+  className,
   ...props
 }: LabelProps) {
   return (
-    <label
+    <ShadcnLabel
+      className={cn(
+        size === 'sm' ? 'text-xs' : 'text-sm',
+        disabled && 'text-[var(--color-text-disabled)] cursor-default opacity-100',
+        !disabled && 'text-[var(--color-text-secondary)] cursor-pointer',
+        'select-none',
+        className,
+      )}
       {...props}
-      style={{
-        display: 'block',
-        fontFamily: 'var(--font-sans)',
-        fontSize: size === 'sm' ? 'var(--text-xs)' : 'var(--text-sm)',
-        fontWeight: 500,
-        letterSpacing: 'var(--tracking-wide)',
-        textTransform: 'uppercase',
-        color: disabled ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
-        userSelect: 'none',
-        cursor: disabled ? 'default' : 'pointer',
-        ...style,
-      }}
     >
       {children}
       {required && (
         <span
           aria-hidden
-          style={{ color: 'var(--color-accent-red)', marginLeft: 'var(--space-1)' }}
+          style={{ color: 'var(--color-accent-red)', marginLeft: '0.25rem' }}
         >
           *
         </span>
       )}
-    </label>
+    </ShadcnLabel>
   );
 }

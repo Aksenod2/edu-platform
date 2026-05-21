@@ -1,19 +1,24 @@
 /**
- * Button — Атом
+ * Button — Атом (обёртка над shadcn Button)
  * Atomic level: Atom
  *
- * Токены: --color-accent-red, --color-bg-surface, --color-border-default
- * Состояния: default, hover, active, disabled, loading
- * Варианты: primary (красный акцент), secondary (ghost), ghost (прозрачный), danger
+ * Сохраняет исходный prop API (ButtonVariant, ButtonSize, loading, fullWidth, icons).
+ * Внутри использует shadcn/ui Button с cva-вариантами.
  *
- * Nothing Phone principle: чёткие границы, нет теней, строгая геометрия
+ * Маппинг вариантов:
+ *   primary   → default (red accent)
+ *   secondary → outline
+ *   ghost     → ghost
+ *   danger    → destructive
  */
 import React from 'react';
+import { ShadcnButton, buttonVariants } from '../components/ui/button';
+import { cn } from '../lib/utils';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'size'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
@@ -22,70 +27,17 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   rightIcon?: React.ReactNode;
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  base: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 'var(--space-2)',
-    fontFamily: 'var(--font-sans)',
-    fontWeight: 'var(--font-medium)' as unknown as number,
-    letterSpacing: 'var(--tracking-wide)',
-    textTransform: 'uppercase' as const,
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-xs)',
-    cursor: 'pointer',
-    transition: `background var(--duration-fast) var(--ease-default),
-                 border-color var(--duration-fast) var(--ease-default),
-                 color var(--duration-fast) var(--ease-default),
-                 opacity var(--duration-fast) var(--ease-default)`,
-    textDecoration: 'none',
-    whiteSpace: 'nowrap' as const,
-    userSelect: 'none' as const,
-    position: 'relative' as const,
-    overflow: 'hidden' as const,
-  },
+const variantMap: Record<ButtonVariant, 'default' | 'outline' | 'ghost' | 'destructive'> = {
+  primary: 'default',
+  secondary: 'outline',
+  ghost: 'ghost',
+  danger: 'destructive',
 };
 
-const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
-  sm: {
-    fontSize: 'var(--text-xs)',
-    padding: 'var(--space-2) var(--space-3)',
-    height: '28px',
-  },
-  md: {
-    fontSize: 'var(--text-sm)',
-    padding: 'var(--space-2) var(--space-5)',
-    height: '36px',
-  },
-  lg: {
-    fontSize: 'var(--text-base)',
-    padding: 'var(--space-3) var(--space-8)',
-    height: '44px',
-  },
-};
-
-const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
-  primary: {
-    background: 'var(--color-accent-red)',
-    borderColor: 'var(--color-accent-red)',
-    color: 'var(--color-text-primary)',
-  },
-  secondary: {
-    background: 'transparent',
-    borderColor: 'var(--color-border-strong)',
-    color: 'var(--color-text-primary)',
-  },
-  ghost: {
-    background: 'transparent',
-    borderColor: 'transparent',
-    color: 'var(--color-text-secondary)',
-  },
-  danger: {
-    background: 'var(--color-error-dim)',
-    borderColor: 'var(--color-error)',
-    color: 'var(--color-error)',
-  },
+const sizeMap: Record<ButtonSize, 'sm' | 'default' | 'lg'> = {
+  sm: 'sm',
+  md: 'default',
+  lg: 'lg',
 };
 
 export function Button({
@@ -97,38 +49,28 @@ export function Button({
   leftIcon,
   rightIcon,
   children,
-  style,
+  className,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
   return (
-    <button
-      {...props}
+    <ShadcnButton
+      variant={variantMap[variant]}
+      size={sizeMap[size]}
       disabled={isDisabled}
-      style={{
-        ...styles.base,
-        ...sizeStyles[size],
-        ...variantStyles[variant],
-        ...(fullWidth && { width: '100%' }),
-        ...(isDisabled && {
-          opacity: 0.38,
-          cursor: 'not-allowed',
-          pointerEvents: 'none',
-        }),
-        ...style,
-      }}
+      className={cn(fullWidth && 'w-full', className)}
+      {...props}
     >
-      {loading && <Spinner size={size === 'lg' ? 'md' : 'sm'} />}
+      {loading && <ButtonSpinner size={size === 'lg' ? 'md' : 'sm'} />}
       {!loading && leftIcon}
       {children}
       {!loading && rightIcon}
-    </button>
+    </ShadcnButton>
   );
 }
 
-// Inline Spinner (used only in Button loading state)
-function Spinner({ size }: { size: 'sm' | 'md' }) {
+function ButtonSpinner({ size }: { size: 'sm' | 'md' }) {
   const dim = size === 'sm' ? 12 : 16;
   return (
     <span

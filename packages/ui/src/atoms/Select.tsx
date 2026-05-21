@@ -2,13 +2,33 @@
  * Select — Атом
  * Atomic level: Atom
  *
- * Стилизованный dropdown, консистентный с Input.
- * Токены: --color-bg-surface, --color-border-default, --color-text-primary
- * Состояния: default, focus, error, disabled
+ * Два уровня API:
  *
- * Nothing Phone: строгий прямоугольник, 1px граница, красный focus ring
+ * 1. Backward-compatible wrapper `<Select>` — нативный <select> с Tailwind-стилями.
+ *    Все существующие страницы используют его без изменений.
+ *
+ * 2. Shadcn/Radix sub-компоненты — для новых форм:
+ *    SelectRoot, SelectTrigger, SelectContent, SelectItem, SelectValue,
+ *    SelectGroup, SelectLabel, SelectSeparator
  */
 import React from 'react';
+import { cn } from '../lib/utils';
+
+// ─── Shadcn Radix-based re-exports ──────────────────────────────────────────
+export {
+  SelectRoot,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
+} from '../components/ui/select';
+
+// ─── Native wrapper (backward compat) ───────────────────────────────────────
 
 export type SelectSize = 'sm' | 'md' | 'lg';
 
@@ -19,10 +39,10 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   placeholder?: string;
 }
 
-const sizeMap: Record<SelectSize, { height: string; fontSize: string; padding: string }> = {
-  sm: { height: '28px', fontSize: 'var(--text-sm)', padding: '0 var(--space-8) 0 var(--space-3)' },
-  md: { height: '36px', fontSize: 'var(--text-base)', padding: '0 var(--space-8) 0 var(--space-4)' },
-  lg: { height: '44px', fontSize: 'var(--text-base)', padding: '0 var(--space-10) 0 var(--space-5)' },
+const sizeClass: Record<SelectSize, string> = {
+  sm: 'h-7 text-sm pl-3 pr-8',
+  md: 'h-9 text-base pl-4 pr-8',
+  lg: 'h-11 text-base pl-5 pr-10',
 };
 
 export function Select({
@@ -30,38 +50,30 @@ export function Select({
   error = false,
   fullWidth = true,
   disabled,
-  style,
+  className,
   children,
   ...props
 }: SelectProps) {
-  const { height, fontSize, padding } = sizeMap[size];
-
   return (
-    <div style={{
-      position: 'relative',
-      display: 'inline-flex',
-      width: fullWidth ? '100%' : 'auto',
-    }}>
+    <div
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        width: fullWidth ? '100%' : 'auto',
+      }}
+    >
       <select
-        {...props}
         disabled={disabled}
-        style={{
-          height,
-          fontSize,
-          padding,
-          fontFamily: 'var(--font-sans)',
-          background: 'var(--color-bg-surface)',
-          border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-border-default)'}`,
-          borderRadius: 'var(--radius-xs)',
-          color: 'var(--color-text-primary)',
-          outline: 'none',
-          transition: 'border-color var(--duration-fast) var(--ease-default)',
-          appearance: 'none',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          width: '100%',
-          ...(disabled && { opacity: 0.38 }),
-          ...style,
-        }}
+        className={cn(
+          'w-full appearance-none border bg-[var(--color-bg-surface)] font-[var(--font-sans)] text-[var(--color-text-primary)] transition-colors outline-none focus-visible:border-[var(--color-accent-red)] focus-visible:ring-1 focus-visible:ring-[var(--color-accent-red)] disabled:cursor-not-allowed disabled:opacity-40',
+          error
+            ? 'border-[var(--color-error)]'
+            : 'border-[var(--color-border-default)]',
+          sizeClass[size],
+          !disabled && 'cursor-pointer',
+          className,
+        )}
+        {...props}
       >
         {children}
       </select>
@@ -69,7 +81,7 @@ export function Select({
       <span
         style={{
           position: 'absolute',
-          right: 'var(--space-3)',
+          right: '0.75rem',
           top: '50%',
           transform: 'translateY(-50%)',
           pointerEvents: 'none',
@@ -78,7 +90,16 @@ export function Select({
         }}
         aria-hidden
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M3 4.5L6 7.5L9 4.5" />
         </svg>
       </span>

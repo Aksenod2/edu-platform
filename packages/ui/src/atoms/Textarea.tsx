@@ -1,14 +1,14 @@
 /**
- * Textarea — Атом
+ * Textarea — Атом (обёртка над shadcn Textarea)
  * Atomic level: Atom
  *
- * Многострочный ввод с авто-ресайзом, консистентный с Input.
- * Токены: --color-bg-surface, --color-border-default, --color-text-primary
- * Состояния: default, focus, error, disabled
- *
- * Nothing Phone: строгий прямоугольник, 1px граница, красный focus ring
+ * Сохраняет исходный prop API (error, fullWidth, autoResize, maxHeight).
+ * Внутри использует shadcn/ui Textarea с Tailwind-классами.
+ * autoResize реализован через JS (ref + scrollHeight), как и прежде.
  */
 import React, { useRef, useCallback } from 'react';
+import { ShadcnTextarea } from '../components/ui/textarea';
+import { cn } from '../lib/utils';
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: boolean;
@@ -23,7 +23,7 @@ export function Textarea({
   autoResize = false,
   maxHeight = 200,
   disabled,
-  style,
+  className,
   onChange,
   ...props
 }: TextareaProps) {
@@ -41,31 +41,17 @@ export function Textarea({
   );
 
   return (
-    <textarea
+    <ShadcnTextarea
       ref={ref}
-      {...props}
       disabled={disabled}
       onChange={handleChange}
-      style={{
-        fontFamily: 'var(--font-sans)',
-        fontSize: 'var(--text-base)',
-        lineHeight: 'var(--leading-normal)',
-        padding: 'var(--space-3) var(--space-4)',
-        background: 'var(--color-bg-surface)',
-        border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-border-default)'}`,
-        borderRadius: 'var(--radius-xs)',
-        color: 'var(--color-text-primary)',
-        outline: 'none',
-        resize: autoResize ? 'none' : 'vertical',
-        minHeight: 80,
-        transition: 'border-color var(--duration-fast) var(--ease-default)',
-        ...(fullWidth && { width: '100%' }),
-        ...(disabled && {
-          opacity: 0.38,
-          cursor: 'not-allowed',
-        }),
-        ...style,
-      }}
+      className={cn(
+        error && 'border-[var(--color-error)] focus-visible:border-[var(--color-error)] focus-visible:ring-[var(--color-error)]',
+        !fullWidth && 'w-auto',
+        autoResize && 'resize-none overflow-hidden',
+        className,
+      )}
+      {...props}
     />
   );
 }
