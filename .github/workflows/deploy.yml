@@ -1,0 +1,86 @@
+name: Сборка и деплой образов
+
+# Обходим лимит build-минут Render: образы собираются здесь (бесплатные
+# минуты GitHub Actions), пушатся в GHCR, а Render деплоит готовый образ.
+#
+# Что настроить на стороне Render (один раз):
+# 1. Сервисы platform-api и platform-web → перевести на «Deploy an existing image»:
+#      platform-api → ghcr.io/aksenod2/edu-platform-api:latest
+#      platform-web → ghcr.io/aksenod2/edu-platform-web:latest
+#    (если пакеты GHCR приватные — сделать их public ИЛИ добавить в Render
+#     Registry Credentials для ghcr.io: логин = GitHub-username, пароль = PAT с read:packages.)
+# 2. Сохранить ВСЕ env-переменные сервисов (DATABASE_URL, JWT_SECRET, S3_*, SMTP_*,
+#    CORS_ORIGIN, PORT, HOST у api; NEXT_PUBLIC_API_URL у web) — они не зависят от источника сборки.
+# 3. Создать Deploy Hook у каждого сервиса и добавить URL'ы в Secrets репозитория:
+#      RENDER_DEPLOY_HOOK_API, RENDER_DEPLOY_HOOK_WEB
+# 4. (web) Задать переменную репозитория NEXT_PUBLIC_API_URL (Settings → Variables)
+#    — она встраивается в образ на этапе сборки.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            dockerfile: apps/api/Dockerfile
+          - service: web
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Логин в GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Метаданные образа
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/aksenod2/edu-platform-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Сборка и пуш
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Деплой platform-api (Render hook)
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_API }}
+        run: |
+          if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK" && echo "api: deploy triggered"; else echo "RENDER_DEPLOY_HOOK_API не задан — пропускаю"; fi
+      - name: Деплой platform-web (Render hook)
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_WEB }}
+        run: |
+          if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK" && echo "web: deploy triggered"; else echo "RENDER_DEPLOY_HOOK_WEB не задан — пропускаю"; fi
