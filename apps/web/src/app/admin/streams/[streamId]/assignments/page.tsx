@@ -25,12 +25,14 @@ import {
   updateAssignment,
   deleteAssignment,
   assignAssignment,
+  uploadAssignmentMaterial,
   getStreams,
   getLessons,
   getStudents,
   getStudentAssignments,
   updateStudentAssignment,
   type Assignment,
+  type AssignmentMaterial,
   type Stream,
   type Lesson,
   type Student,
@@ -92,6 +94,12 @@ export default function AssignmentsPage() {
   const [form, setForm] = useState<AssignmentFormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
 
+  // Materials in form
+  const [formMaterials, setFormMaterials] = useState<AssignmentMaterial[]>([]);
+  const [newUrlName, setNewUrlName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+
   // Assign modal
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignStudentId, setAssignStudentId] = useState('');
@@ -142,6 +150,9 @@ export default function AssignmentsPage() {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setFormMaterials([]);
+    setNewUrlName('');
+    setNewUrl('');
     setShowForm(true);
     setViewingId(null);
   };
@@ -156,6 +167,9 @@ export default function AssignmentsPage() {
       dueDate: a.dueDate ? a.dueDate.slice(0, 16) : '',
       lessonId: a.lessonId || '',
     });
+    setFormMaterials(a.materials || []);
+    setNewUrlName('');
+    setNewUrl('');
     setShowForm(true);
     setViewingId(null);
   };
@@ -164,6 +178,37 @@ export default function AssignmentsPage() {
     setShowForm(false);
     setEditingId(null);
     setForm(emptyForm);
+    setFormMaterials([]);
+    setNewUrlName('');
+    setNewUrl('');
+  };
+
+  const handleAddUrl = () => {
+    const trimmedUrl = newUrl.trim();
+    const trimmedName = newUrlName.trim();
+    if (!trimmedUrl) return;
+    const urlName = trimmedName || trimmedUrl;
+    setFormMaterials((prev) => [...prev, { type: 'url', name: urlName, url: trimmedUrl }]);
+    setNewUrlName('');
+    setNewUrl('');
+  };
+
+  const handleUploadFile = async (file: File) => {
+    if (!accessToken) return;
+    setUploadingMaterial(true);
+    setError('');
+    try {
+      const { material } = await uploadAssignmentMaterial(accessToken, file);
+      setFormMaterials((prev) => [...prev, material]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+    } finally {
+      setUploadingMaterial(false);
+    }
+  };
+
+  const handleRemoveMaterial = (index: number) => {
+    setFormMaterials((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -184,6 +229,7 @@ export default function AssignmentsPage() {
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
           lessonId: form.lessonId || null,
+          materials: formMaterials,
         });
       } else {
         await createAssignment(accessToken, {
@@ -194,6 +240,7 @@ export default function AssignmentsPage() {
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
           lessonId: form.lessonId || undefined,
+          materials: formMaterials,
         });
       }
       closeForm();
@@ -396,6 +443,83 @@ export default function AssignmentsPage() {
               placeholder="дизайн, верстка, типографика"
               style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
             />
+          </div>
+
+          {/* Материалы */}
+          <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--color-bg-overlay)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--color-border-subtle)' }}>
+            <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', fontSize: 14 }}>Материалы</label>
+
+            {/* Existing materials list */}
+            {formMaterials.length > 0 && (
+              <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {formMaterials.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, background: 'var(--color-bg-surface)', padding: '6px 10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--color-border-default)' }}>
+                    <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', flexShrink: 0 }}>
+                      {m.type === 'file' ? '📎' : '🔗'}
+                    </span>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-primary)' }}>{m.name}</span>
+                    {m.type === 'file' && m.size && (
+                      <span style={{ color: 'var(--color-text-disabled)', fontSize: 11, flexShrink: 0 }}>{Math.round(m.size / 1024)}KB</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMaterial(i)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add URL */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Добавить ссылку</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="text"
+                  value={newUrlName}
+                  onChange={(e) => setNewUrlName(e.target.value)}
+                  placeholder="Название (опционально)"
+                  style={{ flex: '0 0 160px', padding: '6px 10px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 13, boxSizing: 'border-box' }}
+                />
+                <input
+                  type="url"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  placeholder="https://..."
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUrl())}
+                  style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 13, boxSizing: 'border-box' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddUrl}
+                  disabled={!newUrl.trim()}
+                  style={{ padding: '6px 12px', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', opacity: !newUrl.trim() ? 0.5 : 1 }}
+                >
+                  + Добавить
+                </button>
+              </div>
+            </div>
+
+            {/* Upload file */}
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Загрузить файл</div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--color-bg-elevated)', border: '1px dashed var(--color-border-default)', borderRadius: 'var(--radius-xs)', cursor: uploadingMaterial ? 'not-allowed' : 'pointer', fontSize: 13, opacity: uploadingMaterial ? 0.6 : 1 }}>
+                {uploadingMaterial ? 'Загрузка...' : '📁 Выбрать файл'}
+                <input
+                  type="file"
+                  style={{ display: 'none' }}
+                  disabled={uploadingMaterial}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleUploadFile(file);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>

@@ -34,13 +34,14 @@ export async function uploadFile(
   buffer: Buffer,
   originalName: string,
   mimeType: string,
+  folder: string = 'threads',
 ): Promise<{ key: string; url: string; size: number }> {
   if (buffer.length > MAX_FILE_SIZE) {
     throw new Error('Файл превышает максимальный размер 50MB');
   }
 
   const ext = originalName.includes('.') ? originalName.split('.').pop() : '';
-  const key = `threads/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
+  const key = `${folder}/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
 
   await s3.send(
     new PutObjectCommand({

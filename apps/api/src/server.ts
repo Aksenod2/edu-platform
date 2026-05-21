@@ -6,6 +6,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
+import { MAX_FILE_SIZE } from './lib/s3.js';
 import { prisma } from '@platform/db';
 import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
@@ -28,6 +30,7 @@ await app.register(cors, {
 });
 
 await app.register(cookie);
+await app.register(multipart, { limits: { fileSize: MAX_FILE_SIZE } });
 
 await app.register(rateLimit, {
   global: false,
