@@ -3,6 +3,31 @@
 @import '@platform/ui/tailwind';
 @source '../../../../packages/ui/src';
 
+/* shadcn/ui standard CSS variables — mapped to Nothing Phone tokens */
+/* Required for shadcn/ui components in apps/web/src/components/ui/ */
+:root {
+  --background: 0 0% 0%;            /* #000000 bg-base */
+  --foreground: 0 0% 100%;          /* #FFFFFF text-primary */
+  --card: 0 0% 5%;                  /* #0D0D0D bg-surface */
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 5%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 0 100% 50%;            /* #FF0000 accent-red */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 9%;             /* #161616 bg-elevated */
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 9%;
+  --muted-foreground: 0 0% 38%;     /* #606060 text-tertiary */
+  --accent: 0 0% 9%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 100% 50%;        /* #FF0000 error/accent-red */
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 16%;               /* #2A2A2A border-default */
+  --input: 0 0% 16%;
+  --ring: 0 100% 50%;               /* #FF0000 focus ring */
+  --radius: 0.25rem;                /* --radius-xs */
+}
+
 /* Spinner keyframe — used by Button (loading) and Spinner atom */
 @keyframes np-spin {
   to { transform: rotate(360deg); }
