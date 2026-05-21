@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -10,19 +10,45 @@ import {
   archiveStream,
   type Stream,
 } from '@/lib/api';
-import { Loader2 } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Search,
+  MoreHorizontal,
+  BookOpen,
+  ClipboardList,
+  SquarePen,
+  Archive,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function StreamsPage() {
   const { user, accessToken } = useAuth();
-  const router = useRouter();
 
   const [streams, setStreams] = useState<Stream[]>([]);
+  const [search, setSearch] = useState('');
   const [loadingStreams, setLoadingStreams] = useState(true);
   const [error, setError] = useState('');
 
@@ -99,94 +125,125 @@ export default function StreamsPage() {
     }
   };
 
+  const filteredStreams = streams.filter((stream) =>
+    stream.name.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Потоки</h1>
           <p className="text-sm text-muted-foreground">Учебные группы и их уроки</p>
         </div>
         <Button
-          variant={showCreateForm ? 'ghost' : 'default'}
-          size="sm"
+          variant={showCreateForm ? 'outline' : 'default'}
           onClick={() => setShowCreateForm(!showCreateForm)}
         >
-          {showCreateForm ? 'Отмена' : 'Создать поток'}
+          {showCreateForm ? (
+            'Отмена'
+          ) : (
+            <>
+              <Plus />
+              Создать поток
+            </>
+          )}
         </Button>
       </div>
 
       {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
+        <Alert variant="destructive">
+          <AlertDescription className="break-all">{error}</AlertDescription>
         </Alert>
       )}
 
       {showCreateForm && (
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle>Новый поток</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate}>
-              <div className="flex items-end gap-3">
-                <div className="flex-1">
-                  <Field>
-                    <FieldLabel htmlFor="new-stream-name">Название потока</FieldLabel>
-                    <Input
-                      id="new-stream-name"
-                      placeholder="Например: Поток #1"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      autoFocus
-                      required
-                    />
-                  </Field>
-                </div>
-                <Button type="submit" variant="default" disabled={creating || !newName.trim()}>
-                  {creating && <Loader2 className="animate-spin" />}
-                  Создать
-                </Button>
-              </div>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="new-stream-name">Название потока</FieldLabel>
+                  <Input
+                    id="new-stream-name"
+                    placeholder="Например: Поток #1"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </Field>
+                <Field>
+                  <Button
+                    type="submit"
+                    disabled={creating || !newName.trim()}
+                    className="w-fit"
+                  >
+                    {creating && <Loader2 className="animate-spin" />}
+                    {creating ? 'Создание...' : 'Создать'}
+                  </Button>
+                </Field>
+              </FieldGroup>
             </form>
           </CardContent>
         </Card>
       )}
 
-      {loadingStreams ? (
-        <div className="flex justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : streams.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Потоков пока нет. Создайте первый поток.</p>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-sm)',
-          }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
-                {['Название', 'Статус', 'Создан', 'Действия'].map((h) => (
-                  <th key={h} style={{ padding: 'var(--spacing-3) var(--spacing-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {streams.map((stream) => (
-                <tr key={stream.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)', color: 'var(--color-text-primary)' }}>
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Поиск по названию..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+        />
+      </div>
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Название</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead>Создан</TableHead>
+              <TableHead className="w-[1%] text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loadingStreams ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
+                </TableRow>
+              ))
+            ) : filteredStreams.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                  Потоки не найдены
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredStreams.map((stream) => (
+                <TableRow
+                  key={stream.id}
+                  className={stream.status === 'archived' ? 'opacity-50' : undefined}
+                >
+                  <TableCell>
                     {editingId === stream.id ? (
-                      <div style={{ display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center' }}>
+                      <div className="flex items-center gap-2">
                         <Input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           autoFocus
-                          style={{ maxWidth: 250 }}
+                          className="max-w-[250px]"
                         />
                         <Button
-                          variant="default"
                           size="sm"
                           onClick={() => handleUpdate(stream.id)}
                           disabled={saving || !editName.trim()}
@@ -197,51 +254,83 @@ export default function StreamsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => { setEditingId(null); setEditName(''); }}
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditName('');
+                          }}
                         >
                           Отмена
                         </Button>
                       </div>
                     ) : (
-                      <span className="text-sm font-medium">{stream.name}</span>
+                      <span className="font-medium">{stream.name}</span>
                     )}
-                  </td>
-                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                    <Badge variant={stream.status === 'active' ? 'default' : 'destructive'}>
-                      {stream.status === 'active' ? 'Активный' : 'Архивный'}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
-                    </span>
-                  </td>
-                  <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
+                  </TableCell>
+                  <TableCell>
+                    {stream.status === 'active' ? (
+                      <Badge>Активный</Badge>
+                    ) : (
+                      <Badge variant="outline">Архивный</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {new Date(stream.createdAt).toLocaleDateString('ru-RU')}
+                  </TableCell>
+                  <TableCell className="text-right">
                     {editingId !== stream.id && (
-                      <div style={{ display: 'flex', gap: 'var(--spacing-2)', flexWrap: 'wrap' }}>
-                        <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/lessons`)}>
-                          Уроки
-                        </Button>
-                        <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/streams/${stream.id}/assignments`)}>
-                          Задания
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingId(stream.id); setEditName(stream.name); }}>
-                          Редактировать
-                        </Button>
-                        {stream.status === 'active' && (
-                          <Button variant="destructive" size="sm" onClick={() => handleArchive(stream.id)}>
-                            Архивировать
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreHorizontal />
+                            <span className="sr-only">Действия</span>
                           </Button>
-                        )}
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/admin/streams/${stream.id}/lessons`}>
+                              <BookOpen />
+                              Уроки
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/admin/streams/${stream.id}/assignments`}>
+                              <ClipboardList />
+                              Задания
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setEditingId(stream.id);
+                              setEditName(stream.name);
+                            }}
+                          >
+                            <SquarePen />
+                            Редактировать
+                          </DropdownMenuItem>
+                          {stream.status === 'active' && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => handleArchive(stream.id)}
+                              >
+                                <Archive />
+                                Архивировать
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
