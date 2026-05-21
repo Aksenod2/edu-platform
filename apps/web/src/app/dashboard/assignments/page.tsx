@@ -141,7 +141,6 @@ export default function StudentAssignmentsPage() {
 
   const handleSubmit = async () => {
     if (!accessToken || !submissionModalSaId) return;
-    if (!confirm('Отправить задание на проверку? Ответ нельзя изменить после отправки.')) return;
     setError('');
     setSuccess('');
     setSubmitting(true);
