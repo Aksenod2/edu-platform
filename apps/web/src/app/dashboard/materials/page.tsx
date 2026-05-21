@@ -3,9 +3,14 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { ChevronDown, FolderOpen, Play } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { getStreams, getLessons, type Stream, type Lesson } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -96,22 +101,22 @@ function MaterialsContent() {
 
       {/* Stats bar */}
       {!loadingData && lessons.length > 0 && (
-        <div className="mb-6 flex items-center gap-6 border-b border-[var(--color-border-subtle)] pb-4">
+        <div className="mb-6 mt-4 flex items-center gap-6 border-b pb-4">
           <div className="text-center">
-            <p className="font-mono text-xl font-bold text-[var(--color-text-primary)]">{lessons.length}</p>
-            <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider mt-0.5">Уроков</p>
+            <p className="text-xl font-bold text-foreground">{lessons.length}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Уроков</p>
           </div>
-          <div className="w-px h-8 bg-[var(--color-border-subtle)]" />
+          <Separator orientation="vertical" className="h-8" />
           <div className="text-center">
-            <p className="font-mono text-xl font-bold text-[var(--color-accent-red)]">{lessonsWithMaterials.length}</p>
-            <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider mt-0.5">С материалами</p>
+            <p className="text-xl font-bold text-foreground">{lessonsWithMaterials.length}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">С материалами</p>
           </div>
-          <div className="w-px h-8 bg-[var(--color-border-subtle)]" />
+          <Separator orientation="vertical" className="h-8" />
           <div className="text-center">
-            <p className="font-mono text-xl font-bold text-[var(--color-text-secondary)]">
+            <p className="text-xl font-bold text-foreground">
               {lessons.filter((l) => l.videoUrl).length}
             </p>
-            <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider mt-0.5">Видео</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Видео</p>
           </div>
         </div>
       )}
@@ -121,14 +126,10 @@ function MaterialsContent() {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : lessons.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <div className="w-12 h-12 border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-text-disabled)]">
-            <FolderIcon size={24} />
-          </div>
-          <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-widest">
-            Материалов пока нет
-          </p>
-          <p className="font-sans text-sm text-[var(--color-text-disabled)] text-center max-w-xs">
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center text-muted-foreground">
+          <FolderOpen className="size-10 opacity-50" aria-hidden />
+          <p className="text-sm font-medium text-foreground">Материалов пока нет</p>
+          <p className="text-sm max-w-xs">
             Преподаватель ещё не добавил материалы к урокам этого потока
           </p>
         </div>
@@ -147,13 +148,13 @@ function MaterialsContent() {
 
           {/* Lessons without materials — collapsed footer */}
           {lessonsWithoutMaterials.length > 0 && (
-            <div className="mt-6 border border-dashed border-[var(--color-border-subtle)] px-5 py-4">
-              <p className="font-mono text-xs text-[var(--color-text-disabled)] uppercase tracking-wider">
+            <div className="mt-6 rounded-lg border border-dashed px-5 py-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 {lessonsWithoutMaterials.length} {lessonsWithoutMaterials.length === 1 ? 'урок' : 'уроков'} без материалов
               </p>
               <div className="mt-2 space-y-1">
                 {lessonsWithoutMaterials.map((l) => (
-                  <p key={l.id} className="font-sans text-xs text-[var(--color-text-disabled)]">
+                  <p key={l.id} className="text-xs text-muted-foreground">
                     · {l.title}
                   </p>
                 ))}
@@ -182,87 +183,61 @@ function LessonCard({
   const hasNotes = !!lesson.notes;
 
   return (
-    <div className={`border ${expanded ? 'border-[var(--color-accent-red)]' : 'border-[var(--color-border-default)]'} bg-[var(--color-bg-surface)] transition-colors duration-150`}>
+    <Card className="overflow-hidden p-0">
       {/* Header row */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-[var(--color-bg-elevated)] transition-colors duration-150 focus:outline-none"
+        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-muted transition-colors focus:outline-none"
       >
         {/* Index dot */}
-        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center border border-[var(--color-border-strong)] font-mono text-xs text-[var(--color-text-tertiary)]">
+        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md border text-xs text-muted-foreground">
           {String(index).padStart(2, '0')}
         </span>
 
         {/* Title */}
-        <span className="flex-1 font-sans text-sm font-medium text-[var(--color-text-primary)] truncate">
+        <span className="flex-1 text-sm font-medium text-foreground truncate">
           {lesson.title}
         </span>
 
         {/* Material badges */}
         <div className="flex-shrink-0 flex items-center gap-2">
-          {hasVideo && (
-            <span className="px-1.5 py-0.5 border border-[var(--color-accent-red)] font-mono text-[10px] text-[var(--color-accent-red)] uppercase tracking-wider">
-              VID
-            </span>
-          )}
-          {hasSummary && (
-            <span className="px-1.5 py-0.5 border border-[var(--color-border-strong)] font-mono text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider">
-              TXT
-            </span>
-          )}
-          {hasNotes && (
-            <span className="px-1.5 py-0.5 border border-[var(--color-border-strong)] font-mono text-[10px] text-[var(--color-text-secondary)] uppercase tracking-wider">
-              NTS
-            </span>
-          )}
+          {hasVideo && <Badge variant="default">Видео</Badge>}
+          {hasSummary && <Badge variant="secondary">Конспект</Badge>}
+          {hasNotes && <Badge variant="outline">Заметки</Badge>}
         </div>
 
         {/* Expand icon */}
-        <svg
-          className={`flex-shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        >
-          <path d="M4 6l4 4 4-4" />
-        </svg>
+        <ChevronDown
+          className={`flex-shrink-0 size-4 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t border-[var(--color-border-subtle)] px-5 py-5 space-y-5 bg-[var(--color-bg-elevated)]">
+        <div className="border-t px-5 py-5 space-y-5 bg-muted">
           {/* Video */}
           {hasVideo && (
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-accent-red)] mb-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
                 Видеозапись
               </p>
-              <a
-                href={lesson.videoUrl!}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 border border-[var(--color-accent-red)] text-[var(--color-accent-red)] font-mono text-xs uppercase tracking-wider hover:bg-[var(--color-accent-red-dim)] transition-colors duration-150 focus:outline-none"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="5,2 12,7 5,12" fill="currentColor" stroke="none" />
-                </svg>
-                Открыть видео
-              </a>
+              <Button asChild variant="outline" size="sm">
+                <a href={lesson.videoUrl!} target="_blank" rel="noopener noreferrer">
+                  <Play className="size-4" />
+                  Открыть видео
+                </a>
+              </Button>
             </div>
           )}
 
           {/* Summary */}
           {hasSummary && (
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-text-tertiary)] mb-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
                 Конспект
               </p>
-              <div className="border-l-2 border-[var(--color-border-strong)] pl-4">
-                <p className="font-sans text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
+              <div className="border-l-2 pl-4">
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {lesson.summary}
                 </p>
               </div>
@@ -272,11 +247,11 @@ function LessonCard({
           {/* Notes */}
           {hasNotes && (
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--color-text-tertiary)] mb-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
                 Заметки преподавателя
               </p>
-              <div className="border-l-2 border-[var(--color-accent-neon)] pl-4">
-                <p className="font-sans text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
+              <div className="border-l-2 border-primary pl-4">
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {lesson.notes}
                 </p>
               </div>
@@ -284,22 +259,24 @@ function LessonCard({
           )}
 
           {/* Metadata */}
-          <div className="pt-2 border-t border-[var(--color-border-subtle)] flex items-center gap-4">
+          <div className="pt-2 border-t flex items-center gap-4">
             {lesson.publishAt && (
-              <p className="font-mono text-[10px] text-[var(--color-text-disabled)] uppercase tracking-wider">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 {new Date(lesson.publishAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
             )}
-            <button
+            <Button
+              variant="link"
+              size="sm"
+              className="ml-auto"
               onClick={() => window.open(`/dashboard/lessons?streamId=${lesson.streamId}`, '_self')}
-              className="font-mono text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider hover:text-[var(--color-accent-red)] transition-colors duration-150 ml-auto"
             >
               Все уроки →
-            </button>
+            </Button>
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -312,14 +289,5 @@ export default function MaterialsPage() {
     }>
       <MaterialsContent />
     </Suspense>
-  );
-}
-
-// ─── Icons ───────────────────────────────────────────────────────────
-function FolderIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M1 4h5l2 2h7v8H1z" />
-    </svg>
   );
 }

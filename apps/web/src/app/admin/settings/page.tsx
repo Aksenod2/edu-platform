@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { cn } from '@platform/ui/lib/utils';
 
 interface SettingRow {
@@ -27,29 +28,29 @@ function SettingsSection({
   return (
     <section className="mb-8">
       <div className="mb-4">
-        <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-[var(--color-text-tertiary)]">
+        <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
           {title}
         </h2>
         {description && (
-          <p className="mt-1 font-sans text-xs text-[var(--color-text-tertiary)]">{description}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
         )}
       </div>
-      <div className="border border-[var(--color-border-default)]">
+      <Card className="overflow-hidden p-0">
         {rows.map((row, idx) => (
           <div
             key={idx}
             className={cn(
               'flex items-center justify-between px-4 py-3',
-              idx < rows.length - 1 && 'border-b border-[var(--color-border-subtle)]',
+              idx < rows.length - 1 && 'border-b',
             )}
           >
-            <span className="font-sans text-sm text-[var(--color-text-secondary)]">{row.label}</span>
+            <span className="text-sm text-muted-foreground">{row.label}</span>
             <div className="flex items-center gap-2">
               {row.badge && <Badge variant="outline">{row.badge}</Badge>}
               <span
                 className={cn(
                   'text-sm',
-                  row.mono ? 'font-mono text-xs text-[var(--color-text-tertiary)]' : 'font-sans text-[var(--color-text-primary)]',
+                  row.mono ? 'font-mono text-xs text-muted-foreground' : 'text-foreground',
                 )}
               >
                 {row.value}
@@ -58,11 +59,11 @@ function SettingsSection({
           </div>
         ))}
         {footer && (
-          <div className="px-4 py-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
+          <div className="px-4 py-3 border-t bg-muted">
             {footer}
           </div>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -111,7 +112,7 @@ export default function AdminSettingsPage() {
         ]}
         footer={
           <div className="flex items-center gap-3">
-            <span className="font-sans text-xs text-[var(--color-text-tertiary)]">
+            <span className="text-xs text-muted-foreground">
               Настройки уведомлений для пользователей — в карточках учеников
             </span>
             <Button variant="ghost" size="sm" onClick={() => router.push('/admin/students')}>
@@ -142,7 +143,7 @@ export default function AdminSettingsPage() {
         ]}
         footer={
           <div className="flex items-center gap-3">
-            <span className="font-sans text-xs text-[var(--color-text-tertiary)]">
+            <span className="text-xs text-muted-foreground">
               Создать и управлять API-ключами
             </span>
             <Button variant="ghost" size="sm" onClick={() => router.push('/admin/api-keys')}>
@@ -155,23 +156,23 @@ export default function AdminSettingsPage() {
       {/* Danger zone */}
       <section className="mb-8">
         <div className="mb-4">
-          <h2 className="font-mono text-xs font-bold tracking-widest uppercase text-[var(--color-error)]">
+          <h2 className="text-xs font-bold tracking-widest uppercase text-destructive">
             Опасная зона
           </h2>
         </div>
-        <div className="border border-[var(--color-error)] bg-[var(--color-error-dim)] p-4">
+        <Card className="border-destructive p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)] mb-1">
+              <p className="text-sm font-semibold text-foreground mb-1">
                 Сбросить данные платформы
               </p>
-              <p className="font-sans text-xs text-[var(--color-text-tertiary)]">
+              <p className="text-xs text-muted-foreground">
                 Необратимое удаление всех данных. Доступно только через прямой доступ к БД.
               </p>
             </div>
             <Badge variant="destructive">Только для суперадмина</Badge>
           </div>
-        </div>
+        </Card>
       </section>
     </>
   );

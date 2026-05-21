@@ -6,8 +6,15 @@ import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { getStreams, getAssignments, type Stream, type Assignment, type AssignmentMaterial } from '@/lib/api';
-import { cn } from '@platform/ui/lib/utils';
 
 interface MaterialRow {
   material: AssignmentMaterial;
@@ -132,25 +139,16 @@ export default function MaterialsPage() {
             ))}
           </SelectContent>
         </Select>
-        <div className="flex">
-          {(['all', 'file', 'url'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={cn(
-                'font-mono text-xs px-3 py-2 uppercase tracking-wider',
-                'border',
-                '-ml-px first:ml-0',
-                'transition-colors',
-                typeFilter === t
-                  ? 'bg-foreground text-background border-foreground'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t === 'all' ? 'Все' : t === 'file' ? 'Файлы' : 'Ссылки'}
-            </button>
-          ))}
-        </div>
+        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | 'file' | 'url')}>
+          <SelectTrigger className="w-full max-w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все типы</SelectItem>
+            <SelectItem value="file">Файлы</SelectItem>
+            <SelectItem value="url">Ссылки</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {error && (
@@ -164,82 +162,58 @@ export default function MaterialsPage() {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : filteredRows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground border rounded-md">
-          <span className="text-3xl opacity-20" aria-hidden>📁</span>
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Материалы не найдены
-          </span>
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+          <p className="text-sm">Материалы не найдены</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b">
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {['Тип', 'Название', 'Задание', 'Поток', 'Размер'].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left font-mono text-xs uppercase tracking-widest text-muted-foreground whitespace-nowrap"
-                  >
+                  <TableHead key={h} className="whitespace-nowrap">
                     {h}
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filteredRows.map((row, idx) => {
                 const ext = getFileExt(row.material.name);
                 const typeLabel = FILE_TYPE_LABELS[ext] ?? (row.material.type === 'url' ? 'URL' : 'FILE');
                 return (
-                  <tr
-                    key={idx}
-                    className="border-b hover:bg-muted transition-colors group"
-                  >
-                    <td className="px-4 py-3">
+                  <TableRow key={idx}>
+                    <TableCell>
                       <Badge variant={row.material.type === 'file' ? 'outline' : 'secondary'}>
                         {typeLabel}
                       </Badge>
-                    </td>
-                    <td className="px-4 py-3 max-w-xs">
-                      {row.material.type === 'url' ? (
-                        <a
-                          href={row.material.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-foreground hover:underline truncate block"
-                        >
-                          {row.material.name}
-                        </a>
-                      ) : (
-                        <a
-                          href={row.material.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-foreground hover:text-muted-foreground truncate block"
-                        >
-                          {row.material.name}
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
+                    </TableCell>
+                    <TableCell className="max-w-xs">
+                      <a
+                        href={row.material.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-foreground hover:underline truncate block"
+                      >
+                        {row.material.name}
+                      </a>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-muted-foreground truncate max-w-[200px] block">
                         {row.assignment.title}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {row.stream.name}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {formatSize(row.material.size)}
-                      </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.stream.name}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatSize(row.material.size)}
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </>
