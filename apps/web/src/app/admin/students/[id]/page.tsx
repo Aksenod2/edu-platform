@@ -26,6 +26,7 @@ import {
   updateStudentAssignment,
   getAssignments,
   assignAssignment,
+  getStudentAssignmentsSummary,
   getThread,
   addThreadEntry,
   uploadThreadFile,
@@ -33,6 +34,7 @@ import {
   type TeacherNote,
   type StudentAssignment,
   type Assignment,
+  type AssignmentsSummary,
   type ThreadEntry,
   type ThreadEntryType,
 } from '@/lib/api';
@@ -75,6 +77,8 @@ export default function StudentProfilePage() {
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [assignmentsSummary, setAssignmentsSummary] = useState<AssignmentsSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   // Assign modal state
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -127,6 +131,19 @@ export default function StudentProfilePage() {
     }
   }, [accessToken, studentId]);
 
+  const fetchSummary = useCallback(async () => {
+    if (!accessToken || !studentId) return;
+    setLoadingSummary(true);
+    try {
+      const result = await getStudentAssignmentsSummary(accessToken, studentId);
+      setAssignmentsSummary(result.summary);
+    } catch {
+      // summary не критична, не показываем ошибку
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, [accessToken, studentId]);
+
   const fetchThread = useCallback(async () => {
     if (!accessToken || !studentId) return;
     setLoadingThread(true);
@@ -145,10 +162,15 @@ export default function StudentProfilePage() {
   }, [accessToken, studentId, fetchProfile]);
 
   useEffect(() => {
-    if (accessToken && studentId && activeTab === 'assignments' && assignments.length === 0 && !loadingAssignments) {
-      fetchAssignments();
+    if (accessToken && studentId && activeTab === 'assignments') {
+      if (assignments.length === 0 && !loadingAssignments) {
+        fetchAssignments();
+      }
+      if (!assignmentsSummary && !loadingSummary) {
+        fetchSummary();
+      }
     }
-  }, [accessToken, studentId, activeTab, assignments.length, loadingAssignments, fetchAssignments]);
+  }, [accessToken, studentId, activeTab, assignments.length, loadingAssignments, fetchAssignments, assignmentsSummary, loadingSummary, fetchSummary]);
 
   useEffect(() => {
     if (accessToken && studentId && activeTab === 'thread' && threadEntries.length === 0 && !loadingThread) {
@@ -188,6 +210,7 @@ export default function StudentProfilePage() {
     try {
       const { studentAssignment } = await updateStudentAssignment(accessToken, saId, { status });
       setAssignments((prev) => prev.map((a) => (a.id === saId ? studentAssignment : a)));
+      fetchSummary();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления статуса');
     } finally {
@@ -221,7 +244,7 @@ export default function StudentProfilePage() {
       setAssignSuccess(`Задание назначено ${data?.student?.name || ''}`);
       setShowAssignModal(false);
       setSelectedAssignmentId('');
-      await fetchAssignments();
+      await Promise.all([fetchAssignments(), fetchSummary()]);
       setTimeout(() => setAssignSuccess(''), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка назначения задания');
@@ -546,6 +569,34 @@ export default function StudentProfilePage() {
 
         {activeTab === 'assignments' && (
           <div style={{ padding: 'var(--space-4)' }}>
+            {/* Summary block */}
+            {(assignmentsSummary || loadingSummary) && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                gap: 'var(--space-3)',
+                marginBottom: 'var(--space-4)',
+                padding: 'var(--space-3)',
+                background: 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-default)',
+                borderRadius: 8,
+              }}>
+                {loadingSummary && !assignmentsSummary ? (
+                  <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'center', padding: 8 }}>
+                    <Spinner size="sm" />
+                  </div>
+                ) : assignmentsSummary ? (
+                  <>
+                    <SummaryCard label="Выдано" value={assignmentsSummary.total} color="#2196F3" />
+                    <SummaryCard label="Сдано" value={assignmentsSummary.submitted} color="#FF9800" />
+                    <SummaryCard label="Проверено" value={assignmentsSummary.reviewed} color="#4CAF50" />
+                    <SummaryCard label="На доработке" value={assignmentsSummary.needs_revision} color="#9C27B0" />
+                    <SummaryCard label="Просрочено" value={assignmentsSummary.overdue} color="#f44336" />
+                  </>
+                ) : null}
+              </div>
+            )}
+
             {/* Status filter */}
             <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
               {[
@@ -829,6 +880,20 @@ function StatBadge({ label, value, color }: { label: string; value: number; colo
     }}>
       <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color }}>{value}</span>
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: 'var(--space-2) var(--space-3)', gap: 4,
+      background: `${color}10`, border: `1px solid ${color}30`, borderRadius: 8,
+      minWidth: 90,
+    }}>
+      <span style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color, lineHeight: 1 }}>{value}</span>
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
     </div>
   );
 }
