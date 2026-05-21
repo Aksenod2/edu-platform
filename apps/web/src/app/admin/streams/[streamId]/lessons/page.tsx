@@ -3,10 +3,27 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Plus, Video, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Select,
   SelectContent,
@@ -83,7 +100,7 @@ export default function LessonsPage() {
       ]);
       const found = streamsData.streams.find((s) => s.id === streamId);
       setStream(found || null);
-      setLessons(lessonsData.lessons);
+      setLessons([...lessonsData.lessons].sort((a, b) => a.sortOrder - b.sortOrder));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
@@ -172,215 +189,246 @@ export default function LessonsPage() {
     }
   };
 
+  const isArchived = stream?.status === 'archived';
+
   return (
-    <>
-    <div style={{ padding: 'var(--spacing-4)', maxWidth: 900 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
           <Button
             variant="ghost"
             size="sm"
+            className="w-fit -ml-2"
             onClick={() => router.push('/admin/streams')}
-            style={{ marginBottom: 8, display: 'block' }}
           >
-            ← Назад к потокам
+            <ArrowLeft />
+            Назад к потокам
           </Button>
-          <h1 style={{ margin: 0 }}>
-            Уроки{stream ? `: ${stream.name}` : ''}
-          </h1>
-          {stream?.status === 'archived' && (
-            <Badge variant="destructive">Архивный поток</Badge>
-          )}
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">
+              Уроки{stream ? `: ${stream.name}` : ''}
+            </h1>
+            {isArchived && <Badge variant="destructive">Архивный поток</Badge>}
+          </div>
+          <p className="text-sm text-muted-foreground">Управление уроками потока</p>
         </div>
-        {stream?.status !== 'archived' && (
+        {!isArchived && (
           <Button
-            variant="default"
+            variant={showForm && !editingId ? 'outline' : 'default'}
             onClick={showForm ? closeForm : openCreate}
           >
-            {showForm && !editingId ? 'Отмена' : 'Добавить урок'}
+            {showForm && !editingId ? (
+              'Отмена'
+            ) : (
+              <>
+                <Plus />
+                Добавить урок
+              </>
+            )}
           </Button>
         )}
       </div>
 
       {error && (
-        <Alert variant="destructive" style={{ marginBottom: 16 }}>
+        <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-default)' }}>
-          <h3 style={{ marginTop: 0 }}>{editingId ? 'Редактировать урок' : 'Новый урок'}</h3>
+        <Card>
+          <CardHeader>
+            <CardTitle>{editingId ? 'Редактировать урок' : 'Новый урок'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="lesson-title">Название *</FieldLabel>
+                  <Input
+                    id="lesson-title"
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="Название урока"
+                    autoFocus
+                  />
+                </Field>
 
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Название *</label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="Название урока"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-              autoFocus
-            />
-          </div>
+                <Field>
+                  <FieldLabel htmlFor="lesson-video">Видео URL</FieldLabel>
+                  <Input
+                    id="lesson-video"
+                    type="url"
+                    value={form.videoUrl}
+                    onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
+                    placeholder="https://..."
+                  />
+                </Field>
 
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Видео URL</label>
-            <input
-              type="url"
-              value={form.videoUrl}
-              onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
-              placeholder="https://..."
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-            />
-          </div>
+                <Field>
+                  <FieldLabel htmlFor="lesson-summary">Краткое описание</FieldLabel>
+                  <Textarea
+                    id="lesson-summary"
+                    value={form.summary}
+                    onChange={(e) => setForm({ ...form, summary: e.target.value })}
+                    placeholder="Краткое описание урока..."
+                    rows={3}
+                  />
+                </Field>
 
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Краткое описание (Summary)</label>
-            <textarea
-              value={form.summary}
-              onChange={(e) => setForm({ ...form, summary: e.target.value })}
-              placeholder="Markdown-текст краткого описания..."
-              rows={3}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
-            />
-          </div>
+                <Field>
+                  <FieldLabel htmlFor="lesson-notes">Конспект</FieldLabel>
+                  <Textarea
+                    id="lesson-notes"
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    placeholder="Текст конспекта..."
+                    rows={5}
+                  />
+                </Field>
 
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Конспект (Notes)</label>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Markdown-текст конспекта..."
-              rows={5}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
-            />
-          </div>
+                <div className="flex flex-col gap-4 sm:flex-row">
+                  <Field className="flex-1">
+                    <FieldLabel htmlFor="lesson-publish">Дата публикации</FieldLabel>
+                    <Input
+                      id="lesson-publish"
+                      type="datetime-local"
+                      value={form.publishAt}
+                      onChange={(e) => setForm({ ...form, publishAt: e.target.value })}
+                    />
+                  </Field>
 
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Дата публикации</label>
-              <input
-                type="datetime-local"
-                value={form.publishAt}
-                onChange={(e) => setForm({ ...form, publishAt: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-              />
-            </div>
+                  <Field className="sm:w-32">
+                    <FieldLabel htmlFor="lesson-order">Порядок</FieldLabel>
+                    <Input
+                      id="lesson-order"
+                      type="number"
+                      value={form.sortOrder}
+                      onChange={(e) =>
+                        setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })
+                      }
+                    />
+                  </Field>
 
-            <div style={{ width: 120 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Порядок</label>
-              <input
-                type="number"
-                value={form.sortOrder}
-                onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-              />
-            </div>
+                  {editingId && (
+                    <Field className="sm:w-44">
+                      <FieldLabel htmlFor="lesson-status">Статус</FieldLabel>
+                      <Select
+                        value={form.status}
+                        onValueChange={(v) =>
+                          setForm({ ...form, status: v as LessonFormData['status'] })
+                        }
+                      >
+                        <SelectTrigger id="lesson-status" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">Черновик</SelectItem>
+                          <SelectItem value="published">Опубликован</SelectItem>
+                          <SelectItem value="closed">Закрыт</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+                </div>
 
-            {editingId && (
-              <div style={{ width: 160 }}>
-                <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Статус</label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm({ ...form, status: v as LessonFormData['status'] })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Черновик</SelectItem>
-                    <SelectItem value="published">Опубликован</SelectItem>
-                    <SelectItem value="closed">Закрыт</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                <Field orientation="horizontal">
+                  <Button type="submit" disabled={submitting || !form.title.trim()}>
+                    {submitting && <Loader2 className="animate-spin" />}
+                    {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={closeForm}>
+                    Отмена
+                  </Button>
+                </Field>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[60px]">#</TableHead>
+              <TableHead>Название</TableHead>
+              <TableHead>Видео</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead>Публикация</TableHead>
+              <TableHead className="w-[1%] text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loadingLessons ? (
+              <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : lessons.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  Уроков пока нет. Добавьте первый урок.
+                </TableCell>
+              </TableRow>
+            ) : (
+              lessons.map((lesson) => (
+                <TableRow key={lesson.id}>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {lesson.sortOrder}
+                  </TableCell>
+                  <TableCell className="font-medium">{lesson.title}</TableCell>
+                  <TableCell>
+                    {lesson.videoUrl ? (
+                      <Video className="size-4 text-muted-foreground" />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
+                      {statusLabels[lesson.status]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {lesson.publishAt
+                      ? new Date(lesson.publishAt).toLocaleString('ru-RU', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {!isArchived && (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => openEdit(lesson)}
+                        >
+                          <Pencil />
+                          <span className="sr-only">Редактировать</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(lesson.id)}
+                        >
+                          <Trash2 />
+                          <span className="sr-only">Удалить</span>
+                        </Button>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
             )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={submitting || !form.title.trim()}
-            >
-              {submitting && <Loader2 className="animate-spin" />}
-              {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={closeForm}
-            >
-              Отмена
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {loadingLessons ? (
-        <p>Загрузка уроков...</p>
-      ) : lessons.length === 0 ? (
-        <p style={{ color: 'var(--color-text-secondary)' }}>Уроков пока нет. Добавьте первый урок.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
-              <th style={{ textAlign: 'left', padding: '8px 12px', width: 50 }}>#</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Название</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Статус</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Публикация</th>
-              <th style={{ textAlign: 'right', padding: '8px 12px' }}>Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lessons.map((lesson) => (
-              <tr key={lesson.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                <td style={{ padding: '12px', color: 'var(--color-text-secondary)' }}>{lesson.sortOrder}</td>
-                <td style={{ padding: '12px' }}>
-                  <div>{lesson.title}</div>
-                  {lesson.videoUrl && (
-                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                      Video: {lesson.videoUrl.length > 40 ? lesson.videoUrl.slice(0, 40) + '...' : lesson.videoUrl}
-                    </div>
-                  )}
-                </td>
-                <td style={{ padding: '12px' }}>
-                  <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
-                    {statusLabels[lesson.status]}
-                  </Badge>
-                </td>
-                <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
-                  {lesson.publishAt
-                    ? new Date(lesson.publishAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
-                    : '—'}
-                </td>
-                <td style={{ padding: '12px', textAlign: 'right' }}>
-                  {stream?.status !== 'archived' && (
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEdit(lesson)}
-                      >
-                        Редактировать
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(lesson.id)}
-                      >
-                        Удалить
-                      </Button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
-    </>
   );
 }

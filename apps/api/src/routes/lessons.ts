@@ -49,7 +49,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     const lesson = await prisma.lesson.findUnique({
       where: { id },
-      include: { stream: true },
+      include: { stream: true, assignments: true },
     });
 
     if (!lesson) {

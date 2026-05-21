@@ -289,7 +289,7 @@ export async function getLessons(
 export async function getLesson(
   accessToken: string,
   id: string,
-): Promise<{ lesson: Lesson }> {
+): Promise<{ lesson: Lesson & { assignments?: Assignment[] } }> {
   return request(`/lessons/${id}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
