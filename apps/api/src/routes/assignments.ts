@@ -646,12 +646,28 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Notify relevant parties about status change
     if (status === 'submitted') {
-      const admins = await prisma.user.findMany({
-        where: { role: 'admin', isActive: true, deletedAt: null },
-        select: { id: true },
-      });
+      // Адресно: уведомляем преподавателей урока, к которому привязано задание.
+      // Если урока/преподавателей нет — фолбэк на всех админов.
+      let recipientIds: string[] = [];
+      if (updated.assignment.lessonId) {
+        const lessonTeachers = await prisma.lessonTeacher.findMany({
+          where: {
+            lessonId: updated.assignment.lessonId,
+            user: { isActive: true, deletedAt: null },
+          },
+          select: { userId: true },
+        });
+        recipientIds = lessonTeachers.map((t) => t.userId);
+      }
+      if (recipientIds.length === 0) {
+        const admins = await prisma.user.findMany({
+          where: { role: 'admin', isActive: true, deletedAt: null },
+          select: { id: true },
+        });
+        recipientIds = admins.map((a) => a.id);
+      }
       notifyMany(
-        admins.map((a) => a.id),
+        recipientIds,
         'assignment_submitted',
         'Студент сдал задание',
         `${updated.student.name} сдал задание «${updated.assignment.title}»`,

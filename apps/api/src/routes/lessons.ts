@@ -35,10 +35,10 @@ export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
 
-  // GET /lessons?streamId=xxx — список уроков (опциональная фильтрация по streamId)
-  // Admin: все уроки; Student: только published (+ auto-publish по publishAt)
+  // GET /lessons?streamId=xxx&mine=true — список уроков (опциональная фильтрация по streamId)
+  // Admin: все уроки (или только свои при ?mine=true); Student: только published (+ auto-publish по publishAt)
   app.get('/lessons', { onRequest: anyAuth }, async (request, reply) => {
-    const { streamId } = request.query as { streamId?: string };
+    const { streamId, mine } = request.query as { streamId?: string; mine?: string };
 
     if (streamId) {
       const stream = await prisma.stream.findUnique({ where: { id: streamId } });
@@ -53,6 +53,7 @@ export async function lessonRoutes(app: FastifyInstance) {
     }
 
     const isAdmin = request.user?.role === 'admin';
+    const isMine = isAdmin && mine === 'true';
     const streamFilter = streamId ? { streamId } : {};
 
     // Auto-publish: переводим draft → published если publishAt <= now
@@ -69,6 +70,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       where: {
         ...streamFilter,
         ...(!isAdmin && { status: { in: ['published', 'closed'] } }),
+        ...(isMine && { teachers: { some: { userId: request.user!.userId } } }),
       },
       include: teacherInclude,
       orderBy: { sortOrder: 'asc' },
