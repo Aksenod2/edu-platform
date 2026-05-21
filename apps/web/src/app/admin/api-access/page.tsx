@@ -286,29 +286,91 @@ export default function ApiAccessPage() {
             <CardTitle>Как подключиться к API</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-2">
-                Base URL
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-2">Аутентификация</p>
+              <p className="text-sm mb-2">
+                Добавьте заголовок <span className="font-mono text-xs">Authorization</span> к каждому запросу. В качестве токена используйте API-ключ
+                {' '}(начинается с <span className="font-mono text-xs">sk_</span>):
               </p>
-              <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md">
-                <span className="font-mono text-xs flex-1">{proxyBase}</span>
-              </div>
+              <CodeBlock>{`Authorization: Bearer sk_<ваш_ключ>`}</CodeBlock>
+              <p className="text-sm text-muted-foreground mt-2">
+                Ключ работает с правами своего владельца — то есть с полными правами администратора. Храните его в секрете и отзывайте при компрометации.
+              </p>
             </div>
 
             <div>
-              <p className="text-sm text-muted-foreground mb-2">
-                Аутентификация
-              </p>
+              <p className="text-sm text-muted-foreground mb-2">Базовый URL</p>
               <p className="text-sm mb-2">
-                Добавьте заголовок <span className="font-mono text-xs">Authorization</span> к каждому запросу:
+                В примерах ниже используется прокси веб-приложения — он сам пробрасывает токен к API:
               </p>
-              <CodeBlock>{`Authorization: Bearer ваш_api_ключ`}</CodeBlock>
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md mb-2">
+                <span className="font-mono text-xs flex-1">{proxyBase}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Можно обращаться и напрямую к API — по его собственному адресу (зависит от окружения; запросите его у администратора инфраструктуры).
+                Заголовок <span className="font-mono text-xs">Authorization</span> в этом случае добавляйте сами.
+              </p>
             </div>
           </CardContent>
         </Card>
       </section>
 
-      {/* ─── Секция 3: Примеры запросов ──────────────────────────── */}
+      {/* ─── Секция 3: Основные эндпоинты ─────────────────────────── */}
+      <section className="mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Основные эндпоинты</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b">
+                    {['Метод', 'Путь', 'Описание'].map((h) => (
+                      <th
+                        key={h}
+                        className="px-3 py-2 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {([
+                    ['GET', '/users', 'Список учеников'],
+                    ['GET', '/users/:id', 'Карточка ученика'],
+                    ['POST', '/users', 'Создать ученика'],
+                    ['POST', '/users/:id/invite', 'Сгенерировать ссылку-приглашение'],
+                    ['POST', '/users/:id/reset-password', 'Сбросить пароль ученика'],
+                    ['GET', '/users/:id/export', 'Выгрузить все данные ученика (профиль, задания, лента, файлы)'],
+                    ['GET', '/streams', 'Список потоков'],
+                    ['GET', '/profiles/:studentId', 'Профиль ученика'],
+                    ['GET', '/student-assignments?studentId=:id', 'Задания ученика'],
+                    ['GET', '/threads/:studentId', 'Лента ученика'],
+                    ['POST', '/threads/:studentId/entries', 'Добавить запись в ленту'],
+                    ['GET', '/schedule', 'Расписание'],
+                    ['GET', '/stats', 'Сводная статистика'],
+                    ['GET', '/files/*', 'Скачать файл (по подписи или админским Bearer)'],
+                  ] as const).map(([method, path, desc]) => (
+                    <tr key={`${method} ${path}`} className="border-b align-top">
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="font-mono text-[11px]">{method}</Badge>
+                      </td>
+                      <td className="px-3 py-2">
+                        <code className="font-mono text-xs whitespace-nowrap">{path}</code>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ─── Секция 4: Примеры запросов ──────────────────────────── */}
       <section className="mb-8">
         <h2 className="text-xl font-bold mb-4">Примеры запросов</h2>
 
@@ -316,6 +378,11 @@ export default function ApiAccessPage() {
           <ExampleCard
             title="Список учеников"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users`}
+          />
+          <ExampleCard
+            title="Скачать всё по студенту"
+            description="Удобная выгрузка одним запросом: профиль, задания, лента и список файлов с подписанными ссылками."
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users/ID_УЧЕНИКА/export`}
           />
           <ExampleCard
             title="Задания ученика"
@@ -339,6 +406,34 @@ export default function ApiAccessPage() {
           />
         </div>
       </section>
+
+      {/* ─── Секция 5: Файлы и подписанные ссылки ─────────────────── */}
+      <section className="mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Файлы и подписанные ссылки</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-sm list-disc pl-5 flex flex-col gap-2">
+              <li>
+                Ответы API содержат подписанные ссылки на файлы (поля <span className="font-mono text-xs">fileUrl</span> /{' '}
+                <span className="font-mono text-xs">signedUrl</span>). Такая ссылка действует около часа.
+              </li>
+              <li>
+                По подписанной ссылке файл скачивается без заголовка <span className="font-mono text-xs">Authorization</span> — подпись уже встроена в URL.
+              </li>
+              <li>
+                С админским ключом можно дёргать <span className="font-mono text-xs">GET /files/*</span> напрямую, передав
+                {' '}<span className="font-mono text-xs">Authorization: Bearer sk_...</span> вместо подписи.
+              </li>
+              <li>Прямого публичного доступа к файлам больше нет: нужна либо валидная подпись, либо админский Bearer.</li>
+            </ul>
+            <div className="mt-4">
+              <CodeBlock>{`# Скачать файл по подписанной ссылке из ответа API (без токена)\ncurl -L -o file 'ССЫЛКА_ИЗ_ОТВЕТА_API'\n\n# Либо напрямую с админским ключом\ncurl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  -o file '${proxyBase}/files/КЛЮЧ_ФАЙЛА'`}</CodeBlock>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     </>
   );
 }
@@ -353,13 +448,14 @@ function CodeBlock({ children }: { children: string }) {
   );
 }
 
-function ExampleCard({ title, code }: { title: string; code: string }) {
+function ExampleCard({ title, code, description }: { title: string; code: string; description?: string }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
       <CardContent>
+        {description && <p className="text-sm text-muted-foreground mb-2">{description}</p>}
         <CodeBlock>{code}</CodeBlock>
       </CardContent>
     </Card>
