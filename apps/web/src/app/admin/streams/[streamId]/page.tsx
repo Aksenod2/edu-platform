@@ -16,6 +16,7 @@ import {
   Search,
   UserPlus,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +24,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -46,14 +46,25 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LessonsManager } from '@/components/lessons-manager';
+import { StreamAssignmentsManager } from '@/components/stream-assignments-manager';
+import {
+  ScheduleCalendar,
+  type CalendarEntry,
+} from '@/components/schedule-calendar';
 import {
   getStream,
   getStreamStudents,
   enrollStudents,
   unenrollStudent,
   getStudents,
+  getSchedule,
+  getLessons,
+  createScheduleEntry,
+  updateScheduleEntry,
+  deleteScheduleEntry,
   type StreamWithCounts,
   type Student,
+  type Lesson,
 } from '@/lib/api';
 
 export default function StreamDetailPage() {
@@ -155,43 +166,123 @@ export default function StreamDetailPage() {
         </TabsContent>
 
         <TabsContent value="assignments" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Задания потока</CardTitle>
-              <CardDescription>
-                Управление заданиями и проверка работ учеников.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button asChild>
-                <Link href={`/admin/streams/${streamId}/assignments`}>
-                  <ClipboardList />
-                  Открыть задания потока
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+          <StreamAssignmentsManager streamId={streamId} />
         </TabsContent>
 
         <TabsContent value="schedule" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Расписание</CardTitle>
-              <CardDescription>
-                Запланированные занятия и встречи.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button asChild>
-                <Link href="/admin/schedule">
-                  <CalendarDays />
-                  Открыть расписание
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+          <ScheduleTab stream={stream} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
+  const { accessToken } = useAuth();
+
+  const [entries, setEntries] = useState<CalendarEntry[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchAll = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const [scheduleData, lessonsData] = await Promise.all([
+        getSchedule(accessToken, stream.id),
+        getLessons(accessToken, stream.id),
+      ]);
+      setEntries(
+        scheduleData.schedule.map((e) => ({
+          ...e,
+          streamName: stream.name,
+          stream: { id: stream.id, name: stream.name },
+        })),
+      );
+      setLessons(lessonsData.lessons);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, stream.id, stream.name]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  const handleCreate = async (data: {
+    streamId: string;
+    lessonId: string;
+    date: string;
+    startTime: string;
+    notes?: string;
+    meetingUrl?: string;
+  }) => {
+    if (!accessToken) return;
+    try {
+      await createScheduleEntry(accessToken, data);
+      await fetchAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка создания записи');
+    }
+  };
+
+  const handleUpdate = async (
+    id: string,
+    data: {
+      date?: string;
+      startTime?: string;
+      lessonId?: string;
+      notes?: string | null;
+      meetingUrl?: string | null;
+    },
+  ) => {
+    if (!accessToken) return;
+    try {
+      await updateScheduleEntry(accessToken, id, data);
+      await fetchAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка обновления записи');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!accessToken) return;
+    try {
+      await deleteScheduleEntry(accessToken, id);
+      await fetchAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления записи');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <ScheduleCalendar
+        editable
+        entries={entries}
+        streams={[stream]}
+        lessons={lessons}
+        onCreate={handleCreate}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }
