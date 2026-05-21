@@ -69,6 +69,13 @@
   --text-3xl:  2.441rem;
   --text-4xl:  3.052rem;
 
+  /* Line heights */
+  --leading-none:     1;
+  --leading-tight:    1.2;
+  --leading-snug:     1.35;
+  --leading-normal:   1.5;
+  --leading-relaxed:  1.7;
+
   /* Letter spacing */
   --tracking-tight:   -0.02em;
   --tracking-normal:   0em;

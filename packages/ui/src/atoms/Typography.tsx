@@ -2,8 +2,8 @@
  * Typography — Атом
  * Atomic level: Atom
  *
- * Токены: --font-sans, --font-mono, типографическая шкала
- * Компоненты: Heading (h1-h4), Text, Mono
+ * Мигрировано на Tailwind CSS v4 (CMP-225).
+ * Токены: @theme в tailwind.css — font-sans, font-mono, text-*, tracking-*, leading-*
  *
  * Nothing Phone typography principles:
  * - Headings: Space Grotesk, tight leading, строгая иерархия
@@ -11,6 +11,7 @@
  * - Mono: Space Mono — dot-matrix эффект для акцентов, кодов, меток
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 
 // ─── Heading ───────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export interface HeadingProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
   weight?: 'light' | 'regular' | 'medium' | 'semibold' | 'bold';
   color?: string;
+  className?: string;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }
@@ -32,44 +34,48 @@ const headingDefaults: Record<HeadingLevel, { size: HeadingProps['size']; weight
   4: { size: 'lg',  weight: 'medium' },
 };
 
-const sizeToVar: Record<NonNullable<HeadingProps['size']>, string> = {
-  xs:  'var(--text-xs)',
-  sm:  'var(--text-sm)',
-  md:  'var(--text-base)',
-  lg:  'var(--text-lg)',
-  xl:  'var(--text-xl)',
-  '2xl': 'var(--text-2xl)',
-  '3xl': 'var(--text-3xl)',
-  '4xl': 'var(--text-4xl)',
+const headingSizeClass: Record<NonNullable<HeadingProps['size']>, string> = {
+  xs:    'text-xs',
+  sm:    'text-sm',
+  md:    'text-base',
+  lg:    'text-lg',
+  xl:    'text-xl',
+  '2xl': 'text-2xl',
+  '3xl': 'text-3xl',
+  '4xl': 'text-4xl',
 };
 
-const weightToVar: Record<NonNullable<HeadingProps['weight']>, string> = {
-  light:    'var(--font-light)',
-  regular:  'var(--font-regular)',
-  medium:   'var(--font-medium)',
-  semibold: 'var(--font-semibold)',
-  bold:     'var(--font-bold)',
+const weightClass: Record<NonNullable<HeadingProps['weight']>, string> = {
+  light:    'font-light',
+  regular:  'font-normal',
+  medium:   'font-medium',
+  semibold: 'font-semibold',
+  bold:     'font-bold',
 };
 
-export function Heading({ level = 2, size, weight, color, children, style }: HeadingProps) {
+export function Heading({ level = 2, size, weight, color, className, children, style }: HeadingProps) {
   const defaults = headingDefaults[level];
   const resolvedSize = size ?? defaults.size!;
   const resolvedWeight = weight ?? defaults.weight!;
 
-  const headingStyle: React.CSSProperties = {
-    fontFamily: 'var(--font-sans)',
-    fontSize: sizeToVar[resolvedSize],
-    fontWeight: weightToVar[resolvedWeight],
-    lineHeight: 'var(--leading-tight)',
-    letterSpacing: 'var(--tracking-tight)',
-    color: color ?? 'var(--color-text-primary)',
-    ...style,
-  };
+  const classes = cn(
+    'font-sans',
+    'leading-tight',
+    'tracking-tight',
+    headingSizeClass[resolvedSize],
+    weightClass[resolvedWeight],
+    !color && 'text-text-primary',
+    className,
+  );
 
-  if (level === 1) return <h1 style={headingStyle}>{children}</h1>;
-  if (level === 2) return <h2 style={headingStyle}>{children}</h2>;
-  if (level === 3) return <h3 style={headingStyle}>{children}</h3>;
-  return <h4 style={headingStyle}>{children}</h4>;
+  const inlineStyle: React.CSSProperties | undefined = color
+    ? { color, ...style }
+    : style;
+
+  if (level === 1) return <h1 className={classes} style={inlineStyle}>{children}</h1>;
+  if (level === 2) return <h2 className={classes} style={inlineStyle}>{children}</h2>;
+  if (level === 3) return <h3 className={classes} style={inlineStyle}>{children}</h3>;
+  return <h4 className={classes} style={inlineStyle}>{children}</h4>;
 }
 
 // ─── Text ───────────────────────────────────────────────
@@ -79,22 +85,24 @@ export interface TextProps {
   color?: 'primary' | 'secondary' | 'tertiary' | 'disabled' | string;
   weight?: HeadingProps['weight'];
   as?: 'p' | 'span' | 'div' | 'li';
+  className?: string;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }
 
-const colorMap: Record<string, string> = {
-  primary:   'var(--color-text-primary)',
-  secondary: 'var(--color-text-secondary)',
-  tertiary:  'var(--color-text-tertiary)',
-  disabled:  'var(--color-text-disabled)',
+const textSizeClass: Record<NonNullable<TextProps['size']>, string> = {
+  xs:   'text-xs',
+  sm:   'text-sm',
+  base: 'text-base',
+  lg:   'text-lg',
 };
 
-const textSizeMap: Record<NonNullable<TextProps['size']>, string> = {
-  xs:   'var(--text-xs)',
-  sm:   'var(--text-sm)',
-  base: 'var(--text-base)',
-  lg:   'var(--text-lg)',
+// Named color values → Tailwind utility classes
+const textColorClass: Record<string, string> = {
+  primary:   'text-text-primary',
+  secondary: 'text-text-secondary',
+  tertiary:  'text-text-tertiary',
+  disabled:  'text-text-disabled',
 };
 
 export function Text({
@@ -102,20 +110,27 @@ export function Text({
   color = 'secondary',
   weight = 'regular',
   as: Tag = 'p',
+  className,
   children,
   style,
 }: TextProps) {
+  const namedColorClass = textColorClass[color];
+
+  const classes = cn(
+    'font-sans',
+    'leading-normal',
+    textSizeClass[size],
+    weightClass[weight],
+    namedColorClass,
+    className,
+  );
+
+  const inlineStyle: React.CSSProperties | undefined = namedColorClass
+    ? style
+    : { color, ...style };
+
   return (
-    <Tag
-      style={{
-        fontFamily: 'var(--font-sans)',
-        fontSize: textSizeMap[size],
-        fontWeight: weightToVar[weight],
-        lineHeight: 'var(--leading-normal)',
-        color: colorMap[color] ?? color,
-        ...style,
-      }}
-    >
+    <Tag className={classes} style={inlineStyle}>
       {children}
     </Tag>
   );
@@ -127,28 +142,33 @@ export function Text({
 export interface MonoProps {
   size?: 'xs' | 'sm' | 'base';
   color?: string;
+  className?: string;
   children: React.ReactNode;
   as?: 'span' | 'p' | 'code' | 'div';
   style?: React.CSSProperties;
 }
 
-const monoSizeMap: Record<NonNullable<MonoProps['size']>, string> = {
-  xs:   'var(--text-xs)',
-  sm:   'var(--text-sm)',
-  base: 'var(--text-base)',
+const monoSizeClass: Record<NonNullable<MonoProps['size']>, string> = {
+  xs:   'text-xs',
+  sm:   'text-sm',
+  base: 'text-base',
 };
 
-export function Mono({ size = 'sm', color, children, as: Tag = 'span', style }: MonoProps) {
+export function Mono({ size = 'sm', color, className, children, as: Tag = 'span', style }: MonoProps) {
+  const classes = cn(
+    'font-mono',
+    'tracking-wide',
+    monoSizeClass[size],
+    !color && 'text-text-secondary',
+    className,
+  );
+
+  const inlineStyle: React.CSSProperties | undefined = color
+    ? { color, ...style }
+    : style;
+
   return (
-    <Tag
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: monoSizeMap[size],
-        letterSpacing: 'var(--tracking-wide)',
-        color: color ?? 'var(--color-text-secondary)',
-        ...style,
-      }}
-    >
+    <Tag className={classes} style={inlineStyle}>
       {children}
     </Tag>
   );
