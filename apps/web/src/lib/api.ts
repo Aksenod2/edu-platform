@@ -431,6 +431,12 @@ export interface StudentAssignment {
   assignmentId: string;
   studentId: string;
   status: 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
+  content: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  fileSignedUrl?: string;
+  studentComment: string | null;
   submittedAt: string | null;
   reviewedAt: string | null;
   createdAt: string;
@@ -544,6 +550,56 @@ export async function updateStudentAssignment(
   });
 }
 
+export interface AssignmentsSummary {
+  assigned: number;
+  submitted: number;
+  reviewed: number;
+  needs_revision: number;
+  overdue: number;
+  total: number;
+}
+
+export async function getStudentAssignmentsSummary(
+  accessToken: string,
+  studentId: string,
+): Promise<{ summary: AssignmentsSummary }> {
+  return request(`/students/${encodeURIComponent(studentId)}/assignments-summary`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function submitStudentAssignment(
+  accessToken: string,
+  id: string,
+  data: { answerText?: string; studentComment?: string; file?: File },
+): Promise<{ studentAssignment: StudentAssignment }> {
+  const formData = new FormData();
+  formData.append('status', 'submitted');
+  if (data.answerText) formData.append('answerText', data.answerText);
+  if (data.studentComment) formData.append('studentComment', data.studentComment);
+  if (data.file) formData.append('file', data.file);
+
+  const res = await fetch(`${API_URL}/student-assignments/${id}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+
+  let result: Record<string, unknown>;
+  try {
+    result = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка сервера (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof result.error === 'string' ? result.error : null;
+    throw new Error(serverMsg || HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`);
+  }
+  return result as { studentAssignment: StudentAssignment };
+}
+
 // Profiles API
 
 export interface StudentProfile {
@@ -633,9 +689,12 @@ export interface ThreadEntry {
     mimeType?: string;
     size?: number;
     url?: string;
+    title?: string;
+    [key: string]: unknown;
   } | null;
   assignmentId: string | null;
   createdAt: string;
+  readAt: string | null;
   author: { id: string; name: string; role: string };
   assignment: { id: string; title: string } | null;
 }
@@ -658,7 +717,7 @@ export async function getThread(
 export async function addThreadEntry(
   accessToken: string,
   studentId: string,
-  data: { type: ThreadEntryType; content: string; assignmentId?: string },
+  data: { type: ThreadEntryType; content: string; assignmentId?: string; metadata?: Record<string, unknown> },
 ): Promise<{ entry: ThreadEntry }> {
   return request(`/threads/${studentId}/entries`, {
     method: 'POST',

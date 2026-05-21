@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import multipart from '@fastify/multipart';
 import { prisma, type ThreadEntryType } from '@platform/db';
 import { authenticate } from '../middleware/auth.js';
-import { uploadFile, getFileUrl, MAX_FILE_SIZE } from '../lib/s3.js';
+import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createNotification } from '../lib/notifications.js';
 
 const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
@@ -10,7 +9,6 @@ const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link']
 const ADMIN_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 
 export async function threadRoutes(app: FastifyInstance) {
-  await app.register(multipart, { limits: { fileSize: MAX_FILE_SIZE } });
   app.addHook('preHandler', authenticate);
 
   // GET /threads/:studentId — chronological feed of entries
@@ -56,6 +54,25 @@ export async function threadRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Auto-mark entries from the other party as read
+    const now = new Date();
+    const unreadFromOtherParty = entries
+      .filter((e) => e.authorId !== user.userId && !e.readAt)
+      .map((e) => e.id);
+
+    if (unreadFromOtherParty.length > 0) {
+      await prisma.threadEntry.updateMany({
+        where: { id: { in: unreadFromOtherParty } },
+        data: { readAt: now },
+      });
+      // Update local entries array so response reflects read status
+      for (const entry of entries) {
+        if (unreadFromOtherParty.includes(entry.id)) {
+          (entry as Record<string, unknown>).readAt = now;
+        }
+      }
+    }
+
     // Generate signed URLs for file/audio entries
     const entriesWithUrls = await Promise.all(
       entries.map(async (entry) => {
@@ -75,6 +92,42 @@ export async function threadRoutes(app: FastifyInstance) {
     );
 
     return { student, thread: { id: thread.id }, entries: entriesWithUrls };
+  });
+
+  // PATCH /threads/:studentId/entries/:entryId/read — mark a specific entry as read
+  app.patch('/threads/:studentId/entries/:entryId/read', async (request, reply) => {
+    const { studentId, entryId } = request.params as { studentId: string; entryId: string };
+    const user = request.user!;
+
+    if (user.role === 'student' && user.userId !== studentId) {
+      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+    }
+
+    const entry = await prisma.threadEntry.findUnique({
+      where: { id: entryId },
+      include: { thread: { select: { studentId: true } } },
+    });
+
+    if (!entry || entry.thread.studentId !== studentId) {
+      return reply.status(404).send({ error: 'Запись не найдена' });
+    }
+
+    // Only recipient can mark as read (not the author)
+    if (entry.authorId === user.userId) {
+      return reply.status(400).send({ error: 'Нельзя пометить своё сообщение как прочитанное' });
+    }
+
+    if (entry.readAt) {
+      return { entry: { id: entry.id, readAt: entry.readAt } };
+    }
+
+    const updated = await prisma.threadEntry.update({
+      where: { id: entryId },
+      data: { readAt: new Date() },
+      select: { id: true, readAt: true },
+    });
+
+    return { entry: updated };
   });
 
   // POST /threads/:studentId/entries — add entry (text, file, audio, link, comment, note)
@@ -114,6 +167,7 @@ export async function threadRoutes(app: FastifyInstance) {
       type: ThreadEntryType;
       content: string;
       assignmentId?: string;
+      metadata?: Record<string, unknown>;
     };
 
     if (!body.type || !body.content) {
@@ -148,6 +202,7 @@ export async function threadRoutes(app: FastifyInstance) {
         type: body.type,
         content: body.content,
         assignmentId: body.assignmentId || null,
+        metadata: (body.metadata ?? undefined) as Parameters<typeof prisma.threadEntry.create>[0]['data']['metadata'],
       },
       include: {
         author: { select: { id: true, name: true, role: true } },

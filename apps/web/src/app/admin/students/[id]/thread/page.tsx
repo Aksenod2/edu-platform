@@ -87,6 +87,8 @@ export default function AdminStudentThreadPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
 
   // Input state
   const [inputMode, setInputMode] = useState<'comment' | 'note'>('comment');

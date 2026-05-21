@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { createNotification, notifyMany } from '../lib/notifications.js';
+import { uploadFile, getFileUrl } from '../lib/s3.js';
 
 export async function assignmentRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -269,6 +270,48 @@ export async function assignmentRoutes(app: FastifyInstance) {
     return reply.status(400).send({ error: 'Укажите studentId или groupId' });
   });
 
+  // GET /students/:id/assignments-summary — сводная статистика по статусам для ученика (admin)
+  app.get('/students/:id/assignments-summary', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const student = await prisma.user.findUnique({ where: { id } });
+    if (!student || student.role !== 'student') {
+      return reply.status(404).send({ error: 'Ученик не найден' });
+    }
+
+    const now = new Date();
+
+    const statusCounts = await prisma.studentAssignment.groupBy({
+      by: ['status'],
+      where: { studentId: id },
+      _count: { status: true },
+    });
+
+    const overdueCount = await prisma.studentAssignment.count({
+      where: {
+        studentId: id,
+        status: { not: 'reviewed' },
+        assignment: { dueDate: { lt: now, not: null } },
+      },
+    });
+
+    const summary: Record<string, number> = {
+      assigned: 0,
+      submitted: 0,
+      reviewed: 0,
+      needs_revision: 0,
+      overdue: overdueCount,
+      total: 0,
+    };
+
+    for (const item of statusCounts) {
+      summary[item.status] = item._count.status;
+      summary.total += item._count.status;
+    }
+
+    return { summary };
+  });
+
   // GET /student-assignments — список назначений ученика со статусами
   app.get('/student-assignments', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId, status, studentId } = request.query as { streamId?: string; status?: string; studentId?: string };
@@ -308,15 +351,59 @@ export async function assignmentRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return { studentAssignments };
+    // Generate signed URLs for files
+    const results = await Promise.all(
+      studentAssignments.map(async (sa) => {
+        if (sa.fileUrl) {
+          return { ...sa, fileSignedUrl: await getFileUrl(sa.fileUrl) };
+        }
+        return sa;
+      }),
+    );
+
+    return { studentAssignments: results };
   });
 
-  // PATCH /student-assignments/:id — смена статуса (submitted/reviewed/needs_revision)
+  // PATCH /student-assignments/:id — смена статуса + ответ (текст/файл)
+  // Принимает JSON или multipart/form-data (когда есть файл)
   app.patch('/student-assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { status: 'submitted' | 'reviewed' | 'needs_revision' };
     const isAdmin = request.user?.role === 'admin';
     const userId = request.user!.userId;
+
+    // Parse body: JSON or multipart
+    let status: string | undefined;
+    let answerText: string | undefined;
+    let studentComment: string | undefined;
+    let fileBuffer: Buffer | null = null;
+    let fileName = '';
+    let fileMimeType = '';
+
+    const contentType = request.headers['content-type'] || '';
+    if (contentType.includes('multipart/form-data')) {
+      const parts = request.parts();
+      for await (const part of parts) {
+        if (part.type === 'file' && part.fieldname === 'file') {
+          const chunks: Buffer[] = [];
+          for await (const chunk of part.file) {
+            chunks.push(chunk);
+          }
+          fileBuffer = Buffer.concat(chunks);
+          fileName = part.filename;
+          fileMimeType = part.mimetype;
+        } else if (part.type === 'field') {
+          const value = part.value as string;
+          if (part.fieldname === 'status') status = value;
+          else if (part.fieldname === 'answerText') answerText = value;
+          else if (part.fieldname === 'studentComment') studentComment = value;
+        }
+      }
+    } else {
+      const body = request.body as Record<string, string>;
+      status = body.status;
+      answerText = body.answerText;
+      studentComment = body.studentComment;
+    }
 
     const sa = await prisma.studentAssignment.findUnique({
       where: { id },
@@ -327,7 +414,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Назначение не найдено' });
     }
 
-    if (!body.status || !['submitted', 'reviewed', 'needs_revision'].includes(body.status)) {
+    if (!status || !['submitted', 'reviewed', 'needs_revision'].includes(status)) {
       return reply.status(400).send({ error: 'Статус: submitted, reviewed или needs_revision' });
     }
 
@@ -336,7 +423,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Нет доступа' });
     }
 
-    if (!isAdmin && body.status !== 'submitted') {
+    if (!isAdmin && status !== 'submitted') {
       return reply.status(403).send({ error: 'Студент может только отправить задание (submitted)' });
     }
 
@@ -346,15 +433,25 @@ export async function assignmentRoutes(app: FastifyInstance) {
     }
 
     // Админ: reviewed/needs_revision только из submitted
-    if (isAdmin && (body.status === 'reviewed' || body.status === 'needs_revision') && sa.status !== 'submitted') {
+    if (isAdmin && (status === 'reviewed' || status === 'needs_revision') && sa.status !== 'submitted') {
       return reply.status(400).send({ error: 'Проверить можно только отправленное задание' });
     }
 
-    const data: Record<string, unknown> = { status: body.status };
-    if (body.status === 'submitted') {
+    const data: Record<string, unknown> = { status };
+    if (status === 'submitted') {
       data.submittedAt = new Date();
+      if (answerText) data.content = answerText;
+      if (studentComment) data.studentComment = studentComment;
+
+      // Upload file if provided
+      if (fileBuffer && fileName) {
+        const uploaded = await uploadFile(fileBuffer, fileName, fileMimeType);
+        data.fileUrl = uploaded.key;
+        data.fileName = fileName;
+        data.fileSize = uploaded.size;
+      }
     }
-    if (body.status === 'reviewed') {
+    if (status === 'reviewed') {
       data.reviewedAt = new Date();
     }
 
@@ -372,8 +469,46 @@ export async function assignmentRoutes(app: FastifyInstance) {
       },
     });
 
+    // Create ThreadEntry for submission so teacher sees it in thread
+    if (status === 'submitted') {
+      const thread = await prisma.thread.findUnique({
+        where: { studentId: sa.studentId },
+      });
+
+      if (thread) {
+        const entryContent = answerText || `Сдано задание «${updated.assignment.title}»`;
+        const entryMetadata: Record<string, unknown> = {
+          submissionType: 'assignment',
+          studentAssignmentId: updated.id,
+        };
+
+        if (updated.fileUrl) {
+          entryMetadata.s3Key = updated.fileUrl;
+          entryMetadata.fileName = updated.fileName;
+          entryMetadata.mimeType = fileMimeType || null;
+          entryMetadata.size = updated.fileSize;
+        }
+
+        await prisma.threadEntry.create({
+          data: {
+            threadId: thread.id,
+            authorId: sa.studentId,
+            type: updated.fileUrl ? 'file' : 'text',
+            content: entryContent,
+            metadata: (entryMetadata as Parameters<typeof prisma.threadEntry.create>[0]['data']['metadata']),
+            assignmentId: sa.assignmentId,
+          },
+        });
+      }
+    }
+
+    // Generate signed URL for file if present
+    if (updated.fileUrl) {
+      (updated as Record<string, unknown>).fileSignedUrl = await getFileUrl(updated.fileUrl);
+    }
+
     // Notify relevant parties about status change
-    if (body.status === 'submitted') {
+    if (status === 'submitted') {
       const admins = await prisma.user.findMany({
         where: { role: 'admin', isActive: true, deletedAt: null },
         select: { id: true },
@@ -385,7 +520,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         `${updated.student.name} сдал задание «${updated.assignment.title}»`,
         { studentAssignmentId: updated.id, assignmentId: updated.assignmentId, studentId: updated.studentId },
       ).catch(() => {});
-    } else if (body.status === 'reviewed') {
+    } else if (status === 'reviewed') {
       createNotification({
         userId: updated.studentId,
         type: 'assignment_reviewed',
@@ -393,7 +528,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         body: `Ваше задание «${updated.assignment.title}» проверено преподавателем`,
         metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
       }).catch(() => {});
-    } else if (body.status === 'needs_revision') {
+    } else if (status === 'needs_revision') {
       createNotification({
         userId: updated.studentId,
         type: 'assignment_reviewed',
