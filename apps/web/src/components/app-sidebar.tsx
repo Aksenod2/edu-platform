@@ -106,9 +106,6 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg">
               <Link href={rootHref}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <LayoutGrid className="size-4" />
-                </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold tracking-tight">PLATFORM</span>
                   <span className="text-xs text-muted-foreground">
