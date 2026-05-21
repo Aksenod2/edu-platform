@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
-import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner } from '@platform/ui/atoms';
 import {
   getThread,
@@ -12,12 +10,10 @@ import {
   uploadThreadFile,
   type ThreadEntry,
 } from '@/lib/api';
-import { STUDENT_NAV } from '@/lib/student-nav';
 
 export default function StudentThreadPage() {
-  const { user, accessToken, loading, logout } = useAuth();
+  const { user, accessToken } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -39,12 +35,6 @@ export default function StudentThreadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -196,27 +186,10 @@ export default function StudentThreadPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-  if (!user || user.role !== 'student') return null;
-
   const hasText = textContent.trim().length > 0;
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <div
         className="flex flex-col"
         style={{ height: 'calc(100vh - var(--header-height))', maxWidth: 800, margin: '0 auto' }}
@@ -290,7 +263,7 @@ export default function StudentThreadPage() {
                   )}
                   <MessageBubble
                     entry={entry}
-                    currentUserId={user.id}
+                    currentUserId={user?.id ?? ''}
                     showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
                   />
                 </div>
@@ -436,7 +409,7 @@ export default function StudentThreadPage() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 

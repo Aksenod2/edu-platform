@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
 import { getPushPermissionStatus } from '@/lib/push';
 import {
   getNotificationPreferences,
@@ -11,26 +9,9 @@ import {
   type NotificationPreference,
   type NotificationCategory,
 } from '@/lib/api';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { PageHeader } from '@platform/ui/templates';
 import { Card, CardBody } from '@platform/ui/molecules';
 import { Mono, Text, Heading } from '@platform/ui/atoms';
-import { Spinner } from '@platform/ui/atoms';
-
-const STUDENT_NAV = [
-  {
-    label: 'Обучение',
-    items: [
-      { label: 'Обзор',      href: '/dashboard',                            icon: <GridIcon /> },
-      { label: 'Уроки',      href: '/dashboard/lessons',                    icon: <BookIcon /> },
-      { label: 'Задания',    href: '/dashboard/assignments',                 icon: <ClipboardIcon /> },
-      { label: 'Тред',       href: '/dashboard/thread',                      icon: <ChatIcon /> },
-      { label: 'Расписание', href: '/dashboard/schedule',                   icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/dashboard/notifications', icon: <BellIcon /> },
-      { label: 'Профиль',   href: '/dashboard/profile',                    icon: <UserIcon /> },
-      { label: 'Настройки', href: '/dashboard/settings/notifications',      icon: <BellIcon /> },
-    ],
-  },
-];
 
 interface CategoryRow {
   category: NotificationCategory;
@@ -86,9 +67,7 @@ const CATEGORY_ROWS: CategoryRow[] = [
 ];
 
 export default function NotificationSettingsPage() {
-  const { user, accessToken, loading: authLoading, logout } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { user, accessToken } = useAuth();
 
   const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,11 +75,6 @@ export default function NotificationSettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [pushStatus, setPushStatus] = useState<NotificationPermission | 'unsupported'>('default');
-
-  useEffect(() => {
-    if (!authLoading && !user) router.push('/login');
-    if (!authLoading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, authLoading, router]);
 
   useEffect(() => {
     setPushStatus(getPushPermissionStatus());
@@ -194,6 +168,14 @@ export default function NotificationSettingsPage() {
     }
   }, [accessToken, prefs]);
 
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </div>
+    );
+  }
+
   const allEmailOff = CATEGORY_ROWS.filter((r) => !r.system).every((r) => {
     const p = getPref(r.category);
     return p ? !p.channelEmail : false;
@@ -204,28 +186,10 @@ export default function NotificationSettingsPage() {
   });
   const globalOff = allEmailOff && allPushOff;
 
-  if (authLoading || loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
-  const visibleRows = CATEGORY_ROWS.filter((r) => r.roles.includes(user.role as 'student' | 'admin'));
+  const visibleRows = CATEGORY_ROWS.filter((r) => r.roles.includes(user?.role as 'student' | 'admin'));
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: user.role as 'admin' | 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <PageHeader
         title="Настройки уведомлений"
         subtitle="Управляйте тем, какие уведомления и по каким каналам вы получаете"
@@ -430,7 +394,7 @@ export default function NotificationSettingsPage() {
           * In-app уведомления (колокольчик) всегда активны и не могут быть отключены — они гарантируют доступ к важным событиям платформы.
         </Mono>
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 
@@ -487,67 +451,5 @@ function Toggle({ checked, onChange, disabled = false, label }: ToggleProps) {
         </Mono>
       )}
     </div>
-  );
-}
-
-// ─── Inline icons ─────────────────────────────────────────────────────────
-
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
-    </svg>
-  );
-}
-function BookIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 2h10v12H3z" />
-      <path d="M6 2v12M6 5h4M6 8h4M6 11h4" />
-    </svg>
-  );
-}
-function ClipboardIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="3" y="2" width="10" height="13" rx="1" />
-      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
-    </svg>
-  );
-}
-function ChatIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 2h12v9H5l-3 3V2z" />
-      <path d="M5 6h6M5 9h3" />
-    </svg>
-  );
-}
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
-    </svg>
-  );
-}
-function UserIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="5" r="3" />
-      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-    </svg>
-  );
-}
-function BellIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
-      <path d="M8 2.5V1" />
-    </svg>
   );
 }

@@ -1,11 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
-import { STUDENT_NAV } from '@/lib/student-nav';
-import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge } from '@platform/ui/atoms';
 import {
   getStudentAssignments,
@@ -41,9 +38,8 @@ export default function AssignmentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { user, accessToken, loading, logout } = useAuth();
+  const { user, accessToken } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   const [sa, setSa] = useState<StudentAssignment | null>(null);
   const [loadingData, setLoadingData] = useState(true);
@@ -55,12 +51,6 @@ export default function AssignmentDetailPage({
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   const fetchAssignment = useCallback(async () => {
     if (!accessToken) return;
@@ -124,7 +114,7 @@ export default function AssignmentDetailPage({
     }
   };
 
-  if (loading || loadingData) {
+  if (loadingData) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
@@ -132,22 +122,12 @@ export default function AssignmentDetailPage({
     );
   }
 
-  if (!user || user.role !== 'student') return null;
-
   const a = sa?.assignment;
   const isOverdue = sa && a?.dueDate && new Date(a.dueDate) < new Date() && (sa.status === 'assigned' || sa.status === 'needs_revision');
   const isShort = a?.type === 'short';
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <div className="max-w-2xl">
         {/* Back */}
         <Link
@@ -515,6 +495,6 @@ export default function AssignmentDetailPage({
           </>
         )}
       </div>
-    </DashboardLayout>
+    </>
   );
 }

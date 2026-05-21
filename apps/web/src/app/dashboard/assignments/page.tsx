@@ -1,11 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
-import { STUDENT_NAV } from '@/lib/student-nav';
-import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
 import {
   getStudentAssignments,
@@ -38,9 +35,8 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function StudentAssignmentsPage() {
-  const { user, accessToken, loading, logout } = useAuth();
+  const { user, accessToken } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   const [assignments, setAssignments] = useState<StudentAssignment[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -55,12 +51,6 @@ export default function StudentAssignmentsPage() {
   const [submissionText, setSubmissionText] = useState('');
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   const fetchData = useCallback(async () => {
     if (!accessToken) return;
@@ -147,28 +137,8 @@ export default function StudentAssignmentsPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-  if (!user || user.role !== 'student') return null;
-
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: 'student' },
-        onLogout: async () => {
-          await logout();
-          router.push('/login');
-        },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <div className="max-w-3xl">
         {/* Page header */}
         <div className="mb-8">
@@ -748,7 +718,7 @@ export default function StudentAssignmentsPage() {
             </div>
           );
         })()}
-    </DashboardLayout>
+    </>
   );
 }
 

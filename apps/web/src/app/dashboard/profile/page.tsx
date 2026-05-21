@@ -1,18 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Button, Input, Spinner, Textarea } from '@platform/ui/atoms';
-import { STUDENT_NAV } from '@/lib/student-nav';
+import { PageHeader } from '@platform/ui/templates';
+import { Button, Input, Textarea } from '@platform/ui/atoms';
 
 export default function ProfilePage() {
-  const { user, accessToken, loading, logout, setUser } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { user, accessToken, setUser } = useAuth();
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -25,12 +20,6 @@ export default function ProfilePage() {
   const [contactEmail, setContactEmail] = useState('');
   const [contactTelegram, setContactTelegram] = useState('');
   const [direction, setDirection] = useState('');
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   const loadProfile = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -54,6 +43,16 @@ export default function ProfilePage() {
   useEffect(() => {
     if (accessToken && user) loadProfile();
   }, [accessToken, user, loadProfile]);
+
+  if (!user) return null;
+
+  if (loadingProfile) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,16 +89,6 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading || loadingProfile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
   const isCompleted = !!profile?.questionnaireCompletedAt;
   const initials = user.name
     .split(' ')
@@ -109,15 +98,7 @@ export default function ProfilePage() {
     .toUpperCase();
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: user.role as 'admin' | 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <PageHeader
         title={isCompleted ? 'Мой профиль' : 'Анкета (Задание №0)'}
         subtitle={isCompleted ? 'Ваши контактные и профессиональные данные' : 'Заполните для начала обучения'}
@@ -264,7 +245,7 @@ export default function ProfilePage() {
           )}
         </div>
       </form>
-    </DashboardLayout>
+    </>
   );
 }
 

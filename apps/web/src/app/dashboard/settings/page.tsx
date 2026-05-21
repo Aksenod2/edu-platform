@@ -1,12 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Spinner } from '@platform/ui/atoms';
-import { STUDENT_NAV } from '@/lib/student-nav';
+import { PageHeader } from '@platform/ui/templates';
 
 interface SettingCard {
   title: string;
@@ -33,36 +29,13 @@ const SETTINGS_CARDS: SettingCard[] = [
 ];
 
 export default function StudentSettingsPage() {
-  const { user, loading, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
 
   if (!user) return null;
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: user.role as 'admin' | 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <PageHeader
         title="Настройки"
         subtitle="Управление аккаунтом и предпочтениями"
@@ -125,7 +98,7 @@ export default function StudentSettingsPage() {
           Версия платформы — Nothing Design System
         </p>
       </div>
-    </DashboardLayout>
+    </>
   );
 }
 

@@ -1,13 +1,9 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useNotifications } from '@/lib/notifications-context';
-import { NotificationBell } from '@/lib/notification-bell';
-import { STUDENT_NAV } from '@/lib/student-nav';
-import { DashboardLayout } from '@platform/ui/templates';
-import { Spinner } from '@platform/ui/atoms';
 import {
   getNotificationLink,
   markNotificationRead,
@@ -41,16 +37,9 @@ function formatRelativeTime(isoString: string): string {
 }
 
 export default function StudentNotificationsPage() {
-  const { user, accessToken, loading, logout } = useAuth();
-  const { notifications, unreadCount, loading: nLoading, markAllRead, refresh } = useNotifications();
+  const { accessToken } = useAuth();
+  const { notifications, unreadCount, markAllRead, refresh } = useNotifications();
   const router = useRouter();
-  const pathname = usePathname();
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin/notifications');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   const handleNotificationClick = useCallback(
     async (notification: Notification) => {
@@ -69,29 +58,8 @@ export default function StudentNotificationsPage() {
     await markAllRead();
   }, [markAllRead]);
 
-  if (loading || nLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: user.role as 'admin' | 'student' },
-        onLogout: async () => {
-          await logout();
-          router.push('/login');
-        },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       {/* Page header */}
       <div className="mb-8">
         <Link
@@ -160,7 +128,7 @@ export default function StudentNotificationsPage() {
           ))}
         </div>
       )}
-    </DashboardLayout>
+    </>
   );
 }
 

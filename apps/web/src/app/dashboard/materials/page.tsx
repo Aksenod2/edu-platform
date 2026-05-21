@@ -1,18 +1,14 @@
 'use client';
 
 import { Suspense, useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NotificationBell } from '@/lib/notification-bell';
 import { getStreams, getLessons, type Stream, type Lesson } from '@/lib/api';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
+import { PageHeader } from '@platform/ui/templates';
 import { Spinner } from '@platform/ui/atoms';
-import { STUDENT_NAV } from '@/lib/student-nav';
 
 function MaterialsContent() {
-  const { user, accessToken, loading, logout } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { user, accessToken } = useAuth();
   const searchParams = useSearchParams();
 
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -21,12 +17,6 @@ function MaterialsContent() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-    if (!loading && user?.role === 'admin') router.push('/admin');
-    if (!loading && user?.mustChangePassword) router.push('/change-password');
-  }, [user, loading, router]);
 
   useEffect(() => {
     if (!accessToken || !user) return;
@@ -59,16 +49,6 @@ function MaterialsContent() {
     if (selectedStreamId) fetchLessons();
   }, [selectedStreamId, fetchLessons]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (!user || user.role !== 'student') return null;
-
   const lessonsWithMaterials = lessons.filter(
     (l) => l.videoUrl || l.summary || l.notes,
   );
@@ -77,15 +57,7 @@ function MaterialsContent() {
   );
 
   return (
-    <DashboardLayout
-      currentPath={pathname}
-      header={{
-        user: { name: user.name, role: 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
-        notificationBell: <NotificationBell />,
-      }}
-      sidebar={{ sections: STUDENT_NAV }}
-    >
+    <>
       <PageHeader
         title="Учебные материалы"
         subtitle="Конспекты, видеозаписи и заметки к урокам"
@@ -179,7 +151,7 @@ function MaterialsContent() {
           )}
         </div>
       )}
-    </DashboardLayout>
+    </>
   );
 }
 
