@@ -14,6 +14,14 @@ import { ChevronLeft, Link2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 const statusLabels: Record<string, string> = {
   assigned: 'Назначено',
@@ -86,7 +94,7 @@ export default function AssignmentDetailPage() {
       <div className="mb-4">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-muted-foreground hover:text-foreground text-sm font-mono uppercase tracking-wider transition-colors"
+          className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
           Назад
@@ -117,46 +125,34 @@ export default function AssignmentDetailPage() {
       ) : (
         <div className="flex flex-col gap-6">
           {/* Assignment meta card */}
-          <div className="rounded-md border bg-card p-6">
+          <div className="rounded-lg border bg-card p-6">
             <div className="flex flex-wrap gap-6">
               <div className="flex flex-col gap-1">
-                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                  Тип
-                </span>
-                <span className="text-foreground text-sm">{typeLabel}</span>
+                <span className="text-xs text-muted-foreground">Тип</span>
+                <span className="text-sm text-foreground">{typeLabel}</span>
               </div>
               {dueDateStr && (
                 <div className="flex flex-col gap-1">
-                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Дедлайн
-                  </span>
-                  <span className="text-foreground text-sm">{dueDateStr}</span>
+                  <span className="text-xs text-muted-foreground">Дедлайн</span>
+                  <span className="text-sm text-foreground">{dueDateStr}</span>
                 </div>
               )}
               {assignment.lesson && (
                 <div className="flex flex-col gap-1">
-                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Урок
-                  </span>
-                  <span className="text-foreground text-sm">{assignment.lesson.title}</span>
+                  <span className="text-xs text-muted-foreground">Урок</span>
+                  <span className="text-sm text-foreground">{assignment.lesson.title}</span>
                 </div>
               )}
               <div className="flex flex-col gap-1">
-                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                  Студентов
-                </span>
-                <span className="font-mono text-xs text-foreground">
-                  {studentAssignments.length}
-                </span>
+                <span className="text-xs text-muted-foreground">Студентов</span>
+                <span className="text-sm text-foreground">{studentAssignments.length}</span>
               </div>
             </div>
 
             {assignment.description && (
-              <div className="mt-4 pt-4 border-t">
-                <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                  Описание
-                </span>
-                <p className="text-muted-foreground text-sm leading-relaxed">
+              <div className="mt-4 border-t pt-4">
+                <span className="mb-2 block text-xs text-muted-foreground">Описание</span>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                   {assignment.description}
                 </p>
               </div>
@@ -165,21 +161,16 @@ export default function AssignmentDetailPage() {
             {assignment.tags.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {assignment.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 rounded-md border text-muted-foreground text-xs font-mono uppercase"
-                  >
+                  <Badge key={tag} variant="outline">
                     {tag}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )}
 
             {assignment.materials.length > 0 && (
-              <div className="mt-4 pt-4 border-t">
-                <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                  Материалы
-                </span>
+              <div className="mt-4 border-t pt-4">
+                <span className="mb-2 block text-xs text-muted-foreground">Материалы</span>
                 <div className="flex flex-col gap-1">
                   {assignment.materials.map((m, i) => (
                     <a
@@ -187,7 +178,7 @@ export default function AssignmentDetailPage() {
                       href={m.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-foreground hover:text-muted-foreground text-sm transition-colors"
+                      className="flex items-center gap-2 text-sm text-foreground transition-colors hover:text-muted-foreground"
                     >
                       <Link2 className="size-4" />
                       {m.name}
@@ -200,60 +191,49 @@ export default function AssignmentDetailPage() {
 
           {/* Student assignments table */}
           <div>
-            <span className="block font-mono text-xs text-muted-foreground uppercase tracking-widest mb-4">
-              Студенты
-            </span>
+            <h2 className="mb-4 text-lg font-semibold tracking-tight">Студенты</h2>
 
             {studentAssignments.length === 0 ? (
-              <div className="rounded-md border bg-card px-6 py-8 text-center">
-                <p className="text-muted-foreground text-sm">
+              <div className="rounded-lg border bg-card px-6 py-8 text-center">
+                <p className="text-sm text-muted-foreground">
                   Задание ещё не назначено ни одному студенту.
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      {['Студент', 'Статус', 'Отправлено', 'Действия'].map((h) => (
-                        <th
-                          key={h}
-                          className="px-4 py-3 text-left text-muted-foreground font-mono text-xs uppercase tracking-wider"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Студент</TableHead>
+                      <TableHead>Статус</TableHead>
+                      <TableHead>Отправлено</TableHead>
+                      <TableHead>Действия</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {studentAssignments.map((sa) => (
-                      <tr
-                        key={sa.id}
-                        className="border-b hover:bg-card transition-colors"
-                      >
-                        <td className="px-4 py-3">
+                      <TableRow key={sa.id}>
+                        <TableCell>
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-foreground font-medium">
+                            <span className="font-medium text-foreground">
                               {sa.student?.name ?? '—'}
                             </span>
-                            <span className="text-muted-foreground text-xs font-mono">
+                            <span className="text-xs text-muted-foreground">
                               {sa.student?.email ?? ''}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
+                        </TableCell>
+                        <TableCell>
                           <Badge variant={statusVariants[sa.status] ?? 'secondary'}>
                             {statusLabels[sa.status] ?? sa.status}
                           </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-muted-foreground text-xs font-mono">
-                            {sa.submittedAt
-                              ? new Date(sa.submittedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-                              : '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {sa.submittedAt
+                            ? new Date(sa.submittedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+                            : '—'}
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-2">
                             {sa.student && (
                               <Button
@@ -286,11 +266,11 @@ export default function AssignmentDetailPage() {
                               </>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </div>
