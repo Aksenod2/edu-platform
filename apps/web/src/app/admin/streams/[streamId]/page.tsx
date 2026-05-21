@@ -45,6 +45,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LessonsManager } from '@/components/lessons-manager';
 import { StreamAssignmentsManager } from '@/components/stream-assignments-manager';
@@ -398,6 +408,9 @@ function StudentsTab({
   const [error, setError] = useState('');
   const [removingId, setRemovingId] = useState<string | null>(null);
 
+  // Подтверждение удаления ученика из потока
+  const [studentToRemove, setStudentToRemove] = useState<Student | null>(null);
+
   // Add-students dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -477,7 +490,6 @@ function StudentsTab({
 
   const handleRemove = async (student: Student) => {
     if (!accessToken) return;
-    if (!confirm(`Убрать ученика «${student.name}» из потока?`)) return;
     setRemovingId(student.id);
     setError('');
     try {
@@ -553,7 +565,7 @@ function StudentsTab({
                       size="icon"
                       className="size-8 text-destructive hover:text-destructive"
                       disabled={removingId === student.id}
-                      onClick={() => handleRemove(student)}
+                      onClick={() => setStudentToRemove(student)}
                     >
                       {removingId === student.id ? (
                         <Loader2 className="animate-spin" />
@@ -646,6 +658,29 @@ function StudentsTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!studentToRemove}
+        onOpenChange={(open) => { if (!open) setStudentToRemove(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Убрать ученика из потока?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {studentToRemove && `Ученик «${studentToRemove.name}» будет убран из этого потока.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (studentToRemove) handleRemove(studentToRemove); }}
+            >
+              Убрать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
