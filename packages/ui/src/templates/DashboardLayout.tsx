@@ -3,7 +3,7 @@
  * Atomic level: Template
  *
  * Состав: Header (организм) + Sidebar (организм) + main content area
- * Токены: --sidebar-width, --header-height, --content-padding
+ * Токены: --sidebar-width, --header-height, --content-max-w
  *
  * Скелет: фиксированный хедер, фиксированный сайдбар, прокручиваемый контент
  * Применяется на: /dashboard, /admin, /admin/students, /admin/streams
@@ -26,35 +26,14 @@ export interface DashboardLayoutProps {
 
 export function DashboardLayout({ header, sidebar, children, currentPath }: DashboardLayoutProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        background: 'var(--color-bg-base)',
-      }}
-    >
+    <div className="flex flex-col min-h-screen bg-[var(--color-bg-base)]">
       <Header {...header} />
 
-      <div
-        style={{
-          display: 'flex',
-          flex: 1,
-          overflow: 'hidden',
-          height: 'calc(100vh - var(--header-height))',
-        }}
-      >
+      <div className="flex flex-1 overflow-hidden h-[calc(100vh-var(--header-height))]">
         <Sidebar {...sidebar} currentPath={currentPath} />
 
-        <main
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: 'var(--content-padding)',
-            background: 'var(--color-bg-base)',
-          }}
-        >
-          <div style={{ maxWidth: 'var(--content-max-w)' }}>
+        <main className="flex-1 overflow-y-auto p-8 bg-[var(--color-bg-base)]">
+          <div className="max-w-[var(--content-max-w)]">
             {children}
           </div>
         </main>
@@ -73,42 +52,18 @@ export interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, action }: PageHeaderProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 'var(--space-4)',
-        marginBottom: 'var(--space-8)',
-      }}
-    >
+    <div className="flex items-start justify-between gap-4 mb-8">
       <div>
-        <h1
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-2xl)',
-            fontWeight: 'var(--font-bold)' as unknown as number,
-            letterSpacing: 'var(--tracking-tight)',
-            color: 'var(--color-text-primary)',
-            lineHeight: 'var(--leading-tight)',
-          }}
-        >
+        <h1 className="font-sans text-2xl font-bold tracking-[var(--tracking-tight)] text-[var(--color-text-primary)] leading-[var(--leading-tight)]">
           {title}
         </h1>
         {subtitle && (
-          <p
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-text-tertiary)',
-              marginTop: 'var(--space-1)',
-            }}
-          >
+          <p className="font-sans text-sm text-[var(--color-text-tertiary)] mt-1">
             {subtitle}
           </p>
         )}
       </div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * Atomic level: Template
  *
  * Состав: центрированный контейнер + DotMatrix фон
- * Токены: --color-bg-base, spacing
+ * Токены: bg-[var(--color-bg-base)], spacing, border
  *
  * Применяется на: /login, /forgot-password, /reset-password, /invite, /change-password
  *
@@ -14,6 +14,7 @@
  * - Всё внимание на форму — ноль визуального шума
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 
 export interface AuthLayoutProps {
   children: React.ReactNode;
@@ -23,60 +24,28 @@ export interface AuthLayoutProps {
 
 export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
   return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--color-bg-base)',
-        padding: 'var(--space-8)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="relative flex items-center justify-center min-h-screen bg-[var(--color-bg-base)] p-8 overflow-hidden">
       {/* Dot-matrix фоновый декор */}
       <DotMatrixBackground />
 
       {/* Форм-карточка */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          width: '100%',
-          maxWidth: 400,
-          background: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-default)',
-          borderRadius: 'var(--radius-xs)',
-          padding: 'var(--space-8)',
-        }}
-      >
+      <div className="relative z-10 w-full max-w-[400px] bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] rounded-[var(--radius-xs)] p-8">
         {/* Логотип и заголовок */}
-        <div style={{ marginBottom: 'var(--space-8)', textAlign: 'center' }}>
+        <div className="mb-8 text-center">
           <AuthLogo />
           {title && (
             <h1
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: 'var(--text-xl)',
-                fontWeight: 'var(--font-semibold)' as unknown as number,
-                color: 'var(--color-text-primary)',
-                letterSpacing: 'var(--tracking-tight)',
-                marginTop: 'var(--space-4)',
-                marginBottom: subtitle ? 'var(--space-2)' : 0,
-              }}
+              className={cn(
+                'font-sans text-xl font-semibold text-[var(--color-text-primary)]',
+                'tracking-[var(--tracking-tight)] mt-4',
+                subtitle ? 'mb-2' : 'mb-0',
+              )}
             >
               {title}
             </h1>
           )}
           {subtitle && (
-            <p
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: 'var(--text-sm)',
-                color: 'var(--color-text-tertiary)',
-              }}
-            >
+            <p className="font-sans text-sm text-[var(--color-text-tertiary)]">
               {subtitle}
             </p>
           )}
@@ -97,36 +66,18 @@ function DotMatrixBackground() {
   return (
     <div
       aria-hidden
+      className="absolute inset-0 grid opacity-[0.15] pointer-events-none"
       style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'grid',
         gridTemplateColumns: `repeat(${cols}, 1fr)`,
         gridTemplateRows: `repeat(${rows}, 1fr)`,
-        opacity: 0.15,
-        pointerEvents: 'none',
       }}
     >
       {dots.map((_, i) => {
         const visible = Math.random() > 0.65;
         return (
-          <span
-            key={i}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+          <span key={i} className="flex items-center justify-center">
             {visible && (
-              <span
-                style={{
-                  width: 2,
-                  height: 2,
-                  borderRadius: '50%',
-                  background: 'var(--color-border-strong)',
-                }}
-              />
+              <span className="w-[2px] h-[2px] rounded-full bg-[var(--color-border-strong)]" />
             )}
           </span>
         );
@@ -138,42 +89,22 @@ function DotMatrixBackground() {
 // Логотип в auth-контексте
 function AuthLogo() {
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 'var(--space-2)',
-      }}
-    >
+    <div className="inline-flex items-center gap-2">
       <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 4px)',
-          gap: 3,
-        }}
+        className="grid gap-[3px]"
+        style={{ gridTemplateColumns: 'repeat(3, 4px)' }}
       >
-        {[1,1,1, 1,0,1, 1,1,1].map((on, i) => (
+        {[1, 1, 1, 1, 0, 1, 1, 1, 1].map((on, i) => (
           <span
             key={i}
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: '50%',
-              background: on ? 'var(--color-accent-red)' : 'transparent',
-            }}
+            className={cn(
+              'w-[4px] h-[4px] rounded-full',
+              on ? 'bg-[var(--color-accent-red)]' : 'bg-transparent',
+            )}
           />
         ))}
       </div>
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 'var(--text-sm)',
-          fontWeight: 700,
-          letterSpacing: 'var(--tracking-widest)',
-          color: 'var(--color-text-primary)',
-          textTransform: 'uppercase',
-        }}
-      >
+      <span className="font-mono text-sm font-bold tracking-[var(--tracking-widest)] text-[var(--color-text-primary)] uppercase">
         PLATFORM
       </span>
     </div>
