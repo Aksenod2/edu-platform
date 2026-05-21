@@ -1,14 +1,9 @@
 /**
- * @platform/ui — Nothing Phone Design System
+ * @platform/ui — общие утилиты и токены.
  *
- * Атомарная иерархия:
- * - tokens:    CSS custom properties + TypeScript зеркало
- * - atoms:     Button, Input, Label, Badge, Typography, Divider, Spinner, Avatar
- * - molecules: FormField, Card, NavItem, EmptyState
- * - organisms: Header, Sidebar, StudentCard, AssignmentList
- * - templates: DashboardLayout, AuthLayout
- *
- * Подключение CSS-токенов: import '@platform/ui/tailwind' в root layout
+ * Легаси-компоненты (atoms/molecules/organisms/templates) удалены — UI
+ * собирается напрямую из shadcn/ui в apps/web. Здесь остались только
+ * утилита cn и дизайн-токены.
  */
 
 // Утилиты
@@ -16,15 +11,3 @@ export { cn } from './lib/utils';
 
 // Токены
 export * from './tokens';
-
-// Атомы
-export * from './atoms';
-
-// Молекулы
-export * from './molecules';
-
-// Организмы
-export * from './organisms';
-
-// Шаблоны
-export * from './templates';
