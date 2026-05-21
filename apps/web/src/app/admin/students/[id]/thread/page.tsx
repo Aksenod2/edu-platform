@@ -11,7 +11,7 @@ export default function AdminStudentThreadPage() {
   const studentId = params.id as string;
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-var(--header-height))] w-full max-w-3xl flex-col">
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col min-h-0">
       <div className="border-b px-4 pt-4 pb-3">
         <Button
           variant="ghost"
