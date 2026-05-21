@@ -8,9 +8,12 @@ services:
   - type: web
     name: platform-api
     plan: free
-    runtime: docker
-    dockerfilePath: ./apps/api/Dockerfile
-    dockerContext: .
+    runtime: image
+    image:
+      url: ghcr.io/aksenod2/edu-platform-api:latest
+      creds:
+        fromRegistryCreds:
+          name: ghcr
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -49,9 +52,9 @@ services:
   - type: web
     name: platform-web
     plan: free
-    runtime: docker
-    dockerfilePath: ./apps/web/Dockerfile
-    dockerContext: .
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        sync: false
+    runtime: image
+    image:
+      url: ghcr.io/aksenod2/edu-platform-web:latest
+      creds:
+        fromRegistryCreds:
+          name: ghcr

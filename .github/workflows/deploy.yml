@@ -1,20 +1,24 @@
 name: Сборка и деплой образов
 
 # Обходим лимит build-минут Render: образы собираются здесь (бесплатные
-# минуты GitHub Actions), пушатся в GHCR, а Render деплоит готовый образ.
+# минуты GitHub Actions), пушатся в GHCR (приватные), а Render тянет готовый
+# образ по Registry Credentials. На Render ничего не собирается.
 #
-# Что настроить на стороне Render (один раз):
-# 1. Сервисы platform-api и platform-web → перевести на «Deploy an existing image»:
-#      platform-api → ghcr.io/aksenod2/edu-platform-api:latest
-#      platform-web → ghcr.io/aksenod2/edu-platform-web:latest
-#    (если пакеты GHCR приватные — сделать их public ИЛИ добавить в Render
-#     Registry Credentials для ghcr.io: логин = GitHub-username, пароль = PAT с read:packages.)
-# 2. Сохранить ВСЕ env-переменные сервисов (DATABASE_URL, JWT_SECRET, S3_*, SMTP_*,
-#    CORS_ORIGIN, PORT, HOST у api; NEXT_PUBLIC_API_URL у web) — они не зависят от источника сборки.
-# 3. Создать Deploy Hook у каждого сервиса и добавить URL'ы в Secrets репозитория:
+# Что настроить один раз:
+# 1. PAT: создать GitHub Personal Access Token (classic) со scope read:packages.
+# 2. Render → Workspace Settings → Registry Credentials → добавить ghcr.io:
+#      Name  = ghcr            (ВАЖНО: ровно это имя, оно прописано в render.yaml)
+#      User  = Aksenod2
+#      Token = PAT из п.1
+#    (имя `ghcr` связывает креды с image.creds.fromRegistryCreds.name в render.yaml)
+# 3. Сервисы platform-api / platform-web уже описаны в render.yaml как
+#    runtime: image на ghcr.io/aksenod2/edu-platform-{api,web}:latest.
+#    Все runtime-env (DATABASE_URL, JWT_SECRET, S3_*, SMTP_*, CORS_ORIGIN у api)
+#    задаются на Render и не зависят от источника сборки.
+# 4. Создать Deploy Hook у каждого сервиса и добавить URL'ы в Secrets репозитория:
 #      RENDER_DEPLOY_HOOK_API, RENDER_DEPLOY_HOOK_WEB
-# 4. (web) Задать переменную репозитория NEXT_PUBLIC_API_URL (Settings → Variables)
-#    — она встраивается в образ на этапе сборки.
+# 5. (web) Задать переменную репозитория NEXT_PUBLIC_API_URL (Settings → Variables)
+#    — она встраивается в web-образ на этапе сборки здесь (build-arg ниже).
 
 on:
   push:
