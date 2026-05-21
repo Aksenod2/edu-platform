@@ -4,9 +4,10 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { AuthLayout } from '@platform/ui/templates';
-import { FormField } from '@platform/ui/molecules';
-import { Button } from '@platform/ui/atoms';
-import { Text } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -39,72 +40,46 @@ export default function LoginPage() {
 
   return (
     <AuthLayout title="Вход" subtitle="Введите свои данные для доступа">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {error && (
-          <div
-            style={{
-              padding: 'var(--spacing-3) var(--spacing-4)',
-              background: 'var(--color-error-dim)',
-              border: '1px solid var(--color-error)',
-              borderRadius: 'var(--radius-xs)',
-              userSelect: 'text',
-              cursor: 'text',
-            }}
-          >
-            <Text size="sm" color="var(--color-error)">{error}</Text>
-          </div>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
-        <FormField
-          id="email"
-          label="Email"
-          inputProps={{
-            type: 'email',
-            value: email,
-            onChange: (e) => setEmail(e.target.value),
-            required: true,
-            placeholder: 'name@example.com',
-            autoComplete: 'email',
-          }}
-        />
-
-        <div>
-          <FormField
-            id="password"
-            label="Пароль"
-            inputProps={{
-              type: 'password',
-              value: password,
-              onChange: (e) => setPassword(e.target.value),
-              required: true,
-              placeholder: '••••••••',
-              autoComplete: 'current-password',
-            }}
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="name@example.com"
+            autoComplete="email"
           />
-          <div style={{ marginTop: 'var(--spacing-2)', textAlign: 'right' }}>
-            <a
-              href="/forgot-password"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-xs)',
-                color: 'var(--color-text-tertiary)',
-                textDecoration: 'none',
-                letterSpacing: 'var(--tracking-wide)',
-              }}
-            >
-              ЗАБЫЛИ ПАРОЛЬ
-            </a>
-          </div>
         </div>
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={loading}
-        >
-          {loading ? 'ВХОД...' : 'ВОЙТИ'}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Пароль</Label>
+            <a href="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              Забыли пароль?
+            </a>
+          </div>
+          <Input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="••••••••"
+            autoComplete="current-password"
+          />
+        </div>
+
+        <Button type="submit" size="lg" className="w-full" disabled={loading}>
+          {loading ? 'Вход...' : 'Войти'}
         </Button>
       </form>
     </AuthLayout>

@@ -3,9 +3,12 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AuthLayout } from '@platform/ui/templates';
-import { FormField } from '@platform/ui/molecules';
-import { Button, Text } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { acceptInvite } from '@/lib/api';
+import { CheckCircle } from 'lucide-react';
 
 function InviteForm() {
   const searchParams = useSearchParams();
@@ -25,7 +28,6 @@ function InviteForm() {
       setError('Пароль должен быть не менее 6 символов');
       return;
     }
-
     if (password !== confirmPassword) {
       setError('Пароли не совпадают');
       return;
@@ -45,8 +47,10 @@ function InviteForm() {
   if (!token) {
     return (
       <AuthLayout title="Ошибка" subtitle="Ссылка приглашения недействительна">
-        <div style={{ textAlign: 'center' }}>
-          <BackToLoginLink />
+        <div className="text-center">
+          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            ← Вернуться ко входу
+          </a>
         </div>
       </AuthLayout>
     );
@@ -55,56 +59,54 @@ function InviteForm() {
   if (success) {
     return (
       <AuthLayout title="Готово!" subtitle="Регистрация завершена. Теперь вы можете войти.">
-        <div style={{ textAlign: 'center' }}>
-          <SuccessIcon />
-          <BackToLoginLink label="ПЕРЕЙТИ КО ВХОДУ →" />
+        <div className="flex flex-col items-center gap-6">
+          <CheckCircle className="w-12 h-12 text-green-500" />
+          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Перейти ко входу →
+          </a>
         </div>
       </AuthLayout>
     );
   }
 
   return (
-    <AuthLayout
-      title="Регистрация"
-      subtitle="Установите пароль для входа на платформу"
-    >
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}
-      >
-        {error && <ErrorAlert message={error} />}
+    <AuthLayout title="Регистрация" subtitle="Установите пароль для входа на платформу">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-        <FormField
-          id="password"
-          label="Пароль"
-          required
-          inputProps={{
-            type: 'password',
-            value: password,
-            onChange: (e) => setPassword(e.target.value),
-            required: true,
-            minLength: 6,
-            autoComplete: 'new-password',
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="password">Пароль</Label>
+          <Input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+            autoComplete="new-password"
+          />
+        </div>
 
-        <FormField
-          id="confirmPassword"
-          label="Подтвердите пароль"
-          required
-          error={confirmPassword && confirmPassword !== password ? 'Пароли не совпадают' : undefined}
-          inputProps={{
-            type: 'password',
-            value: confirmPassword,
-            onChange: (e) => setConfirmPassword(e.target.value),
-            required: true,
-            minLength: 6,
-            autoComplete: 'new-password',
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={6}
+            autoComplete="new-password"
+            aria-invalid={confirmPassword !== '' && confirmPassword !== password}
+          />
+        </div>
 
-        <Button type="submit" variant="primary" fullWidth loading={loading} disabled={loading}>
-          {loading ? 'РЕГИСТРАЦИЯ...' : 'ЗАРЕГИСТРИРОВАТЬСЯ'}
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Регистрация...' : 'Зарегистрироваться'}
         </Button>
       </form>
     </AuthLayout>
@@ -116,101 +118,13 @@ export default function InvitePage() {
     <Suspense
       fallback={
         <AuthLayout title="Загрузка...">
-          <PageSpinner />
+          <div className="flex justify-center py-8">
+            <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
+          </div>
         </AuthLayout>
       }
     >
       <InviteForm />
     </Suspense>
-  );
-}
-
-function ErrorAlert({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        padding: 'var(--spacing-3) var(--spacing-4)',
-        background: 'var(--color-error-dim)',
-        border: '1px solid var(--color-error)',
-        borderRadius: 'var(--radius-xs)',
-        userSelect: 'text',
-        cursor: 'text',
-      }}
-    >
-      <Text size="sm" color="var(--color-error)">{message}</Text>
-    </div>
-  );
-}
-
-function BackToLoginLink({ label = '← ВЕРНУТЬСЯ КО ВХОДУ' }: { label?: string }) {
-  return (
-    <a
-      href="/login"
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 'var(--text-xs)',
-        color: 'var(--color-text-tertiary)',
-        textDecoration: 'none',
-        letterSpacing: 'var(--tracking-wide)',
-        textTransform: 'uppercase',
-      }}
-    >
-      {label}
-    </a>
-  );
-}
-
-function SuccessIcon() {
-  return (
-    <div
-      style={{
-        width: 48,
-        height: 48,
-        borderRadius: 'var(--radius-full)',
-        border: '2px solid var(--color-success)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto var(--spacing-6)',
-        color: 'var(--color-success)',
-      }}
-    >
-      <svg
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M20 6L9 17l-5-5" />
-      </svg>
-    </div>
-  );
-}
-
-function PageSpinner() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--spacing-8)',
-      }}
-    >
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          border: '2px solid var(--color-border-default)',
-          borderTopColor: 'var(--color-accent-red)',
-          animation: 'np-spin 0.7s linear infinite',
-        }}
-      />
-    </div>
   );
 }

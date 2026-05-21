@@ -3,8 +3,10 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthLayout } from '@platform/ui/templates';
-import { FormField } from '@platform/ui/molecules';
-import { Button, Text } from '@platform/ui/atoms';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/lib/auth-context';
 import { changePassword } from '@/lib/api';
 
@@ -20,7 +22,9 @@ export default function ChangePasswordPage() {
   if (loading) {
     return (
       <AuthLayout title="Загрузка...">
-        <PageSpinner />
+        <div className="flex justify-center py-8">
+          <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
+        </div>
       </AuthLayout>
     );
   }
@@ -65,99 +69,56 @@ export default function ChangePasswordPage() {
           : 'Введите текущий пароль и задайте новый'
       }
     >
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}
-      >
-        {error && <ErrorAlert message={error} />}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-        <FormField
-          id="currentPassword"
-          label="Текущий пароль"
-          required
-          inputProps={{
-            type: 'password',
-            value: currentPassword,
-            onChange: (e) => setCurrentPassword(e.target.value),
-            required: true,
-            autoComplete: 'current-password',
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="currentPassword">Текущий пароль</Label>
+          <Input
+            id="currentPassword"
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </div>
 
-        <FormField
-          id="newPassword"
-          label="Новый пароль"
-          required
-          inputProps={{
-            type: 'password',
-            value: newPassword,
-            onChange: (e) => setNewPassword(e.target.value),
-            required: true,
-            minLength: 6,
-            autoComplete: 'new-password',
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="newPassword">Новый пароль</Label>
+          <Input
+            id="newPassword"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={6}
+            autoComplete="new-password"
+          />
+        </div>
 
-        <FormField
-          id="confirmPassword"
-          label="Подтвердите новый пароль"
-          required
-          error={confirmPassword && confirmPassword !== newPassword ? 'Пароли не совпадают' : undefined}
-          inputProps={{
-            type: 'password',
-            value: confirmPassword,
-            onChange: (e) => setConfirmPassword(e.target.value),
-            required: true,
-            minLength: 6,
-            autoComplete: 'new-password',
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={6}
+            autoComplete="new-password"
+            aria-invalid={confirmPassword !== '' && confirmPassword !== newPassword}
+          />
+        </div>
 
-        <Button type="submit" variant="primary" fullWidth loading={submitting}>
-          {submitting ? 'СОХРАНЕНИЕ...' : 'СМЕНИТЬ ПАРОЛЬ'}
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Сохранение...' : 'Сменить пароль'}
         </Button>
       </form>
     </AuthLayout>
-  );
-}
-
-function ErrorAlert({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        padding: 'var(--spacing-3) var(--spacing-4)',
-        background: 'var(--color-error-dim)',
-        border: '1px solid var(--color-error)',
-        borderRadius: 'var(--radius-xs)',
-        userSelect: 'text',
-        cursor: 'text',
-      }}
-    >
-      <Text size="sm" color="var(--color-error)">{message}</Text>
-    </div>
-  );
-}
-
-function PageSpinner() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--spacing-8)',
-      }}
-    >
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          border: '2px solid var(--color-border-default)',
-          borderTopColor: 'var(--color-accent-red)',
-          animation: 'np-spin 0.7s linear infinite',
-        }}
-      />
-    </div>
   );
 }
