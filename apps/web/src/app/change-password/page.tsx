@@ -2,10 +2,16 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthLayout } from '@platform/ui/templates';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/lib/auth-context';
 import { changePassword } from '@/lib/api';
@@ -21,11 +27,9 @@ export default function ChangePasswordPage() {
 
   if (loading) {
     return (
-      <AuthLayout title="Загрузка...">
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-        </div>
-      </AuthLayout>
+      <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </div>
     );
   }
 
@@ -61,64 +65,71 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <AuthLayout
-      title="Смена пароля"
-      subtitle={
-        user.mustChangePassword
-          ? 'Необходимо сменить пароль перед началом работы'
-          : 'Введите текущий пароль и задайте новый'
-      }
-    >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="currentPassword">Текущий пароль</Label>
-          <Input
-            id="currentPassword"
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="newPassword">Новый пароль</Label>
-          <Input
-            id="newPassword"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-            aria-invalid={confirmPassword !== '' && confirmPassword !== newPassword}
-          />
-        </div>
-
-        <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Сохранение...' : 'Сменить пароль'}
-        </Button>
-      </form>
-    </AuthLayout>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <Card>
+          <CardHeader>
+            <CardTitle>Смена пароля</CardTitle>
+            <CardDescription>
+              {user.mustChangePassword
+                ? 'Необходимо сменить пароль перед началом работы'
+                : 'Введите текущий пароль и задайте новый'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit}>
+              <FieldGroup>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+                <Field>
+                  <FieldLabel htmlFor="currentPassword">Текущий пароль</FieldLabel>
+                  <Input
+                    id="currentPassword"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="newPassword">Новый пароль</FieldLabel>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={6}
+                    autoComplete="new-password"
+                    required
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="confirmPassword">Подтвердите новый пароль</FieldLabel>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    minLength={6}
+                    autoComplete="new-password"
+                    aria-invalid={confirmPassword !== '' && confirmPassword !== newPassword}
+                    required
+                  />
+                </Field>
+                <Field>
+                  <Button type="submit" className="w-full" disabled={submitting}>
+                    {submitting ? 'Сохранение...' : 'Сменить пароль'}
+                  </Button>
+                </Field>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

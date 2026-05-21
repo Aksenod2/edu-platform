@@ -2,10 +2,16 @@
 
 import { Suspense, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AuthLayout } from '@platform/ui/templates';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { resetPassword } from '@/lib/api';
 import { CheckCircle } from 'lucide-react';
@@ -43,75 +49,89 @@ function ResetPasswordForm() {
     }
   }
 
-  if (!token) {
-    return (
-      <AuthLayout
-        title="Невалидная ссылка"
-        subtitle="Ссылка для сброса пароля недействительна или устарела"
-      >
-        <div className="text-center">
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Вернуться ко входу
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (done) {
-    return (
-      <AuthLayout title="Пароль изменён" subtitle="Вы можете войти с новым паролем">
-        <div className="flex flex-col items-center gap-6">
-          <CheckCircle className="w-12 h-12 text-green-500" />
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Войти →
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
   return (
-    <AuthLayout title="Новый пароль" subtitle="Задайте новый пароль для вашего аккаунта">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Новый пароль</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-            aria-invalid={confirmPassword !== '' && confirmPassword !== password}
-          />
-        </div>
-
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Сохранение...' : 'Сменить пароль'}
-        </Button>
-      </form>
-    </AuthLayout>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <Card>
+          {!token ? (
+            <>
+              <CardHeader>
+                <CardTitle>Невалидная ссылка</CardTitle>
+                <CardDescription>
+                  Ссылка для сброса пароля недействительна или устарела
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="text-center text-sm">
+                <a href="/login" className="underline-offset-4 hover:underline">
+                  ← Вернуться ко входу
+                </a>
+              </CardContent>
+            </>
+          ) : done ? (
+            <>
+              <CardHeader>
+                <CardTitle>Пароль изменён</CardTitle>
+                <CardDescription>Вы можете войти с новым паролем</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-6">
+                <CheckCircle className="size-12 text-green-500" />
+                <a href="/login" className="text-sm underline-offset-4 hover:underline">
+                  Войти →
+                </a>
+              </CardContent>
+            </>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle>Новый пароль</CardTitle>
+                <CardDescription>Задайте новый пароль для вашего аккаунта</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSubmit}>
+                  <FieldGroup>
+                    {error && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{error}</AlertDescription>
+                      </Alert>
+                    )}
+                    <Field>
+                      <FieldLabel htmlFor="password">Новый пароль</FieldLabel>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        minLength={6}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="confirmPassword">Подтвердите пароль</FieldLabel>
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        minLength={6}
+                        autoComplete="new-password"
+                        aria-invalid={confirmPassword !== '' && confirmPassword !== password}
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? 'Сохранение...' : 'Сменить пароль'}
+                      </Button>
+                    </Field>
+                  </FieldGroup>
+                </form>
+              </CardContent>
+            </>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -119,11 +139,9 @@ export default function ResetPasswordPage() {
   return (
     <Suspense
       fallback={
-        <AuthLayout title="Загрузка...">
-          <div className="flex justify-center py-8">
-            <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-          </div>
-        </AuthLayout>
+        <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+          <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+        </div>
       }
     >
       <ResetPasswordForm />

@@ -2,7 +2,13 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AuthLayout } from '@platform/ui/templates';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle } from 'lucide-react';
 import { verifyEmail } from '@/lib/api';
@@ -26,62 +32,74 @@ function VerifyEmailContent() {
       });
   }, [token]);
 
-  if (state === 'no-token') {
-    return (
-      <AuthLayout
-        title="Невалидная ссылка"
-        subtitle="Ссылка для подтверждения email недействительна или устарела"
-      >
-        <div className="text-center">
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Вернуться ко входу
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (state === 'loading') {
-    return (
-      <AuthLayout title="Подтверждение..." subtitle="Проверяем ссылку">
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (state === 'success') {
-    return (
-      <AuthLayout
-        title="Email подтверждён"
-        subtitle="Ваш адрес успешно подтверждён. Теперь вы можете войти."
-      >
-        <div className="flex flex-col items-center gap-6">
-          <CheckCircle className="w-12 h-12 text-green-500" />
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Войти →
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  // state === 'error'
   return (
-    <AuthLayout
-      title="Ошибка подтверждения"
-      subtitle="Не удалось подтвердить email"
-    >
-      <div className="flex flex-col items-center gap-5">
-        <Alert variant="destructive" className="w-full">
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-        <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          ← Вернуться ко входу
-        </a>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <Card>
+          {state === 'no-token' && (
+            <>
+              <CardHeader>
+                <CardTitle>Невалидная ссылка</CardTitle>
+                <CardDescription>
+                  Ссылка для подтверждения email недействительна или устарела
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="text-center text-sm">
+                <a href="/login" className="underline-offset-4 hover:underline">
+                  ← Вернуться ко входу
+                </a>
+              </CardContent>
+            </>
+          )}
+
+          {state === 'loading' && (
+            <>
+              <CardHeader>
+                <CardTitle>Подтверждение...</CardTitle>
+                <CardDescription>Проверяем ссылку</CardDescription>
+              </CardHeader>
+              <CardContent className="flex justify-center py-4">
+                <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+              </CardContent>
+            </>
+          )}
+
+          {state === 'success' && (
+            <>
+              <CardHeader>
+                <CardTitle>Email подтверждён</CardTitle>
+                <CardDescription>
+                  Ваш адрес успешно подтверждён. Теперь вы можете войти.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-6">
+                <CheckCircle className="size-12 text-green-500" />
+                <a href="/login" className="text-sm underline-offset-4 hover:underline">
+                  Войти →
+                </a>
+              </CardContent>
+            </>
+          )}
+
+          {state === 'error' && (
+            <>
+              <CardHeader>
+                <CardTitle>Ошибка подтверждения</CardTitle>
+                <CardDescription>Не удалось подтвердить email</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-5">
+                <Alert variant="destructive">
+                  <AlertDescription>{errorMessage}</AlertDescription>
+                </Alert>
+                <a href="/login" className="text-sm underline-offset-4 hover:underline">
+                  ← Вернуться ко входу
+                </a>
+              </CardContent>
+            </>
+          )}
+        </Card>
       </div>
-    </AuthLayout>
+    </div>
   );
 }
 
@@ -89,11 +107,9 @@ export default function VerifyEmailPage() {
   return (
     <Suspense
       fallback={
-        <AuthLayout title="Загрузка...">
-          <div className="flex justify-center py-8">
-            <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-          </div>
-        </AuthLayout>
+        <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+          <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+        </div>
       }
     >
       <VerifyEmailContent />

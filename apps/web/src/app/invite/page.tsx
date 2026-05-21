@@ -2,10 +2,16 @@
 
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AuthLayout } from '@platform/ui/templates';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { acceptInvite } from '@/lib/api';
 import { CheckCircle } from 'lucide-react';
@@ -44,72 +50,89 @@ function InviteForm() {
     }
   };
 
-  if (!token) {
-    return (
-      <AuthLayout title="Ошибка" subtitle="Ссылка приглашения недействительна">
-        <div className="text-center">
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Вернуться ко входу
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (success) {
-    return (
-      <AuthLayout title="Готово!" subtitle="Регистрация завершена. Теперь вы можете войти.">
-        <div className="flex flex-col items-center gap-6">
-          <CheckCircle className="w-12 h-12 text-green-500" />
-          <a href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Перейти ко входу →
-          </a>
-        </div>
-      </AuthLayout>
-    );
-  }
-
   return (
-    <AuthLayout title="Регистрация" subtitle="Установите пароль для входа на платформу">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Пароль</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-            aria-invalid={confirmPassword !== '' && confirmPassword !== password}
-          />
-        </div>
-
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-        </Button>
-      </form>
-    </AuthLayout>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <Card>
+          {!token ? (
+            <>
+              <CardHeader>
+                <CardTitle>Ошибка</CardTitle>
+                <CardDescription>Ссылка приглашения недействительна</CardDescription>
+              </CardHeader>
+              <CardContent className="text-center text-sm">
+                <a href="/login" className="underline-offset-4 hover:underline">
+                  ← Вернуться ко входу
+                </a>
+              </CardContent>
+            </>
+          ) : success ? (
+            <>
+              <CardHeader>
+                <CardTitle>Готово!</CardTitle>
+                <CardDescription>
+                  Регистрация завершена. Теперь вы можете войти.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-6">
+                <CheckCircle className="size-12 text-green-500" />
+                <a href="/login" className="text-sm underline-offset-4 hover:underline">
+                  Перейти ко входу →
+                </a>
+              </CardContent>
+            </>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle>Регистрация</CardTitle>
+                <CardDescription>Установите пароль для входа на платформу</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSubmit}>
+                  <FieldGroup>
+                    {error && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{error}</AlertDescription>
+                      </Alert>
+                    )}
+                    <Field>
+                      <FieldLabel htmlFor="password">Пароль</FieldLabel>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        minLength={6}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="confirmPassword">Подтвердите пароль</FieldLabel>
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        minLength={6}
+                        autoComplete="new-password"
+                        aria-invalid={confirmPassword !== '' && confirmPassword !== password}
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+                      </Button>
+                    </Field>
+                  </FieldGroup>
+                </form>
+              </CardContent>
+            </>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -117,11 +140,9 @@ export default function InvitePage() {
   return (
     <Suspense
       fallback={
-        <AuthLayout title="Загрузка...">
-          <div className="flex justify-center py-8">
-            <div className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-          </div>
-        </AuthLayout>
+        <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+          <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+        </div>
       }
     >
       <InviteForm />
