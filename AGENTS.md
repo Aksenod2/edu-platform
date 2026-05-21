@@ -7,14 +7,17 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- BEGIN:ui-system-rules -->
 # UI Components — shadcn/ui (raw, no wrappers)
 
-## The Rule
-**Use shadcn/ui components directly. Do NOT use `@platform/ui` atoms/molecules.**
+## The Rules
+1. **Use shadcn/ui components directly. Do NOT use `@platform/ui` atoms/molecules.**
+2. **Build pages from shadcn/ui blocks** — see https://ui.shadcn.com/blocks
+3. **Light theme only** — standard shadcn/ui zinc theme. No dark theme, no Nothing Phone theme.
 
-## How to add components
+## How to add components and blocks
 
 Always install via CLI before using:
 ```bash
-npx shadcn@latest add <component-name> -c apps/web
+npx shadcn@latest add <component-name> -c apps/web   # component
+npx shadcn@latest add <block-name> -c apps/web        # block (e.g. login-01, sidebar-01)
 ```
 
 Then import from `@/components/ui/<component>`:
@@ -27,7 +30,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 ```
 
 ## Currently installed (apps/web/src/components/ui/)
-- button, input, label, card, alert, form
+- button, input, label, card, alert, form, field, separator
 
 ## Discover more components
 ```bash
@@ -36,9 +39,8 @@ npx shadcn@latest docs <component> -c apps/web  # read docs
 ```
 
 ## What stays from @platform/ui
-- `AuthLayout` from `@platform/ui/templates` — keep using it (it's just a layout wrapper, not a component)
-- `DashboardLayout` from `@platform/ui/templates` — keep using it
-- Design tokens (CSS variables like `--color-*`, `--spacing-*`) still work alongside shadcn
+- `DashboardLayout` from `@platform/ui/templates` — keep using it (until migrated to shadcn blocks)
+- `cn()` utility from `@platform/ui/lib/utils` — used by shadcn components
 
 ## What to STOP using
 - `@platform/ui/atoms` (Button, Input, FormField, etc.) — replaced by shadcn/ui
