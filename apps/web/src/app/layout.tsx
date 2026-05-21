@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { AuthProvider } from '@/lib/auth-context';
+import { NotificationsProvider } from '@/lib/notifications-context';
+import { PushManager } from '@/lib/push-manager';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -11,7 +13,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <NotificationsProvider>
+            <PushManager />
+            {children}
+          </NotificationsProvider>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -661,6 +661,94 @@ export async function addThreadEntry(
   });
 }
 
+// Notifications API
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type:
+    | 'lesson_published'
+    | 'assignment_added'
+    | 'deadline_reminder'
+    | 'thread_reply'
+    | 'assignment_reviewed'
+    | 'schedule_updated'
+    | 'assignment_submitted'
+    | 'system';
+  title: string;
+  bodyText: string;
+  linkUrl: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export type NotificationCategory =
+  | 'learning'
+  | 'deadlines'
+  | 'feedback'
+  | 'schedule'
+  | 'student_activity'
+  | 'system';
+
+export interface NotificationPreference {
+  id: string;
+  userId: string;
+  category: NotificationCategory;
+  channelEmail: boolean;
+  channelPush: boolean;
+  updatedAt: string;
+}
+
+export async function getNotifications(
+  accessToken: string,
+): Promise<{ notifications: Notification[]; unreadCount: number }> {
+  return request('/notifications', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function markAllNotificationsRead(
+  accessToken: string,
+): Promise<{ message: string }> {
+  return request('/notifications/read-all', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getNotificationPreferences(
+  accessToken: string,
+): Promise<{ preferences: NotificationPreference[] }> {
+  return request('/notification-preferences', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function updateNotificationPreferences(
+  accessToken: string,
+  preferences: Array<{ category: NotificationCategory; channelEmail?: boolean; channelPush?: boolean }>,
+): Promise<{ preferences: NotificationPreference[] }> {
+  return request('/notification-preferences', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ preferences }),
+  });
+}
+
+export async function savePushSubscription(
+  accessToken: string,
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  },
+): Promise<{ message: string }> {
+  return request('/push-subscriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(subscription),
+  });
+}
+
 export async function uploadThreadFile(
   accessToken: string,
   studentId: string,

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card, CardHeader, CardBody } from '@platform/ui/molecules';
 import { Heading, Text, Mono } from '@platform/ui/atoms';
@@ -18,6 +19,7 @@ const STUDENT_NAV = [
       { label: 'Тред',       href: '/dashboard/thread',   icon: <ChatIcon /> },
       { label: 'Расписание', href: '/dashboard/schedule', icon: <CalendarIcon /> },
       { label: 'Профиль',   href: '/dashboard/profile',  icon: <UserIcon /> },
+      { label: 'Настройки', href: '/dashboard/settings/notifications', icon: <BellNavIcon /> },
     ],
   },
 ];
@@ -52,6 +54,7 @@ export default function DashboardPage() {
       header={{
         user: { name: user.name, role: user.role as 'admin' | 'student' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >
@@ -185,6 +188,16 @@ function ClipboardIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <rect x="3" y="2" width="10" height="13" rx="1" />
       <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
+    </svg>
+  );
+}
+
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
+      <path d="M8 2.5V1" />
     </svg>
   );
 }

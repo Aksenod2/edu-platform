@@ -24,9 +24,11 @@ export interface HeaderProps {
   user?: HeaderUser;
   onLogout?: () => void;
   platformName?: string;
+  /** Слот для иконки колокольчика уведомлений — рендерится между логотипом и пользователем */
+  notificationBell?: React.ReactNode;
 }
 
-export function Header({ user, onLogout, platformName = 'PLATFORM' }: HeaderProps) {
+export function Header({ user, onLogout, platformName = 'PLATFORM', notificationBell }: HeaderProps) {
   return (
     <header
       style={{
@@ -50,9 +52,11 @@ export function Header({ user, onLogout, platformName = 'PLATFORM' }: HeaderProp
         </Mono>
       </div>
 
-      {/* Правая сторона: пользователь + выход */}
+      {/* Правая сторона: колокольчик + пользователь + выход */}
       {user && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          {notificationBell}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <Avatar name={user.name} src={user.avatarSrc} size="sm" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

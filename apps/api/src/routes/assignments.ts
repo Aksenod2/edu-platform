@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
+import { createNotification, notifyMany } from '../lib/notifications.js';
 
 export async function assignmentRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -107,6 +108,19 @@ export async function assignmentRoutes(app: FastifyInstance) {
         lesson: { select: { id: true, title: true } },
       },
     });
+
+    // Notify all active students about new assignment
+    const students = await prisma.user.findMany({
+      where: { role: 'student', isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    notifyMany(
+      students.map((s) => s.id),
+      'assignment_created',
+      'Новое задание',
+      `Добавлено задание «${assignment.title}»`,
+      { assignmentId: assignment.id },
+    ).catch(() => {});
 
     return reply.status(201).send({ assignment });
   });
@@ -344,6 +358,31 @@ export async function assignmentRoutes(app: FastifyInstance) {
         student: { select: { id: true, name: true, email: true } },
       },
     });
+
+    // Notify relevant parties about status change
+    if (body.status === 'submitted') {
+      // Notify all admins that student submitted an assignment
+      const admins = await prisma.user.findMany({
+        where: { role: 'admin', isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      notifyMany(
+        admins.map((a) => a.id),
+        'assignment_submitted',
+        'Студент сдал задание',
+        `${updated.student.name} сдал задание «${updated.assignment.title}»`,
+        { studentAssignmentId: updated.id, assignmentId: updated.assignmentId, studentId: updated.studentId },
+      ).catch(() => {});
+    } else if (body.status === 'reviewed') {
+      // Notify student that their assignment has been reviewed
+      createNotification({
+        userId: updated.studentId,
+        type: 'assignment_reviewed',
+        title: 'Задание проверено',
+        body: `Ваше задание «${updated.assignment.title}» проверено преподавателем`,
+        metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
+      }).catch(() => {});
+    }
 
     return { studentAssignment: updated };
   });

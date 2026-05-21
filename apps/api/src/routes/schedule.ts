@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { notifyMany } from '../lib/notifications.js';
 
 export async function scheduleRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -56,6 +57,19 @@ export async function scheduleRoutes(app: FastifyInstance) {
       },
       include: { stream: { select: { id: true, name: true } } },
     });
+
+    // Notify all active students about the new schedule entry
+    const students = await prisma.user.findMany({
+      where: { role: 'student', isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    notifyMany(
+      students.map((s) => s.id),
+      'schedule_entry_created',
+      'Новое занятие в расписании',
+      `${entry.lessonTitle} — ${new Date(entry.date).toLocaleDateString('ru-RU')} в ${entry.startTime}`,
+      { scheduleEntryId: entry.id, streamId: entry.streamId },
+    ).catch(() => {});
 
     return reply.status(201).send({ entry });
   });

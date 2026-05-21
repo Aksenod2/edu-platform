@@ -3,6 +3,7 @@ import multipart from '@fastify/multipart';
 import { prisma, type ThreadEntryType } from '@platform/db';
 import { authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl, MAX_FILE_SIZE } from '../lib/s3.js';
+import { createNotification } from '../lib/notifications.js';
 
 const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
@@ -154,6 +155,34 @@ export async function threadRoutes(app: FastifyInstance) {
       },
     });
 
+    // Notify the other party: student gets notified when admin posts, admin gets notified when student posts
+    if (user.role === 'admin') {
+      // Admin wrote in student's thread — notify the student
+      createNotification({
+        userId: studentId,
+        type: 'thread_entry',
+        title: 'Новое сообщение от преподавателя',
+        body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+        metadata: { threadId: thread.id, entryId: entry.id },
+      }).catch(() => {});
+    } else {
+      // Student wrote — notify all admins
+      const admins = await prisma.user.findMany({
+        where: { role: 'admin', isActive: true, deletedAt: null },
+        select: { id: true, name: true },
+      });
+      const authorName = entry.author.name;
+      for (const admin of admins) {
+        createNotification({
+          userId: admin.id,
+          type: 'thread_entry',
+          title: `Новое сообщение от ${authorName}`,
+          body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+          metadata: { threadId: thread.id, entryId: entry.id, studentId },
+        }).catch(() => {});
+      }
+    }
+
     return reply.status(201).send({ entry });
   });
 }
@@ -164,7 +193,7 @@ async function handleMultipartEntry(
   threadId: string,
   user: { userId: string; role: string },
   studentId: string,
-) {
+): Promise<unknown> {
   const allowedTypes = user.role === 'admin' ? ADMIN_ENTRY_TYPES : STUDENT_ENTRY_TYPES;
 
   const parts = request.parts();
@@ -236,6 +265,31 @@ async function handleMultipartEntry(
       assignment: { select: { id: true, title: true } },
     },
   });
+
+  // Notify the other party for file uploads too
+  if (user.role === 'admin') {
+    createNotification({
+      userId: studentId,
+      type: 'thread_entry',
+      title: 'Новый файл от преподавателя',
+      body: `Загружен файл: ${fileName}`,
+      metadata: { threadId, entryId: entry.id },
+    }).catch(() => {});
+  } else {
+    const admins = await prisma.user.findMany({
+      where: { role: 'admin', isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      createNotification({
+        userId: admin.id,
+        type: 'thread_entry',
+        title: `Новый файл от ${entry.author.name}`,
+        body: `Загружен файл: ${fileName}`,
+        metadata: { threadId, entryId: entry.id, studentId },
+      }).catch(() => {});
+    }
+  }
 
   return reply.status(201).send({ entry });
 }

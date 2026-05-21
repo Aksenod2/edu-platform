@@ -43,6 +43,16 @@ enum ThreadEntryType {
   note
 }
 
+enum NotificationType {
+  lesson_published
+  assignment_created
+  deadline_reminder
+  thread_entry
+  assignment_submitted
+  assignment_reviewed
+  schedule_entry_created
+}
+
 model User {
   id                 String    @id @default(uuid())
   email              String    @unique
@@ -59,13 +69,16 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  refreshTokens      RefreshToken[]
-  studentAssignments StudentAssignment[]
-  thread             Thread?
-  threadEntries      ThreadEntry[]       @relation("AuthoredEntries")
-  studentProfile     StudentProfile?
-  teacherNotes       TeacherNote[]       @relation("AuthoredNotes")
-  studentNotes       TeacherNote[]       @relation("StudentNotes")
+  refreshTokens           RefreshToken[]
+  studentAssignments      StudentAssignment[]
+  thread                  Thread?
+  threadEntries           ThreadEntry[]            @relation("AuthoredEntries")
+  studentProfile          StudentProfile?
+  teacherNotes            TeacherNote[]            @relation("AuthoredNotes")
+  studentNotes            TeacherNote[]            @relation("StudentNotes")
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  pushSubscriptions       PushSubscription[]
 }
 
 model RefreshToken {
@@ -218,4 +231,48 @@ model ScheduleEntry {
   stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
 
   @@index([streamId])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  metadata  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id           String           @id @default(uuid())
+  userId       String
+  type         NotificationType
+  emailEnabled Boolean          @default(true)
+  pushEnabled  Boolean          @default(true)
+  inAppEnabled Boolean          @default(true)
+  updatedAt    DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

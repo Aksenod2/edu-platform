@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card, CardHeader, CardBody } from '@platform/ui/molecules';
 import { Heading, Text, Mono } from '@platform/ui/atoms';
@@ -48,6 +49,7 @@ export default function AdminPage() {
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
         platformName: 'PLATFORM ADMIN',
+        notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: ADMIN_NAV }}
     >

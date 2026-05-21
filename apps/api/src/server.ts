@@ -15,7 +15,10 @@ import { scheduleRoutes } from './routes/schedule.js';
 import { assignmentRoutes } from './routes/assignments.js';
 import { profileRoutes } from './routes/profiles.js';
 import { threadRoutes } from './routes/threads.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { pushSubscriptionRoutes } from './routes/push-subscriptions.js';
 import { ensureBucketExists } from './lib/s3.js';
+import { startCronJobs } from './lib/cron.js';
 
 const app = Fastify({ logger: true });
 
@@ -49,6 +52,8 @@ await app.register(scheduleRoutes);
 await app.register(assignmentRoutes);
 await app.register(profileRoutes);
 await app.register(threadRoutes);
+await app.register(notificationRoutes);
+await app.register(pushSubscriptionRoutes);
 
 app.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };
@@ -74,3 +79,6 @@ try {
 ensureBucketExists().catch((err) => {
   app.log.warn({ err }, 'S3 bucket init failed - uploads will fail until MinIO is available');
 });
+
+// Start cron jobs: deadline reminders & notification cleanup
+startCronJobs();

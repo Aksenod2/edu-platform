@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
+import { notifyMany } from '../lib/notifications.js';
 
 export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -157,6 +158,21 @@ export async function lessonRoutes(app: FastifyInstance) {
       where: { id },
       data,
     });
+
+    // Notify all students when lesson is published
+    if (body.status === 'published' && existing.status !== 'published') {
+      const students = await prisma.user.findMany({
+        where: { role: 'student', isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      notifyMany(
+        students.map((s) => s.id),
+        'lesson_published',
+        'Новый урок опубликован',
+        `Урок «${lesson.title}» доступен для просмотра`,
+        { lessonId: lesson.id },
+      ).catch(() => {});
+    }
 
     return { lesson };
   });
