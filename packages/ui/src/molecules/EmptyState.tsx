@@ -2,8 +2,9 @@
  * EmptyState — Молекула
  * Atomic level: Molecule
  *
+ * Rebuilt on Tailwind CSS v4 (CMP-251).
  * Состав: иконка/иллюстрация + Heading (атом) + Text (атом) + Button (атом, опц.)
- * Токены: spacing, --color-text-tertiary
+ * Токены: через @theme — text-text-tertiary, bg-border-strong, gap-*, p-*
  *
  * Nothing Phone: dot-matrix иконка-заглушка, центрированная пустота,
  * минимум слов — максимум смысла (Recognition over Recall)
@@ -11,6 +12,7 @@
  * Важно: empty state = такой же уровень качества, как happy path
  */
 import React from 'react';
+import { cn } from '../lib/utils';
 import { Heading, Text } from '../atoms/Typography';
 import { Button } from '../atoms/Button';
 
@@ -23,14 +25,16 @@ export interface EmptyStateProps {
     onClick: () => void;
   };
   size?: 'sm' | 'md' | 'lg';
+  className?: string;
+  /** @deprecated используй className */
   style?: React.CSSProperties;
 }
 
-const sizeMap = {
-  sm: { iconSize: 32, gap: 'var(--space-3)', padding: 'var(--space-8)' },
-  md: { iconSize: 48, gap: 'var(--space-4)', padding: 'var(--space-12)' },
-  lg: { iconSize: 64, gap: 'var(--space-6)', padding: 'var(--space-16)' },
-};
+const sizeConfig = {
+  sm: { iconSize: 32, gapClass: 'gap-3', padClass: 'p-8',  headingSize: 'md' as const },
+  md: { iconSize: 48, gapClass: 'gap-4', padClass: 'p-12', headingSize: 'lg' as const },
+  lg: { iconSize: 64, gapClass: 'gap-6', padClass: 'p-16', headingSize: 'xl' as const },
+} satisfies Record<string, { iconSize: number; gapClass: string; padClass: string; headingSize: 'md' | 'lg' | 'xl' }>;
 
 export function EmptyState({
   icon,
@@ -38,33 +42,25 @@ export function EmptyState({
   description,
   action,
   size = 'md',
+  className,
   style,
 }: EmptyStateProps) {
-  const { iconSize, gap, padding } = sizeMap[size];
+  const { iconSize, gapClass, padClass, headingSize } = sizeConfig[size];
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap,
-        padding,
-        textAlign: 'center',
-        ...style,
-      }}
+      className={cn(
+        'flex flex-col items-center justify-center text-center',
+        gapClass,
+        padClass,
+        className,
+      )}
+      style={style}
     >
       {icon ? (
         <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: iconSize,
-            height: iconSize,
-            color: 'var(--color-text-tertiary)',
-          }}
+          className="flex items-center justify-center shrink-0 text-text-tertiary"
+          style={{ width: iconSize, height: iconSize }}
         >
           {icon}
         </span>
@@ -72,8 +68,8 @@ export function EmptyState({
         <DotMatrixPlaceholder size={iconSize} />
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: 320 }}>
-        <Heading level={3} size={size === 'lg' ? 'xl' : size === 'sm' ? 'md' : 'lg'}>
+      <div className="flex flex-col gap-2 max-w-xs">
+        <Heading level={3} size={headingSize}>
           {title}
         </Heading>
         {description && (
@@ -93,30 +89,32 @@ export function EmptyState({
 }
 
 // Dot-matrix заглушка — Nothing Phone фирменный паттерн
+// Паттерн детерминирован (без Math.random) — безопасен для SSR и гидрации
+const DOT_OPACITY: number[] = [1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1, 0.3, 1];
+
 function DotMatrixPlaceholder({ size }: { size: number }) {
   const cols = 5;
   const rows = 5;
   const dotSize = Math.floor(size / (cols * 2));
-  const gap = dotSize;
 
   return (
     <div
+      className="shrink-0"
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${cols}, ${dotSize}px)`,
-        gap,
+        gap: dotSize,
       }}
       aria-hidden
     >
       {Array.from({ length: cols * rows }).map((_, i) => (
         <span
           key={i}
+          className="rounded-full bg-border-strong"
           style={{
             width: dotSize,
             height: dotSize,
-            borderRadius: '50%',
-            background: 'var(--color-border-strong)',
-            opacity: Math.random() > 0.5 ? 1 : 0.3,
+            opacity: DOT_OPACITY[i % DOT_OPACITY.length],
           }}
         />
       ))}
