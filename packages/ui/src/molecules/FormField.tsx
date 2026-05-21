@@ -1,17 +1,19 @@
 /**
- * FormField — Молекула
+ * FormField — Молекула (shadcn Form migration)
  * Atomic level: Molecule
  *
- * Состав: Label (атом) + Input (атом) + описание/ошибка (Text атом)
- * Токены: spacing, color-error, color-text-secondary
- * Состояния: default, error, disabled
+ * Обёртка над shadcn Label + shadcn Input (через атомы Label / Input),
+ * опционально Select.
+ * Поддерживает slot-подход через children для нестандартных контролов.
  *
- * Nothing Phone: чёткая иерархия label → input → hint
+ * Nothing Phone: uppercase лейблы, dark bg, тонкая border, dot-matrix hint.
+ * Состояния: default, error, disabled.
  */
 import React from 'react';
 import { Label } from '../atoms/Label';
 import { Input, type InputProps } from '../atoms/Input';
 import { Text } from '../atoms/Typography';
+import { cn } from '../lib/utils';
 
 export interface FormFieldProps {
   label?: string;
@@ -21,7 +23,7 @@ export interface FormFieldProps {
   disabled?: boolean;
   id: string;
   inputProps?: Omit<InputProps, 'id' | 'error' | 'disabled'>;
-  style?: React.CSSProperties;
+  className?: string;
   children?: React.ReactNode;
 }
 
@@ -33,20 +35,13 @@ export function FormField({
   disabled,
   id,
   inputProps,
-  style,
+  className,
   children,
 }: FormFieldProps) {
   const hasError = Boolean(error);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-        ...style,
-      }}
-    >
+    <div className={cn('flex flex-col gap-2', className)}>
       {label && (
         <Label htmlFor={id} required={required} disabled={disabled}>
           {label}
@@ -66,7 +61,7 @@ export function FormField({
         <Text
           size="xs"
           color={hasError ? 'var(--color-error)' : 'tertiary'}
-          style={{ lineHeight: 'var(--leading-snug)' }}
+          className="leading-[var(--leading-snug)]"
         >
           {error ?? hint}
         </Text>

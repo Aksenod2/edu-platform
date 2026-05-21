@@ -3,7 +3,7 @@
  * Atomic Design: Molecule
  *
  * Nothing Phone: строгий прямоугольный контейнер без теней, 1px граница.
- * Варианты: default (surface bg), elevated (darker), outlined (transparent).
+ * Варианты: default (surface bg), elevated (darker), outlined (transparent), interactive.
  */
 import type { Meta, StoryObj } from '@storybook/react';
 import { Card, CardHeader, CardBody, CardFooter } from './Card';
@@ -16,7 +16,7 @@ const meta: Meta<typeof Card> = {
   component: Card,
   tags: ['autodocs'],
   argTypes: {
-    variant: { control: 'select', options: ['default', 'elevated', 'outlined'] },
+    variant: { control: 'select', options: ['default', 'elevated', 'outlined', 'interactive'] },
     padding: { control: 'select', options: ['none', 'sm', 'md', 'lg'] },
     interactive: { control: 'boolean' },
   },
@@ -63,9 +63,22 @@ export const Outlined: Story = {
   },
 };
 
+export const Interactive: Story = {
+  args: {
+    interactive: true,
+    children: (
+      <>
+        <Mono size="xs">ASSIGNMENTS</Mono>
+        <Heading level={3} style={{ marginTop: 8 }}>Задания</Heading>
+        <Text size="sm" color="tertiary">Управление заданиями (через потоки)</Text>
+      </>
+    ),
+  },
+};
+
 export const WithHeaderAndFooter: Story = {
   render: () => (
-    <Card style={{ width: 360 }}>
+    <Card className="w-[360px]">
       <CardHeader action={<Badge variant="success">Активный</Badge>}>
         <Heading level={4}>Основы UX/UI Design 2026</Heading>
       </CardHeader>
@@ -80,22 +93,9 @@ export const WithHeaderAndFooter: Story = {
   ),
 };
 
-export const Interactive: Story = {
-  args: {
-    interactive: true,
-    children: (
-      <>
-        <Mono size="xs">ASSIGNMENTS</Mono>
-        <Heading level={3} style={{ marginTop: 8 }}>Задания</Heading>
-        <Text size="sm" color="tertiary">Управление заданиями (через потоки)</Text>
-      </>
-    ),
-  },
-};
-
 export const DashboardGrid: Story = {
   render: () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, width: 800 }}>
+    <div className="grid grid-cols-3 gap-4 w-[800px]">
       {['STUDENTS', 'STREAMS', 'SCHEDULE', 'ASSIGNMENTS'].map((label) => (
         <Card key={label} variant="outlined" interactive>
           <Mono size="xs">{label}</Mono>

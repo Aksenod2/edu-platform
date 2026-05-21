@@ -1,41 +1,64 @@
 /**
- * Card — Молекула
+ * Card — Молекула (shadcn Card migration)
  * Atomic level: Molecule
  *
- * Состав: контейнер с border, опционально header (Heading) + body + footer
- * Токены: --color-bg-surface, --color-border-default, --radius-sm, spacing
- * Варианты: default, elevated, outlined
- * Состояния: default, interactive (hover highlight)
+ * Состав: обёртка над shadcn Card primitives (ShadcnCardHeader /
+ * ShadcnCardContent / ShadcnCardFooter) с CVA-вариантами.
  *
- * Nothing Phone: строгий прямоугольный контейнер без теней,
- * тонкая 1px граница — всё содержание говорит само за себя
+ * Nothing Phone эстетика: dark bg, border-subtle, dot-matrix accent.
+ * Варианты: default, elevated, outlined, interactive.
  */
-import React from 'react';
+import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import {
+  ShadcnCardHeader,
+  ShadcnCardContent,
+  ShadcnCardFooter,
+} from '../components/ui/card';
+import { cn } from '../lib/utils';
 
-export type CardVariant = 'default' | 'elevated' | 'outlined';
+// ─── Card variants ──────────────────────────────────────
 
-export interface CardProps {
+const cardVariants = cva(
+  // base — Nothing Phone: sharp corners, 1px border, no shadow
+  'rounded-[var(--radius-xs)] border text-[var(--color-text-primary)] transition-colors duration-[var(--duration-fast)]',
+  {
+    variants: {
+      variant: {
+        default:
+          'bg-[var(--color-bg-surface)] border-[var(--color-border-default)]',
+        elevated:
+          'bg-[var(--color-bg-elevated)] border-[var(--color-border-default)]',
+        outlined:
+          'bg-transparent border-[var(--color-border-default)]',
+        interactive:
+          'bg-[var(--color-bg-surface)] border-[var(--color-border-default)] cursor-pointer hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-red)]',
+      },
+      padding: {
+        none: 'p-0',
+        sm:   'p-4',
+        md:   'p-6',
+        lg:   'p-8',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      padding: 'md',
+    },
+  },
+);
+
+export type CardVariant = 'default' | 'elevated' | 'outlined' | 'interactive';
+
+export interface CardProps
+  extends Omit<React.HTMLAttributes<HTMLElement>, 'onClick'>,
+    VariantProps<typeof cardVariants> {
   variant?: CardVariant;
   interactive?: boolean;
   padding?: 'none' | 'sm' | 'md' | 'lg';
   onClick?: () => void;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
   as?: 'div' | 'article' | 'li';
 }
-
-const variantBg: Record<CardVariant, string> = {
-  default:  'var(--color-bg-surface)',
-  elevated: 'var(--color-bg-elevated)',
-  outlined: 'transparent',
-};
-
-const paddingMap: Record<NonNullable<CardProps['padding']>, string> = {
-  none: '0',
-  sm:   'var(--space-4)',
-  md:   'var(--space-6)',
-  lg:   'var(--space-8)',
-};
 
 export function Card({
   variant = 'default',
@@ -43,85 +66,78 @@ export function Card({
   padding = 'md',
   onClick,
   children,
-  style,
+  className,
   as: Tag = 'div',
+  ...props
 }: CardProps) {
+  const resolvedVariant = interactive ? 'interactive' : variant;
+
   return (
     <Tag
       onClick={onClick}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
-      style={{
-        background: variantBg[variant],
-        border: '1px solid var(--color-border-default)',
-        borderRadius: 'var(--radius-xs)',
-        padding: paddingMap[padding],
-        ...(interactive && {
-          cursor: 'pointer',
-          transition: 'border-color var(--duration-fast) var(--ease-default)',
-        }),
-        ...style,
-      }}
+      className={cn(cardVariants({ variant: resolvedVariant, padding }), className)}
+      {...(props as React.HTMLAttributes<HTMLElement>)}
     >
       {children}
     </Tag>
   );
 }
 
-// ─── Card sub-components ────────────────────────────────
+// ─── CardHeader ────────────────────────────────────────
 
 export interface CardHeaderProps {
   children: React.ReactNode;
   action?: React.ReactNode;
-  style?: React.CSSProperties;
+  className?: string;
 }
 
-export function CardHeader({ children, action, style }: CardHeaderProps) {
+export function CardHeader({ children, action, className }: CardHeaderProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 'var(--space-4)',
-        marginBottom: 'var(--space-4)',
-        ...style,
-      }}
+    <ShadcnCardHeader
+      className={cn(
+        'flex-row items-center justify-between gap-4 p-0 mb-4',
+        className,
+      )}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
-    </div>
+      <div className="flex-1 min-w-0">{children}</div>
+      {action && <div className="shrink-0">{action}</div>}
+    </ShadcnCardHeader>
   );
 }
 
+// ─── CardBody ──────────────────────────────────────────
+
 export interface CardBodyProps {
   children: React.ReactNode;
-  style?: React.CSSProperties;
+  className?: string;
 }
 
-export function CardBody({ children, style }: CardBodyProps) {
-  return <div style={style}>{children}</div>;
+export function CardBody({ children, className }: CardBodyProps) {
+  return (
+    <ShadcnCardContent className={cn('p-0', className)}>
+      {children}
+    </ShadcnCardContent>
+  );
 }
+
+// ─── CardFooter ────────────────────────────────────────
 
 export interface CardFooterProps {
   children: React.ReactNode;
-  style?: React.CSSProperties;
+  className?: string;
 }
 
-export function CardFooter({ children, style }: CardFooterProps) {
+export function CardFooter({ children, className }: CardFooterProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-3)',
-        marginTop: 'var(--space-4)',
-        paddingTop: 'var(--space-4)',
-        borderTop: '1px solid var(--color-border-subtle)',
-        ...style,
-      }}
+    <ShadcnCardFooter
+      className={cn(
+        'gap-3 p-0 mt-4 pt-4 border-t border-[var(--color-border-subtle)]',
+        className,
+      )}
     >
       {children}
-    </div>
+    </ShadcnCardFooter>
   );
 }
