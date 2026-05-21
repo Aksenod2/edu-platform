@@ -141,6 +141,8 @@ export interface Stream {
   status: 'active' | 'archived';
   createdAt: string;
   updatedAt: string;
+  teachers?: { id: string; name: string }[];
+  shared?: boolean;
 }
 
 export async function getStreams(accessToken: string): Promise<{ streams: Stream[] }> {
@@ -307,6 +309,22 @@ export async function resetStudentPassword(
   });
 }
 
+// Teachers (admins) API
+
+export interface Teacher {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export async function getTeachers(
+  accessToken: string,
+): Promise<{ teachers: Teacher[] }> {
+  return request('/teachers', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Lessons API
 
 export interface Lesson {
@@ -321,6 +339,7 @@ export interface Lesson {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  teachers?: { id: string; name: string }[];
 }
 
 export async function getLessons(
@@ -351,6 +370,7 @@ export async function createLesson(
     notes?: string;
     publishAt?: string;
     sortOrder?: number;
+    teacherIds?: string[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request('/lessons', {
@@ -371,6 +391,7 @@ export async function updateLesson(
     status?: 'draft' | 'published' | 'closed';
     publishAt?: string | null;
     sortOrder?: number;
+    teacherIds?: string[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request(`/lessons/${id}`, {

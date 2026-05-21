@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -44,6 +45,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+// Инициалы из имени для аватара преподавателя
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 export default function StreamsPage() {
   const router = useRouter();
@@ -209,6 +220,7 @@ export default function StreamsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Название</TableHead>
+              <TableHead>Преподаватели</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Создан</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>
@@ -219,6 +231,7 @@ export default function StreamsPage() {
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
@@ -226,7 +239,7 @@ export default function StreamsPage() {
               ))
             ) : filteredStreams.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   Потоки не найдены
                 </TableCell>
               </TableRow>
@@ -282,6 +295,27 @@ export default function StreamsPage() {
                       </div>
                     ) : (
                       <span className="font-medium">{stream.name}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {stream.teachers && stream.teachers.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex -space-x-2">
+                          {stream.teachers.map((t) => (
+                            <Avatar
+                              key={t.id}
+                              size="sm"
+                              className="ring-2 ring-background"
+                              title={t.name}
+                            >
+                              <AvatarFallback>{initials(t.name)}</AvatarFallback>
+                            </Avatar>
+                          ))}
+                        </div>
+                        {stream.shared && <Badge variant="secondary">Общий</Badge>}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell>

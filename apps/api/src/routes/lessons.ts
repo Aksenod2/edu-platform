@@ -4,6 +4,33 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 
+// include-конфиг для подгрузки преподавателей урока
+const teacherInclude = {
+  teachers: { include: { user: { select: { id: true, name: true } } } },
+} as const;
+
+// Преобразует урок с include-преподавателями к плоскому виду { teachers: [{id,name}] }
+function shapeLesson<T extends { teachers?: { user: { id: string; name: string } }[] }>(
+  lesson: T,
+): Omit<T, 'teachers'> & { teachers: { id: string; name: string }[] } {
+  const { teachers, ...rest } = lesson;
+  return {
+    ...rest,
+    teachers: (teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+  };
+}
+
+// Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
+async function filterAdminIds(teacherIds: string[]): Promise<string[]> {
+  const unique = [...new Set(teacherIds.filter((id) => typeof id === 'string'))];
+  if (unique.length === 0) return [];
+  const admins = await prisma.user.findMany({
+    where: { id: { in: unique }, role: 'admin', deletedAt: null },
+    select: { id: true },
+  });
+  return admins.map((a) => a.id);
+}
+
 export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
@@ -43,10 +70,11 @@ export async function lessonRoutes(app: FastifyInstance) {
         ...streamFilter,
         ...(!isAdmin && { status: { in: ['published', 'closed'] } }),
       },
+      include: teacherInclude,
       orderBy: { sortOrder: 'asc' },
     });
 
-    return { lessons };
+    return { lessons: lessons.map(shapeLesson) };
   });
 
   // GET /lessons/:id — получить урок
@@ -55,7 +83,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     const lesson = await prisma.lesson.findUnique({
       where: { id },
-      include: { stream: true, assignments: true },
+      include: { stream: true, assignments: true, ...teacherInclude },
     });
 
     if (!lesson) {
@@ -83,7 +111,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Урок не найден' });
     }
 
-    return { lesson };
+    return { lesson: shapeLesson(lesson) };
   });
 
   // POST /lessons — создание урока (admin)
@@ -96,6 +124,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       notes?: string;
       publishAt?: string;
       sortOrder?: number;
+      teacherIds?: string[];
     };
 
     if (!body.streamId) {
@@ -115,6 +144,10 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивный поток' });
     }
 
+    const teacherIds = Array.isArray(body.teacherIds)
+      ? await filterAdminIds(body.teacherIds)
+      : [];
+
     const lesson = await prisma.lesson.create({
       data: {
         streamId: body.streamId,
@@ -124,10 +157,14 @@ export async function lessonRoutes(app: FastifyInstance) {
         notes: body.notes || null,
         publishAt: body.publishAt ? new Date(body.publishAt) : null,
         sortOrder: body.sortOrder ?? 0,
+        ...(teacherIds.length > 0 && {
+          teachers: { create: teacherIds.map((userId) => ({ userId })) },
+        }),
       },
+      include: teacherInclude,
     });
 
-    return reply.status(201).send({ lesson });
+    return reply.status(201).send({ lesson: shapeLesson(lesson) });
   });
 
   // PATCH /lessons/:id — обновление урока (admin)
@@ -141,6 +178,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       status?: 'draft' | 'published' | 'closed';
       publishAt?: string | null;
       sortOrder?: number;
+      teacherIds?: string[];
     };
 
     const existing = await prisma.lesson.findUnique({ where: { id } });
@@ -165,9 +203,28 @@ export async function lessonRoutes(app: FastifyInstance) {
     if (body.publishAt !== undefined) data.publishAt = body.publishAt ? new Date(body.publishAt) : null;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
 
+    // Замена набора преподавателей: удаляем текущие, создаём новые (только admin)
+    if (body.teacherIds !== undefined) {
+      const teacherIds = Array.isArray(body.teacherIds)
+        ? await filterAdminIds(body.teacherIds)
+        : [];
+      await prisma.$transaction([
+        prisma.lessonTeacher.deleteMany({ where: { lessonId: id } }),
+        ...(teacherIds.length > 0
+          ? [
+              prisma.lessonTeacher.createMany({
+                data: teacherIds.map((userId) => ({ lessonId: id, userId })),
+                skipDuplicates: true,
+              }),
+            ]
+          : []),
+      ]);
+    }
+
     const lesson = await prisma.lesson.update({
       where: { id },
       data,
+      include: teacherInclude,
     });
 
     // Notify only students enrolled in the lesson's stream when published
@@ -185,7 +242,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       ).catch(() => {});
     }
 
-    return { lesson };
+    return { lesson: shapeLesson(lesson) };
   });
 
   // DELETE /lessons/:id — удаление урока (admin)

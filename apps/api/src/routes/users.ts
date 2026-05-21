@@ -56,6 +56,16 @@ export async function userRoutes(app: FastifyInstance) {
     return { users: users.map((u) => ({ ...u, submittedCount: u._count.studentAssignments, _count: undefined })) };
   });
 
+  // GET /teachers — список преподавателей (пользователей с ролью admin) для пикеров
+  app.get('/teachers', async () => {
+    const teachers = await prisma.user.findMany({
+      where: { role: 'admin', deletedAt: null },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    });
+    return { teachers };
+  });
+
   // POST /users — create student
   app.post('/users', async (request, reply) => {
     const { email, name } = request.body as { email: string; name: string };

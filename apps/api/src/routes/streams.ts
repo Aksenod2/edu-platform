@@ -2,6 +2,31 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 
+// Собирает уникальных преподавателей (admin) по всем урокам потока.
+// shared = true, если в потоке преподаёт больше одного преподавателя.
+function deriveStreamTeachers(
+  lessons: { teachers: { user: { id: string; name: string } }[] }[],
+): { teachers: { id: string; name: string }[]; shared: boolean } {
+  const map = new Map<string, { id: string; name: string }>();
+  for (const lesson of lessons) {
+    for (const t of lesson.teachers) {
+      if (!map.has(t.user.id)) {
+        map.set(t.user.id, { id: t.user.id, name: t.user.name });
+      }
+    }
+  }
+  const teachers = [...map.values()];
+  return { teachers, shared: teachers.length > 1 };
+}
+
+const streamTeachersInclude = {
+  lessons: {
+    select: {
+      teachers: { include: { user: { select: { id: true, name: true } } } },
+    },
+  },
+} as const;
+
 export async function streamRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
 
@@ -16,9 +41,15 @@ export async function streamRoutes(app: FastifyInstance) {
             status: 'active',
             enrollments: { some: { userId: request.user!.userId } },
           },
+      include: streamTeachersInclude,
       orderBy: { createdAt: 'desc' },
     });
-    return { streams };
+    return {
+      streams: streams.map(({ lessons, ...stream }) => ({
+        ...stream,
+        ...deriveStreamTeachers(lessons),
+      })),
+    };
   });
 
   // POST /streams — создание потока
@@ -70,6 +101,7 @@ export async function streamRoutes(app: FastifyInstance) {
         _count: {
           select: { enrollments: true, lessons: true },
         },
+        ...streamTeachersInclude,
       },
     });
 
@@ -77,12 +109,13 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Поток не найден' });
     }
 
-    const { _count, ...streamFields } = stream;
+    const { _count, lessons, ...streamFields } = stream;
     return {
       stream: {
         ...streamFields,
         studentsCount: _count.enrollments,
         lessonsCount: _count.lessons,
+        ...deriveStreamTeachers(lessons),
       },
     };
   });

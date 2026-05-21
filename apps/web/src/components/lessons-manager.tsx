@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
@@ -43,8 +45,10 @@ import {
   updateLesson,
   deleteLesson,
   getStreams,
+  getTeachers,
   type Lesson,
   type Stream,
+  type Teacher,
 } from '@/lib/api';
 
 type LessonFormData = {
@@ -55,6 +59,7 @@ type LessonFormData = {
   publishAt: string;
   sortOrder: number;
   status: 'draft' | 'published' | 'closed';
+  teacherIds: string[];
 };
 
 const emptyForm: LessonFormData = {
@@ -65,6 +70,7 @@ const emptyForm: LessonFormData = {
   publishAt: '',
   sortOrder: 0,
   status: 'draft',
+  teacherIds: [],
 };
 
 function lessonToForm(lesson: Lesson): LessonFormData {
@@ -76,7 +82,78 @@ function lessonToForm(lesson: Lesson): LessonFormData {
     publishAt: lesson.publishAt ? lesson.publishAt.slice(0, 16) : '',
     sortOrder: lesson.sortOrder,
     status: lesson.status,
+    teacherIds: (lesson.teachers ?? []).map((t) => t.id),
   };
+}
+
+// Инициалы из имени для аватара преподавателя
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
+// Чек-лист выбора преподавателей (admins) для урока
+function TeacherPicker({
+  teachers,
+  selected,
+  onToggle,
+}: {
+  teachers: Teacher[];
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  if (teachers.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Нет доступных преподавателей.
+      </p>
+    );
+  }
+  return (
+    <div className="max-h-48 overflow-y-auto rounded-lg border">
+      <ul className="divide-y">
+        {teachers.map((teacher) => (
+          <li key={teacher.id}>
+            <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/50">
+              <Checkbox
+                checked={selected.includes(teacher.id)}
+                onCheckedChange={() => onToggle(teacher.id)}
+              />
+              <Avatar size="sm">
+                <AvatarFallback>{initials(teacher.name)}</AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium">{teacher.name}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {teacher.email}
+                </span>
+              </div>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Ряд аватаров преподавателей урока с инициалами
+function TeacherAvatars({ teachers }: { teachers?: { id: string; name: string }[] }) {
+  if (!teachers || teachers.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex -space-x-2">
+      {teachers.map((t) => (
+        <Avatar key={t.id} size="sm" className="ring-2 ring-background" title={t.name}>
+          <AvatarFallback>{initials(t.name)}</AvatarFallback>
+        </Avatar>
+      ))}
+    </div>
+  );
 }
 
 const statusLabels: Record<string, string> = {
@@ -96,6 +173,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const [stream, setStream] = useState<Stream | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [error, setError] = useState('');
 
@@ -115,13 +193,15 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     if (!accessToken || !streamId) return;
     setLoadingLessons(true);
     try {
-      const [streamsData, lessonsData] = await Promise.all([
+      const [streamsData, lessonsData, teachersData] = await Promise.all([
         getStreams(accessToken),
         getLessons(accessToken, streamId),
+        getTeachers(accessToken),
       ]);
       const found = streamsData.streams.find((s) => s.id === streamId);
       setStream(found || null);
       setLessons([...lessonsData.lessons].sort((a, b) => a.sortOrder - b.sortOrder));
+      setTeachers(teachersData.teachers);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
@@ -185,6 +265,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         notes: form.notes || undefined,
         publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
         sortOrder: form.sortOrder,
+        teacherIds: form.teacherIds,
       });
       closeForm();
       await fetchData();
@@ -209,6 +290,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         status: editForm.status,
         publishAt: editForm.publishAt ? new Date(editForm.publishAt).toISOString() : null,
         sortOrder: editForm.sortOrder,
+        teacherIds: editForm.teacherIds,
       });
       setViewLesson(lesson);
       setEditing(false);
@@ -232,6 +314,22 @@ export function LessonsManager({ streamId }: { streamId: string }) {
       setError(err instanceof Error ? err.message : 'Ошибка удаления');
     }
   };
+
+  const toggleFormTeacher = (id: string) =>
+    setForm((prev) => ({
+      ...prev,
+      teacherIds: prev.teacherIds.includes(id)
+        ? prev.teacherIds.filter((t) => t !== id)
+        : [...prev.teacherIds, id],
+    }));
+
+  const toggleEditTeacher = (id: string) =>
+    setEditForm((prev) => ({
+      ...prev,
+      teacherIds: prev.teacherIds.includes(id)
+        ? prev.teacherIds.filter((t) => t !== id)
+        : [...prev.teacherIds, id],
+    }));
 
   const isArchived = stream?.status === 'archived';
 
@@ -343,6 +441,15 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                   </Field>
                 </div>
 
+                <Field>
+                  <FieldLabel>Преподаватели</FieldLabel>
+                  <TeacherPicker
+                    teachers={teachers}
+                    selected={form.teacherIds}
+                    onToggle={toggleFormTeacher}
+                  />
+                </Field>
+
                 <Field orientation="horizontal">
                   <Button type="submit" disabled={submitting || !form.title.trim()}>
                     {submitting && <Loader2 className="animate-spin" />}
@@ -364,6 +471,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
             <TableRow>
               <TableHead className="w-[60px]">#</TableHead>
               <TableHead>Название</TableHead>
+              <TableHead>Преподаватели</TableHead>
               <TableHead>Видео</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Публикация</TableHead>
@@ -373,13 +481,13 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           <TableBody>
             {loadingLessons ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : lessons.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                   Уроков пока нет. Добавьте первый урок.
                 </TableCell>
               </TableRow>
@@ -394,6 +502,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     {lesson.sortOrder}
                   </TableCell>
                   <TableCell className="font-medium">{lesson.title}</TableCell>
+                  <TableCell>
+                    <TeacherAvatars teachers={lesson.teachers} />
+                  </TableCell>
                   <TableCell>
                     {lesson.videoUrl ? (
                       <Video className="size-4 text-muted-foreground" />
@@ -556,6 +667,15 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           />
                         </Field>
                       </div>
+
+                      <Field>
+                        <FieldLabel>Преподаватели</FieldLabel>
+                        <TeacherPicker
+                          teachers={teachers}
+                          selected={editForm.teacherIds}
+                          onToggle={toggleEditTeacher}
+                        />
+                      </Field>
                     </FieldGroup>
                   </div>
 
@@ -581,6 +701,29 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           >
                             {statusLabels[viewLesson.status]}
                           </Badge>
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Преподаватели</dt>
+                        <dd>
+                          {viewLesson.teachers && viewLesson.teachers.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {viewLesson.teachers.map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="inline-flex items-center gap-2"
+                                >
+                                  <Avatar size="sm">
+                                    <AvatarFallback>{initials(t.name)}</AvatarFallback>
+                                  </Avatar>
+                                  {t.name}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </dd>
                       </div>
 

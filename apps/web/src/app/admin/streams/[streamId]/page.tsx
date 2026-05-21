@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Card,
@@ -287,9 +288,44 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
   );
 }
 
+// Инициалы из имени для аватара преподавателя
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
 function OverviewTab({ stream }: { stream: StreamWithCounts }) {
   return (
     <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle className="text-base">Преподаватели</CardTitle>
+          {stream.shared && <Badge variant="secondary">Общий</Badge>}
+        </CardHeader>
+        <CardContent>
+          {stream.teachers && stream.teachers.length > 0 ? (
+            <div className="flex flex-wrap gap-3">
+              {stream.teachers.map((t) => (
+                <div key={t.id} className="flex items-center gap-2">
+                  <Avatar size="sm">
+                    <AvatarFallback>{initials(t.name)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">{t.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Преподаватели ещё не назначены на уроки потока.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
