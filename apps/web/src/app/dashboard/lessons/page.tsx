@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import {
   getStreams,
   getLessons,
@@ -105,6 +106,7 @@ function StudentLessonsContent() {
       header={{
         user: { name: user.name, role: user.role as 'admin' | 'student' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge } from '@platform/ui/atoms';
 import {
@@ -197,6 +198,7 @@ export default function LessonsPage() {
       header={{
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
         platformName: 'PLATFORM ADMIN',
       }}
       sidebar={{ sections: ADMIN_NAV }}

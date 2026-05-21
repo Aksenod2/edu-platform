@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button } from '@platform/ui/atoms';
 
@@ -100,6 +101,7 @@ export default function StudentProfilePage() {
         header={{
           user: { name: user.name, role: 'admin' },
           onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
           platformName: 'PLATFORM ADMIN',
         }}
         sidebar={{ sections: ADMIN_NAV }}
@@ -122,6 +124,7 @@ export default function StudentProfilePage() {
       header={{
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
         platformName: 'PLATFORM ADMIN',
       }}
       sidebar={{ sections: ADMIN_NAV }}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { getStreams, getAssignments, type Stream, type Assignment } from '@/lib/api';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Button, Badge, Text, Mono, Spinner } from '@platform/ui/atoms';
@@ -81,6 +82,7 @@ export default function AssignmentsHubPage() {
       header={{
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
         platformName: 'PLATFORM ADMIN',
       }}
       sidebar={{ sections: ADMIN_NAV }}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner } from '@platform/ui/atoms';
 
@@ -175,6 +176,7 @@ export default function AdminStudentThreadPage() {
       header={{
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
         platformName: 'PLATFORM ADMIN',
       }}
       sidebar={{ sections: ADMIN_NAV }}

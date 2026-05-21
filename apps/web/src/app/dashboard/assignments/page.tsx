@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
 import {
@@ -120,6 +121,7 @@ export default function StudentAssignmentsPage() {
       header={{
         user: { name: user.name, role: 'student' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >

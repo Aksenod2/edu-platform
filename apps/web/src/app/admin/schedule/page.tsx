@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
 import { Card } from '@platform/ui/molecules';
 import { FormField } from '@platform/ui/molecules';
@@ -209,6 +210,7 @@ export default function SchedulePage() {
       header={{
         user: { name: user.name, role: 'admin' },
         onLogout: async () => { await logout(); router.push('/login'); },
+        notificationBell: <NotificationBell />,
         platformName: 'PLATFORM ADMIN',
       }}
       sidebar={{ sections: ADMIN_NAV }}
