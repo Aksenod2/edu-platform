@@ -14,8 +14,9 @@ export const STUDENT_NAV = [
       { label: 'Тред',         href: '/dashboard/thread',        icon: <ChatIcon /> },
       { label: 'Расписание',   href: '/dashboard/schedule',      icon: <CalendarIcon /> },
       { label: 'Уведомления',  href: '/dashboard/notifications', icon: <BellNavIcon /> },
+      { label: 'Материалы',    href: '/dashboard/materials',     icon: <FolderIcon /> },
       { label: 'Профиль',      href: '/dashboard/profile',       icon: <UserIcon /> },
-      { label: 'Настройки',    href: '/dashboard/settings/notifications', icon: <GearIcon /> },
+      { label: 'Настройки',    href: '/dashboard/settings',      icon: <GearIcon /> },
     ],
   },
 ];
@@ -82,6 +83,14 @@ function UserIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="5" r="3" />
       <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M1 4h5l2 2h7v8H1z" />
     </svg>
   );
 }
