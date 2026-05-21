@@ -3,10 +3,28 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ArrowLeft, Loader2, Paperclip, Link2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Select,
   SelectContent,
@@ -14,6 +32,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   getAssignments,
   createAssignment,
@@ -80,7 +108,7 @@ export default function AssignmentsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
 
   // Create / edit form
   const [showForm, setShowForm] = useState(false);
@@ -103,6 +131,9 @@ export default function AssignmentsPage() {
   const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([]);
   const [loadingSA, setLoadingSA] = useState(false);
 
+  // Delete confirmation
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -121,9 +152,8 @@ export default function AssignmentsPage() {
       setAssignments(assignmentsData.assignments);
       setLessons(lessonsData.lessons);
       setStudents(studentsData.users.filter((u) => u.role === 'student'));
-      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
       setLoadingData(false);
     }
@@ -141,6 +171,7 @@ export default function AssignmentsPage() {
     setFormMaterials([]);
     setNewUrlName('');
     setNewUrl('');
+    setFormError('');
     setShowForm(true);
     setViewingId(null);
   };
@@ -158,6 +189,7 @@ export default function AssignmentsPage() {
     setFormMaterials(a.materials || []);
     setNewUrlName('');
     setNewUrl('');
+    setFormError('');
     setShowForm(true);
     setViewingId(null);
   };
@@ -169,6 +201,7 @@ export default function AssignmentsPage() {
     setFormMaterials([]);
     setNewUrlName('');
     setNewUrl('');
+    setFormError('');
   };
 
   const handleAddUrl = () => {
@@ -184,12 +217,11 @@ export default function AssignmentsPage() {
   const handleUploadFile = async (file: File) => {
     if (!accessToken) return;
     setUploadingMaterial(true);
-    setError('');
     try {
       const { material } = await uploadAssignmentMaterial(accessToken, file);
       setFormMaterials((prev) => [...prev, material]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
     } finally {
       setUploadingMaterial(false);
     }
@@ -203,7 +235,7 @@ export default function AssignmentsPage() {
     e.preventDefault();
     if (!accessToken || !form.title.trim()) return;
     setSubmitting(true);
-    setError('');
+    setFormError('');
     try {
       const tags = form.tags
         .split(',')
@@ -231,10 +263,11 @@ export default function AssignmentsPage() {
           materials: formMaterials,
         });
       }
+      toast.success(editingId ? 'Задание обновлено' : 'Задание создано');
       closeForm();
       await fetchData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения');
+      setFormError(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
       setSubmitting(false);
     }
@@ -242,30 +275,29 @@ export default function AssignmentsPage() {
 
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
-    if (!confirm('Удалить это задание? Все назначения будут удалены.')) return;
-    setError('');
     try {
       await deleteAssignment(accessToken, id);
       if (viewingId === id) setViewingId(null);
+      toast.success('Задание удалено');
       await fetchData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления');
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления');
     }
   };
 
   const handleAssign = async (assignmentId: string, studentId?: string, groupId?: string) => {
     if (!accessToken) return;
-    setError('');
     try {
       await assignAssignment(accessToken, assignmentId, { studentId, groupId });
       setAssigningId(null);
       setAssignStudentId('');
+      toast.success('Задание назначено');
       await fetchData();
       if (viewingId === assignmentId) {
         await loadStudentAssignments(assignmentId);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка назначения');
+      toast.error(err instanceof Error ? err.message : 'Ошибка назначения');
     }
   };
 
@@ -296,9 +328,10 @@ export default function AssignmentsPage() {
     if (!accessToken) return;
     try {
       await updateStudentAssignment(accessToken, saId, { status: 'reviewed' });
+      toast.success('Отмечено как проверено');
       if (viewingId) await loadStudentAssignments(viewingId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
+      toast.error(err instanceof Error ? err.message : 'Ошибка');
     }
   };
 
@@ -307,424 +340,454 @@ export default function AssignmentsPage() {
     : assignments;
 
   return (
-    <>
-    <div style={{ padding: 'var(--spacing-4)', maxWidth: 1000 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div className="mx-auto max-w-[1000px] p-4">
+      <div className="mb-6 flex items-center justify-between">
         <div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push('/admin/streams')}
-            style={{ marginBottom: 8, display: 'block' }}
+            className="mb-2"
           >
-            ← Назад к потокам
+            <ArrowLeft className="size-4" />
+            Назад к потокам
           </Button>
-          <h1 style={{ margin: 0 }}>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Задания{stream ? `: ${stream.name}` : ''}
           </h1>
         </div>
         {stream?.status !== 'archived' && (
-          <Button
-            variant="default"
-            onClick={showForm ? closeForm : openCreate}
-          >
+          <Button onClick={showForm ? closeForm : openCreate}>
             {showForm && !editingId ? 'Отмена' : 'Добавить задание'}
           </Button>
         )}
       </div>
 
-      {error && (
-        <Alert variant="destructive" style={{ marginBottom: 16 }}>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
       {showForm && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 16, background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-default)' }}>
-          <h3 style={{ marginTop: 0 }}>{editingId ? 'Редактировать задание' : 'Новое задание'}</h3>
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Название *</label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="Название задания"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-              autoFocus
-            />
-          </div>
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Описание (Markdown)</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Описание задания в формате Markdown..."
-              rows={5}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box', resize: 'vertical' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Тип</label>
-              <Select
-                value={form.type}
-                onValueChange={(v) => setForm({ ...form, type: v as 'short' | 'long' })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="short">Короткое</SelectItem>
-                  <SelectItem value="long">Длинное</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Урок (опционально)</label>
-              <Select
-                value={form.lessonId || '__none__'}
-                onValueChange={(v) => setForm({ ...form, lessonId: v === '__none__' ? '' : v })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="— Без привязки —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Без привязки —</SelectItem>
-                  {lessons.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Дедлайн</label>
-              <input
-                type="datetime-local"
-                value={form.dueDate}
-                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-              />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>Теги (через запятую)</label>
-            <input
-              type="text"
-              value={form.tags}
-              onChange={(e) => setForm({ ...form, tags: e.target.value })}
-              placeholder="дизайн, верстка, типографика"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--text-sm)', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          {/* Материалы */}
-          <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--color-bg-overlay)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--color-border-subtle)' }}>
-            <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', fontSize: 14 }}>Материалы</label>
-
-            {/* Existing materials list */}
-            {formMaterials.length > 0 && (
-              <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {formMaterials.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, background: 'var(--color-bg-surface)', padding: '6px 10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--color-border-default)' }}>
-                    <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', flexShrink: 0 }}>
-                      {m.type === 'file' ? '📎' : '🔗'}
-                    </span>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-primary)' }}>{m.name}</span>
-                    {m.type === 'file' && m.size && (
-                      <span style={{ color: 'var(--color-text-disabled)', fontSize: 11, flexShrink: 0 }}>{Math.round(m.size / 1024)}KB</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMaterial(i)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
-                    >×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add URL */}
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Добавить ссылку</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>{editingId ? 'Редактировать задание' : 'Новое задание'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="title">Название *</Label>
+                <Input
+                  id="title"
                   type="text"
-                  value={newUrlName}
-                  onChange={(e) => setNewUrlName(e.target.value)}
-                  placeholder="Название (опционально)"
-                  style={{ flex: '0 0 160px', padding: '6px 10px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 13, boxSizing: 'border-box' }}
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="Название задания"
+                  autoFocus
                 />
-                <input
-                  type="url"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  placeholder="https://..."
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUrl())}
-                  style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 13, boxSizing: 'border-box' }}
-                />
-                <button
-                  type="button"
-                  onClick={handleAddUrl}
-                  disabled={!newUrl.trim()}
-                  style={{ padding: '6px 12px', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', opacity: !newUrl.trim() ? 0.5 : 1 }}
-                >
-                  + Добавить
-                </button>
               </div>
-            </div>
 
-            {/* Upload file */}
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Загрузить файл</div>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--color-bg-elevated)', border: '1px dashed var(--color-border-default)', borderRadius: 'var(--radius-xs)', cursor: uploadingMaterial ? 'not-allowed' : 'pointer', fontSize: 13, opacity: uploadingMaterial ? 0.6 : 1 }}>
-                {uploadingMaterial ? 'Загрузка...' : '📁 Выбрать файл'}
-                <input
-                  type="file"
-                  style={{ display: 'none' }}
-                  disabled={uploadingMaterial}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handleUploadFile(file);
-                      e.target.value = '';
-                    }
-                  }}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="description">Описание (Markdown)</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Описание задания в формате Markdown..."
+                  rows={5}
                 />
-              </label>
-            </div>
-          </div>
+              </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={submitting || !form.title.trim()}
-            >
-              {submitting && <Loader2 className="animate-spin" />}
-              {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={closeForm}
-            >
-              Отмена
-            </Button>
-          </div>
-        </form>
+              <div className="flex flex-col gap-4 sm:flex-row">
+                <div className="flex flex-1 flex-col gap-2">
+                  <Label>Тип</Label>
+                  <Select
+                    value={form.type}
+                    onValueChange={(v) => setForm({ ...form, type: v as 'short' | 'long' })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short">Короткое</SelectItem>
+                      <SelectItem value="long">Длинное</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-2">
+                  <Label>Урок (опционально)</Label>
+                  <Select
+                    value={form.lessonId || '__none__'}
+                    onValueChange={(v) => setForm({ ...form, lessonId: v === '__none__' ? '' : v })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="— Без привязки —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— Без привязки —</SelectItem>
+                      {lessons.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-2">
+                  <Label htmlFor="dueDate">Дедлайн</Label>
+                  <Input
+                    id="dueDate"
+                    type="datetime-local"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="tags">Теги (через запятую)</Label>
+                <Input
+                  id="tags"
+                  type="text"
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                  placeholder="дизайн, верстка, типографика"
+                />
+              </div>
+
+              {/* Материалы */}
+              <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
+                <Label>Материалы</Label>
+
+                {/* Existing materials list */}
+                {formMaterials.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {formMaterials.map((m, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm"
+                      >
+                        <span className="shrink-0 text-muted-foreground">
+                          {m.type === 'file' ? <Paperclip className="size-4" /> : <Link2 className="size-4" />}
+                        </span>
+                        <span className="flex-1 truncate text-foreground">{m.name}</span>
+                        {m.type === 'file' && m.size && (
+                          <span className="shrink-0 text-xs text-muted-foreground">{Math.round(m.size / 1024)}KB</span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => handleRemoveMaterial(i)}
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add URL */}
+                <div className="flex flex-col gap-1">
+                  <div className="text-xs text-muted-foreground">Добавить ссылку</div>
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="text"
+                      value={newUrlName}
+                      onChange={(e) => setNewUrlName(e.target.value)}
+                      placeholder="Название (опционально)"
+                      className="w-40 shrink-0"
+                    />
+                    <Input
+                      type="url"
+                      value={newUrl}
+                      onChange={(e) => setNewUrl(e.target.value)}
+                      placeholder="https://..."
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUrl())}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleAddUrl}
+                      disabled={!newUrl.trim()}
+                      className="whitespace-nowrap"
+                    >
+                      + Добавить
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Upload file */}
+                <div className="flex flex-col gap-1">
+                  <div className="text-xs text-muted-foreground">Загрузить файл</div>
+                  <label
+                    className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm ${uploadingMaterial ? 'cursor-not-allowed opacity-60' : ''}`}
+                  >
+                    {uploadingMaterial ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Загрузка...
+                      </>
+                    ) : (
+                      <>
+                        <Paperclip className="size-4" />
+                        Выбрать файл
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={uploadingMaterial}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handleUploadFile(file);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {formError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{formError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex gap-2">
+                <Button type="submit" disabled={submitting || !form.title.trim()}>
+                  {submitting && <Loader2 className="size-4 animate-spin" />}
+                  {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={closeForm}>
+                  Отмена
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {loadingData ? (
-        <p>Загрузка заданий...</p>
+        <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+          Загрузка заданий...
+        </div>
       ) : filteredAssignments.length === 0 ? (
-        <p style={{ color: 'var(--color-text-secondary)' }}>Заданий пока нет. Добавьте первое задание.</p>
+        <div className="py-12 text-center text-muted-foreground">
+          Заданий пока нет. Добавьте первое задание.
+        </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Название</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Тип</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Урок</th>
-              <th style={{ textAlign: 'left', padding: '8px 12px' }}>Дедлайн</th>
-              <th style={{ textAlign: 'center', padding: '8px 12px' }}>Назначено</th>
-              <th style={{ textAlign: 'right', padding: '8px 12px' }}>Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAssignments.map((a) => (
-              <>
-                <tr key={a.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <td style={{ padding: '12px' }}>
-                    <div style={{ fontWeight: 500 }}>{a.title}</div>
-                    {a.tags.length > 0 && (
-                      <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {a.tags.map((tag) => (
-                          <span key={tag} style={{ fontSize: 11, background: '#e8e8e8', padding: '1px 6px', borderRadius: 8 }}>{tag}</span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '12px' }}>
-                    <Badge variant="outline">{typeLabels[a.type]}</Badge>
-                  </td>
-                  <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
-                    {a.lesson?.title || '—'}
-                  </td>
-                  <td style={{ padding: '12px', color: 'var(--color-text-secondary)', fontSize: 14 }}>
-                    {a.dueDate
-                      ? new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
-                      : '—'}
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'center' }}>
-                    {a._count?.studentAssignments || 0}
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      <Button
-                        variant={viewingId === a.id ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => handleView(a.id)}
-                      >
-                        {viewingId === a.id ? 'Скрыть' : 'Назначения'}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => { setAssigningId(a.id); setAssignStudentId(''); }}
-                      >
-                        Назначить
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEdit(a)}
-                      >
-                        Ред.
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(a.id)}
-                      >
-                        Удалить
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-
-                {/* Assign modal inline */}
-                {assigningId === a.id && (
-                  <tr key={`assign-${a.id}`}>
-                    <td colSpan={6} style={{ padding: '12px 12px 16px', background: '#f0f8ff', borderBottom: '1px solid #cce5ff' }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Select
-                          value={assignStudentId}
-                          onValueChange={setAssignStudentId}
-                        >
-                          <SelectTrigger style={{ minWidth: 220 }}>
-                            <SelectValue placeholder="— Выбрать ученика —" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {students.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Название</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Урок</TableHead>
+                <TableHead>Дедлайн</TableHead>
+                <TableHead className="text-center">Назначено</TableHead>
+                <TableHead className="text-right">Действия</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredAssignments.map((a) => (
+                <>
+                  <TableRow key={a.id}>
+                    <TableCell>
+                      <div className="font-medium">{a.title}</div>
+                      {a.tags.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {a.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="font-normal">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{typeLabels[a.type]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {a.lesson?.title || '—'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {a.dueDate
+                        ? new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {a._count?.studentAssignments || 0}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-1">
                         <Button
-                          variant="default"
-                          disabled={!assignStudentId}
-                          onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
+                          variant={viewingId === a.id ? 'default' : 'ghost'}
+                          size="sm"
+                          onClick={() => handleView(a.id)}
                         >
-                          Назначить ученику
+                          {viewingId === a.id ? 'Скрыть' : 'Назначения'}
                         </Button>
                         <Button
                           variant="secondary"
-                          onClick={() => handleAssign(a.id, undefined, streamId)}
+                          size="sm"
+                          onClick={() => { setAssigningId(a.id); setAssignStudentId(''); }}
                         >
-                          Назначить всем
+                          Назначить
                         </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setAssigningId(null)}
-                        >
-                          Отмена
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
+                          Ред.
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => setDeletingId(a.id)}>
+                          Удалить
                         </Button>
                       </div>
-                    </td>
-                  </tr>
-                )}
+                    </TableCell>
+                  </TableRow>
 
-                {/* Student assignments detail */}
-                {viewingId === a.id && (
-                  <tr key={`detail-${a.id}`}>
-                    <td colSpan={6} style={{ padding: '12px', background: '#fafafa', borderBottom: '2px solid var(--color-border-default)' }}>
-                      {a.description && (
-                        <div style={{ marginBottom: 12, padding: 12, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-default)', borderRadius: 4 }}>
-                          <strong style={{ fontSize: 13 }}>Описание:</strong>
-                          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: '4px 0 0', fontSize: 14 }}>{a.description}</pre>
+                  {/* Assign modal inline */}
+                  {assigningId === a.id && (
+                    <TableRow key={`assign-${a.id}`} className="bg-muted/50 hover:bg-muted/50">
+                      <TableCell colSpan={6}>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Select value={assignStudentId} onValueChange={setAssignStudentId}>
+                            <SelectTrigger className="min-w-[220px]">
+                              <SelectValue placeholder="— Выбрать ученика —" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {students.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            disabled={!assignStudentId}
+                            onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
+                          >
+                            Назначить ученику
+                          </Button>
+                          <Button variant="secondary" onClick={() => handleAssign(a.id, undefined, streamId)}>
+                            Назначить всем
+                          </Button>
+                          <Button variant="ghost" onClick={() => setAssigningId(null)}>
+                            Отмена
+                          </Button>
                         </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                        <strong style={{ fontSize: 13 }}>Назначения:</strong>
-                        <Select
-                          value={statusFilter || '__all__'}
-                          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : v)}
-                        >
-                          <SelectTrigger style={{ minWidth: 160 }}>
-                            <SelectValue placeholder="Все статусы" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__all__">Все статусы</SelectItem>
-                            <SelectItem value="assigned">Назначено</SelectItem>
-                            <SelectItem value="submitted">Отправлено</SelectItem>
-                            <SelectItem value="reviewed">Проверено</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {loadingSA ? (
-                        <p style={{ fontSize: 13 }}>Загрузка...</p>
-                      ) : studentAssignments.length === 0 ? (
-                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Нет назначений. Используйте «Назначить» для добавления учеников.</p>
-                      ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid #ddd' }}>
-                              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Ученик</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Статус</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Отправлено</th>
-                              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Проверено</th>
-                              <th style={{ textAlign: 'right', padding: '6px 8px' }}>Действие</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(statusFilter
-                              ? studentAssignments.filter((sa) => sa.status === statusFilter)
-                              : studentAssignments
-                            ).map((sa) => (
-                              <tr key={sa.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                                <td style={{ padding: '6px 8px' }}>{sa.student?.name || sa.studentId}</td>
-                                <td style={{ padding: '6px 8px' }}>
-                                  <Badge variant={saStatusBadgeVariant[sa.status] ?? 'default'}>
-                                    {saStatusLabels[sa.status]}
-                                  </Badge>
-                                </td>
-                                <td style={{ padding: '6px 8px', color: 'var(--color-text-secondary)' }}>
-                                  {sa.submittedAt ? new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                                </td>
-                                <td style={{ padding: '6px 8px', color: 'var(--color-text-secondary)' }}>
-                                  {sa.reviewedAt ? new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                                </td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                  {sa.status === 'submitted' && (
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => handleReview(sa.id)}
-                                    >
-                                      Проверено
-                                    </Button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
-          </tbody>
-        </table>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {/* Student assignments detail */}
+                  {viewingId === a.id && (
+                    <TableRow key={`detail-${a.id}`} className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell colSpan={6}>
+                        {a.description && (
+                          <div className="mb-3 rounded-md border bg-card p-3">
+                            <strong className="text-sm">Описание:</strong>
+                            <pre className="mt-1 mb-0 whitespace-pre-wrap font-sans text-sm">{a.description}</pre>
+                          </div>
+                        )}
+                        <div className="mb-2 flex items-center gap-2">
+                          <strong className="text-sm">Назначения:</strong>
+                          <Select
+                            value={statusFilter || '__all__'}
+                            onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : v)}
+                          >
+                            <SelectTrigger className="min-w-[160px]">
+                              <SelectValue placeholder="Все статусы" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Все статусы</SelectItem>
+                              <SelectItem value="assigned">Назначено</SelectItem>
+                              <SelectItem value="submitted">Отправлено</SelectItem>
+                              <SelectItem value="reviewed">Проверено</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {loadingSA ? (
+                          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" />
+                            Загрузка...
+                          </div>
+                        ) : studentAssignments.length === 0 ? (
+                          <p className="py-2 text-sm text-muted-foreground">
+                            Нет назначений. Используйте «Назначить» для добавления учеников.
+                          </p>
+                        ) : (
+                          <div className="rounded-lg border bg-card">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Ученик</TableHead>
+                                  <TableHead>Статус</TableHead>
+                                  <TableHead>Отправлено</TableHead>
+                                  <TableHead>Проверено</TableHead>
+                                  <TableHead className="text-right">Действие</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {(statusFilter
+                                  ? studentAssignments.filter((sa) => sa.status === statusFilter)
+                                  : studentAssignments
+                                ).map((sa) => (
+                                  <TableRow key={sa.id}>
+                                    <TableCell>{sa.student?.name || sa.studentId}</TableCell>
+                                    <TableCell>
+                                      <Badge variant={saStatusBadgeVariant[sa.status] ?? 'default'}>
+                                        {saStatusLabels[sa.status]}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {sa.submittedAt ? new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {sa.reviewedAt ? new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {sa.status === 'submitted' && (
+                                        <Button variant="secondary" size="sm" onClick={() => handleReview(sa.id)}>
+                                          Проверено
+                                        </Button>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
+
+      <AlertDialog open={deletingId !== null} onOpenChange={(open) => !open && setDeletingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить задание?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Все назначения этого задания будут удалены. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                if (deletingId) handleDelete(deletingId);
+                setDeletingId(null);
+              }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-    </>
   );
 }
