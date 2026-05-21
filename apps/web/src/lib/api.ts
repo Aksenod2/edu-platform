@@ -781,6 +781,22 @@ export async function addThreadEntry(
   });
 }
 
+export interface ThreadSummary {
+  studentId: string;
+  studentName: string;
+  lastEntryAt: string;
+  lastEntryPreview: string;
+  lastEntryAuthorRole: string;
+  unanswered: boolean;
+  unreadCount: number;
+}
+
+export async function getThreads(accessToken: string): Promise<{ threads: ThreadSummary[] }> {
+  return request('/threads', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Notifications API
 
 export type NotificationType =

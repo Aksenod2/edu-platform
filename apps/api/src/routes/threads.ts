@@ -8,8 +8,81 @@ const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link',
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
 const ADMIN_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 
+// Short human-readable preview of the latest entry for the inbox list.
+function previewForEntry(type: ThreadEntryType, content: string): string {
+  switch (type) {
+    case 'file':
+      return `Файл: ${content}`;
+    case 'audio':
+      return 'Аудиосообщение';
+    case 'link':
+      return `Ссылка: ${content}`;
+    default:
+      return content.length > 140 ? content.slice(0, 140) + '…' : content;
+  }
+}
+
 export async function threadRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
+
+  // GET /threads — admin inbox: one item per student conversation with activity.
+  // Sorted: unanswered (latest entry by student) first, then by lastEntryAt desc.
+  app.get('/threads', async (request, reply) => {
+    const user = request.user!;
+    if (user.role !== 'admin') {
+      return reply.status(403).send({ error: 'Недостаточно прав' });
+    }
+
+    // Threads of non-deleted students that have at least one entry.
+    // Pull the newest entry (author role + preview) per thread, plus the count
+    // of unread student-authored entries (readAt null = not yet read by admin).
+    const threads = await prisma.thread.findMany({
+      where: {
+        student: { deletedAt: null },
+        entries: { some: {} },
+      },
+      select: {
+        studentId: true,
+        student: { select: { name: true } },
+        entries: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            type: true,
+            content: true,
+            createdAt: true,
+            author: { select: { role: true } },
+          },
+        },
+        _count: {
+          select: {
+            entries: { where: { readAt: null, author: { role: 'student' } } },
+          },
+        },
+      },
+    });
+
+    const summaries = threads
+      .filter((t) => t.entries[0])
+      .map((t) => {
+        const last = t.entries[0]!;
+        return {
+          studentId: t.studentId,
+          studentName: t.student.name,
+          lastEntryAt: last.createdAt,
+          lastEntryPreview: previewForEntry(last.type, last.content),
+          lastEntryAuthorRole: last.author.role,
+          unanswered: last.author.role === 'student',
+          unreadCount: t._count.entries,
+        };
+      })
+      .sort((a, b) => {
+        if (a.unanswered !== b.unanswered) return a.unanswered ? -1 : 1;
+        return b.lastEntryAt.getTime() - a.lastEntryAt.getTime();
+      });
+
+    return { threads: summaries };
+  });
 
   // GET /threads/:studentId — chronological feed of entries
   // Query params: ?assignmentId=X to filter by assignment context
