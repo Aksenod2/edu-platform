@@ -29,7 +29,7 @@ const variantClasses: Record<BadgeVariant, string> = {
   warning:  'bg-warning-dim text-warning border-transparent',
   error:    'bg-error-dim text-error border-transparent',
   info:     'bg-info-dim text-info border-transparent',
-  accent:   'bg-accent-red text-white border-transparent',
+  accent:   'bg-accent-red text-text-inverse border-transparent',
 };
 
 const dotColorClasses: Record<BadgeVariant, string> = {
