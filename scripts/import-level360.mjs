@@ -12,7 +12,7 @@
  *   node scripts/import-level360.mjs
  *
  * API_URL — базовый URL API. Подойдёт и прокси веба:
- *   API_URL="https://platform-web-8zsp.onrender.com/api-proxy"
+ *   API_URL="https://<web-host>/api-proxy"
  *
  * Требуется Node 18+ (используется глобальный fetch).
  */
@@ -23,7 +23,7 @@ const STREAM_NAME = process.env.STREAM_NAME || 'level360';
 
 if (!API_URL || !API_KEY) {
   console.error('Заполни переменные окружения API_URL и API_KEY. Пример:');
-  console.error('  API_URL="https://platform-web-8zsp.onrender.com/api-proxy" API_KEY="sk_..." node scripts/import-level360.mjs');
+  console.error('  API_URL="https://<web-host>/api-proxy" API_KEY="sk_..." node scripts/import-level360.mjs');
   process.exit(1);
 }
 
