@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
+import { isEnrolled } from '../lib/enrollment.js';
 
 export async function scheduleRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -17,6 +18,11 @@ export async function scheduleRoutes(app: FastifyInstance) {
     const stream = await prisma.stream.findUnique({ where: { id: streamId } });
     if (!stream) {
       return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    // Студент видит расписание только своих потоков
+    if (request.user?.role !== 'admin' && !(await isEnrolled(request.user!.userId, streamId))) {
+      return reply.status(403).send({ error: 'Нет доступа к этому потоку' });
     }
 
     const entries = await prisma.scheduleEntry.findMany({

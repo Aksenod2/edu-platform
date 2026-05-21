@@ -6,11 +6,16 @@ export async function streamRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
 
   // GET /streams — список потоков
-  // Admin: все потоки; Student: только активные
+  // Admin: все потоки; Student: только активные потоки, на которые он зачислен
   app.get('/streams', { onRequest: authenticate }, async (request) => {
     const isAdmin = request.user?.role === 'admin';
     const streams = await prisma.stream.findMany({
-      where: isAdmin ? {} : { status: 'active' },
+      where: isAdmin
+        ? {}
+        : {
+            status: 'active',
+            enrollments: { some: { userId: request.user!.userId } },
+          },
       orderBy: { createdAt: 'desc' },
     });
     return { streams };

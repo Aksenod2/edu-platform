@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
+import { isEnrolled } from '../lib/enrollment.js';
 
 export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -16,6 +17,11 @@ export async function lessonRoutes(app: FastifyInstance) {
       const stream = await prisma.stream.findUnique({ where: { id: streamId } });
       if (!stream) {
         return reply.status(404).send({ error: 'Поток не найден' });
+      }
+
+      // Студент видит уроки только своих потоков
+      if (request.user?.role !== 'admin' && !(await isEnrolled(request.user!.userId, streamId))) {
+        return reply.status(403).send({ error: 'Нет доступа к этому потоку' });
       }
     }
 
@@ -57,6 +63,11 @@ export async function lessonRoutes(app: FastifyInstance) {
     }
 
     const isAdmin = request.user?.role === 'admin';
+
+    // Студент не должен знать о существовании уроков чужих потоков → 404
+    if (!isAdmin && !(await isEnrolled(request.user!.userId, lesson.streamId))) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
 
     // Auto-publish при чтении конкретного урока
     if (lesson.status === 'draft' && lesson.publishAt && lesson.publishAt <= new Date()) {
