@@ -75,17 +75,19 @@ async function ensureStream() {
   const existing = (list.body?.streams || []).find((s) => s.name === STREAM_NAME);
   if (existing) {
     console.log(`• Поток "${STREAM_NAME}" уже существует (${existing.id}).`);
-    return;
+    return existing.id;
   }
   const created = await api('/streams', {
     method: 'POST',
     body: JSON.stringify({ name: STREAM_NAME }),
   });
   if (created.ok) {
-    console.log(`✓ Создан поток "${STREAM_NAME}" (${created.body?.stream?.id}).`);
-  } else {
-    console.warn(`! Не удалось создать поток "${STREAM_NAME}" (HTTP ${created.status}): ${JSON.stringify(created.body)}`);
+    const id = created.body?.stream?.id;
+    console.log(`✓ Создан поток "${STREAM_NAME}" (${id}).`);
+    return id;
   }
+  console.warn(`! Не удалось создать поток "${STREAM_NAME}" (HTTP ${created.status}): ${JSON.stringify(created.body)}`);
+  return null;
 }
 
 async function findStudentIdByEmail(email) {
@@ -99,9 +101,10 @@ async function findStudentIdByEmail(email) {
 
 async function run() {
   console.log(`API_URL=${API_URL}`);
-  await ensureStream();
+  const streamId = await ensureStream();
 
   const results = [];
+  const enrollIds = [];
   for (const student of STUDENTS) {
     const row = { name: student.name, email: student.email, password: '', note: '' };
     try {
@@ -122,6 +125,7 @@ async function run() {
       }
 
       if (userId) {
+        enrollIds.push(userId);
         const reset = await api(`/users/${userId}/reset-password`, { method: 'POST' });
         if (reset.ok) {
           row.password = reset.body?.tempPassword || '';
@@ -134,6 +138,19 @@ async function run() {
     }
     results.push(row);
     console.log(`  ${row.email} → ${row.password || '—'} (${row.note})`);
+  }
+
+  // Зачисляем созданных студентов в поток level360
+  if (streamId && enrollIds.length) {
+    const enroll = await api(`/streams/${streamId}/students`, {
+      method: 'POST',
+      body: JSON.stringify({ studentIds: enrollIds }),
+    });
+    if (enroll.ok) {
+      console.log(`\n✓ Зачислено в поток "${STREAM_NAME}": ${enrollIds.length}.`);
+    } else {
+      console.warn(`\n! Не удалось зачислить в поток (HTTP ${enroll.status}): ${JSON.stringify(enroll.body)}. Возможно, миграция БД ещё не применилась на проде — повтори позже.`);
+    }
   }
 
   console.log('\n================ ИТОГ (email | пароль | статус) ================');
