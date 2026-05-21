@@ -56,6 +56,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: 'Обзор', href: '/admin', icon: LayoutGrid },
       { label: 'Ученики', href: '/admin/students', icon: Users },
       { label: 'Потоки', href: '/admin/streams', icon: Layers },
+      { label: 'Уроки', href: '/admin/lessons', icon: BookOpen },
       { label: 'Расписание', href: '/admin/schedule', icon: Calendar },
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
     ],
