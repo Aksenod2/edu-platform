@@ -409,6 +409,14 @@ export async function deleteScheduleEntry(
 
 // Assignments API
 
+export interface AssignmentMaterial {
+  type: 'file' | 'url';
+  name: string;
+  url: string;
+  size?: number;
+  s3Key?: string;
+}
+
 export interface Assignment {
   id: string;
   streamId: string;
@@ -419,6 +427,7 @@ export interface Assignment {
   tags: string[];
   dueDate: string | null;
   groupId: string | null;
+  materials: AssignmentMaterial[];
   createdAt: string;
   updatedAt: string;
   lesson?: { id: string; title: string } | null;
@@ -474,6 +483,7 @@ export async function createAssignment(
     tags?: string[];
     dueDate?: string;
     lessonId?: string;
+    materials?: AssignmentMaterial[];
   },
 ): Promise<{ assignment: Assignment }> {
   return request('/assignments', {
@@ -493,6 +503,7 @@ export async function updateAssignment(
     tags?: string[];
     dueDate?: string | null;
     lessonId?: string | null;
+    materials?: AssignmentMaterial[];
   },
 ): Promise<{ assignment: Assignment }> {
   return request(`/assignments/${id}`, {
@@ -500,6 +511,39 @@ export async function updateAssignment(
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify(data),
   });
+}
+
+export async function uploadAssignmentMaterial(
+  accessToken: string,
+  file: File,
+): Promise<{ material: AssignmentMaterial }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/assignments/upload-material`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { material: AssignmentMaterial };
 }
 
 export async function deleteAssignment(

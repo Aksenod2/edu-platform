@@ -8,7 +8,6 @@ import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
 import {
   getStudentAssignments,
-  updateStudentAssignment,
   submitStudentAssignment,
   getStreams,
   type StudentAssignment,

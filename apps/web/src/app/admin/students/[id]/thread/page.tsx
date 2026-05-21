@@ -110,9 +110,13 @@ export default function AdminStudentThreadPage() {
     if (!accessToken || !studentId) return;
     setLoadingData(true);
     try {
-      const data = await getThread(accessToken, studentId);
+      const [data, saData] = await Promise.all([
+        getThread(accessToken, studentId),
+        getStudentAssignments(accessToken, { studentId }),
+      ]);
       setStudentName(data.student.name);
       setEntries(data.entries);
+      setStudentAssignments(saData.studentAssignments);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки треда');
@@ -194,6 +198,21 @@ export default function AdminStudentThreadPage() {
     } finally {
       setSending(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleReview = async (saId: string, newStatus: 'reviewed' | 'needs_revision') => {
+    if (!accessToken) return;
+    setReviewingId(saId);
+    try {
+      await updateStudentAssignment(accessToken, saId, { status: newStatus });
+      // Refresh data to reflect new status
+      const saData = await getStudentAssignments(accessToken, { studentId });
+      setStudentAssignments(saData.studentAssignments);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка обновления статуса');
+    } finally {
+      setReviewingId(null);
     }
   };
 
@@ -346,6 +365,11 @@ export default function AdminStudentThreadPage() {
           entries.map((entry, i) => {
             const showGroupHeader = entry.assignmentId
               && entry.assignmentId !== entries[i - 1]?.assignmentId;
+            const isSubmission = entry.metadata?.submissionType === 'assignment' && entry.assignmentId;
+            const relatedSa = isSubmission
+              ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId)
+              : null;
+
             return (
               <div key={entry.id}>
                 {showGroupHeader && (
@@ -371,14 +395,25 @@ export default function AdminStudentThreadPage() {
                       color: 'var(--color-info)',
                       letterSpacing: 'var(--tracking-wide)',
                     }}>
-                      Вопросы по заданию: {entry.assignment?.title}
+                      {isSubmission ? 'Сданная работа' : 'Вопросы по заданию'}: {entry.assignment?.title}
                     </span>
                   </div>
                 )}
-                <AdminMessageBubble
-                  entry={entry}
-                  showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
-                />
+                {isSubmission && relatedSa ? (
+                  <SubmissionThreadCard
+                    entry={entry}
+                    sa={relatedSa}
+                    studentName={studentName}
+                    onAccept={() => handleReview(relatedSa.id, 'reviewed')}
+                    onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
+                    isReviewing={reviewingId === relatedSa.id}
+                  />
+                ) : (
+                  <AdminMessageBubble
+                    entry={entry}
+                    showAuthor={i === 0 || entries[i - 1].authorId !== entry.authorId}
+                  />
+                )}
               </div>
             );
           })
@@ -737,6 +772,280 @@ function CalendarIcon() {
       <rect x="1" y="3" width="14" height="12" />
       <path d="M1 7h14M5 1v4M11 1v4" />
     </svg>
+  );
+}
+
+/* ─── Submission thread card (admin view) ─── */
+
+const SUBMISSION_STATUS_LABELS: Record<string, string> = {
+  submitted: 'Сдана',
+  reviewed: 'Принята',
+  needs_revision: 'На доработке',
+};
+
+const SUBMISSION_STATUS_COLORS: Record<string, string> = {
+  submitted: 'var(--color-success)',
+  reviewed: 'var(--color-text-disabled)',
+  needs_revision: 'var(--color-error)',
+};
+
+function SubmissionThreadCard({
+  entry,
+  sa,
+  studentName,
+  onAccept,
+  onRequestRevision,
+  isReviewing,
+}: {
+  entry: ThreadEntry;
+  sa: StudentAssignment;
+  studentName: string;
+  onAccept: () => void;
+  onRequestRevision: () => void;
+  isReviewing: boolean;
+}) {
+  const date = new Date(entry.createdAt);
+  const statusColor = SUBMISSION_STATUS_COLORS[sa.status] || 'var(--color-text-disabled)';
+
+  return (
+    <div style={{
+      maxWidth: '85%',
+      alignSelf: 'flex-start',
+      marginTop: 'var(--space-4)',
+      marginLeft: 'calc(32px + var(--space-2))',
+    }}>
+      <div style={{
+        border: '1px solid var(--color-success)',
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden',
+        background: 'var(--color-bg-surface)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: 'var(--space-3) var(--space-4)',
+          background: 'rgba(0, 200, 83, 0.06)',
+          borderBottom: '1px solid var(--color-border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 'var(--space-3)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--space-1)',
+              padding: 'var(--space-1) var(--space-2)',
+              borderRadius: 'var(--radius-full)',
+              fontSize: 'var(--text-xs)',
+              fontWeight: 'var(--font-semibold)' as unknown as number,
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: 'var(--tracking-wide)',
+              textTransform: 'uppercase',
+              color: statusColor,
+              background: `color-mix(in srgb, ${statusColor} 10%, transparent)`,
+              border: `1px solid ${statusColor}`,
+            }}>
+              {sa.status === 'submitted' && (
+                <span style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: statusColor,
+                  animation: 'pulse 2s infinite',
+                }} />
+              )}
+              {SUBMISSION_STATUS_LABELS[sa.status] || sa.status}
+            </span>
+            <span style={{
+              fontSize: 'var(--text-sm)',
+              fontWeight: 'var(--font-medium)' as unknown as number,
+              color: 'var(--color-text-primary)',
+            }}>
+              {entry.assignment?.title}
+            </span>
+          </div>
+          <span style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-disabled)',
+            fontFamily: 'var(--font-mono)',
+          }}>
+            {date.toLocaleString('ru-RU', { day: 'numeric', month: 'short' })} · {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 'var(--space-4)' }}>
+          {/* Student name */}
+          <div style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-tertiary)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: 'var(--tracking-wide)',
+            marginBottom: 'var(--space-2)',
+          }}>
+            Студент: {studentName}
+          </div>
+
+          {/* Answer text */}
+          {sa.content && (
+            <div style={{
+              padding: 'var(--space-3)',
+              background: 'var(--color-bg-overlay)',
+              borderLeft: '3px solid var(--color-info)',
+              borderRadius: 'var(--radius-xs)',
+              marginBottom: 'var(--space-3)',
+            }}>
+              <p style={{
+                whiteSpace: 'pre-wrap',
+                margin: 0,
+                fontSize: 'var(--text-sm)',
+                lineHeight: 'var(--leading-relaxed)',
+                color: 'var(--color-text-secondary)',
+                fontStyle: 'italic',
+              }}>
+                {sa.content}
+              </p>
+            </div>
+          )}
+
+          {/* Attached file */}
+          {sa.fileName && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+              padding: 'var(--space-2) var(--space-3)',
+              background: 'var(--color-bg-overlay)',
+              borderRadius: 'var(--radius-xs)',
+              border: '1px solid var(--color-border-subtle)',
+              marginBottom: 'var(--space-3)',
+            }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-default)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: 'var(--color-text-tertiary)',
+              }}>
+                <PaperclipIcon />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 'var(--font-medium)' as unknown as number,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {sa.fileName}
+                </div>
+                {sa.fileSize && (
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>
+                    {sa.fileSize < 1024 * 1024
+                      ? `${Math.round(sa.fileSize / 1024)} КБ`
+                      : `${(sa.fileSize / (1024 * 1024)).toFixed(1)} МБ`}
+                  </span>
+                )}
+              </div>
+              {sa.fileSignedUrl && (
+                <a
+                  href={sa.fileSignedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: 'var(--text-xs)',
+                    color: 'var(--color-info)',
+                    textDecoration: 'none',
+                    fontFamily: 'var(--font-mono)',
+                    letterSpacing: 'var(--tracking-wide)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Открыть ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {sa.status === 'submitted' && (
+            <div style={{
+              display: 'flex',
+              gap: 'var(--space-2)',
+              marginTop: 'var(--space-3)',
+              paddingTop: 'var(--space-3)',
+              borderTop: '1px solid var(--color-border-subtle)',
+            }}>
+              <button
+                onClick={onAccept}
+                disabled={isReviewing}
+                style={{
+                  flex: 1,
+                  padding: 'var(--space-2) var(--space-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-success)',
+                  background: 'rgba(0, 200, 83, 0.08)',
+                  color: 'var(--color-success)',
+                  cursor: isReviewing ? 'default' : 'pointer',
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 'var(--font-medium)' as unknown as number,
+                  fontFamily: 'var(--font-sans)',
+                  opacity: isReviewing ? 0.5 : 1,
+                  transition: 'background var(--duration-fast) var(--ease-default)',
+                }}
+              >
+                {isReviewing ? '…' : 'Принять'}
+              </button>
+              <button
+                onClick={onRequestRevision}
+                disabled={isReviewing}
+                style={{
+                  flex: 1,
+                  padding: 'var(--space-2) var(--space-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-error)',
+                  background: 'rgba(255, 77, 77, 0.08)',
+                  color: 'var(--color-error)',
+                  cursor: isReviewing ? 'default' : 'pointer',
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 'var(--font-medium)' as unknown as number,
+                  fontFamily: 'var(--font-sans)',
+                  opacity: isReviewing ? 0.5 : 1,
+                  transition: 'background var(--duration-fast) var(--ease-default)',
+                }}
+              >
+                {isReviewing ? '…' : 'На доработке'}
+              </button>
+            </div>
+          )}
+
+          {/* Status badge for already reviewed */}
+          {(sa.status === 'reviewed' || sa.status === 'needs_revision') && (
+            <div style={{
+              marginTop: 'var(--space-2)',
+              fontSize: 'var(--text-xs)',
+              color: SUBMISSION_STATUS_COLORS[sa.status],
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: 'var(--tracking-wide)',
+              textTransform: 'uppercase',
+            }}>
+              {SUBMISSION_STATUS_LABELS[sa.status]}
+              {sa.reviewedAt && (
+                <span style={{ color: 'var(--color-text-disabled)', marginLeft: 'var(--space-2)' }}>
+                  {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

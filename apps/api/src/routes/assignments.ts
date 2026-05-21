@@ -3,6 +3,32 @@ import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { createNotification, notifyMany } from '../lib/notifications.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { pipeline } from 'node:stream/promises';
+import { Writable } from 'node:stream';
+
+export interface AssignmentMaterial {
+  type: 'file' | 'url';
+  name: string;
+  url: string;
+  size?: number;
+  s3Key?: string;
+}
+
+async function regenerateMaterialUrls(materials: AssignmentMaterial[]): Promise<AssignmentMaterial[]> {
+  return Promise.all(
+    materials.map(async (m) => {
+      if (m.type === 'file' && m.s3Key) {
+        try {
+          const signedUrl = await getFileUrl(m.s3Key);
+          return { ...m, url: signedUrl };
+        } catch {
+          return m;
+        }
+      }
+      return m;
+    }),
+  );
+}
 
 export async function assignmentRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
@@ -29,7 +55,14 @@ export async function assignmentRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return { assignments };
+    const assignmentsWithUrls = await Promise.all(
+      assignments.map(async (a) => ({
+        ...a,
+        materials: await regenerateMaterialUrls((a.materials as AssignmentMaterial[]) || []),
+      })),
+    );
+
+    return { assignments: assignmentsWithUrls };
   });
 
   // GET /assignments/:id — получить задание
@@ -49,7 +82,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
-    return { assignment };
+    const materials = await regenerateMaterialUrls((assignment.materials as AssignmentMaterial[]) || []);
+
+    return { assignment: { ...assignment, materials } };
   });
 
   // POST /assignments — создание задания (admin)
@@ -62,6 +97,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       tags?: string[];
       dueDate?: string;
       lessonId?: string;
+      materials?: AssignmentMaterial[];
     };
 
     if (!body.streamId) {
@@ -104,6 +140,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         tags: body.tags || [],
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         lessonId: body.lessonId || null,
+        materials: Array.isArray(body.materials) ? body.materials : [],
       },
       include: {
         lesson: { select: { id: true, title: true } },
@@ -136,6 +173,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       tags?: string[];
       dueDate?: string | null;
       lessonId?: string | null;
+      materials?: AssignmentMaterial[];
     };
 
     const existing = await prisma.assignment.findUnique({ where: { id } });
@@ -168,6 +206,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
     if (body.lessonId !== undefined) data.lessonId = body.lessonId || null;
+    if (body.materials !== undefined) data.materials = Array.isArray(body.materials) ? body.materials : [];
 
     const assignment = await prisma.assignment.update({
       where: { id },
@@ -192,6 +231,45 @@ export async function assignmentRoutes(app: FastifyInstance) {
     await prisma.assignment.delete({ where: { id } });
 
     return { message: 'Задание удалено' };
+  });
+
+  // POST /assignments/upload-material — upload a file to S3 for use as assignment material (admin)
+  app.post('/assignments/upload-material', { onRequest: adminOnly }, async (request, reply) => {
+    if (!request.isMultipart()) {
+      return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
+    }
+
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: 'Файл не найден в запросе' });
+    }
+
+    const chunks: Buffer[] = [];
+    await pipeline(
+      data.file,
+      new Writable({
+        write(chunk, _enc, cb) {
+          chunks.push(chunk);
+          cb();
+        },
+      }),
+    );
+
+    const buffer = Buffer.concat(chunks);
+    const mimeType = data.mimetype || 'application/octet-stream';
+    const originalName = data.filename || 'file';
+
+    const { key, url, size } = await uploadFile(buffer, originalName, mimeType, 'assignments');
+
+    const material: AssignmentMaterial = {
+      type: 'file',
+      name: originalName,
+      url,
+      size,
+      s3Key: key,
+    };
+
+    return reply.status(201).send({ material });
   });
 
   // POST /assignments/:id/assign — назначить задание группе или конкретному студенту
@@ -351,13 +429,18 @@ export async function assignmentRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Generate signed URLs for files
+    // Generate signed URLs for files (submission files + assignment materials)
     const results = await Promise.all(
       studentAssignments.map(async (sa) => {
+        let updated: typeof sa & { fileSignedUrl?: string } = sa;
         if (sa.fileUrl) {
-          return { ...sa, fileSignedUrl: await getFileUrl(sa.fileUrl) };
+          updated = { ...updated, fileSignedUrl: await getFileUrl(sa.fileUrl) };
         }
-        return sa;
+        if (updated.assignment) {
+          const materials = await regenerateMaterialUrls((updated.assignment.materials as AssignmentMaterial[]) || []);
+          updated = { ...updated, assignment: { ...updated.assignment, materials } };
+        }
+        return updated;
       }),
     );
 

@@ -136,6 +136,7 @@ model Assignment {
   tags        String[]       @default([])
   dueDate     DateTime?
   groupId     String?
+  materials   Json           @default("[]")
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -149,14 +150,19 @@ model Assignment {
 }
 
 model StudentAssignment {
-  id           String                  @id @default(uuid())
-  assignmentId String
-  studentId    String
-  status       StudentAssignmentStatus @default(assigned)
-  submittedAt  DateTime?
-  reviewedAt   DateTime?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  id             String                  @id @default(uuid())
+  assignmentId   String
+  studentId      String
+  status         StudentAssignmentStatus @default(assigned)
+  content        String?
+  fileUrl        String?
+  fileName       String?
+  fileSize       Int?
+  studentComment String?
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student    User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -183,6 +189,7 @@ model ThreadEntry {
   metadata     Json?
   assignmentId String?
   createdAt    DateTime        @default(now())
+  readAt       DateTime?
 
   thread     Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
   author     User        @relation("AuthoredEntries", fields: [authorId], references: [id], onDelete: Cascade)
