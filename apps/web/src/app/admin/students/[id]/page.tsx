@@ -5,21 +5,22 @@ import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { DashboardLayout } from '@platform/ui/templates';
-import { Spinner, Button } from '@platform/ui/atoms';
+import { Spinner, Button, Badge, Mono } from '@platform/ui/atoms';
 
 const ADMIN_NAV = [
   {
     label: 'Управление',
     items: [
-      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
-      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
-      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
-      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
-      { label: 'API-доступ', href: '/admin/api-access', icon: <KeyIcon /> },
+      { label: 'Обзор',       href: '/admin',                icon: <GridIcon /> },
+      { label: 'Ученики',     href: '/admin/students',       icon: <UsersIcon /> },
+      { label: 'Потоки',      href: '/admin/streams',        icon: <StreamIcon /> },
+      { label: 'Расписание',  href: '/admin/schedule',       icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/admin/notifications',  icon: <BellNavIcon /> },
+      { label: 'API-доступ',  href: '/admin/api-access',     icon: <KeyIcon /> },
     ],
   },
 ];
+
 import {
   getProfile,
   addTeacherNote,
@@ -49,11 +50,11 @@ const STATUS_LABELS: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  assigned: '#2196F3',
-  submitted: '#FF9800',
-  reviewed: '#4CAF50',
-  needs_revision: '#9C27B0',
+const STATUS_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'error' | 'accent' | 'default'> = {
+  assigned: 'info',
+  submitted: 'warning',
+  reviewed: 'success',
+  needs_revision: 'accent',
 };
 
 export default function StudentProfilePage() {
@@ -139,7 +140,7 @@ export default function StudentProfilePage() {
       const result = await getStudentAssignmentsSummary(accessToken, studentId);
       setAssignmentsSummary(result.summary);
     } catch {
-      // summary не критична, не показываем ошибку
+      // summary не критична
     } finally {
       setLoadingSummary(false);
     }
@@ -164,12 +165,8 @@ export default function StudentProfilePage() {
 
   useEffect(() => {
     if (accessToken && studentId && activeTab === 'assignments') {
-      if (assignments.length === 0 && !loadingAssignments) {
-        fetchAssignments();
-      }
-      if (!assignmentsSummary && !loadingSummary) {
-        fetchSummary();
-      }
+      if (assignments.length === 0 && !loadingAssignments) fetchAssignments();
+      if (!assignmentsSummary && !loadingSummary) fetchSummary();
     }
   }, [accessToken, studentId, activeTab, assignments.length, loadingAssignments, fetchAssignments, assignmentsSummary, loadingSummary, fetchSummary]);
 
@@ -293,7 +290,7 @@ export default function StudentProfilePage() {
 
   if (loading || loadingProfile) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen">
         <Spinner size="lg" />
       </div>
     );
@@ -312,9 +309,9 @@ export default function StudentProfilePage() {
         }}
         sidebar={{ sections: ADMIN_NAV }}
       >
-        <div style={{ padding: 'var(--space-4)' }}>
-          <a href="/admin/students" style={{ color: '#666', textDecoration: 'none' }}>← К списку учеников</a>
-          <p style={{ color: '#dc3545', marginTop: 16 }}>{error}</p>
+        <div className="p-4">
+          <a href="/admin/students" className="text-text-tertiary no-underline text-sm">← К списку учеников</a>
+          <p className="text-error mt-4">{error}</p>
         </div>
       </DashboardLayout>
     );
@@ -324,17 +321,7 @@ export default function StudentProfilePage() {
 
   const { student, profile, notes } = data;
 
-  // Summary stats
-  const totalAssigned = assignments.length;
-  const totalSubmitted = assignments.filter((a) => a.status === 'submitted').length;
-  const totalReviewed = assignments.filter((a) => a.status === 'reviewed').length;
   const now = new Date();
-  const totalOverdue = assignments.filter((a) => {
-    if (a.status === 'reviewed') return false;
-    const dueDate = a.assignment?.dueDate;
-    return dueDate && new Date(dueDate) < now;
-  }).length;
-
   const filteredAssignments = statusFilter === 'all'
     ? assignments
     : statusFilter === 'overdue'
@@ -358,570 +345,480 @@ export default function StudentProfilePage() {
       }}
       sidebar={{ sections: ADMIN_NAV }}
     >
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--header-height))' }}>
-      {/* Header */}
-      <div style={{ padding: 'var(--space-4) var(--space-4) 0', maxWidth: 900, width: '100%', margin: '0 auto' }}>
-        <a href="/admin/students" style={{ color: 'var(--color-text-tertiary)', textDecoration: 'none', fontSize: 'var(--text-sm)' }}>← К списку учеников</a>
+      <div className="flex flex-col" style={{ height: 'calc(100vh - var(--header-height))' }}>
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 8, marginBottom: 4, gap: 'var(--space-3)' }}>
-          <div style={{ minWidth: 0 }}>
-            <h1 style={{ margin: 0, marginBottom: 4, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-semibold)' }}>{student.name}</h1>
-            <p style={{ color: 'var(--color-text-tertiary)', margin: 0, fontSize: 'var(--text-sm)' }}>
-              {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexShrink: 0 }}>
-            {assignSuccess && (
-              <span style={{ color: '#4CAF50', fontSize: 'var(--text-sm)', whiteSpace: 'nowrap' }}>{assignSuccess}</span>
-            )}
-            <Button variant="primary" size="sm" onClick={handleOpenAssignModal}>
-              + Назначить задание
-            </Button>
-          </div>
-        </div>
+        {/* ── Header ── */}
+        <div className="px-4 pt-4 max-w-[900px] w-full mx-auto">
+          <a href="/admin/students" className="text-text-tertiary no-underline text-sm hover:text-text-secondary transition-colors">
+            ← К списку учеников
+          </a>
 
-        {/* Summary stats — visible when assignments are loaded */}
-        {assignments.length > 0 && (
-          <div style={{
-            display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-3)',
-            flexWrap: 'wrap',
-          }}>
-            <StatBadge label="Выдано" value={totalAssigned} color="#2196F3" />
-            <StatBadge label="Сдано" value={totalSubmitted} color="#FF9800" />
-            <StatBadge label="Проверено" value={totalReviewed} color="#4CAF50" />
-            <StatBadge label="Просрочено" value={totalOverdue} color="#f44336" />
-          </div>
-        )}
-
-        {/* Error banner */}
-        {error && (
-          <div style={{
-            background: 'var(--color-error-dim, #f8d7da)', border: '1px solid var(--color-error, #dc3545)',
-            borderRadius: 6, padding: '8px 12px', marginTop: 12, color: 'var(--color-error, #dc3545)',
-            fontSize: 'var(--text-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span>{error}</span>
-            <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16 }}>×</button>
-          </div>
-        )}
-
-        {/* Assign modal — shown above tabs regardless of active tab */}
-        {showAssignModal && (
-          <div style={{
-            background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)',
-            borderRadius: 8, padding: 16, marginTop: 'var(--space-3)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <strong>Назначить задание ученику {student.name}</strong>
-              <button onClick={() => setShowAssignModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--color-text-tertiary)' }}>×</button>
+          <div className="flex items-start justify-between mt-2 mb-1 gap-3">
+            <div className="min-w-0">
+              <h1 className="m-0 mb-1 text-xl font-semibold text-text-primary">{student.name}</h1>
+              <p className="text-text-tertiary m-0 text-sm">
+                {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
+              </p>
             </div>
-            {loadingAllAssignments ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spinner size="md" /></div>
-            ) : allAssignments.length === 0 ? (
-              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-sm)' }}>Нет доступных заданий. Создайте задание в разделе потока.</p>
-            ) : (
-              <>
-                <select
-                  value={selectedAssignmentId}
-                  onChange={(e) => setSelectedAssignmentId(e.target.value)}
-                  style={{
-                    width: '100%', padding: '8px 12px', borderRadius: 4,
-                    border: '1px solid var(--color-border-default)',
-                    background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)',
-                    fontSize: 'var(--text-sm)', marginBottom: 12,
-                  }}
-                >
-                  <option value="">Выберите задание...</option>
-                  {allAssignments.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleAssignToStudent}
-                    disabled={!selectedAssignmentId}
-                    loading={assigning}
-                  >
-                    Назначить
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
-                    Отмена
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div style={{
-          display: 'flex', gap: 0, marginTop: 'var(--space-4)',
-          borderBottom: '1px solid var(--color-border-default)',
-        }}>
-          {([
-            { key: 'profile' as Tab, label: 'Профиль' },
-            { key: 'assignments' as Tab, label: 'Задания' },
-            { key: 'thread' as Tab, label: 'Тред' },
-          ]).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              style={{
-                padding: 'var(--space-2) var(--space-4)',
-                border: 'none',
-                borderBottom: activeTab === key ? '2px solid var(--color-accent-red, #e53935)' : '2px solid transparent',
-                background: 'none',
-                cursor: 'pointer',
-                fontSize: 'var(--text-sm)',
-                fontWeight: activeTab === key ? 'var(--font-semibold)' : 'normal',
-                color: activeTab === key ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
-                fontFamily: 'var(--font-sans)',
-                transition: 'color 0.15s, border-color 0.15s',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', maxWidth: 900, width: '100%', margin: '0 auto' }}>
-        {activeTab === 'profile' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            {/* Анкета */}
-            <section>
-              <h2 style={{ fontSize: 20, marginBottom: 12 }}>Анкета (Задание №0)</h2>
-              {profile ? (
-                <div style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 6, padding: 16 }}>
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Резюме:</strong>
-                    <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{profile.resume || '—'}</p>
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Портфолио:</strong>
-                    <p style={{ margin: '4px 0 0' }}>{profile.portfolio || '—'}</p>
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Контакты:</strong>
-                    <p style={{ margin: '4px 0 0' }}>
-                      {profile.contacts
-                        ? `Email: ${(profile.contacts as { email?: string; telegram?: string }).email || '—'}, Telegram: ${(profile.contacts as { email?: string; telegram?: string }).telegram || '—'}`
-                        : '—'}
-                    </p>
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Направление:</strong>
-                    <p style={{ margin: '4px 0 0' }}>{profile.direction || '—'}</p>
-                  </div>
-                  {profile.questionnaireCompletedAt && (
-                    <p style={{ color: '#28a745', fontSize: 14 }}>
-                      Заполнена: {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
-                    </p>
-                  )}
-                  {!profile.questionnaireCompletedAt && (
-                    <p style={{ color: '#dc3545', fontSize: 14 }}>Анкета не заполнена</p>
-                  )}
-                </div>
-              ) : (
-                <p style={{ color: '#999' }}>Ученик ещё не заполнил анкету.</p>
+            <div className="flex items-center gap-3 shrink-0">
+              {assignSuccess && (
+                <Mono size="xs" className="text-success whitespace-nowrap">{assignSuccess}</Mono>
               )}
-            </section>
+              <Button variant="primary" size="sm" onClick={handleOpenAssignModal}>
+                + Назначить задание
+              </Button>
+            </div>
+          </div>
 
-            {/* Заметки преподавателя */}
-            <section style={{ marginTop: 32 }}>
-              <h2 style={{ fontSize: 20, marginBottom: 12 }}>Наблюдения преподавателя</h2>
-              <form onSubmit={handleAddNote} style={{ marginBottom: 20 }}>
-                <textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Добавить наблюдение или заметку..."
-                  rows={3}
-                  style={{ width: '100%', padding: 8, border: '1px solid #ccc', borderRadius: 4, fontFamily: 'sans-serif', boxSizing: 'border-box', marginBottom: 8 }}
-                />
-                <Button type="submit" variant="primary" disabled={!noteContent.trim()} loading={savingNote}>
-                  {savingNote ? 'Сохранение...' : 'Добавить заметку'}
-                </Button>
-                {noteMessage && (
-                  <span style={{ marginLeft: 12, color: '#28a745' }}>{noteMessage}</span>
-                )}
-              </form>
-              {notes && notes.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {notes.map((note: TeacherNote) => (
-                    <div key={note.id} style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-default)', borderRadius: 6, padding: 12 }}>
-                      <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{note.content}</p>
-                      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#999' }}>
-                        {note.author.name} — {new Date(note.createdAt).toLocaleString('ru-RU')}
+          {/* Error banner */}
+          {error && (
+            <div className="flex justify-between items-center px-3 py-2 mt-3 rounded-xs border border-error bg-error-dim text-sm text-error">
+              <span>{error}</span>
+              <button
+                onClick={() => setError('')}
+                className="bg-transparent border-0 cursor-pointer text-error text-base ml-2"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Assign modal */}
+          {showAssignModal && (
+            <div className="mt-3 p-4 rounded-sm border border-border-default bg-bg-elevated">
+              <div className="flex justify-between items-center mb-3">
+                <strong className="text-text-primary text-sm">
+                  Назначить задание ученику {student.name}
+                </strong>
+                <button
+                  onClick={() => setShowAssignModal(false)}
+                  className="bg-transparent border-0 cursor-pointer text-text-tertiary text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              {loadingAllAssignments ? (
+                <div className="flex justify-center p-4"><Spinner size="md" /></div>
+              ) : allAssignments.length === 0 ? (
+                <p className="text-text-tertiary text-sm">Нет доступных заданий. Создайте задание в разделе потока.</p>
+              ) : (
+                <>
+                  <select
+                    value={selectedAssignmentId}
+                    onChange={(e) => setSelectedAssignmentId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xs border border-border-default bg-bg-surface text-text-primary text-sm mb-3"
+                  >
+                    <option value="">Выберите задание...</option>
+                    {allAssignments.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleAssignToStudent}
+                      disabled={!selectedAssignmentId}
+                      loading={assigning}
+                    >
+                      Назначить
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
+                      Отмена
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="flex gap-0 mt-4 border-b border-border-default">
+            {([
+              { key: 'profile' as Tab, label: 'Профиль' },
+              { key: 'assignments' as Tab, label: 'Задания' },
+              { key: 'thread' as Tab, label: 'Тред' },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={[
+                  'px-4 py-2 border-0 bg-transparent cursor-pointer text-sm font-sans transition-colors',
+                  activeTab === key
+                    ? 'border-b-2 border-accent-red text-text-primary font-semibold'
+                    : 'border-b-2 border-transparent text-text-tertiary hover:text-text-secondary',
+                ].join(' ')}
+                style={{ marginBottom: -1 }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tab content ── */}
+        <div className="flex-1 overflow-auto max-w-[900px] w-full mx-auto">
+
+          {/* ── Profile tab ── */}
+          {activeTab === 'profile' && (
+            <div className="p-4">
+
+              {/* Анкета */}
+              <section>
+                <h2 className="text-xl font-semibold text-text-primary mb-3">Анкета (Задание №0)</h2>
+                {profile ? (
+                  <div className="bg-bg-elevated border border-border-default rounded-sm p-4">
+                    <div className="mb-3">
+                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Резюме</Mono>
+                      <p className="mt-1 text-sm text-text-primary whitespace-pre-wrap">{profile.resume || '—'}</p>
+                    </div>
+                    <div className="mb-3">
+                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Портфолио</Mono>
+                      <p className="mt-1 text-sm text-text-primary">{profile.portfolio || '—'}</p>
+                    </div>
+                    <div className="mb-3">
+                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Контакты</Mono>
+                      <p className="mt-1 text-sm text-text-primary">
+                        {profile.contacts
+                          ? `Email: ${(profile.contacts as { email?: string; telegram?: string }).email || '—'}, Telegram: ${(profile.contacts as { email?: string; telegram?: string }).telegram || '—'}`
+                          : '—'}
                       </p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: '#999' }}>Заметок пока нет.</p>
-              )}
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'assignments' && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            {/* Summary block */}
-            {(assignmentsSummary || loadingSummary) && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-                gap: 'var(--space-3)',
-                marginBottom: 'var(--space-4)',
-                padding: 'var(--space-3)',
-                background: 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-default)',
-                borderRadius: 8,
-              }}>
-                {loadingSummary && !assignmentsSummary ? (
-                  <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'center', padding: 8 }}>
-                    <Spinner size="sm" />
+                    <div className="mb-3">
+                      <Mono size="xs" className="text-text-tertiary uppercase tracking-wider">Направление</Mono>
+                      <p className="mt-1 text-sm text-text-primary">{profile.direction || '—'}</p>
+                    </div>
+                    {profile.questionnaireCompletedAt ? (
+                      <Mono size="xs" className="text-success">
+                        Заполнена: {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
+                      </Mono>
+                    ) : (
+                      <Mono size="xs" className="text-error">Анкета не заполнена</Mono>
+                    )}
                   </div>
-                ) : assignmentsSummary ? (
-                  <>
-                    <SummaryCard label="Выдано" value={assignmentsSummary.total} color="#2196F3" />
-                    <SummaryCard label="Сдано" value={assignmentsSummary.submitted} color="#FF9800" />
-                    <SummaryCard label="Проверено" value={assignmentsSummary.reviewed} color="#4CAF50" />
-                    <SummaryCard label="На доработке" value={assignmentsSummary.needs_revision} color="#9C27B0" />
-                    <SummaryCard label="Просрочено" value={assignmentsSummary.overdue} color="#f44336" />
-                  </>
-                ) : null}
-              </div>
-            )}
+                ) : (
+                  <p className="text-text-tertiary text-sm">Ученик ещё не заполнил анкету.</p>
+                )}
+              </section>
 
-            {/* Status filter */}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
-              {[
-                { key: 'all', label: 'Все' },
-                { key: 'assigned', label: 'Выдано' },
-                { key: 'submitted', label: 'Сдано' },
-                { key: 'reviewed', label: 'Проверено' },
-                { key: 'needs_revision', label: 'На доработке' },
-                { key: 'overdue', label: 'Просрочено' },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setStatusFilter(key)}
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 16,
-                    border: statusFilter === key ? '1px solid var(--color-accent-red, #e53935)' : '1px solid var(--color-border-default)',
-                    background: statusFilter === key ? 'var(--color-accent-red-dim, rgba(229,57,53,0.1))' : 'transparent',
-                    color: statusFilter === key ? 'var(--color-accent-red, #e53935)' : 'var(--color-text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--text-sm)',
-                    fontFamily: 'var(--font-sans)',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {loadingAssignments ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner size="lg" /></div>
-            ) : filteredAssignments.length === 0 ? (
-              <p style={{ color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 32 }}>
-                {assignments.length === 0 ? 'Заданий пока нет.' : 'Нет заданий с выбранным фильтром.'}
-              </p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{
-                  width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)',
-                }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--color-border-default)' }}>
-                      <th style={thStyle}>Задание</th>
-                      <th style={thStyle}>Статус</th>
-                      <th style={thStyle}>Поток</th>
-                      <th style={thStyle}>Выдано</th>
-                      <th style={thStyle}>Срок сдачи</th>
-                      <th style={thStyle}>Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAssignments.map((sa) => {
-                      const isOverdue = sa.status !== 'reviewed' && sa.assignment?.dueDate && new Date(sa.assignment.dueDate) < now;
-                      return (
-                        <tr key={sa.id} style={{ borderBottom: '1px solid var(--color-border-subtle, #eee)' }}>
-                          <td style={tdStyle}>{sa.assignment?.title || '—'}</td>
-                          <td style={tdStyle}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '2px 8px',
-                              borderRadius: 12,
-                              fontSize: 12,
-                              fontWeight: 600,
-                              background: `${STATUS_COLORS[sa.status] || '#999'}20`,
-                              color: STATUS_COLORS[sa.status] || '#999',
-                            }}>
-                              {STATUS_LABELS[sa.status] || sa.status}
-                            </span>
-                            {isOverdue && (
-                              <span style={{
-                                display: 'inline-block', marginLeft: 6,
-                                padding: '2px 6px', borderRadius: 12, fontSize: 11,
-                                background: '#f4433620', color: '#f44336', fontWeight: 600,
-                              }}>
-                                Просрочено
-                              </span>
-                            )}
-                          </td>
-                          <td style={tdStyle}>{sa.assignment?.stream?.name || '—'}</td>
-                          <td style={tdStyle}>{new Date(sa.createdAt).toLocaleDateString('ru-RU')}</td>
-                          <td style={tdStyle}>
-                            {sa.assignment?.dueDate
-                              ? new Date(sa.assignment.dueDate).toLocaleDateString('ru-RU')
-                              : '—'}
-                          </td>
-                          <td style={tdStyle}>
-                            {sa.status === 'submitted' && (
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <button
-                                  onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
-                                  disabled={updatingId === sa.id}
-                                  style={{
-                                    padding: '3px 10px', borderRadius: 4, border: 'none',
-                                    background: '#4CAF50', color: '#fff', cursor: 'pointer',
-                                    fontSize: 12, opacity: updatingId === sa.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  Принять
-                                </button>
-                                <button
-                                  onClick={() => handleUpdateAssignment(sa.id, 'needs_revision')}
-                                  disabled={updatingId === sa.id}
-                                  style={{
-                                    padding: '3px 10px', borderRadius: 4,
-                                    border: '1px solid #9C27B0', background: 'transparent',
-                                    color: '#9C27B0', cursor: 'pointer',
-                                    fontSize: 12, opacity: updatingId === sa.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  На доработку
-                                </button>
-                              </div>
-                            )}
-                            {sa.status === 'assigned' && '—'}
-                            {sa.status === 'needs_revision' && (
-                              <span style={{ color: '#9C27B0', fontSize: 12 }}>↩ Ожидает пересдачи</span>
-                            )}
-                            {sa.status === 'reviewed' && (
-                              <span style={{ color: 'var(--color-text-disabled)', fontSize: 12 }}>✓ Проверено</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'thread' && (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-            {/* Thread messages */}
-            <div style={{
-              flex: 1, overflowY: 'auto', padding: 'var(--space-4)',
-              display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
-            }}>
-              {loadingThread ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Spinner size="lg" />
-                </div>
-              ) : threadEntries.length === 0 ? (
-                <div style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <p style={{
-                    color: 'var(--color-text-tertiary)', fontSize: 'var(--text-sm)',
-                    fontFamily: 'var(--font-mono)', letterSpacing: 'var(--tracking-wide)',
-                    textTransform: 'uppercase',
-                  }}>
-                    Тред пуст
-                  </p>
-                </div>
-              ) : (
-                threadEntries.map((entry, i) => (
-                  <ThreadBubble
-                    key={entry.id}
-                    entry={entry}
-                    showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
+              {/* Заметки преподавателя */}
+              <section className="mt-8">
+                <h2 className="text-xl font-semibold text-text-primary mb-3">Наблюдения преподавателя</h2>
+                <form onSubmit={handleAddNote} className="mb-5">
+                  <textarea
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    placeholder="Добавить наблюдение или заметку..."
+                    rows={3}
+                    className="w-full px-3 py-2 mb-2 border border-border-default rounded-xs bg-bg-elevated text-text-primary text-sm font-sans resize-none"
                   />
-                ))
-              )}
-              <div ref={bottomRef} />
+                  <div className="flex items-center gap-3">
+                    <Button type="submit" variant="primary" disabled={!noteContent.trim()} loading={savingNote}>
+                      {savingNote ? 'Сохранение...' : 'Добавить заметку'}
+                    </Button>
+                    {noteMessage && (
+                      <Mono size="xs" className="text-success">{noteMessage}</Mono>
+                    )}
+                  </div>
+                </form>
+                {notes && notes.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {notes.map((note: TeacherNote) => (
+                      <div key={note.id} className="bg-bg-elevated border border-border-default rounded-xs p-3">
+                        <p className="m-0 text-sm text-text-primary whitespace-pre-wrap">{note.content}</p>
+                        <Mono size="xs" className="mt-2 text-text-tertiary block">
+                          {note.author.name} — {new Date(note.createdAt).toLocaleString('ru-RU')}
+                        </Mono>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-text-tertiary text-sm">Заметок пока нет.</p>
+                )}
+              </section>
             </div>
+          )}
 
-            {/* Compose bar */}
-            <div style={{
-              borderTop: '1px solid var(--color-border-subtle)',
-              padding: 'var(--space-3) var(--space-4)',
-              background: 'var(--color-bg-surface)',
-            }}>
-              {inputMode === 'note' && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-2)',
-                  background: 'var(--color-warning-dim)', border: '1px solid var(--color-warning)',
-                  borderRadius: 'var(--radius-sm)',
-                }}>
-                  <span style={{
-                    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-                    color: 'var(--color-warning)', letterSpacing: 'var(--tracking-wide)',
-                    textTransform: 'uppercase',
-                  }}>
-                    Приватная заметка — ученик не увидит
-                  </span>
-                  <button onClick={() => setInputMode('comment')} style={{
-                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-warning)',
-                    padding: 'var(--space-1)', display: 'flex',
-                  }}>
-                    ×
+          {/* ── Assignments tab ── */}
+          {activeTab === 'assignments' && (
+            <div className="p-4">
+              {/* Summary block */}
+              {(assignmentsSummary || loadingSummary) && (
+                <div className="grid gap-3 mb-4 p-3 bg-bg-elevated border border-border-default rounded-sm [grid-template-columns:repeat(auto-fit,minmax(110px,1fr))]">
+                  {loadingSummary && !assignmentsSummary ? (
+                    <div className="col-span-full flex justify-center p-2">
+                      <Spinner size="sm" />
+                    </div>
+                  ) : assignmentsSummary ? (
+                    <>
+                      <SummaryCard label="Выдано"      value={assignmentsSummary.total}          variant="info" />
+                      <SummaryCard label="Сдано"        value={assignmentsSummary.submitted}       variant="warning" />
+                      <SummaryCard label="Проверено"    value={assignmentsSummary.reviewed}        variant="success" />
+                      <SummaryCard label="На доработке" value={assignmentsSummary.needs_revision}  variant="accent" />
+                      <SummaryCard label="Просрочено"   value={assignmentsSummary.overdue}         variant="error" />
+                    </>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Status filter */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {[
+                  { key: 'all',            label: 'Все' },
+                  { key: 'assigned',       label: 'Выдано' },
+                  { key: 'submitted',      label: 'Сдано' },
+                  { key: 'reviewed',       label: 'Проверено' },
+                  { key: 'needs_revision', label: 'На доработке' },
+                  { key: 'overdue',        label: 'Просрочено' },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter(key)}
+                    className={[
+                      'px-3 py-1 rounded-full text-sm font-sans cursor-pointer border transition-colors',
+                      statusFilter === key
+                        ? 'border-accent-red bg-accent-red-dim text-accent-red'
+                        : 'border-border-default bg-transparent text-text-secondary hover:border-border-strong',
+                    ].join(' ')}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {loadingAssignments ? (
+                <div className="flex justify-center p-8"><Spinner size="lg" /></div>
+              ) : filteredAssignments.length === 0 ? (
+                <p className="text-text-tertiary text-center py-8">
+                  {assignments.length === 0 ? 'Заданий пока нет.' : 'Нет заданий с выбранным фильтром.'}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-border-default">
+                        {['Задание', 'Статус', 'Поток', 'Выдано', 'Срок сдачи', 'Действия'].map((h) => (
+                          <th key={h} className="px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-text-tertiary">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAssignments.map((sa) => {
+                        const isOverdue = sa.status !== 'reviewed' && sa.assignment?.dueDate && new Date(sa.assignment.dueDate) < now;
+                        return (
+                          <tr key={sa.id} className="border-b border-border-subtle hover:bg-bg-surface transition-colors">
+                            <td className="px-3 py-2.5 text-text-primary">{sa.assignment?.title || '—'}</td>
+                            <td className="px-3 py-2.5">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Badge variant={STATUS_VARIANT[sa.status] || 'default'}>
+                                  {STATUS_LABELS[sa.status] || sa.status}
+                                </Badge>
+                                {isOverdue && <Badge variant="error">Просрочено</Badge>}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-text-secondary">{sa.assignment?.stream?.name || '—'}</td>
+                            <td className="px-3 py-2.5">
+                              <Mono size="xs" className="text-text-tertiary">
+                                {new Date(sa.createdAt).toLocaleDateString('ru-RU')}
+                              </Mono>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <Mono size="xs" className="text-text-tertiary">
+                                {sa.assignment?.dueDate
+                                  ? new Date(sa.assignment.dueDate).toLocaleDateString('ru-RU')
+                                  : '—'}
+                              </Mono>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {sa.status === 'submitted' && (
+                                <div className="flex gap-1.5">
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
+                                    disabled={updatingId === sa.id}
+                                  >
+                                    Принять
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => handleUpdateAssignment(sa.id, 'needs_revision')}
+                                    disabled={updatingId === sa.id}
+                                  >
+                                    На доработку
+                                  </Button>
+                                </div>
+                              )}
+                              {sa.status === 'assigned' && (
+                                <Mono size="xs" className="text-text-disabled">—</Mono>
+                              )}
+                              {sa.status === 'needs_revision' && (
+                                <Mono size="xs" className="text-accent-red">↩ Ожидает пересдачи</Mono>
+                              )}
+                              {sa.status === 'reviewed' && (
+                                <Mono size="xs" className="text-success">✓ Проверено</Mono>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Thread tab ── */}
+          {activeTab === 'thread' && (
+            <div className="flex flex-col flex-1 min-h-0">
+              {/* Thread messages */}
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+                {loadingThread ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Spinner size="lg" />
+                  </div>
+                ) : threadEntries.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Mono size="sm" className="text-text-tertiary uppercase tracking-wide">Тред пуст</Mono>
+                  </div>
+                ) : (
+                  threadEntries.map((entry, i) => (
+                    <ThreadBubble
+                      key={entry.id}
+                      entry={entry}
+                      showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
+                    />
+                  ))
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Compose bar */}
+              <div className="border-t border-border-subtle px-4 py-3 bg-bg-surface">
+                {inputMode === 'note' && (
+                  <div className="flex items-center justify-between px-3 py-2 mb-2 bg-warning-dim border border-warning rounded-sm">
+                    <Mono size="xs" className="text-warning uppercase tracking-wide">
+                      Приватная заметка — ученик не увидит
+                    </Mono>
+                    <button
+                      onClick={() => setInputMode('comment')}
+                      className="bg-transparent border-0 cursor-pointer text-warning p-1 flex"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-end gap-2">
+                  <div className="flex gap-1">
+                    <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+                    <ComposeButton title="Прикрепить файл" onClick={() => fileInputRef.current?.click()} disabled={sendingThread}>
+                      <PaperclipIcon />
+                    </ComposeButton>
+                    <ComposeButton
+                      title="Приватная заметка"
+                      active={inputMode === 'note'}
+                      onClick={() => setInputMode(inputMode === 'note' ? 'comment' : 'note')}
+                    >
+                      <NoteIcon />
+                    </ComposeButton>
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    value={threadContent}
+                    onChange={(e) => {
+                      setThreadContent(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+                    }}
+                    placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
+                    rows={1}
+                    className="flex-1 px-3 py-2 text-sm font-sans text-text-primary resize-none overflow-hidden leading-normal"
+                    style={{
+                      borderRadius: 'var(--radius-lg)',
+                      border: `1px solid ${inputMode === 'note' ? 'var(--color-warning)' : 'var(--color-border-default)'}`,
+                      background: inputMode === 'note' ? 'var(--color-warning-dim)' : 'var(--color-bg-elevated)',
+                      minHeight: 36, maxHeight: 160, outline: 'none',
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendThread(); }
+                    }}
+                  />
+                  <button
+                    disabled={sendingThread || !hasThreadContent}
+                    onClick={handleSendThread}
+                    className="flex items-center justify-center shrink-0 border-0 transition-colors"
+                    style={{
+                      width: 36, height: 36, borderRadius: 'var(--radius-full)',
+                      background: hasThreadContent ? 'var(--color-accent-red)' : 'var(--color-bg-elevated)',
+                      color: hasThreadContent ? 'var(--color-text-primary)' : 'var(--color-text-disabled)',
+                      cursor: hasThreadContent ? 'pointer' : 'default',
+                    }}
+                  >
+                    <SendIcon />
                   </button>
                 </div>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
-                <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                  <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: 'none' }} />
-                  <ComposeButton title="Прикрепить файл" onClick={() => fileInputRef.current?.click()} disabled={sendingThread}>
-                    <PaperclipIcon />
-                  </ComposeButton>
-                  <ComposeButton
-                    title="Приватная заметка"
-                    active={inputMode === 'note'}
-                    onClick={() => setInputMode(inputMode === 'note' ? 'comment' : 'note')}
-                  >
-                    <NoteIcon />
-                  </ComposeButton>
-                </div>
-                <textarea
-                  ref={textareaRef}
-                  value={threadContent}
-                  onChange={(e) => {
-                    setThreadContent(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-                  }}
-                  placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
-                  rows={1}
-                  style={{
-                    flex: 1,
-                    padding: 'var(--space-2) var(--space-3)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: `1px solid ${inputMode === 'note' ? 'var(--color-warning)' : 'var(--color-border-default)'}`,
-                    fontSize: 'var(--text-sm)',
-                    fontFamily: 'var(--font-sans)',
-                    background: inputMode === 'note' ? 'var(--color-warning-dim)' : 'var(--color-bg-elevated)',
-                    color: 'var(--color-text-primary)',
-                    resize: 'none', overflow: 'hidden',
-                    lineHeight: 'var(--leading-normal)', outline: 'none',
-                    minHeight: 36, maxHeight: 160,
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendThread(); }
-                  }}
-                />
-                <button
-                  disabled={sendingThread || !hasThreadContent}
-                  onClick={handleSendThread}
-                  style={{
-                    width: 36, height: 36, borderRadius: 'var(--radius-full)',
-                    border: 'none',
-                    background: hasThreadContent ? 'var(--color-accent-red)' : 'var(--color-bg-elevated)',
-                    color: hasThreadContent ? 'var(--color-text-primary)' : 'var(--color-text-disabled)',
-                    cursor: hasThreadContent ? 'pointer' : 'default',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}
-                >
-                  <SendIcon />
-                </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
     </DashboardLayout>
   );
 }
 
-/* ─── Table styles ─── */
+/* ─── SummaryCard ─── */
 
-const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '8px 12px', fontWeight: 600,
-  fontSize: 'var(--text-xs)', textTransform: 'uppercase' as const,
-  color: 'var(--color-text-tertiary)', letterSpacing: '0.05em',
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: '10px 12px', verticalAlign: 'middle',
-};
-
-/* ─── Stat badge ─── */
-
-function StatBadge({ label, value, color }: { label: string; value: number; color: string }) {
+function SummaryCard({ label, value, variant }: {
+  label: string; value: number;
+  variant: 'info' | 'warning' | 'success' | 'error' | 'accent' | 'default';
+}) {
+  const colorMap = {
+    info:    { text: 'text-info',    bg: 'bg-info-dim',    border: 'border-info' },
+    warning: { text: 'text-warning', bg: 'bg-warning-dim', border: 'border-warning' },
+    success: { text: 'text-success', bg: 'bg-success-dim', border: 'border-success' },
+    error:   { text: 'text-error',   bg: 'bg-error-dim',   border: 'border-error' },
+    accent:  { text: 'text-accent-red', bg: 'bg-accent-red-dim', border: 'border-accent-red' },
+    default: { text: 'text-text-secondary', bg: 'bg-bg-elevated', border: 'border-border-default' },
+  };
+  const c = colorMap[variant];
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 6,
-      padding: '4px 12px', borderRadius: 16,
-      background: `${color}15`, border: `1px solid ${color}30`,
-    }}>
-      <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color }}>{value}</span>
-      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+    <div className={`flex flex-col items-center justify-center gap-1 p-3 rounded-sm border ${c.bg} ${c.border} min-w-[90px]`}>
+      <span className={`text-2xl font-bold leading-none ${c.text}`}>{value}</span>
+      <span className={`text-xs text-center leading-tight ${c.text} opacity-80`}>{label}</span>
     </div>
   );
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: 'var(--space-2) var(--space-3)', gap: 4,
-      background: `${color}10`, border: `1px solid ${color}30`, borderRadius: 8,
-      minWidth: 90,
-    }}>
-      <span style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color, lineHeight: 1 }}>{value}</span>
-      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
-    </div>
-  );
-}
-
-/* ─── Compose button ─── */
+/* ─── ComposeButton ─── */
 
 function ComposeButton({ children, title, onClick, disabled, active }: {
   children: React.ReactNode; title: string; onClick: () => void; disabled?: boolean; active?: boolean;
 }) {
   return (
     <button
-      title={title} onClick={onClick} disabled={disabled}
-      style={{
-        width: 36, height: 36, borderRadius: 'var(--radius-full)', border: 'none',
-        background: active ? 'var(--color-bg-overlay)' : 'transparent',
-        color: active ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
-        cursor: disabled ? 'default' : 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        opacity: disabled ? 0.38 : 1,
-      }}
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        'flex items-center justify-center shrink-0 border-0 transition-colors',
+        active ? 'bg-bg-overlay text-text-primary' : 'bg-transparent text-text-tertiary',
+        disabled ? 'opacity-40 cursor-default' : 'cursor-pointer hover:text-text-secondary',
+      ].join(' ')}
+      style={{ width: 36, height: 36, borderRadius: 'var(--radius-full)' }}
     >
       {children}
     </button>
   );
 }
 
-/* ─── Thread bubble ─── */
+/* ─── ThreadBubble ─── */
 
 function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: boolean }) {
   const isAdmin = entry.author.role === 'admin';
@@ -930,37 +827,36 @@ function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: b
   const initials = entry.author.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: isAdmin ? 'row-reverse' : 'row',
-      alignItems: 'flex-end', gap: 'var(--space-2)',
-      marginTop: showAuthor ? 'var(--space-4)' : 'var(--space-1)',
-      maxWidth: '85%', alignSelf: isAdmin ? 'flex-end' : 'flex-start',
-    }}>
+    <div className={[
+      'flex items-end gap-2',
+      isAdmin ? 'flex-row-reverse self-end' : 'flex-row self-start',
+      showAuthor ? 'mt-4' : 'mt-1',
+      'max-w-[85%]',
+    ].join(' ')}>
       {showAuthor ? (
-        <div style={{
-          width: 32, height: 32, borderRadius: 'var(--radius-full)',
-          background: isNote ? 'var(--color-warning-dim)' : isAdmin ? 'var(--color-accent-red-dim)' : 'var(--color-bg-overlay)',
-          border: `1px solid ${isNote ? 'var(--color-warning)' : isAdmin ? 'var(--color-accent-red)' : 'var(--color-border-default)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', fontWeight: 'var(--font-bold)',
-          color: isNote ? 'var(--color-warning)' : isAdmin ? 'var(--color-accent-red)' : 'var(--color-text-secondary)',
-          flexShrink: 0,
-        }}>
+        <div
+          className={[
+            'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
+            'text-xs font-mono font-bold',
+            isNote ? 'bg-warning-dim border border-warning text-warning'
+              : isAdmin ? 'bg-accent-red-dim border border-accent-red text-accent-red'
+              : 'bg-bg-overlay border border-border-default text-text-secondary',
+          ].join(' ')}
+        >
           {initials}
         </div>
       ) : (
-        <div style={{ width: 32, flexShrink: 0 }} />
+        <div className="w-8 shrink-0" />
       )}
-      <div style={{ minWidth: 0 }}>
+      <div className="min-w-0">
         {showAuthor && (
-          <div style={{
-            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-            color: isNote ? 'var(--color-warning)' : isAdmin ? 'var(--color-accent-red)' : 'var(--color-text-tertiary)',
-            marginBottom: 'var(--space-1)', letterSpacing: 'var(--tracking-wide)',
-            textTransform: 'uppercase', textAlign: isAdmin ? 'right' : 'left',
-          }}>
+          <div className={[
+            'text-xs font-mono mb-1 tracking-wide uppercase',
+            isNote ? 'text-warning' : isAdmin ? 'text-accent-red' : 'text-text-tertiary',
+            isAdmin ? 'text-right' : 'text-left',
+          ].join(' ')}>
             {entry.author.name}
-            {isNote && <span style={{ marginLeft: 'var(--space-2)', color: 'var(--color-warning)' }}>заметка</span>}
+            {isNote && <span className="ml-2 text-warning">заметка</span>}
           </div>
         )}
         <div style={{
@@ -970,39 +866,36 @@ function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: b
             : 'var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-xs)',
           background: isNote ? 'var(--color-warning-dim)' : isAdmin ? 'var(--color-bg-overlay)' : 'var(--color-bg-elevated)',
           border: `1px solid ${isNote ? 'var(--color-warning)' : 'var(--color-border-default)'}`,
-          ...(isNote && { borderStyle: 'dashed' as const }),
+          borderStyle: isNote ? 'dashed' : 'solid',
         }}>
-          <div style={{ fontSize: 'var(--text-sm)', lineHeight: 'var(--leading-normal)', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+          <div className="text-sm leading-normal text-text-primary break-words">
             {['text', 'comment', 'note'].includes(entry.type) ? (
-              <span style={{ whiteSpace: 'pre-wrap' }}>{entry.content}</span>
+              <span className="whitespace-pre-wrap">{entry.content}</span>
             ) : entry.type === 'file' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div className="flex items-center gap-3">
                 <span>{entry.metadata?.fileName || entry.content}</span>
                 {entry.metadata?.url && (
-                  <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-info)', fontSize: 'var(--text-xs)' }}>
+                  <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" className="text-info text-xs">
                     Скачать
                   </a>
                 )}
               </div>
             ) : entry.type === 'audio' && entry.metadata?.url ? (
-              <audio controls src={entry.metadata.url} style={{ maxWidth: '100%', height: 36 }} />
+              <audio controls src={entry.metadata.url} className="max-w-full h-9" />
             ) : entry.type === 'link' ? (
-              <a href={entry.content} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-info)', wordBreak: 'break-all' }}>
+              <a href={entry.content} target="_blank" rel="noopener noreferrer" className="text-info break-all">
                 {entry.content}
               </a>
             ) : null}
           </div>
-          <div style={{
-            fontSize: 10, color: 'var(--color-text-disabled)', marginTop: 'var(--space-1)',
-            textAlign: isAdmin ? 'left' : 'right', fontFamily: 'var(--font-mono)',
-          }}>
+          <div className={`text-[10px] text-text-disabled mt-1 font-mono ${isAdmin ? 'text-left' : 'text-right'}`}>
             {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
         {entry.assignment && (
-          <div style={{ marginTop: 'var(--space-1)', fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)', fontFamily: 'var(--font-mono)' }}>
+          <Mono size="xs" className="mt-1 text-text-disabled block">
             К заданию: {entry.assignment.title}
-          </div>
+          </Mono>
         )}
       </div>
     </div>
@@ -1069,7 +962,6 @@ function SendIcon() {
   );
 }
 
-
 function KeyIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -1078,6 +970,7 @@ function KeyIcon() {
     </svg>
   );
 }
+
 function BellNavIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">

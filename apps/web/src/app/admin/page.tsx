@@ -13,12 +13,12 @@ const ADMIN_NAV = [
   {
     label: 'Управление',
     items: [
-      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
-      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
-      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
-      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
-      { label: 'API-доступ', href: '/admin/api-access', icon: <KeyIcon /> },
+      { label: 'Обзор',       href: '/admin',                icon: <GridIcon /> },
+      { label: 'Ученики',     href: '/admin/students',       icon: <UsersIcon /> },
+      { label: 'Потоки',      href: '/admin/streams',        icon: <StreamIcon /> },
+      { label: 'Расписание',  href: '/admin/schedule',       icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/admin/notifications',  icon: <BellNavIcon /> },
+      { label: 'API-доступ',  href: '/admin/api-access',     icon: <KeyIcon /> },
     ],
   },
 ];
@@ -36,7 +36,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen">
         <Spinner size="lg" />
       </div>
     );
@@ -60,17 +60,11 @@ export default function AdminPage() {
         subtitle="Управление учениками, потоками и расписанием"
       />
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: 'var(--space-4)',
-        }}
-      >
-        <QuickCard title="Ученики"    description="Список и карточки учеников"        mono="STUDENTS" href="/admin/students" />
-        <QuickCard title="Потоки"     description="Учебные группы и их уроки"          mono="STREAMS"  href="/admin/streams" />
-        <QuickCard title="Расписание" description="Предстоящие занятия и сроки сдачи" mono="SCHEDULE" href="/admin/schedule" />
-        <QuickCard title="Задания"    description="Управление заданиями (через потоки)"  mono="ASSIGNMENTS" href="/admin/assignments" />
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+        <QuickCard title="Ученики"    description="Список и карточки учеников"          mono="STUDENTS"    href="/admin/students" />
+        <QuickCard title="Потоки"     description="Учебные группы и их уроки"            mono="STREAMS"     href="/admin/streams" />
+        <QuickCard title="Расписание" description="Предстоящие занятия и сроки сдачи"  mono="SCHEDULE"    href="/admin/schedule" />
+        <QuickCard title="Задания"    description="Управление заданиями (через потоки)" mono="ASSIGNMENTS" href="/admin/assignments" />
       </div>
     </DashboardLayout>
   );
@@ -80,15 +74,15 @@ function QuickCard({ title, description, mono, href }: {
   title: string; description: string; mono: string; href: string;
 }) {
   return (
-    <a href={href} style={{ textDecoration: 'none' }}>
+    <a href={href} className="no-underline block">
       <Card interactive padding="md">
         <CardHeader>
-          <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', letterSpacing: 'var(--tracking-widest)' }}>
+          <Mono size="xs" className="text-text-tertiary tracking-widest uppercase">
             {mono}
           </Mono>
         </CardHeader>
         <CardBody>
-          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-2)' }}>{title}</Heading>
+          <Heading level={3} size="lg" className="mb-2">{title}</Heading>
           <Text size="sm" color="tertiary">{description}</Text>
         </CardBody>
       </Card>
@@ -135,7 +129,6 @@ function CalendarIcon() {
   );
 }
 
-
 function KeyIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -144,6 +137,7 @@ function KeyIcon() {
     </svg>
   );
 }
+
 function BellNavIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">

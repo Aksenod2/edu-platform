@@ -14,19 +14,19 @@ import {
   type Student,
 } from '@/lib/api';
 import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Card, FormField } from '@platform/ui/molecules';
-import { Button, Input, Badge, Heading, Text, Mono, Spinner } from '@platform/ui/atoms';
+import { Card, CardHeader, CardBody, FormField } from '@platform/ui/molecules';
+import { Button, Input, Badge, Heading, Mono, Spinner } from '@platform/ui/atoms';
 
 const ADMIN_NAV = [
   {
     label: 'Управление',
     items: [
-      { label: 'Обзор',      href: '/admin',           icon: <GridIcon /> },
-      { label: 'Ученики',    href: '/admin/students',  icon: <UsersIcon /> },
-      { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
-      { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
-      { label: 'API-доступ', href: '/admin/api-access', icon: <KeyIcon /> },
+      { label: 'Обзор',       href: '/admin',                icon: <GridIcon /> },
+      { label: 'Ученики',     href: '/admin/students',       icon: <UsersIcon /> },
+      { label: 'Потоки',      href: '/admin/streams',        icon: <StreamIcon /> },
+      { label: 'Расписание',  href: '/admin/schedule',       icon: <CalendarIcon /> },
+      { label: 'Уведомления', href: '/admin/notifications',  icon: <BellNavIcon /> },
+      { label: 'API-доступ',  href: '/admin/api-access',     icon: <KeyIcon /> },
     ],
   },
 ];
@@ -140,7 +140,7 @@ export default function StudentsPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen">
         <Spinner size="lg" />
       </div>
     );
@@ -174,78 +174,106 @@ export default function StudentsPage() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
-          <Text size="sm" color="var(--color-error)">{error}</Text>
-        </Card>
+        <div className="mb-4 px-4 py-3 rounded-xs border border-error bg-error-dim">
+          <Mono size="xs" className="text-error break-all">{error}</Mono>
+        </div>
       )}
 
       {actionMessage && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-success)', marginBottom: 'var(--space-4)' }}>
-          <Mono size="xs" style={{ wordBreak: 'break-all', color: 'var(--color-success)' }}>{actionMessage}</Mono>
-        </Card>
+        <div className="mb-4 px-4 py-3 rounded-xs border border-success bg-success-dim">
+          <Mono size="xs" className="text-success break-all">{actionMessage}</Mono>
+        </div>
       )}
 
       {showCreateForm && (
-        <Card variant="elevated" padding="md" style={{ marginBottom: 'var(--space-6)' }}>
-          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-4)' }}>Новый ученик</Heading>
-          <form onSubmit={handleCreate}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-              <FormField id="new-name" label="Имя" required inputProps={{ placeholder: 'Имя', value: newName, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value) }} />
-              <FormField id="new-email" label="Email" required inputProps={{ type: 'email', placeholder: 'Email', value: newEmail, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value) }} />
-            </div>
-            <Button type="submit" variant="primary" size="sm" loading={creating}>
-              Создать
-            </Button>
-          </form>
+        <Card variant="elevated" padding="md" className="mb-6">
+          <CardHeader>
+            <Heading level={3} size="lg">Новый ученик</Heading>
+          </CardHeader>
+          <CardBody>
+            <form onSubmit={handleCreate}>
+              <div className="flex flex-col gap-3 mb-4">
+                <FormField
+                  id="new-name"
+                  label="Имя"
+                  required
+                  inputProps={{
+                    placeholder: 'Имя',
+                    value: newName,
+                    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value),
+                  }}
+                />
+                <FormField
+                  id="new-email"
+                  label="Email"
+                  required
+                  inputProps={{
+                    type: 'email',
+                    placeholder: 'Email',
+                    value: newEmail,
+                    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value),
+                  }}
+                />
+              </div>
+              <Button type="submit" variant="primary" size="sm" loading={creating}>
+                Создать
+              </Button>
+            </form>
+          </CardBody>
         </Card>
       )}
 
-      <div style={{ marginBottom: 'var(--space-4)' }}>
+      <div className="mb-4">
         <Input
           placeholder="Поиск по имени или email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           leftElement={<SearchIcon />}
-          style={{ maxWidth: 400 }}
+          className="max-w-[400px]"
         />
       </div>
 
       {loadingStudents ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+        <div className="flex justify-center py-8">
           <Spinner size="md" />
         </div>
       ) : students.length === 0 ? (
-        <Text color="tertiary">Ученики не найдены</Text>
+        <Mono size="sm" className="text-text-tertiary">Ученики не найдены</Mono>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--text-sm)',
-          }}>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse font-sans text-sm">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--color-border-strong)' }}>
+              <tr className="border-b border-border-strong">
                 {['Имя', 'Email', 'Статус', 'Создан', 'Действия'].map((h) => (
-                  <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'left', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)' }}>{h}</th>
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-text-tertiary"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {students.map((s) => (
-                <tr key={s.id} style={{ borderBottom: '1px solid var(--color-border-subtle)', opacity: s.deletedAt ? 0.4 : 1 }}>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--color-text-primary)' }}>
-                    {s.name}
-                    {!!s.submittedCount && s.submittedCount > 0 && (
-                      <Badge variant="warning" style={{ marginLeft: 'var(--space-2)' }}>
-                        {s.submittedCount} ждут проверки
-                      </Badge>
-                    )}
+                <tr
+                  key={s.id}
+                  className={`border-b border-border-subtle transition-colors hover:bg-bg-surface ${s.deletedAt ? 'opacity-40' : ''}`}
+                >
+                  <td className="px-4 py-3 text-text-primary">
+                    <span className="flex items-center gap-2">
+                      {s.name}
+                      {!!s.submittedCount && s.submittedCount > 0 && (
+                        <Badge variant="warning">
+                          {s.submittedCount} ждут проверки
+                        </Badge>
+                      )}
+                    </span>
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td className="px-4 py-3">
                     <Mono size="xs">{s.email}</Mono>
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td className="px-4 py-3">
                     {s.deletedAt ? (
                       <Badge variant="default">Удалён</Badge>
                     ) : s.isActive ? (
@@ -254,18 +282,18 @@ export default function StudentsPage() {
                       <Badge variant="error">Заблокирован</Badge>
                     )}
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
-                    <Mono size="xs" color="var(--color-text-tertiary)">
+                  <td className="px-4 py-3">
+                    <Mono size="xs" className="text-text-tertiary">
                       {new Date(s.createdAt).toLocaleDateString('ru-RU')}
                     </Mono>
                   </td>
-                  <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                  <td className="px-4 py-3">
                     {!s.deletedAt && (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                        <a href={`/admin/students/${s.id}`} style={{ textDecoration: 'none' }}>
+                      <div className="flex flex-wrap gap-2">
+                        <a href={`/admin/students/${s.id}`} className="no-underline">
                           <Button variant="ghost" size="sm">Профиль</Button>
                         </a>
-                        <a href={`/admin/students/${s.id}/thread`} style={{ textDecoration: 'none' }}>
+                        <a href={`/admin/students/${s.id}/thread`} className="no-underline">
                           <Button variant="ghost" size="sm">Тред</Button>
                         </a>
                         <Button
@@ -275,7 +303,12 @@ export default function StudentsPage() {
                         >
                           {s.isActive ? 'Блокировать' : 'Разблокировать'}
                         </Button>
-                        <Button variant="secondary" size="sm" onClick={() => handleInvite(s)} disabled={!s.isActive}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleInvite(s)}
+                          disabled={!s.isActive}
+                        >
                           Invite
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => handleResetPassword(s)}>
@@ -301,14 +334,16 @@ export default function StudentsPage() {
 function GridIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" /><rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
+      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" />
+      <rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
     </svg>
   );
 }
 function UsersIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" /><circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" />
+      <circle cx="6" cy="5" r="3" /><path d="M1 14c0-3 2-5 5-5s5 2 5 5" />
+      <circle cx="12" cy="4" r="2" /><path d="M15 13c0-2-1-4-3-4" />
     </svg>
   );
 }
@@ -333,8 +368,6 @@ function SearchIcon() {
     </svg>
   );
 }
-
-
 function KeyIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
