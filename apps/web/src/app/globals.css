@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* shadcn/ui — neutral тема (oklch), Tailwind v4 */
 @theme inline {
