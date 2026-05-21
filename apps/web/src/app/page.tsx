@@ -23,15 +23,7 @@ export default function Home() {
   }, [user, loading, router]);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--color-bg-base)',
-      }}
-    >
+    <div className="flex min-h-screen items-center justify-center bg-background">
       <Loader2 className="size-8 animate-spin text-muted-foreground" />
     </div>
   );

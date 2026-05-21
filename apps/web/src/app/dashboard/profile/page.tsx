@@ -2,11 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2 } from 'lucide-react';
+import { Loader2, TriangleAlert } from 'lucide-react';
+import { toast } from 'sonner';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfilePage() {
@@ -15,7 +19,6 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   const [resume, setResume] = useState('');
@@ -37,7 +40,7 @@ export default function ProfilePage() {
         setDirection(data.profile.direction || '');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки профиля');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки профиля');
     } finally {
       setLoadingProfile(false);
     }
@@ -52,7 +55,7 @@ export default function ProfilePage() {
   if (loadingProfile) {
     return (
       <div className="flex justify-center py-8">
-        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -68,7 +71,6 @@ export default function ProfilePage() {
 
     setSaving(true);
     setError('');
-    setMessage('');
 
     try {
       const result = await updateProfile(accessToken, user.id, {
@@ -83,10 +85,9 @@ export default function ProfilePage() {
         setUser({ ...user, questionnaireCompleted: true });
       }
 
-      setMessage('Профиль сохранён');
-      setTimeout(() => setMessage(''), 3000);
+      toast.success('Профиль сохранён');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения');
+      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
     }
@@ -110,97 +111,87 @@ export default function ProfilePage() {
       </div>
 
       {/* Avatar + status strip */}
-      <div className="flex items-center gap-4 mb-8 p-5 border border-[var(--color-border-default)] bg-[var(--color-bg-surface)]">
-        <div className="flex-shrink-0 w-14 h-14 rounded-full border-2 border-[var(--color-accent-red)] flex items-center justify-center bg-[var(--color-bg-elevated)]">
-          <span className="font-mono text-base font-bold text-[var(--color-accent-red)] tracking-wider">
-            {initials}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-sans text-base font-semibold text-[var(--color-text-primary)] truncate">{user.name}</p>
-          <p className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-widest mt-0.5">
-            {direction || 'Направление не указано'}
-          </p>
-        </div>
-        {isCompleted && (
-          <span className="flex-shrink-0 px-2 py-1 border border-[var(--color-accent-neon)] font-mono text-xs text-[var(--color-accent-neon)] uppercase tracking-wider">
-            Анкета заполнена
-          </span>
-        )}
-      </div>
+      <Card className="mb-8 mt-4">
+        <CardContent className="flex items-center gap-4">
+          <div className="flex size-14 flex-shrink-0 items-center justify-center rounded-full border-2 border-primary bg-muted">
+            <span className="text-base font-bold tracking-wider text-primary">{initials}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold text-foreground">{user.name}</p>
+            <p className="mt-0.5 text-xs uppercase tracking-widest text-muted-foreground">
+              {direction || 'Направление не указано'}
+            </p>
+          </div>
+          {isCompleted && <Badge variant="secondary" className="flex-shrink-0">Анкета заполнена</Badge>}
+        </CardContent>
+      </Card>
 
       {/* Warning */}
       {!isCompleted && (
-        <div className="mb-6 px-4 py-3 border border-[var(--color-warning)] bg-[var(--color-warning-dim)] flex items-start gap-3">
-          <svg className="flex-shrink-0 mt-0.5 text-[var(--color-warning)]" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M8 1L15 14H1L8 1z" />
-            <path d="M8 6v4" strokeLinecap="round" />
-            <circle cx="8" cy="12.5" r="0.5" fill="currentColor" stroke="none" />
-          </svg>
-          <p className="font-sans text-sm text-[var(--color-warning)] leading-relaxed">
+        <Alert className="mb-6">
+          <TriangleAlert />
+          <AlertDescription>
             Заполните анкету, чтобы преподаватель знал ваш профессиональный бэкграунд. Все поля обязательны.
-          </p>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <Alert variant="destructive" className="mb-6 flex items-center justify-between gap-3">
-          <AlertDescription>{error}</AlertDescription>
-          <button onClick={() => setError('')} className="flex-shrink-0 hover:opacity-70 transition-opacity">
-            <CloseIcon />
-          </button>
+          </AlertDescription>
         </Alert>
       )}
 
-      {/* Success */}
-      {message && (
-        <Alert className="mb-6">
-          <AlertDescription>{message}</AlertDescription>
+      {/* Validation error */}
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Резюме */}
-        <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5">
-          <label htmlFor="resume" className="block font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] mb-3">
-            Резюме <span className="text-[var(--color-accent-red)]">*</span>
-          </label>
-          <Textarea
-            id="resume"
-            value={resume}
-            onChange={(e) => setResume(e.target.value)}
-            placeholder="Краткое профессиональное описание себя"
-            rows={4}
-          />
-          <p className="mt-2 font-sans text-xs text-[var(--color-text-disabled)]">Краткое профессиональное описание себя</p>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Резюме <span className="text-destructive">*</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <Textarea
+              id="resume"
+              value={resume}
+              onChange={(e) => setResume(e.target.value)}
+              placeholder="Краткое профессиональное описание себя"
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">Краткое профессиональное описание себя</p>
+          </CardContent>
+        </Card>
 
         {/* Портфолио */}
-        <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5">
-          <label htmlFor="portfolio" className="block font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] mb-3">
-            Портфолио <span className="text-[var(--color-accent-red)]">*</span>
-          </label>
-          <Input
-            id="portfolio"
-            type="text"
-            value={portfolio}
-            onChange={(e) => setPortfolio(e.target.value)}
-            placeholder="Ссылка на портфолио (Behance, Dribbble, и т.д.)"
-          />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Портфолио <span className="text-destructive">*</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Input
+              id="portfolio"
+              type="text"
+              value={portfolio}
+              onChange={(e) => setPortfolio(e.target.value)}
+              placeholder="Ссылка на портфолио (Behance, Dribbble, и т.д.)"
+            />
+          </CardContent>
+        </Card>
 
         {/* Контакты */}
-        <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5">
-          <p className="font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] mb-4">
-            Контакты
-          </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="contact-email" className="block font-mono text-xs text-[var(--color-text-secondary)] mb-2">
-                Email <span className="text-[var(--color-accent-red)]">*</span>
-              </label>
+        <Card>
+          <CardHeader>
+            <CardTitle>Контакты</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="contact-email">
+                Email <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="contact-email"
                 type="email"
@@ -209,10 +200,8 @@ export default function ProfilePage() {
                 placeholder="email@example.com"
               />
             </div>
-            <div>
-              <label htmlFor="contact-telegram" className="block font-mono text-xs text-[var(--color-text-secondary)] mb-2">
-                Telegram
-              </label>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="contact-telegram">Telegram</Label>
               <Input
                 id="contact-telegram"
                 type="text"
@@ -221,22 +210,26 @@ export default function ProfilePage() {
                 placeholder="@username"
               />
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Направление */}
-        <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5">
-          <label htmlFor="direction" className="block font-mono text-xs uppercase tracking-widest text-[var(--color-text-tertiary)] mb-3">
-            Направление <span className="text-[var(--color-accent-red)]">*</span>
-          </label>
-          <Input
-            id="direction"
-            type="text"
-            value={direction}
-            onChange={(e) => setDirection(e.target.value)}
-            placeholder="Специализация в дизайне (UX/UI, графический дизайн, и т.д.)"
-          />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Направление <span className="text-destructive">*</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Input
+              id="direction"
+              type="text"
+              value={direction}
+              onChange={(e) => setDirection(e.target.value)}
+              placeholder="Специализация в дизайне (UX/UI, графический дизайн, и т.д.)"
+            />
+          </CardContent>
+        </Card>
 
         {/* Submit */}
         <div className="flex items-center justify-between pt-2">
@@ -245,21 +238,12 @@ export default function ProfilePage() {
             {saving ? 'Сохранение...' : isCompleted ? 'Обновить профиль' : 'Отправить анкету'}
           </Button>
           {isCompleted && profile?.questionnaireCompletedAt && (
-            <span className="font-mono text-xs text-[var(--color-text-disabled)] uppercase tracking-wider">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
               {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
             </span>
           )}
         </div>
       </form>
     </>
-  );
-}
-
-// ─── Icons ─────────────────────────────────────────────────
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <path d="M4 4l8 8M12 4l-8 8" />
-    </svg>
   );
 }

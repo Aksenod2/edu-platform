@@ -10,8 +10,10 @@ import {
   type NotificationCategory,
 } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface CategoryRow {
@@ -73,8 +75,6 @@ export default function NotificationSettingsPage() {
   const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [pushStatus, setPushStatus] = useState<NotificationPermission | 'unsupported'>('default');
 
   useEffect(() => {
@@ -118,8 +118,6 @@ export default function NotificationSettingsPage() {
           },
         ];
       });
-      setSaveSuccess(false);
-      setSaveError(null);
     },
     [user],
   );
@@ -139,8 +137,6 @@ export default function NotificationSettingsPage() {
           };
         }),
       );
-      setSaveSuccess(false);
-      setSaveError(null);
     },
     [user],
   );
@@ -148,8 +144,6 @@ export default function NotificationSettingsPage() {
   const handleSave = useCallback(async () => {
     if (!accessToken) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
     try {
       const updates = prefs
         .filter((p) => p.category !== 'system')
@@ -160,10 +154,9 @@ export default function NotificationSettingsPage() {
         }));
       const data = await updateNotificationPreferences(accessToken, updates);
       setPrefs(data.preferences);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      toast.success('Настройки сохранены');
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Ошибка сохранения');
+      toast.error(e instanceof Error ? e.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
     }
@@ -172,7 +165,7 @@ export default function NotificationSettingsPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-8">
-        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -196,18 +189,10 @@ export default function NotificationSettingsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Настройки уведомлений</h1>
           <p className="text-sm text-muted-foreground">Управляйте тем, какие уведомления и по каким каналам вы получаете</p>
         </div>
-        <div className="flex items-center gap-3">
-          {saveError && (
-            <span className="font-mono text-xs text-destructive">{saveError}</span>
-          )}
-          {saveSuccess && (
-            <span className="font-mono text-xs text-muted-foreground">СОХРАНЕНО</span>
-          )}
-          <Button onClick={handleSave} disabled={saving}>
-            {saving && <Loader2 className="animate-spin" />}
-            {saving ? 'СОХРАНЕНИЕ...' : 'СОХРАНИТЬ'}
-          </Button>
-        </div>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving && <Loader2 className="animate-spin" />}
+          {saving ? 'Сохранение...' : 'Сохранить'}
+        </Button>
       </div>
 
       {/* Web Push status banner */}
@@ -249,23 +234,14 @@ export default function NotificationSettingsPage() {
       <Card>
         <CardContent className="p-0">
           {/* Header row */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 120px 120px',
-              gap: 0,
-              padding: 'var(--spacing-3) var(--spacing-4)',
-              borderBottom: '1px solid var(--color-border-subtle)',
-              background: 'var(--color-bg-elevated)',
-            }}
-          >
-            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+          <div className="grid grid-cols-[1fr_120px_120px] border-b bg-muted px-4 py-3">
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">
               Категория
             </span>
-            <span className="text-center font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            <span className="text-center text-xs uppercase tracking-widest text-muted-foreground">
               Email
             </span>
-            <span className="text-center font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            <span className="text-center text-xs uppercase tracking-widest text-muted-foreground">
               Push
             </span>
           </div>
@@ -279,36 +255,12 @@ export default function NotificationSettingsPage() {
             return (
               <div
                 key={row.category}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 120px 120px',
-                  gap: 0,
-                  padding: 'var(--spacing-4)',
-                  borderBottom: isLast ? 'none' : '1px solid var(--color-border-subtle)',
-                  background: row.system ? 'var(--color-bg-elevated)' : 'transparent',
-                }}
+                className={`grid grid-cols-[1fr_120px_120px] p-4 ${isLast ? '' : 'border-b'} ${row.system ? 'bg-muted' : ''}`}
               >
-                <div style={{ paddingRight: 'var(--spacing-4)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', marginBottom: 'var(--spacing-1)' }}>
+                <div className="pr-4">
+                  <div className="mb-1 flex items-center gap-2">
                     <p className="text-sm font-semibold text-foreground">{row.label}</p>
-                    {row.system && (
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: 'var(--tracking-widest)',
-                          textTransform: 'uppercase',
-                          color: 'var(--color-text-tertiary)',
-                          background: 'var(--color-bg-base)',
-                          border: '1px solid var(--color-border-default)',
-                          borderRadius: 'var(--radius-xs)',
-                          padding: '1px 4px',
-                        }}
-                      >
-                        ВСЕГДА ВКЛ
-                      </span>
-                    )}
+                    {row.system && <Badge variant="outline">Всегда вкл</Badge>}
                   </div>
                   <p className="text-sm text-muted-foreground">{row.description}</p>
                   {row.system && (
@@ -318,7 +270,7 @@ export default function NotificationSettingsPage() {
                   )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="flex items-center justify-center">
                   {row.system ? (
                     <Toggle checked={true} disabled label="ВКЛ" />
                   ) : (
@@ -330,13 +282,13 @@ export default function NotificationSettingsPage() {
                   )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="flex items-center justify-center">
                   {row.system ? (
                     <Toggle checked={true} disabled label="ВКЛ" />
                   ) : pushStatus === 'denied' ? (
                     <div className="text-center">
-                      <span className="font-mono text-xs uppercase text-muted-foreground">
-                        ЗАБЛОК.
+                      <span className="text-xs uppercase text-muted-foreground">
+                        Заблок.
                       </span>
                     </div>
                   ) : (
@@ -354,8 +306,8 @@ export default function NotificationSettingsPage() {
       </Card>
 
       {/* In-app note */}
-      <div className="mt-4 rounded-sm border bg-card px-4 py-3">
-        <span className="font-mono text-xs text-muted-foreground">
+      <div className="mt-4 rounded-md border bg-card px-4 py-3">
+        <span className="text-xs text-muted-foreground">
           * In-app уведомления (колокольчик) всегда активны и не могут быть отключены — они гарантируют доступ к важным событиям платформы.
         </span>
       </div>
@@ -373,47 +325,35 @@ interface ToggleProps {
 }
 
 function Toggle({ checked, onChange, disabled = false, label }: ToggleProps) {
+  const on = checked && !disabled;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-1)' }}>
+    <div className="flex flex-col items-center gap-1">
       <button
+        type="button"
         role="switch"
         aria-checked={checked}
         disabled={disabled}
         onClick={() => !disabled && onChange?.(!checked)}
-        style={{
-          position: 'relative',
-          width: 36,
-          height: 20,
-          borderRadius: 10,
-          background: checked
-            ? disabled
-              ? 'var(--color-border-default)'
-              : 'var(--color-accent-red)'
-            : 'var(--color-bg-elevated)',
-          border: `1px solid ${checked && !disabled ? 'var(--color-accent-red)' : 'var(--color-border-default)'}`,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          transition: 'background var(--duration-fast) var(--ease-default), border-color var(--duration-fast) var(--ease-default)',
-          padding: 0,
-          opacity: disabled ? 0.6 : 1,
-        }}
+        className={[
+          'relative h-5 w-9 rounded-full border p-0 transition-colors',
+          on
+            ? 'border-primary bg-primary'
+            : checked
+              ? 'border-input bg-input'
+              : 'border-input bg-muted',
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        ].join(' ')}
       >
         <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: checked ? 16 : 2,
-            width: 14,
-            height: 14,
-            borderRadius: '50%',
-            background: checked && !disabled ? '#fff' : 'var(--color-text-tertiary)',
-            transition: 'left var(--duration-fast) var(--ease-default)',
-          }}
+          className={[
+            'absolute top-0.5 size-3.5 rounded-full transition-all',
+            checked ? 'left-4' : 'left-0.5',
+            on ? 'bg-primary-foreground' : 'bg-muted-foreground',
+          ].join(' ')}
         />
       </button>
       {label && (
-        <span className="font-mono uppercase tracking-wider text-muted-foreground" style={{ fontSize: 9 }}>
-          {label}
-        </span>
+        <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span>
       )}
     </div>
   );

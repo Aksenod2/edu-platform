@@ -2,6 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { ArrowRight } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
 interface SettingCard {
   title: string;
@@ -45,62 +49,61 @@ export default function StudentSettingsPage() {
       </div>
 
       {/* Account info strip */}
-      <div className="mb-8 px-5 py-4 border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] flex items-center gap-4">
-        <div className="flex-shrink-0 w-10 h-10 rounded-full border border-[var(--color-border-strong)] flex items-center justify-center bg-[var(--color-bg-elevated)]">
-          <span className="font-mono text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
-            {user.name.split(' ').slice(0, 2).map((w) => w[0]).join('')}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-sans text-sm font-medium text-[var(--color-text-primary)] truncate">
-            {user.name}
-          </p>
-          <p className="font-mono text-xs text-[var(--color-text-disabled)] uppercase tracking-widest mt-0.5">
-            {user.role === 'student' ? 'Студент' : 'Администратор'}
-          </p>
-        </div>
-      </div>
+      <Card className="mb-8 mt-4">
+        <CardContent className="flex items-center gap-4">
+          <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-full border bg-muted">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              {user.name.split(' ').slice(0, 2).map((w) => w[0]).join('')}
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-foreground">{user.name}</p>
+            <p className="mt-0.5 text-xs uppercase tracking-widest text-muted-foreground">
+              {user.role === 'student' ? 'Студент' : 'Администратор'}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Settings grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {SETTINGS_CARDS.map((card) => (
-          <button
+          <Card
             key={card.href}
+            role="button"
+            tabIndex={0}
             onClick={() => router.push(card.href)}
-            className="group text-left p-5 border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-elevated)] hover:border-[var(--color-border-strong)] transition-colors duration-150 focus:outline-none focus:border-[var(--color-accent-red)]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                router.push(card.href);
+              }
+            }}
+            className="group cursor-pointer transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div className="flex-shrink-0 w-9 h-9 border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-text-secondary)] group-hover:border-[var(--color-accent-red)] group-hover:text-[var(--color-accent-red)] transition-colors">
-                {card.icon}
+            <CardContent>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-md border text-muted-foreground transition-colors group-hover:text-foreground">
+                  {card.icon}
+                </div>
+                {card.badge && <Badge variant="secondary">{card.badge}</Badge>}
               </div>
-              {card.badge && (
-                <span className="font-mono text-[10px] px-1.5 py-0.5 border border-[var(--color-border-default)] text-[var(--color-text-disabled)] uppercase tracking-wider">
-                  {card.badge}
-                </span>
-              )}
-            </div>
-            <h3 className="font-sans text-sm font-semibold text-[var(--color-text-primary)] mb-1.5">
-              {card.title}
-            </h3>
-            <p className="font-sans text-xs text-[var(--color-text-secondary)] leading-relaxed">
-              {card.description}
-            </p>
-            <div className="mt-4 flex items-center gap-1.5 font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider group-hover:text-[var(--color-accent-red)] transition-colors">
-              Открыть
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 6h8M6 2l4 4-4 4" />
-              </svg>
-            </div>
-          </button>
+              <h3 className="mb-1.5 text-sm font-semibold text-foreground">{card.title}</h3>
+              <p className="text-xs leading-relaxed text-muted-foreground">{card.description}</p>
+              <div className="mt-4 flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors group-hover:text-foreground">
+                Открыть
+                <ArrowRight className="size-3" />
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Divider + metadata */}
-      <div className="mt-10 pt-6 border-t border-[var(--color-border-subtle)]">
-        <p className="font-mono text-xs text-[var(--color-text-disabled)] uppercase tracking-widest">
-          Версия платформы — Nothing Design System
-        </p>
-      </div>
+      <Separator className="mt-10" />
+      <p className="mt-6 text-xs uppercase tracking-widest text-muted-foreground">
+        Версия платформы
+      </p>
     </>
   );
 }
