@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/lib/auth-context';
 import { NotificationsProvider } from '@/lib/notifications-context';
 import { PushManager } from '@/lib/push-manager';
+import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NotificationsProvider>
             <PushManager />
             {children}
+            <Toaster />
           </NotificationsProvider>
         </AuthProvider>
       </body>
