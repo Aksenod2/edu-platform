@@ -182,6 +182,52 @@ export async function archiveStream(
   });
 }
 
+export interface StreamWithCounts extends Stream {
+  studentsCount: number;
+  lessonsCount: number;
+}
+
+export async function getStream(
+  accessToken: string,
+  id: string,
+): Promise<{ stream: StreamWithCounts }> {
+  return request(`/streams/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getStreamStudents(
+  accessToken: string,
+  streamId: string,
+): Promise<{ students: Student[] }> {
+  return request(`/streams/${streamId}/students`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function enrollStudents(
+  accessToken: string,
+  streamId: string,
+  studentIds: string[],
+): Promise<{ students: Student[] }> {
+  return request(`/streams/${streamId}/students`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ studentIds }),
+  });
+}
+
+export async function unenrollStudent(
+  accessToken: string,
+  streamId: string,
+  studentId: string,
+): Promise<{ success: boolean }> {
+  return request(`/streams/${streamId}/students/${studentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Users (Students) API
 
 export interface Student {

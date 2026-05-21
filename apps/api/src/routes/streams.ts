@@ -55,6 +55,122 @@ export async function streamRoutes(app: FastifyInstance) {
     return { stream };
   });
 
+  // GET /streams/:id — детали потока со счётчиками (admin)
+  app.get('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const stream = await prisma.stream.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { enrollments: true, lessons: true },
+        },
+      },
+    });
+
+    if (!stream) {
+      return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    const { _count, ...streamFields } = stream;
+    return {
+      stream: {
+        ...streamFields,
+        studentsCount: _count.enrollments,
+        lessonsCount: _count.lessons,
+      },
+    };
+  });
+
+  // GET /streams/:id/students — список зачисленных студентов (admin)
+  app.get('/streams/:id/students', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const stream = await prisma.stream.findUnique({ where: { id } });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: {
+        streamId: id,
+        user: { deletedAt: null },
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const students = enrollments.map((e) => e.user);
+    return { students };
+  });
+
+  // POST /streams/:id/students — зачисление студентов (admin)
+  app.post('/streams/:id/students', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { studentIds } = request.body as { studentIds?: string[] };
+
+    const stream = await prisma.stream.findUnique({ where: { id } });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return reply.status(400).send({ error: 'Список студентов обязателен' });
+    }
+
+    // Оставляем только существующих пользователей с ролью student (без soft-deleted)
+    const validStudents = await prisma.user.findMany({
+      where: {
+        id: { in: studentIds },
+        role: 'student',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (validStudents.length > 0) {
+      await prisma.streamEnrollment.createMany({
+        data: validStudents.map((s) => ({ streamId: id, userId: s.id })),
+        skipDuplicates: true,
+      });
+    }
+
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: {
+        streamId: id,
+        user: { deletedAt: null },
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const students = enrollments.map((e) => e.user);
+    return { students };
+  });
+
+  // DELETE /streams/:id/students/:studentId — отчисление студента (admin, идемпотентно)
+  app.delete(
+    '/streams/:id/students/:studentId',
+    { onRequest: adminOnly },
+    async (request) => {
+      const { id, studentId } = request.params as { id: string; studentId: string };
+
+      await prisma.streamEnrollment.deleteMany({
+        where: { streamId: id, userId: studentId },
+      });
+
+      return { success: true };
+    },
+  );
+
   // POST /streams/:id/archive — архивирование потока
   app.post('/streams/:id/archive', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };

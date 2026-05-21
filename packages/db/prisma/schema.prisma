@@ -81,6 +81,7 @@ model User {
   notificationPreferences NotificationPreference[]
   pushSubscriptions       PushSubscription[]
   apiKeys                 ApiKey[]
+  enrollments             StreamEnrollment[]
 }
 
 model ApiKey {
@@ -122,6 +123,21 @@ model Stream {
   lessons         Lesson[]
   assignments     Assignment[]
   scheduleEntries ScheduleEntry[]
+  enrollments     StreamEnrollment[]
+}
+
+model StreamEnrollment {
+  id        String   @id @default(uuid())
+  streamId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([streamId, userId])
+  @@index([streamId])
+  @@index([userId])
 }
 
 model Lesson {
