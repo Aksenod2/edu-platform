@@ -31,6 +31,7 @@ const ADMIN_NAV = [
       { label: 'Потоки',     href: '/admin/streams',   icon: <StreamIcon /> },
       { label: 'Расписание', href: '/admin/schedule',  icon: <CalendarIcon /> },
       { label: 'Уведомления', href: '/admin/notifications', icon: <BellNavIcon /> },
+      { label: 'API-доступ', href: '/admin/api-access', icon: <KeyIcon /> },
     ],
   },
 ];
@@ -524,6 +525,15 @@ function CalendarIcon() {
   );
 }
 
+
+function KeyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="6" cy="6" r="3.5" />
+      <path d="M8.5 8.5l5.5 5.5M11 11l1.5 1.5" />
+    </svg>
+  );
+}
 function BellNavIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">

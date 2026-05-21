@@ -903,6 +903,47 @@ export async function savePushSubscription(
   });
 }
 
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface CreateApiKeyResponse {
+  apiKey: {
+    id: string;
+    name: string;
+    key: string; // полный ключ, показывается 1 раз
+    keyPrefix: string;
+    createdAt: string;
+  };
+}
+
+export async function getApiKeys(accessToken: string): Promise<{ apiKeys: ApiKey[] }> {
+  return request('/api-keys', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createApiKey(accessToken: string, name: string): Promise<CreateApiKeyResponse> {
+  return request('/api-keys', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function revokeApiKey(accessToken: string, id: string): Promise<{ message: string }> {
+  return request(`/api-keys/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export async function uploadThreadFile(
   accessToken: string,
   studentId: string,
