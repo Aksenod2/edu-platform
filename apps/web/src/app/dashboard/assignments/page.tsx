@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
+import { STUDENT_NAV } from '@/lib/student-nav';
 import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner, Button, Badge, Select } from '@platform/ui/atoms';
 import {
@@ -15,21 +16,7 @@ import {
   type Stream,
   type ThreadEntry,
 } from '@/lib/api';
-
-const STUDENT_NAV = [
-  {
-    label: 'Обучение',
-    items: [
-      { label: 'Обзор',      href: '/dashboard',             icon: <GridIcon /> },
-      { label: 'Уроки',      href: '/dashboard/lessons',     icon: <BookIcon /> },
-      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
-      { label: 'Тред',       href: '/dashboard/thread',      icon: <ChatIcon /> },
-      { label: 'Расписание', href: '/dashboard/schedule',    icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/dashboard/notifications', icon: <BellNavIcon /> },
-      { label: 'Профиль',    href: '/dashboard/profile',     icon: <UserIcon /> },
-    ],
-  },
-];
+import Link from 'next/link';
 
 const STATUS_LABELS: Record<string, string> = {
   assigned: 'Назначено',
@@ -63,7 +50,6 @@ export default function StudentAssignmentsPage() {
   const [streamFilter, setStreamFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  // assignmentId → last teacher comment entry for that assignment
   const [assignmentFeedback, setAssignmentFeedback] = useState<Record<string, ThreadEntry | null>>({});
   const [submissionModalSaId, setSubmissionModalSaId] = useState<string | null>(null);
   const [submissionText, setSubmissionText] = useState('');
@@ -102,21 +88,22 @@ export default function StudentAssignmentsPage() {
     if (accessToken && user?.role === 'student') fetchData();
   }, [accessToken, user, fetchData]);
 
-  // Load teacher feedback (type=comment from admin) for a reviewed assignment
-  const loadAssignmentFeedback = useCallback(async (assignmentId: string) => {
-    if (!accessToken || !user || assignmentId in assignmentFeedback) return;
-    try {
-      const data = await getThread(accessToken, user.id, assignmentId);
-      // Find last admin comment entry for this assignment
-      const adminComments = data.entries.filter(
-        (e) => e.type === 'comment' && e.author.role === 'admin' && e.assignmentId === assignmentId,
-      );
-      const last = adminComments.length > 0 ? adminComments[adminComments.length - 1] : null;
-      setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: last }));
-    } catch {
-      setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: null }));
-    }
-  }, [accessToken, user, assignmentFeedback]);
+  const loadAssignmentFeedback = useCallback(
+    async (assignmentId: string) => {
+      if (!accessToken || !user || assignmentId in assignmentFeedback) return;
+      try {
+        const data = await getThread(accessToken, user.id, assignmentId);
+        const adminComments = data.entries.filter(
+          (e) => e.type === 'comment' && e.author.role === 'admin' && e.assignmentId === assignmentId,
+        );
+        const last = adminComments.length > 0 ? adminComments[adminComments.length - 1] : null;
+        setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: last }));
+      } catch {
+        setAssignmentFeedback((prev) => ({ ...prev, [assignmentId]: null }));
+      }
+    },
+    [accessToken, user, assignmentFeedback],
+  );
 
   const handleToggleExpand = (saId: string, assignmentId: string | undefined, isReviewed: boolean) => {
     const nextExpanded = expandedId === saId ? null : saId;
@@ -162,7 +149,7 @@ export default function StudentAssignmentsPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
       </div>
     );
@@ -174,105 +161,63 @@ export default function StudentAssignmentsPage() {
       currentPath={pathname}
       header={{
         user: { name: user.name, role: 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
+        onLogout: async () => {
+          await logout();
+          router.push('/login');
+        },
         notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >
-      <div style={{ padding: 'var(--space-6)', maxWidth: 900 }}>
+      <div className="max-w-3xl">
         {/* Page header */}
-        <div style={{ marginBottom: 'var(--space-6)' }}>
-          <button
-            onClick={() => router.push('/dashboard')}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'var(--font-sans)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-1)',
-              marginBottom: 'var(--space-3)',
-              padding: 0,
-              transition: 'color var(--duration-fast) var(--ease-default)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
+        <div className="mb-8">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1 font-mono text-xs tracking-wide text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors mb-3 no-underline"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
               <path d="M9 2L4 7l5 5" />
             </svg>
             Назад
-          </button>
-          <h1 style={{
-            margin: 0,
-            fontSize: 'var(--text-2xl)',
-            fontWeight: 'var(--font-semibold)',
-            fontFamily: 'var(--font-sans)',
-            letterSpacing: 'var(--tracking-tight)',
-            color: 'var(--color-text-primary)',
-          }}>
+          </Link>
+          <h1 className="font-sans text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
             Мои задания
           </h1>
-          <p style={{
-            margin: 'var(--space-1) 0 0',
-            color: 'var(--color-text-tertiary)',
-            fontSize: 'var(--text-sm)',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: 'var(--tracking-wide)',
-            textTransform: 'uppercase',
-          }}>
-            {assignments.length} задани{assignments.length === 1 ? 'е' : assignments.length < 5 ? 'я' : 'й'}
+          <p className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mt-1">
+            {assignments.length} задани
+            {assignments.length === 1 ? 'е' : assignments.length < 5 ? 'я' : 'й'}
           </p>
         </div>
 
         {/* Alerts */}
         {error && (
-          <div style={{
-            padding: 'var(--space-3) var(--space-4)',
-            background: 'var(--color-error-dim)',
-            border: '1px solid var(--color-error)',
-            borderRadius: 'var(--radius-xs)',
-            marginBottom: 'var(--space-4)',
-            color: 'var(--color-error)',
-            fontSize: 'var(--text-sm)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            userSelect: 'text',
-          }}>
+          <div className="flex justify-between items-center px-4 py-3 mb-4 border border-[var(--color-error)] bg-[var(--color-error-dim)] text-[var(--color-error)] text-sm select-text">
             <span>{error}</span>
             <button
               onClick={() => setError('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 16 }}
+              className="bg-transparent border-0 cursor-pointer text-[var(--color-error)] text-base leading-none"
             >
               ×
             </button>
           </div>
         )}
-
         {success && (
-          <div style={{
-            padding: 'var(--space-3) var(--space-4)',
-            background: 'var(--color-success-dim)',
-            border: '1px solid var(--color-success)',
-            borderRadius: 'var(--radius-xs)',
-            marginBottom: 'var(--space-4)',
-            color: 'var(--color-success)',
-            fontSize: 'var(--text-sm)',
-          }}>
+          <div className="px-4 py-3 mb-4 border border-[var(--color-success)] bg-[var(--color-success-dim)] text-[var(--color-success)] text-sm">
             {success}
           </div>
         )}
 
         {/* Filters */}
-        <div style={{
-          display: 'flex',
-          gap: 'var(--space-3)',
-          marginBottom: 'var(--space-5)',
-          flexWrap: 'wrap',
-        }}>
+        <div className="flex gap-3 mb-5 flex-wrap">
           <Select
             value={streamFilter}
             onChange={(e) => setStreamFilter(e.target.value)}
@@ -281,7 +226,9 @@ export default function StudentAssignmentsPage() {
           >
             <option value="">Все потоки</option>
             {streams.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
             ))}
           </Select>
 
@@ -300,24 +247,21 @@ export default function StudentAssignmentsPage() {
 
           {(streamFilter || statusFilter) && (
             <button
-              onClick={() => { setStreamFilter(''); setStatusFilter(''); }}
-              style={{
-                background: 'none',
-                border: '1px solid var(--color-border-default)',
-                borderRadius: 'var(--radius-xs)',
-                color: 'var(--color-text-tertiary)',
-                cursor: 'pointer',
-                padding: 'var(--space-2) var(--space-3)',
-                fontSize: 'var(--text-xs)',
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: 'var(--tracking-wide)',
-                textTransform: 'uppercase',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-1)',
+              onClick={() => {
+                setStreamFilter('');
+                setStatusFilter('');
               }}
+              className="flex items-center gap-1 px-3 py-2 border border-[var(--color-border-default)] bg-transparent text-[var(--color-text-tertiary)] font-mono text-xs tracking-widest uppercase cursor-pointer hover:text-[var(--color-text-primary)] transition-colors"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
                 <path d="M2 2l8 8M10 2L2 10" />
               </svg>
               Сбросить
@@ -327,154 +271,87 @@ export default function StudentAssignmentsPage() {
 
         {/* Content */}
         {loadingData ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-16)' }}>
+          <div className="flex justify-center py-16">
             <Spinner size="lg" />
           </div>
         ) : assignments.length === 0 ? (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 'var(--space-3)',
-            padding: 'var(--space-16)',
-            border: '1px dashed var(--color-border-default)',
-            borderRadius: 'var(--radius-md)',
-          }}>
-            <div style={{
-              width: 48,
-              height: 48,
-              borderRadius: 'var(--radius-full)',
-              border: '2px solid var(--color-border-default)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-disabled)',
-            }}>
+          <div className="flex flex-col items-center justify-center gap-3 py-16 border border-dashed border-[var(--color-border-default)]">
+            <div className="w-12 h-12 rounded-full border-2 border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-text-disabled)]">
               <ClipboardIcon />
             </div>
-            <p style={{
-              color: 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-sm)',
-              margin: 0,
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: 'var(--tracking-wide)',
-              textTransform: 'uppercase',
-            }}>
+            <p className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] m-0">
               {statusFilter || streamFilter ? 'Нет заданий по фильтрам' : 'Заданий пока нет'}
             </p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <div className="flex flex-col gap-2">
             {assignments.map((sa) => {
               const a = sa.assignment;
               const isExpanded = expandedId === sa.id;
-              const isOverdue = a?.dueDate && new Date(a.dueDate) < new Date() && (sa.status === 'assigned' || sa.status === 'needs_revision');
+              const isOverdue =
+                a?.dueDate &&
+                new Date(a.dueDate) < new Date() &&
+                (sa.status === 'assigned' || sa.status === 'needs_revision');
 
               return (
                 <div
                   key={sa.id}
+                  className="border bg-[var(--color-bg-surface)] overflow-hidden transition-colors"
                   style={{
-                    border: `1px solid ${isOverdue ? 'var(--color-error)' : 'var(--color-border-default)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    overflow: 'hidden',
-                    background: 'var(--color-bg-surface)',
-                    transition: 'border-color var(--duration-fast) var(--ease-default)',
+                    borderColor: isOverdue ? 'var(--color-error)' : 'var(--color-border-default)',
                   }}
                 >
-                  {/* Card header — clickable */}
+                  {/* Card header */}
                   <button
                     onClick={() => handleToggleExpand(sa.id, a?.id, sa.status === 'reviewed')}
                     aria-expanded={isExpanded}
-                    style={{
-                      width: '100%',
-                      padding: 'var(--space-4) var(--space-5)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      background: isExpanded ? 'var(--color-bg-elevated)' : 'transparent',
-                      border: 'none',
-                      textAlign: 'left',
-                      transition: 'background var(--duration-fast) var(--ease-default)',
-                      gap: 'var(--space-4)',
-                    }}
+                    className="w-full px-5 py-4 cursor-pointer flex justify-between items-center border-0 text-left gap-4 transition-colors"
+                    style={{ background: isExpanded ? 'var(--color-bg-elevated)' : 'transparent' }}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontWeight: 'var(--font-medium)' as unknown as number,
-                        fontSize: 'var(--text-base)',
-                        fontFamily: 'var(--font-sans)',
-                        color: 'var(--color-text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        marginBottom: 'var(--space-2)',
-                      }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-sans font-medium text-base text-[var(--color-text-primary)] overflow-hidden text-ellipsis whitespace-nowrap mb-2">
                         {a?.title}
                       </div>
-                      <div style={{
-                        display: 'flex',
-                        gap: 'var(--space-2)',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                      }}>
+                      <div className="flex gap-2 items-center flex-wrap">
                         <Badge variant={STATUS_VARIANT[sa.status] ?? 'default'}>
                           {STATUS_LABELS[sa.status]}
                         </Badge>
                         {a?.type && (
                           <Badge variant="default">{TYPE_LABELS[a.type] ?? a.type}</Badge>
                         )}
-                        {a && !a.groupId && (
-                          <Badge variant="accent">Индивидуальное</Badge>
-                        )}
+                        {a && !a.groupId && <Badge variant="accent">Индивидуальное</Badge>}
                         {a?.stream && (
-                          <span style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-tertiary)',
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: 'var(--tracking-wide)',
-                          }}>
+                          <span className="font-mono text-xs tracking-wide text-[var(--color-text-tertiary)]">
                             {a.stream.name}
                           </span>
                         )}
                         {a?.lesson && (
-                          <span style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-disabled)',
-                          }}>
+                          <span className="text-xs text-[var(--color-text-disabled)]">
                             Урок: {a.lesson.title}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div style={{
-                      display: 'flex',
-                      gap: 'var(--space-4)',
-                      alignItems: 'center',
-                      flexShrink: 0,
-                    }}>
+                    <div className="flex gap-4 items-center shrink-0">
                       {a?.dueDate && (
-                        <div style={{
-                          textAlign: 'right',
-                          fontSize: 'var(--text-xs)',
-                        }}>
-                          <div style={{
-                            color: 'var(--color-text-disabled)',
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: 'var(--tracking-wide)',
-                            textTransform: 'uppercase',
-                            marginBottom: 2,
-                          }}>
+                        <div className="text-right text-xs">
+                          <div className="font-mono tracking-wide uppercase text-[var(--color-text-disabled)] mb-0.5">
                             Дедлайн
                           </div>
-                          <div style={{
-                            color: isOverdue ? 'var(--color-error)' : 'var(--color-text-secondary)',
-                            fontFamily: 'var(--font-mono)',
-                            fontWeight: isOverdue ? 'var(--font-semibold)' as unknown as number : undefined,
-                          }}>
-                            {new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                          <div
+                            className="font-mono"
+                            style={{
+                              color: isOverdue
+                                ? 'var(--color-error)'
+                                : 'var(--color-text-secondary)',
+                              fontWeight: isOverdue ? 600 : undefined,
+                            }}
+                          >
+                            {new Date(a.dueDate).toLocaleString('ru-RU', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
                           </div>
                         </div>
                       )}
@@ -484,56 +361,28 @@ export default function StudentAssignmentsPage() {
 
                   {/* Expanded content */}
                   {isExpanded && (
-                    <div style={{
-                      padding: 'var(--space-4) var(--space-5)',
-                      borderTop: '1px solid var(--color-border-subtle)',
-                    }}>
+                    <div className="px-5 py-4 border-t border-[var(--color-border-subtle)]">
                       {a?.description ? (
-                        <div style={{ marginBottom: 'var(--space-4)' }}>
-                          <p style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-tertiary)',
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: 'var(--tracking-wide)',
-                            textTransform: 'uppercase',
-                            marginBottom: 'var(--space-2)',
-                          }}>
+                        <div className="mb-4">
+                          <p className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
                             Описание
                           </p>
-                          <p style={{
-                            whiteSpace: 'pre-wrap',
-                            margin: 0,
-                            fontSize: 'var(--text-sm)',
-                            lineHeight: 'var(--leading-relaxed)',
-                            color: 'var(--color-text-secondary)',
-                          }}>
+                          <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed text-[var(--color-text-secondary)]">
                             {a.description}
                           </p>
                         </div>
                       ) : (
-                        <p style={{
-                          color: 'var(--color-text-disabled)',
-                          fontSize: 'var(--text-sm)',
-                          fontStyle: 'italic',
-                          marginBottom: 'var(--space-4)',
-                        }}>
+                        <p className="text-[var(--color-text-disabled)] text-sm italic mb-4">
                           Описание не указано
                         </p>
                       )}
 
                       {a?.materials && a.materials.length > 0 && (
-                        <div style={{ marginBottom: 'var(--space-4)' }}>
-                          <p style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-tertiary)',
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: 'var(--tracking-wide)',
-                            textTransform: 'uppercase',
-                            marginBottom: 'var(--space-2)',
-                          }}>
+                        <div className="mb-4">
+                          <p className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
                             Материалы
                           </p>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                          <div className="flex flex-col gap-2">
                             {a.materials.map((m, i) => (
                               <a
                                 key={i}
@@ -541,39 +390,42 @@ export default function StudentAssignmentsPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 download={m.type === 'file' ? m.name : undefined}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 'var(--space-2)',
-                                  padding: 'var(--space-2) var(--space-3)',
-                                  background: 'var(--color-bg-overlay)',
-                                  border: '1px solid var(--color-border-subtle)',
-                                  borderRadius: 'var(--radius-xs)',
-                                  color: 'var(--color-accent)',
-                                  textDecoration: 'none',
-                                  fontSize: 'var(--text-sm)',
-                                }}
+                                className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)] text-[var(--color-accent)] no-underline text-sm transition-opacity hover:opacity-80"
                               >
                                 {m.type === 'file' ? (
-                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 14 14"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                  >
                                     <path d="M8 1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z" />
-                                    <path d="M8 1v4h4" />
-                                    <path d="M5 9l2 2 2-2M7 11V6" />
+                                    <path d="M8 1v4h4M5 9l2 2 2-2M7 11V6" />
                                   </svg>
                                 ) : (
-                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 14 14"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                  >
                                     <path d="M6 3H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
-                                    <path d="M9 1h4v4" />
-                                    <path d="M14 1L7 8" />
+                                    <path d="M9 1h4v4M14 1L7 8" />
                                   </svg>
                                 )}
-                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                                <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                                  {m.name}
+                                </span>
                                 {m.type === 'file' && m.size && (
-                                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)', flexShrink: 0 }}>
+                                  <span className="text-xs text-[var(--color-text-disabled)] shrink-0">
                                     {Math.round(m.size / 1024)}KB
                                   </span>
                                 )}
-                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)', flexShrink: 0, fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
+                                <span className="font-mono text-xs text-[var(--color-text-disabled)] shrink-0 uppercase">
                                   {m.type === 'file' ? 'Скачать' : 'Открыть'}
                                 </span>
                               </a>
@@ -583,25 +435,11 @@ export default function StudentAssignmentsPage() {
                       )}
 
                       {a?.tags && a.tags.length > 0 && (
-                        <div style={{
-                          display: 'flex',
-                          gap: 'var(--space-1)',
-                          flexWrap: 'wrap',
-                          marginBottom: 'var(--space-4)',
-                        }}>
+                        <div className="flex gap-1 flex-wrap mb-4">
                           {a.tags.map((tag) => (
                             <span
                               key={tag}
-                              style={{
-                                fontSize: 'var(--text-xs)',
-                                background: 'var(--color-bg-overlay)',
-                                color: 'var(--color-text-tertiary)',
-                                padding: 'var(--space-1) var(--space-2)',
-                                borderRadius: 'var(--radius-full)',
-                                border: '1px solid var(--color-border-subtle)',
-                                fontFamily: 'var(--font-mono)',
-                                letterSpacing: 'var(--tracking-wide)',
-                              }}
+                              className="font-mono text-xs bg-[var(--color-bg-overlay)] text-[var(--color-text-tertiary)] px-2 py-1 rounded-full border border-[var(--color-border-subtle)] tracking-wide"
                             >
                               {tag}
                             </span>
@@ -609,65 +447,37 @@ export default function StudentAssignmentsPage() {
                         </div>
                       )}
 
-                      {/* Submitted answer display */}
+                      {/* Submitted answer */}
                       {(sa.status === 'submitted' || sa.status === 'reviewed') && sa.content && (
-                        <div style={{
-                          marginBottom: 'var(--space-4)',
-                          padding: 'var(--space-3) var(--space-4)',
-                          background: 'var(--color-bg-overlay)',
-                          borderLeft: '3px solid var(--color-info)',
-                          borderRadius: 'var(--radius-xs)',
-                        }}>
-                          <p style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-tertiary)',
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: 'var(--tracking-wide)',
-                            textTransform: 'uppercase',
-                            marginBottom: 'var(--space-2)',
-                          }}>
+                        <div className="mb-4 px-4 py-3 bg-[var(--color-bg-overlay)] border-l-[3px] border-[var(--color-info)]">
+                          <p className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
                             Ваш ответ
                           </p>
-                          <p style={{
-                            whiteSpace: 'pre-wrap',
-                            margin: 0,
-                            fontSize: 'var(--text-sm)',
-                            lineHeight: 'var(--leading-relaxed)',
-                            color: 'var(--color-text-secondary)',
-                            fontStyle: 'italic',
-                          }}>
+                          <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed text-[var(--color-text-secondary)] italic">
                             {sa.content}
                           </p>
                         </div>
                       )}
 
                       {(sa.status === 'submitted' || sa.status === 'reviewed') && sa.fileName && (
-                        <div style={{
-                          marginBottom: 'var(--space-4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 'var(--space-3)',
-                          padding: 'var(--space-2) var(--space-3)',
-                          background: 'var(--color-bg-overlay)',
-                          borderRadius: 'var(--radius-xs)',
-                          border: '1px solid var(--color-border-subtle)',
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <div className="mb-4 flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
                             <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z" />
                             <path d="M9 1v4h4" />
                           </svg>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{
-                              fontSize: 'var(--text-sm)',
-                              color: 'var(--color-text-primary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-[var(--color-text-primary)] overflow-hidden text-ellipsis whitespace-nowrap">
                               {sa.fileName}
                             </div>
                             {sa.fileSize && (
-                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)' }}>
+                              <div className="text-xs text-[var(--color-text-disabled)]">
                                 {sa.fileSize < 1024 * 1024
                                   ? `${Math.round(sa.fileSize / 1024)} КБ`
                                   : `${(sa.fileSize / (1024 * 1024)).toFixed(1)} МБ`}
@@ -679,11 +489,7 @@ export default function StudentAssignmentsPage() {
                               href={sa.fileSignedUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                fontSize: 'var(--text-xs)',
-                                color: 'var(--color-info)',
-                                textDecoration: 'none',
-                              }}
+                              className="text-xs text-[var(--color-info)] no-underline"
                             >
                               Открыть ↗
                             </a>
@@ -691,166 +497,106 @@ export default function StudentAssignmentsPage() {
                         </div>
                       )}
 
-                      {/* Feedback block for reviewed assignments */}
-                      {sa.status === 'reviewed' && a?.id && (() => {
-                        const feedback = assignmentFeedback[a.id];
-                        if (feedback === undefined) return null; // still loading
-                        if (feedback === null) return null; // no feedback yet
-                        return (
-                          <div style={{
-                            marginBottom: 'var(--space-4)',
-                            padding: 'var(--space-4)',
-                            background: 'rgba(57,255,20,0.04)',
-                            border: '1px solid rgba(57,255,20,0.2)',
-                            borderRadius: 'var(--radius-sm)',
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 'var(--space-2)',
-                              marginBottom: 'var(--space-3)',
-                            }}>
-                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-success)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M2 2h10v7H5l-3 3V2z"/>
-                                <path d="M4.5 5h5M4.5 7.5h3"/>
-                              </svg>
-                              <span style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: 'var(--text-xs)',
-                                letterSpacing: 'var(--tracking-wide)',
-                                textTransform: 'uppercase',
-                                color: 'var(--color-success)',
-                              }}>
-                                Фидбек учителя
-                              </span>
-                              <span style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: 'var(--text-xs)',
-                                color: 'var(--color-text-disabled)',
-                                marginLeft: 'auto',
-                              }}>
-                                {new Date(feedback.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} · {feedback.author.name}
-                              </span>
-                            </div>
-                            <p style={{
-                              fontSize: 'var(--text-sm)',
-                              color: 'var(--color-text-secondary)',
-                              lineHeight: '1.6',
-                              whiteSpace: 'pre-wrap',
-                              margin: 0,
-                            }}>
-                              {feedback.content}
-                            </p>
-                            <div style={{
-                              display: 'flex',
-                              gap: 'var(--space-3)',
-                              marginTop: 'var(--space-3)',
-                              paddingTop: 'var(--space-3)',
-                              borderTop: '1px solid rgba(57,255,20,0.12)',
-                            }}>
-                              <button
-                                onClick={() => router.push(
-                                  `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`
-                                )}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--color-info)',
-                                  fontFamily: 'var(--font-mono)',
-                                  fontSize: 'var(--text-xs)',
-                                  letterSpacing: 'var(--tracking-wide)',
-                                  textTransform: 'uppercase',
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 'var(--space-1)',
-                                  padding: 0,
-                                }}
-                              >
-                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                                  <path d="M2 2h8v6H4.5l-2.5 2V2z"/>
+                      {/* Teacher feedback */}
+                      {sa.status === 'reviewed' &&
+                        a?.id &&
+                        (() => {
+                          const feedback = assignmentFeedback[a.id];
+                          if (feedback === undefined || feedback === null) return null;
+                          return (
+                            <div className="mb-4 p-4 border border-[rgba(57,255,20,0.2)] bg-[rgba(57,255,20,0.04)]">
+                              <div className="flex items-center gap-2 mb-3">
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 14 14"
+                                  fill="none"
+                                  stroke="var(--color-success)"
+                                  strokeWidth="1.4"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M2 2h10v7H5l-3 3V2z" />
+                                  <path d="M4.5 5h5M4.5 7.5h3" />
                                 </svg>
-                                Открыть в треде
-                              </button>
-                              <button
-                                onClick={() => router.push(
-                                  `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`
-                                )}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--color-text-tertiary)',
-                                  fontFamily: 'var(--font-mono)',
-                                  fontSize: 'var(--text-xs)',
-                                  letterSpacing: 'var(--tracking-wide)',
-                                  textTransform: 'uppercase',
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 'var(--space-1)',
-                                  padding: 0,
-                                  marginLeft: 'auto',
-                                }}
-                              >
-                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                                  <path d="M2 2h8v6H4.5l-2.5 2V2z"/>
-                                  <path d="M4 4.5h4M4 6.5h2.5"/>
-                                </svg>
-                                Ответить
-                              </button>
+                                <span className="font-mono text-xs tracking-widest uppercase text-[var(--color-success)]">
+                                  Фидбек учителя
+                                </span>
+                                <span className="font-mono text-xs text-[var(--color-text-disabled)] ml-auto">
+                                  {new Date(feedback.createdAt).toLocaleString('ru-RU', {
+                                    dateStyle: 'short',
+                                    timeStyle: 'short',
+                                  })}{' '}
+                                  · {feedback.author.name}
+                                </span>
+                              </div>
+                              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap m-0">
+                                {feedback.content}
+                              </p>
+                              <div className="flex gap-3 mt-3 pt-3 border-t border-[rgba(57,255,20,0.12)]">
+                                <button
+                                  onClick={() =>
+                                    router.push(
+                                      `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`,
+                                    )
+                                  }
+                                  className="font-mono text-xs tracking-widest uppercase text-[var(--color-info)] bg-transparent border-0 cursor-pointer flex items-center gap-1 p-0 hover:opacity-80 transition-opacity"
+                                >
+                                  Открыть в треде
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
 
-                      <div style={{
-                        display: 'flex',
-                        gap: 'var(--space-5)',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          gap: 'var(--space-5)',
-                          fontSize: 'var(--text-xs)',
-                          color: 'var(--color-text-disabled)',
-                          fontFamily: 'var(--font-mono)',
-                          letterSpacing: 'var(--tracking-wide)',
-                        }}>
+                      {/* Actions row */}
+                      <div className="flex gap-5 items-center justify-between flex-wrap">
+                        <div className="flex gap-5 font-mono text-xs text-[var(--color-text-disabled)] tracking-wide">
                           {sa.submittedAt && (
-                            <span>Отправлено: {new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            <span>
+                              Отправлено:{' '}
+                              {new Date(sa.submittedAt).toLocaleString('ru-RU', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
+                            </span>
                           )}
                           {sa.reviewedAt && (
-                            <span>Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            <span>
+                              Проверено:{' '}
+                              {new Date(sa.reviewedAt).toLocaleString('ru-RU', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
+                            </span>
                           )}
                         </div>
 
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                          <button
-                            onClick={() => router.push(
-                              `/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`
-                            )}
-                            style={{
-                              background: 'none',
-                              border: '1px solid var(--color-info)',
-                              borderRadius: 'var(--radius-xs)',
-                              color: 'var(--color-info)',
-                              cursor: 'pointer',
-                              padding: 'var(--space-2) var(--space-3)',
-                              fontSize: 'var(--text-xs)',
-                              fontFamily: 'var(--font-sans)',
-                              fontWeight: 'var(--font-medium)' as unknown as number,
-                              letterSpacing: 'var(--tracking-wide)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 'var(--space-1)',
-                              transition: 'background var(--duration-fast) var(--ease-default)',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(77,166,255,0.08)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                        <div className="flex gap-2 items-center">
+                          <Link
+                            href={`/dashboard/assignments/${sa.id}`}
+                            className="flex items-center gap-1 px-3 py-2 border border-[var(--color-border-default)] text-[var(--color-text-secondary)] font-mono text-xs tracking-wide uppercase no-underline hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-primary)] transition-colors"
                           >
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            Подробнее
+                          </Link>
+                          <button
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`,
+                              )
+                            }
+                            className="flex items-center gap-1 px-3 py-2 border border-[var(--color-info)] text-[var(--color-info)] bg-transparent font-sans text-xs cursor-pointer hover:bg-[rgba(77,166,255,0.08)] transition-colors"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 14 14"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <circle cx="7" cy="7" r="6" />
                               <path d="M5 5.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1.5-1.5 1.5" />
                               <circle cx="7" cy="10.5" r="0.5" fill="currentColor" stroke="none" />
@@ -863,7 +609,7 @@ export default function StudentAssignmentsPage() {
                               size="sm"
                               onClick={() => openSubmissionForm(sa.id)}
                             >
-                              {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить на проверку'}
+                              {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить'}
                             </Button>
                           )}
                         </div>
@@ -877,247 +623,134 @@ export default function StudentAssignmentsPage() {
         )}
       </div>
 
-      {/* Submission Form Modal */}
-      {submissionModalSaId && (() => {
-        const modalSa = assignments.find((s) => s.id === submissionModalSaId);
-        const modalAssignment = modalSa?.assignment;
-        const isShort = modalAssignment?.type === 'short';
+      {/* Submission Modal */}
+      {submissionModalSaId &&
+        (() => {
+          const modalSa = assignments.find((s) => s.id === submissionModalSaId);
+          const modalAssignment = modalSa?.assignment;
+          const isShort = modalAssignment?.type === 'short';
 
-        return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.6)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-              padding: 'var(--space-4)',
-            }}
-            onClick={(e) => { if (e.target === e.currentTarget) closeSubmissionForm(); }}
-          >
-            <div style={{
-              background: 'var(--color-bg-surface)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--color-border-default)',
-              width: '100%',
-              maxWidth: 520,
-              maxHeight: '90vh',
-              overflow: 'auto',
-              padding: 'var(--space-6)',
-            }}>
-              {/* Context banner */}
-              <div style={{
-                marginBottom: 'var(--space-5)',
-                padding: 'var(--space-3) var(--space-4)',
-                background: 'var(--color-bg-elevated)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border-subtle)',
-              }}>
-                <div style={{
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-text-disabled)',
-                  fontFamily: 'var(--font-mono)',
-                  letterSpacing: 'var(--tracking-wide)',
-                  textTransform: 'uppercase',
-                  marginBottom: 'var(--space-1)',
-                }}>
-                  Сдача задания
-                </div>
-                <div style={{
-                  fontSize: 'var(--text-base)',
-                  fontWeight: 'var(--font-medium)' as unknown as number,
-                  color: 'var(--color-text-primary)',
-                }}>
-                  {modalAssignment?.title}
-                </div>
-                <div style={{
-                  display: 'flex',
-                  gap: 'var(--space-2)',
-                  marginTop: 'var(--space-2)',
-                }}>
-                  {modalAssignment?.type && (
-                    <Badge variant="default">{TYPE_LABELS[modalAssignment.type] ?? modalAssignment.type}</Badge>
-                  )}
-                  {modalAssignment?.dueDate && (
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>
-                      Дедлайн: {new Date(modalAssignment.dueDate).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Answer textarea */}
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-text-tertiary)',
-                  fontFamily: 'var(--font-mono)',
-                  letterSpacing: 'var(--tracking-wide)',
-                  textTransform: 'uppercase',
-                  marginBottom: 'var(--space-2)',
-                }}>
-                  Ваш ответ {isShort && <span style={{ color: 'var(--color-error)' }}>*</span>}
-                </label>
-                <textarea
-                  value={submissionText}
-                  onChange={(e) => setSubmissionText(e.target.value)}
-                  placeholder="Опишите вашу работу кратко…"
-                  maxLength={2000}
-                  style={{
-                    width: '100%',
-                    minHeight: 140,
-                    resize: 'none',
-                    padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-border-default)',
-                    background: 'var(--color-bg-input)',
-                    color: 'var(--color-text-primary)',
-                    fontSize: 'var(--text-sm)',
-                    fontFamily: 'var(--font-sans)',
-                    lineHeight: 'var(--leading-relaxed)',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <div style={{
-                  textAlign: 'right',
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-text-disabled)',
-                  marginTop: 'var(--space-1)',
-                }}>
-                  {submissionText.length} / 2000
-                </div>
-              </div>
-
-              {/* File upload */}
-              <div style={{ marginBottom: 'var(--space-5)' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-text-tertiary)',
-                  fontFamily: 'var(--font-mono)',
-                  letterSpacing: 'var(--tracking-wide)',
-                  textTransform: 'uppercase',
-                  marginBottom: 'var(--space-2)',
-                }}>
-                  Файл
-                </label>
-                {submissionFile ? (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-3)',
-                    padding: 'var(--space-2) var(--space-3)',
-                    background: 'var(--color-bg-overlay)',
-                    borderRadius: 'var(--radius-xs)',
-                    border: '1px solid var(--color-border-subtle)',
-                  }}>
-                    <Badge variant="default">
-                      {submissionFile.name.split('.').pop()?.toUpperCase()}
-                    </Badge>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 'var(--text-sm)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {submissionFile.name}
-                      </div>
-                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-disabled)' }}>
-                        {submissionFile.size < 1024 * 1024
-                          ? `${Math.round(submissionFile.size / 1024)} КБ`
-                          : `${(submissionFile.size / (1024 * 1024)).toFixed(1)} МБ`}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSubmissionFile(null)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-text-disabled)',
-                        fontSize: 'var(--text-base)',
-                        padding: 'var(--space-1)',
-                      }}
-                    >
-                      ×
-                    </button>
+          return (
+            <div
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-[1000] p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) closeSubmissionForm();
+              }}
+            >
+              <div className="bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] w-full max-w-[520px] max-h-[90vh] overflow-auto p-6">
+                <div className="mb-5 p-3 px-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border-subtle)]">
+                  <div className="font-mono text-xs text-[var(--color-text-disabled)] tracking-widest uppercase mb-1">
+                    Сдача задания
                   </div>
-                ) : (
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 'var(--space-2)',
-                    padding: 'var(--space-4)',
-                    border: '2px dashed var(--color-border-default)',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--text-sm)',
-                    color: 'var(--color-text-tertiary)',
-                    transition: 'border-color var(--duration-fast) var(--ease-default)',
-                  }}>
-                    <input
-                      type="file"
-                      accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
-                      style={{ display: 'none' }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) {
-                          if (f.size > 20 * 1024 * 1024) {
-                            setError('Файл не должен превышать 20 МБ');
-                            return;
-                          }
-                          setSubmissionFile(f);
-                        }
-                      }}
-                    />
-                    + Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                  <div className="text-base font-medium text-[var(--color-text-primary)]">
+                    {modalAssignment?.title}
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    {modalAssignment?.type && (
+                      <Badge variant="default">
+                        {TYPE_LABELS[modalAssignment.type] ?? modalAssignment.type}
+                      </Badge>
+                    )}
+                    {modalAssignment?.dueDate && (
+                      <span className="text-xs text-[var(--color-text-tertiary)]">
+                        Дедлайн:{' '}
+                        {new Date(modalAssignment.dueDate).toLocaleString('ru-RU', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
+                    Ваш ответ {isShort && <span className="text-[var(--color-error)]">*</span>}
                   </label>
-                )}
-              </div>
+                  <textarea
+                    value={submissionText}
+                    onChange={(e) => setSubmissionText(e.target.value)}
+                    placeholder="Опишите вашу работу кратко…"
+                    maxLength={2000}
+                    className="w-full min-h-[140px] resize-none p-3 border border-[var(--color-border-default)] bg-[var(--color-bg-input)] text-[var(--color-text-primary)] text-sm font-sans leading-relaxed outline-none focus:border-[var(--color-border-strong)] box-border"
+                  />
+                  <div className="text-right text-xs text-[var(--color-text-disabled)] mt-1">
+                    {submissionText.length} / 2000
+                  </div>
+                </div>
 
-              {/* Hint */}
-              <p style={{
-                fontSize: 'var(--text-xs)',
-                color: 'var(--color-text-disabled)',
-                fontStyle: 'italic',
-                marginBottom: 'var(--space-4)',
-              }}>
-                После отправки потребуется подтверждение. Ответ нельзя изменить.
-              </p>
+                <div className="mb-5">
+                  <label className="block font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
+                    Файл
+                  </label>
+                  {submissionFile ? (
+                    <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
+                      <Badge variant="default">
+                        {submissionFile.name.split('.').pop()?.toUpperCase()}
+                      </Badge>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
+                          {submissionFile.name}
+                        </div>
+                        <div className="text-xs text-[var(--color-text-disabled)]">
+                          {submissionFile.size < 1024 * 1024
+                            ? `${Math.round(submissionFile.size / 1024)} КБ`
+                            : `${(submissionFile.size / (1024 * 1024)).toFixed(1)} МБ`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSubmissionFile(null)}
+                        className="bg-transparent border-0 cursor-pointer text-[var(--color-text-disabled)] text-base p-1"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-[var(--color-border-default)] cursor-pointer text-sm text-[var(--color-text-tertiary)] hover:border-[var(--color-border-strong)] transition-colors">
+                      <input
+                        type="file"
+                        accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            if (f.size > 20 * 1024 * 1024) {
+                              setError('Файл не должен превышать 20 МБ');
+                              return;
+                            }
+                            setSubmissionFile(f);
+                          }
+                        }}
+                      />
+                      + Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                    </label>
+                  )}
+                </div>
 
-              {/* Actions */}
-              <div style={{
-                display: 'flex',
-                gap: 'var(--space-3)',
-                justifyContent: 'flex-end',
-              }}>
-                <Button variant="secondary" size="sm" onClick={closeSubmissionForm}>
-                  Отмена
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleSubmit}
-                  disabled={submitting || (isShort && !submissionText.trim())}
-                >
-                  {submitting ? 'Отправка…' : 'Сдать задание →'}
-                </Button>
+                <p className="text-xs text-[var(--color-text-disabled)] italic mb-4">
+                  После отправки потребуется подтверждение. Ответ нельзя изменить.
+                </p>
+
+                <div className="flex gap-3 justify-end">
+                  <Button variant="secondary" size="sm" onClick={closeSubmissionForm}>
+                    Отмена
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSubmit}
+                    disabled={submitting || (isShort && !submissionText.trim())}
+                  >
+                    {submitting ? 'Отправка…' : 'Сдать задание →'}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
     </DashboardLayout>
   );
 }
-
-/* ─── Icons ─── */
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (
@@ -1130,68 +763,19 @@ function ChevronIcon({ open }: { open: boolean }) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{
-        color: 'var(--color-text-tertiary)',
-        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform var(--duration-fast) var(--ease-default)',
-      }}
+      className="text-[var(--color-text-tertiary)] transition-transform"
+      style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
     >
       <path d="M4 6l4 4 4-4" />
     </svg>
   );
 }
 
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" /><rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" /><rect x="10" y="10" width="5" height="5" />
-    </svg>
-  );
-}
-function BookIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 2h10v12H3z" /><path d="M6 2v12" /><path d="M6 5h4M6 8h4M6 11h4" />
-    </svg>
-  );
-}
 function ClipboardIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <rect x="3" y="2" width="10" height="13" rx="1" />
       <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
-    </svg>
-  );
-}
-function ChatIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 2h12v9H5l-3 3V2z" /><path d="M5 6h6M5 9h3" />
-    </svg>
-  );
-}
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" /><path d="M1 7h14M5 1v4M11 1v4" />
-    </svg>
-  );
-}
-function UserIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="5" r="3" /><path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-    </svg>
-  );
-}
-
-function BellNavIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
-      <path d="M8 2.5V1" />
     </svg>
   );
 }

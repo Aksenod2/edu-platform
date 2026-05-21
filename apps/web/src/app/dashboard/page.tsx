@@ -4,24 +4,41 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
-import { DashboardLayout, PageHeader } from '@platform/ui/templates';
-import { Card, CardHeader, CardBody } from '@platform/ui/molecules';
-import { Heading, Text, Mono } from '@platform/ui/atoms';
+import { STUDENT_NAV } from '@/lib/student-nav';
+import { DashboardLayout } from '@platform/ui/templates';
 import { Spinner } from '@platform/ui/atoms';
+import Link from 'next/link';
 
-const STUDENT_NAV = [
+const QUICK_LINKS = [
   {
-    label: 'Обучение',
-    items: [
-      { label: 'Обзор',      href: '/dashboard',          icon: <GridIcon /> },
-      { label: 'Уроки',      href: '/dashboard/lessons',  icon: <BookIcon /> },
-      { label: 'Задания',    href: '/dashboard/assignments', icon: <ClipboardIcon /> },
-      { label: 'Тред',       href: '/dashboard/thread',   icon: <ChatIcon /> },
-      { label: 'Расписание', href: '/dashboard/schedule', icon: <CalendarIcon /> },
-      { label: 'Уведомления', href: '/dashboard/notifications', icon: <BellNavIcon /> },
-      { label: 'Профиль',   href: '/dashboard/profile',  icon: <UserIcon /> },
-      { label: 'Настройки', href: '/dashboard/settings/notifications', icon: <GearIcon /> },
-    ],
+    title: 'Уроки',
+    description: 'Видеозаписи, конспекты, материалы',
+    tag: 'LESSONS',
+    href: '/dashboard/lessons',
+  },
+  {
+    title: 'Задания',
+    description: 'Назначенные задания и их статусы',
+    tag: 'ASSIGNMENTS',
+    href: '/dashboard/assignments',
+  },
+  {
+    title: 'Тред',
+    description: 'Записи, файлы, обратная связь',
+    tag: 'THREAD',
+    href: '/dashboard/thread',
+  },
+  {
+    title: 'Расписание',
+    description: 'Предстоящие занятия и сроки',
+    tag: 'SCHEDULE',
+    href: '/dashboard/schedule',
+  },
+  {
+    title: 'Профиль',
+    description: 'Анкета и контактные данные',
+    tag: 'PROFILE',
+    href: '/dashboard/profile',
   },
 ];
 
@@ -41,7 +58,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
         <Spinner size="lg" />
       </div>
     );
@@ -49,59 +66,37 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
+  const firstName = user.name.split(' ')[0];
+
   return (
     <DashboardLayout
       currentPath={pathname}
       header={{
         user: { name: user.name, role: user.role as 'admin' | 'student' },
-        onLogout: async () => { await logout(); router.push('/login'); },
+        onLogout: async () => {
+          await logout();
+          router.push('/login');
+        },
         notificationBell: <NotificationBell />,
       }}
       sidebar={{ sections: STUDENT_NAV }}
     >
-      <PageHeader
-        title={`Привет, ${user.name.split(' ')[0]}`}
-        subtitle="Ваш учебный дашборд"
-      />
+      {/* Page header */}
+      <div className="mb-10">
+        <p className="font-mono text-xs tracking-[0.2em] uppercase text-[var(--color-text-tertiary)] mb-2">
+          STUDENT DASHBOARD
+        </p>
+        <h1 className="font-sans text-3xl font-bold tracking-tight text-[var(--color-text-primary)] leading-tight">
+          Привет, {firstName}
+        </h1>
+        <p className="font-sans text-sm text-[var(--color-text-tertiary)] mt-1">Ваш учебный дашборд</p>
+      </div>
 
-      {/* Быстрые ссылки */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: 'var(--space-4)',
-        }}
-      >
-        <QuickCard
-          title="Уроки"
-          description="Видеозаписи, конспекты, материалы"
-          mono="LESSONS"
-          href="/dashboard/lessons"
-        />
-        <QuickCard
-          title="Задания"
-          description="Назначенные задания и их статусы"
-          mono="ASSIGNMENTS"
-          href="/dashboard/assignments"
-        />
-        <QuickCard
-          title="Тред"
-          description="Записи, файлы, обратная связь"
-          mono="THREAD"
-          href="/dashboard/thread"
-        />
-        <QuickCard
-          title="Расписание"
-          description="Предстоящие занятия и сроки"
-          mono="SCHEDULE"
-          href="/dashboard/schedule"
-        />
-        <QuickCard
-          title="Профиль"
-          description="Анкета и контактные данные"
-          mono="PROFILE"
-          href="/dashboard/profile"
-        />
+      {/* Quick links grid */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+        {QUICK_LINKS.map((link) => (
+          <QuickCard key={link.href} {...link} />
+        ))}
       </div>
     </DashboardLayout>
   );
@@ -110,104 +105,39 @@ export default function DashboardPage() {
 function QuickCard({
   title,
   description,
-  mono,
+  tag,
   href,
 }: {
   title: string;
   description: string;
-  mono: string;
+  tag: string;
   href: string;
 }) {
   return (
-    <a href={href} style={{ textDecoration: 'none' }}>
-      <Card interactive padding="md">
-        <CardHeader>
-          <Mono size="xs" style={{ color: 'var(--color-text-tertiary)', letterSpacing: 'var(--tracking-widest)' }}>
-            {mono}
-          </Mono>
-        </CardHeader>
-        <CardBody>
-          <Heading level={3} size="lg" style={{ marginBottom: 'var(--space-2)' }}>{title}</Heading>
-          <Text size="sm" color="tertiary">{description}</Text>
-        </CardBody>
-      </Card>
-    </a>
-  );
-}
-
-// Inline иконки — минималистичные SVG в стиле Nothing
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="1" width="5" height="5" />
-      <rect x="10" y="1" width="5" height="5" />
-      <rect x="1" y="10" width="5" height="5" />
-      <rect x="10" y="10" width="5" height="5" />
-    </svg>
-  );
-}
-
-function BookIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 2h10v12H3z" />
-      <path d="M6 2v12" />
-      <path d="M6 5h4M6 8h4M6 11h4" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="1" y="3" width="14" height="12" />
-      <path d="M1 7h14M5 1v4M11 1v4" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="5" r="3" />
-      <path d="M2 15c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-    </svg>
-  );
-}
-
-function ChatIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 2h12v9H5l-3 3V2z" />
-      <path d="M5 6h6M5 9h3" />
-    </svg>
-  );
-}
-
-function ClipboardIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="3" y="2" width="10" height="13" rx="1" />
-      <path d="M6 1h4v2H6zM6 6h4M6 9h4M6 12h2" />
-    </svg>
-  );
-}
-
-function BellNavIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2.5a4.5 4.5 0 0 1 4.5 4.5c0 2.5 1 3.5 1 4H2.5s1-1.5 1-4A4.5 4.5 0 0 1 8 2.5z" />
-      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" />
-      <path d="M8 2.5V1" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="8" r="2.5" />
-      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
-    </svg>
+    <Link
+      href={href}
+      className="group block border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5 no-underline transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-elevated)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-red)]"
+    >
+      <p className="font-mono text-[10px] tracking-[0.2em] uppercase text-[var(--color-text-tertiary)] mb-3">
+        {tag}
+      </p>
+      <h3 className="font-sans text-lg font-semibold text-[var(--color-text-primary)] tracking-tight mb-2 group-hover:text-white transition-colors">
+        {title}
+      </h3>
+      <p className="font-sans text-sm text-[var(--color-text-tertiary)] leading-relaxed">{description}</p>
+      <div className="mt-4 flex items-center gap-1 text-[var(--color-text-tertiary)] group-hover:text-[var(--color-accent-red)] transition-colors">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        >
+          <path d="M2 6h8M7 3l3 3-3 3" />
+        </svg>
+      </div>
+    </Link>
   );
 }

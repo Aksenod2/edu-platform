@@ -144,13 +144,13 @@ export default function StudentSchedulePage() {
       />
 
       {error && (
-        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--space-4)' }}>
+        <Card variant="outlined" padding="sm" style={{ borderColor: 'var(--color-error)', marginBottom: 'var(--spacing-4)' }}>
           <Text size="sm" color="var(--color-error)">{error}</Text>
         </Card>
       )}
 
       {loadingEntries ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--spacing-8)' }}>
           <Spinner size="md" />
         </div>
       ) : entries.length === 0 ? (
@@ -158,14 +158,14 @@ export default function StudentSchedulePage() {
       ) : (
         <>
           {upcomingEntries.length > 0 && (
-            <section style={{ marginBottom: 'var(--space-8)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+            <section style={{ marginBottom: 'var(--spacing-8)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)', marginBottom: 'var(--spacing-4)' }}>
                 <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-accent-red)' }}>
                   Предстоящие занятия
                 </Mono>
                 <Badge variant="accent">{upcomingEntries.length}</Badge>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
                 {upcomingEntries.map((entry) => (
                   <Card
                     key={entry.id}
@@ -173,19 +173,19 @@ export default function StudentSchedulePage() {
                     padding="sm"
                     style={{ borderLeft: '2px solid var(--color-accent-red)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
                       <Heading level={4} size="md" style={{ margin: 0 }}>{entry.lessonTitle}</Heading>
                       <Mono size="xs" color="var(--color-text-tertiary)">
                         {formatEntryDateTime(entry.date, entry.startTime)}
                       </Mono>
                     </div>
                     {entry.notes && (
-                      <Text size="sm" color="secondary" style={{ marginTop: 'var(--space-2)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
+                      <Text size="sm" color="secondary" style={{ marginTop: 'var(--spacing-2)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>
                         {entry.notes}
                       </Text>
                     )}
                     {entry.meetingUrl && (
-                      <div style={{ marginTop: 'var(--space-3)' }}>
+                      <div style={{ marginTop: 'var(--spacing-3)' }}>
                         <a href={entry.meetingUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
                           <Button variant="primary" size="sm">
                             Присоединиться
@@ -205,10 +205,10 @@ export default function StudentSchedulePage() {
 
           {pastEntries.length > 0 && (
             <section>
-              <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-4)', display: 'block' }}>
+              <Mono size="xs" style={{ textTransform: 'uppercase', letterSpacing: 'var(--tracking-widest)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--spacing-4)', display: 'block' }}>
                 Прошедшие занятия
               </Mono>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
                 {pastEntries.map((entry) => (
                   <Card
                     key={entry.id}
@@ -216,14 +216,14 @@ export default function StudentSchedulePage() {
                     padding="sm"
                     style={{ opacity: 0.6, borderLeft: '2px solid var(--color-border-subtle)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
                       <Text size="sm" weight="medium">{entry.lessonTitle}</Text>
                       <Mono size="xs" color="var(--color-text-tertiary)">
                         {formatEntryDateTime(entry.date, entry.startTime)}
                       </Mono>
                     </div>
                     {entry.notes && (
-                      <Text size="xs" color="tertiary" style={{ marginTop: 'var(--space-1)', whiteSpace: 'pre-wrap' }}>
+                      <Text size="xs" color="tertiary" style={{ marginTop: 'var(--spacing-1)', whiteSpace: 'pre-wrap' }}>
                         {entry.notes}
                       </Text>
                     )}
