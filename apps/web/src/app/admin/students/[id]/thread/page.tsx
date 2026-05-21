@@ -227,6 +227,14 @@ export default function AdminStudentThreadPage() {
 
   const hasContent = content.trim().length > 0;
 
+  // Pre-compute the last submission entry ID per assignmentId
+  const latestSubmissionEntryId: Record<string, string> = {};
+  for (const e of entries) {
+    if (e.metadata?.submissionType === 'assignment' && e.assignmentId) {
+      latestSubmissionEntryId[e.assignmentId] = e.id;
+    }
+  }
+
   return (
     <DashboardLayout
       currentPath={pathname}
@@ -369,6 +377,9 @@ export default function AdminStudentThreadPage() {
             const relatedSa = isSubmission
               ? studentAssignments.find((sa) => sa.assignmentId === entry.assignmentId)
               : null;
+            const isLatestSubmission = isSubmission
+              && entry.assignmentId
+              && latestSubmissionEntryId[entry.assignmentId] === entry.id;
 
             return (
               <div key={entry.id}>
@@ -407,6 +418,7 @@ export default function AdminStudentThreadPage() {
                     onAccept={() => handleReview(relatedSa.id, 'reviewed')}
                     onRequestRevision={() => handleReview(relatedSa.id, 'needs_revision')}
                     isReviewing={reviewingId === relatedSa.id}
+                    showActions={!!isLatestSubmission}
                   />
                 ) : (
                   <AdminMessageBubble
@@ -796,6 +808,7 @@ function SubmissionThreadCard({
   onAccept,
   onRequestRevision,
   isReviewing,
+  showActions,
 }: {
   entry: ThreadEntry;
   sa: StudentAssignment;
@@ -803,6 +816,7 @@ function SubmissionThreadCard({
   onAccept: () => void;
   onRequestRevision: () => void;
   isReviewing: boolean;
+  showActions: boolean;
 }) {
   const date = new Date(entry.createdAt);
   const statusColor = SUBMISSION_STATUS_COLORS[sa.status] || 'var(--color-text-disabled)';
@@ -973,8 +987,8 @@ function SubmissionThreadCard({
             </div>
           )}
 
-          {/* Action buttons */}
-          {sa.status === 'submitted' && (
+          {/* Action buttons — only on the latest submission entry */}
+          {showActions && sa.status === 'submitted' && (
             <div style={{
               display: 'flex',
               gap: 'var(--space-2)',

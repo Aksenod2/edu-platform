@@ -58,7 +58,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     const assignmentsWithUrls = await Promise.all(
       assignments.map(async (a) => ({
         ...a,
-        materials: await regenerateMaterialUrls((a.materials as AssignmentMaterial[]) || []),
+        materials: await regenerateMaterialUrls((a.materials as unknown as AssignmentMaterial[]) || []),
       })),
     );
 
@@ -82,7 +82,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
-    const materials = await regenerateMaterialUrls((assignment.materials as AssignmentMaterial[]) || []);
+    const materials = await regenerateMaterialUrls((assignment.materials as unknown as AssignmentMaterial[]) || []);
 
     return { assignment: { ...assignment, materials } };
   });
@@ -140,7 +140,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         tags: body.tags || [],
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         lessonId: body.lessonId || null,
-        materials: Array.isArray(body.materials) ? body.materials : [],
+        materials: JSON.parse(JSON.stringify(Array.isArray(body.materials) ? body.materials : [])),
       },
       include: {
         lesson: { select: { id: true, title: true } },
@@ -206,7 +206,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
     if (body.lessonId !== undefined) data.lessonId = body.lessonId || null;
-    if (body.materials !== undefined) data.materials = Array.isArray(body.materials) ? body.materials : [];
+    if (body.materials !== undefined) data.materials = JSON.parse(JSON.stringify(Array.isArray(body.materials) ? body.materials : []));
 
     const assignment = await prisma.assignment.update({
       where: { id },
@@ -409,7 +409,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     }
 
     if (status) {
-      const statuses = status.split(',').filter((s) => ['assigned', 'submitted', 'reviewed'].includes(s));
+      const statuses = status.split(',').filter((s) => ['assigned', 'submitted', 'reviewed', 'needs_revision'].includes(s));
       if (statuses.length > 0) {
         where.status = { in: statuses };
       }
@@ -437,8 +437,8 @@ export async function assignmentRoutes(app: FastifyInstance) {
           updated = { ...updated, fileSignedUrl: await getFileUrl(sa.fileUrl) };
         }
         if (updated.assignment) {
-          const materials = await regenerateMaterialUrls((updated.assignment.materials as AssignmentMaterial[]) || []);
-          updated = { ...updated, assignment: { ...updated.assignment, materials } };
+          const materials = await regenerateMaterialUrls((updated.assignment.materials as unknown as AssignmentMaterial[]) || []);
+          updated = { ...updated, assignment: { ...updated.assignment, materials: materials as unknown as typeof updated.assignment.materials } };
         }
         return updated;
       }),
@@ -554,9 +554,13 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Create ThreadEntry for submission so teacher sees it in thread
     if (status === 'submitted') {
-      const thread = await prisma.thread.findUnique({
+      // Auto-create thread if not yet exists (student may not have visited thread page)
+      let thread = await prisma.thread.findUnique({
         where: { studentId: sa.studentId },
       });
+      if (!thread) {
+        thread = await prisma.thread.create({ data: { studentId: sa.studentId } });
+      }
 
       if (thread) {
         const entryContent = answerText || `Сдано задание «${updated.assignment.title}»`;
