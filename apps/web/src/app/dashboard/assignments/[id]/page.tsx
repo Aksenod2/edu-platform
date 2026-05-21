@@ -3,10 +3,14 @@
 import { useEffect, useState, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronLeft, Calendar, FileText, ExternalLink, X, Upload, MessageCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   getStudentAssignments,
   submitStudentAssignment,
@@ -47,7 +51,6 @@ export default function AssignmentDetailPage({
   const [sa, setSa] = useState<StudentAssignment | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [feedback, setFeedback] = useState<ThreadEntry | null | undefined>(undefined);
 
   const [submissionText, setSubmissionText] = useState('');
@@ -97,8 +100,6 @@ export default function AssignmentDetailPage({
 
   const handleSubmit = async () => {
     if (!accessToken || !sa) return;
-    setError('');
-    setSuccess('');
     setSubmitting(true);
     try {
       const updated = await submitStudentAssignment(accessToken, sa.id, {
@@ -106,12 +107,12 @@ export default function AssignmentDetailPage({
         file: submissionFile || undefined,
       });
       setSa(updated.studentAssignment);
-      setSuccess('Задание отправлено на проверку');
+      toast.success('Задание отправлено на проверку');
       setShowForm(false);
       setSubmissionText('');
       setSubmissionFile(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отправки');
+      toast.error(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
       setSubmitting(false);
     }
@@ -119,7 +120,7 @@ export default function AssignmentDetailPage({
 
   if (loadingData) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-base)]">
+      <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -135,11 +136,9 @@ export default function AssignmentDetailPage({
         {/* Back */}
         <Link
           href="/dashboard/assignments"
-          className="inline-flex items-center gap-1 font-mono text-xs tracking-wide text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors mb-6 no-underline"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6 no-underline"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <path d="M9 2L4 7l5 5" />
-          </svg>
+          <ChevronLeft className="size-3.5" />
           К заданиям
         </Link>
 
@@ -160,17 +159,17 @@ export default function AssignmentDetailPage({
                 {a?.type && <Badge variant="outline">{TYPE_LABELS[a.type] ?? a.type}</Badge>}
                 {a && !a.groupId && <Badge variant="secondary">Индивидуальное</Badge>}
               </div>
-              <h1 className="font-sans text-2xl font-semibold tracking-tight text-[var(--color-text-primary)] mb-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground mb-2">
                 {a?.title ?? '—'}
               </h1>
               <div className="flex gap-4 flex-wrap">
                 {a?.stream && (
-                  <span className="font-mono text-xs tracking-wide text-[var(--color-text-tertiary)] uppercase">
+                  <span className="text-xs text-muted-foreground uppercase">
                     {a.stream.name}
                   </span>
                 )}
                 {a?.lesson && (
-                  <span className="font-mono text-xs tracking-wide text-[var(--color-text-disabled)]">
+                  <span className="text-xs text-muted-foreground">
                     Урок: {a.lesson.title}
                   </span>
                 )}
@@ -179,18 +178,15 @@ export default function AssignmentDetailPage({
 
             {/* Meta row */}
             {a?.dueDate && (
-              <div className="flex items-center gap-3 mb-6 p-3 border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" className="text-[var(--color-text-tertiary)] shrink-0">
-                  <rect x="1" y="2" width="12" height="11" rx="1" />
-                  <path d="M1 6h12M4 1v2M10 1v2" />
-                </svg>
-                <div className="font-mono text-xs tracking-wide">
-                  <span className="text-[var(--color-text-disabled)] uppercase mr-2">Дедлайн</span>
-                  <span style={{ color: isOverdue ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>
+              <div className="flex items-center gap-3 mb-6 p-3 rounded-md border bg-card">
+                <Calendar className="size-3.5 text-muted-foreground shrink-0" />
+                <div className="text-xs">
+                  <span className="text-muted-foreground uppercase mr-2">Дедлайн</span>
+                  <span className={isOverdue ? 'text-destructive' : 'text-muted-foreground'}>
                     {new Date(a.dueDate).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}
                   </span>
                   {isOverdue && (
-                    <span className="ml-2 text-[var(--color-error)] uppercase font-bold">— просрочено</span>
+                    <span className="ml-2 text-destructive uppercase font-bold">— просрочено</span>
                   )}
                 </div>
               </div>
@@ -199,23 +195,23 @@ export default function AssignmentDetailPage({
             {/* Description */}
             {a?.description ? (
               <section className="mb-6">
-                <h2 className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-3">
+                <h2 className="text-xs uppercase text-muted-foreground mb-3">
                   Описание
                 </h2>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text-secondary)] m-0">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground m-0">
                   {a.description}
                 </p>
               </section>
             ) : (
               <section className="mb-6">
-                <p className="text-sm text-[var(--color-text-disabled)] italic">Описание не указано</p>
+                <p className="text-sm text-muted-foreground italic">Описание не указано</p>
               </section>
             )}
 
             {/* Materials */}
             {a?.materials && a.materials.length > 0 && (
               <section className="mb-6">
-                <h2 className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-3">
+                <h2 className="text-xs uppercase text-muted-foreground mb-3">
                   Материалы
                 </h2>
                 <div className="flex flex-col gap-2">
@@ -226,26 +222,20 @@ export default function AssignmentDetailPage({
                       target="_blank"
                       rel="noopener noreferrer"
                       download={m.type === 'file' ? m.name : undefined}
-                      className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)] text-[var(--color-accent)] no-underline text-sm hover:opacity-80 transition-opacity"
+                      className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted border text-primary no-underline text-sm hover:opacity-80 transition-opacity"
                     >
                       {m.type === 'file' ? (
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M8 1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z" />
-                          <path d="M8 1v4h4M5 9l2 2 2-2M7 11V6" />
-                        </svg>
+                        <FileText className="size-3.5 shrink-0" />
                       ) : (
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M6 3H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
-                          <path d="M9 1h4v4M14 1L7 8" />
-                        </svg>
+                        <ExternalLink className="size-3.5 shrink-0" />
                       )}
                       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{m.name}</span>
                       {m.type === 'file' && m.size && (
-                        <span className="font-mono text-xs text-[var(--color-text-disabled)] shrink-0">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {Math.round(m.size / 1024)}KB
                         </span>
                       )}
-                      <span className="font-mono text-xs text-[var(--color-text-disabled)] shrink-0 uppercase">
+                      <span className="text-xs text-muted-foreground shrink-0 uppercase">
                         {m.type === 'file' ? 'Скачать' : 'Открыть'}
                       </span>
                     </a>
@@ -258,44 +248,38 @@ export default function AssignmentDetailPage({
             {a?.tags && a.tags.length > 0 && (
               <div className="flex gap-1 flex-wrap mb-6">
                 {a.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="font-mono text-xs bg-[var(--color-bg-overlay)] text-[var(--color-text-tertiary)] px-2 py-1 rounded-full border border-[var(--color-border-subtle)] tracking-wide"
-                  >
+                  <Badge key={tag} variant="secondary">
                     {tag}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )}
 
             {/* Divider */}
-            <div className="border-t border-[var(--color-border-subtle)] my-6" />
+            <Separator className="my-6" />
 
             {/* Submitted answer */}
             {(sa.status === 'submitted' || sa.status === 'reviewed') && (
               <section className="mb-6">
-                <h2 className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-3">
+                <h2 className="text-xs uppercase text-muted-foreground mb-3">
                   Ваш ответ
                 </h2>
                 {sa.content && (
-                  <div className="px-4 py-3 bg-[var(--color-bg-overlay)] border-l-[3px] border-[var(--color-info)] mb-3">
-                    <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed text-[var(--color-text-secondary)] italic">
+                  <div className="px-4 py-3 rounded-md bg-muted border-l-[3px] border-primary mb-3">
+                    <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed text-muted-foreground italic">
                       {sa.content}
                     </p>
                   </div>
                 )}
                 {sa.fileName && (
-                  <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--color-text-tertiary)]">
-                      <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z" />
-                      <path d="M9 1v4h4" />
-                    </svg>
+                  <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted border">
+                    <FileText className="size-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-[var(--color-text-primary)] overflow-hidden text-ellipsis whitespace-nowrap">
+                      <div className="text-sm text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                         {sa.fileName}
                       </div>
                       {sa.fileSize && (
-                        <div className="font-mono text-xs text-[var(--color-text-disabled)]">
+                        <div className="text-xs text-muted-foreground">
                           {sa.fileSize < 1024 * 1024
                             ? `${Math.round(sa.fileSize / 1024)} КБ`
                             : `${(sa.fileSize / (1024 * 1024)).toFixed(1)} МБ`}
@@ -307,7 +291,7 @@ export default function AssignmentDetailPage({
                         href={sa.fileSignedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono text-xs text-[var(--color-info)] no-underline"
+                        className="text-xs text-primary no-underline"
                       >
                         Открыть ↗
                       </a>
@@ -315,7 +299,7 @@ export default function AssignmentDetailPage({
                   </div>
                 )}
                 {sa.submittedAt && (
-                  <p className="font-mono text-xs text-[var(--color-text-disabled)] tracking-wide mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     Отправлено: {new Date(sa.submittedAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}
                   </p>
                 )}
@@ -325,41 +309,26 @@ export default function AssignmentDetailPage({
             {/* Teacher feedback */}
             {sa.status === 'reviewed' && feedback && (
               <section className="mb-6">
-                <div className="p-4 border border-[rgba(57,255,20,0.2)] bg-[rgba(57,255,20,0.04)]">
+                <div className="p-4 rounded-md border bg-muted">
                   <div className="flex items-center gap-2 mb-3">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-success)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2 2h10v7H5l-3 3V2z"/>
-                      <path d="M4.5 5h5M4.5 7.5h3"/>
-                    </svg>
-                    <span className="font-mono text-xs tracking-widest uppercase text-[var(--color-success)]">
+                    <MessageCircle className="size-3.5 text-primary" />
+                    <span className="text-xs uppercase text-foreground font-medium">
                       Фидбек учителя
                     </span>
-                    <span className="font-mono text-xs text-[var(--color-text-disabled)] ml-auto">
+                    <span className="text-xs text-muted-foreground ml-auto">
                       {new Date(feedback.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} · {feedback.author.name}
                     </span>
                   </div>
-                  <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap m-0">
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap m-0">
                     {feedback.content}
                   </p>
                   {sa.reviewedAt && (
-                    <p className="font-mono text-xs text-[var(--color-text-disabled)] mt-3 tracking-wide">
+                    <p className="text-xs text-muted-foreground mt-3">
                       Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}
                     </p>
                   )}
                 </div>
               </section>
-            )}
-
-            {/* Alerts */}
-            {error && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {success && (
-              <Alert className="mb-4">
-                <AlertDescription>{success}</AlertDescription>
-              </Alert>
             )}
 
             {/* Submission form */}
@@ -379,34 +348,33 @@ export default function AssignmentDetailPage({
 
             {showForm && (
               <section>
-                <h2 className="font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-4">
+                <h2 className="text-xs uppercase text-muted-foreground mb-4">
                   {sa.status === 'needs_revision' ? 'Пересдача задания' : 'Сдача задания'}
                 </h2>
 
                 {/* Answer */}
-                <div className="mb-4">
-                  <label className="block font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
-                    Ваш ответ {isShort && <span className="text-[var(--color-error)]">*</span>}
-                  </label>
-                  <textarea
+                <div className="flex flex-col gap-2 mb-4">
+                  <Label htmlFor="submission-text">
+                    Ваш ответ {isShort && <span className="text-destructive">*</span>}
+                  </Label>
+                  <Textarea
+                    id="submission-text"
                     value={submissionText}
                     onChange={(e) => setSubmissionText(e.target.value)}
                     placeholder="Опишите вашу работу кратко…"
                     maxLength={2000}
-                    className="w-full min-h-[160px] resize-none p-3 border border-[var(--color-border-default)] bg-[var(--color-bg-input)] text-[var(--color-text-primary)] text-sm font-sans leading-relaxed outline-none focus:border-[var(--color-border-strong)] box-border"
+                    className="min-h-[160px] resize-none"
                   />
-                  <div className="text-right font-mono text-xs text-[var(--color-text-disabled)] mt-1">
+                  <div className="text-right text-xs text-muted-foreground">
                     {submissionText.length} / 2000
                   </div>
                 </div>
 
                 {/* File */}
-                <div className="mb-6">
-                  <label className="block font-mono text-xs tracking-widest uppercase text-[var(--color-text-tertiary)] mb-2">
-                    Файл
-                  </label>
+                <div className="flex flex-col gap-2 mb-6">
+                  <Label>Файл</Label>
                   {submissionFile ? (
-                    <div className="flex items-center gap-3 px-3 py-2 bg-[var(--color-bg-overlay)] border border-[var(--color-border-subtle)]">
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted border">
                       <Badge variant="outline">
                         {submissionFile.name.split('.').pop()?.toUpperCase()}
                       </Badge>
@@ -414,21 +382,23 @@ export default function AssignmentDetailPage({
                         <div className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
                           {submissionFile.name}
                         </div>
-                        <div className="font-mono text-xs text-[var(--color-text-disabled)]">
+                        <div className="text-xs text-muted-foreground">
                           {submissionFile.size < 1024 * 1024
                             ? `${Math.round(submissionFile.size / 1024)} КБ`
                             : `${(submissionFile.size / (1024 * 1024)).toFixed(1)} МБ`}
                         </div>
                       </div>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
                         onClick={() => setSubmissionFile(null)}
-                        className="bg-transparent border-0 cursor-pointer text-[var(--color-text-disabled)] text-base p-1 hover:text-[var(--color-text-primary)] transition-colors"
                       >
-                        ×
-                      </button>
+                        <X className="size-4" />
+                      </Button>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center gap-2 p-6 border-2 border-dashed border-[var(--color-border-default)] cursor-pointer text-sm text-[var(--color-text-tertiary)] hover:border-[var(--color-border-strong)] transition-colors">
+                    <label className="flex items-center justify-center gap-2 p-6 rounded-md border-2 border-dashed cursor-pointer text-sm text-muted-foreground hover:border-ring transition-colors">
                       <input
                         type="file"
                         accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
@@ -437,23 +407,20 @@ export default function AssignmentDetailPage({
                           const f = e.target.files?.[0];
                           if (f) {
                             if (f.size > 20 * 1024 * 1024) {
-                              setError('Файл не должен превышать 20 МБ');
+                              toast.error('Файл не должен превышать 20 МБ');
                               return;
                             }
                             setSubmissionFile(f);
                           }
                         }}
                       />
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <path d="M8 2v8M5 5l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M2 12h12" strokeLinecap="round" />
-                      </svg>
+                      <Upload className="size-4" />
                       Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
                     </label>
                   )}
                 </div>
 
-                <p className="font-mono text-xs text-[var(--color-text-disabled)] italic mb-4">
+                <p className="text-xs text-muted-foreground italic mb-4">
                   После отправки ответ нельзя изменить.
                 </p>
 
@@ -480,17 +447,15 @@ export default function AssignmentDetailPage({
 
             {/* Thread link */}
             {(sa.status === 'submitted' || sa.status === 'reviewed') && (
-              <div className="mt-6 pt-6 border-t border-[var(--color-border-subtle)]">
-                <button
+              <div className="mt-6 pt-6 border-t">
+                <Button
+                  variant="link"
+                  className="h-auto p-0"
                   onClick={() => router.push(`/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
-                  className="font-mono text-xs tracking-widest uppercase text-[var(--color-info)] bg-transparent border-0 cursor-pointer flex items-center gap-2 p-0 hover:opacity-80 transition-opacity"
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M2 2h10v7H5l-3 3V2z"/>
-                    <path d="M4.5 5h5M4.5 7.5h3"/>
-                  </svg>
+                  <MessageCircle className="size-3.5" />
                   Открыть тред для этого задания
-                </button>
+                </Button>
               </div>
             )}
           </>
