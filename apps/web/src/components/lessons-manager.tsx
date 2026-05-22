@@ -504,6 +504,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const allMode = !streamId;
 
   const [stream, setStream] = useState<Stream | null>(null);
+  // Список потоков для выбора при создании урока в режиме «Все потоки».
+  const [allStreams, setAllStreams] = useState<Stream[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
@@ -513,6 +515,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   // Create form (separate inline affordance)
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<LessonFormData>(emptyForm);
+  // Поток для создаваемого урока в режиме «Все потоки» (иначе берём streamId пропа).
+  const [createStreamId, setCreateStreamId] = useState('');
   // Видеофайл, выбранный при создании урока: грузим его сразу после создания
   // (эндпоинт загрузки видео требует id уже существующего урока).
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -539,6 +543,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
       ]);
       const found = streamId ? streamsData.streams.find((s) => s.id === streamId) : null;
       setStream(found || null);
+      setAllStreams(streamsData.streams.filter((s) => s.status === 'active'));
       // В режиме «все потоки» группируем по имени потока, затем по порядку урока.
       setLessons(
         [...lessonsData.lessons].sort((a, b) => {
@@ -567,6 +572,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const openCreate = () => {
     setForm(emptyForm);
     setVideoFile(null);
+    setCreateStreamId('');
     setShowForm(true);
   };
 
@@ -574,6 +580,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     setShowForm(false);
     setForm(emptyForm);
     setVideoFile(null);
+    setCreateStreamId('');
   };
 
   // --- Row view / in-place edit ---
@@ -603,12 +610,17 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetStreamId = allMode ? createStreamId : streamId;
     if (!accessToken || !form.title.trim()) return;
+    if (!targetStreamId) {
+      setError('Выберите поток для урока');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       const { lesson: created } = await createLesson(accessToken, {
-        streamId,
+        streamId: targetStreamId,
         title: form.title.trim(),
         videoUrl: form.videoUrl.trim() || undefined,
         summary: form.summary || undefined,
@@ -733,11 +745,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
             />
             Только мои
           </label>
-          {allMode ? (
-            <span className="text-sm text-muted-foreground whitespace-nowrap">
-              Выберите поток, чтобы добавить урок
-            </span>
-          ) : !isArchived && (
+          {(allMode || !isArchived) && (
             <Button
               variant={showForm ? 'outline' : 'default'}
               onClick={showForm ? closeForm : openCreate}
@@ -769,6 +777,24 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           <CardContent>
             <form onSubmit={handleCreate}>
               <FieldGroup>
+                {allMode && (
+                  <Field>
+                    <FieldLabel htmlFor="lesson-stream">Поток *</FieldLabel>
+                    <Select value={createStreamId} onValueChange={setCreateStreamId}>
+                      <SelectTrigger id="lesson-stream" className="w-full">
+                        <SelectValue placeholder="Выберите поток" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allStreams.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
+
                 <Field>
                   <FieldLabel htmlFor="lesson-title">Название *</FieldLabel>
                   <Input
@@ -925,7 +951,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field orientation="horizontal">
-                  <Button type="submit" disabled={submitting || !form.title.trim()}>
+                  <Button
+                    type="submit"
+                    disabled={submitting || !form.title.trim() || (allMode && !createStreamId)}
+                  >
                     {submitting && <Loader2 className="animate-spin" />}
                     {submitting ? 'Сохранение...' : 'Создать'}
                   </Button>
@@ -1265,10 +1294,20 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         <dt className="text-muted-foreground">Видеозапись (загруженный файл)</dt>
                         <dd>
                           {viewLesson.videoFileUrl ? (
-                            <span className="inline-flex items-center gap-1.5 text-foreground">
-                              <Film className="size-4 shrink-0 text-muted-foreground" />
-                              Видео загружено
-                            </span>
+                            <div className="flex flex-col gap-1.5">
+                              <span className="inline-flex items-center gap-1.5 text-foreground">
+                                <Film className="size-4 shrink-0 text-muted-foreground" />
+                                Видео загружено
+                              </span>
+                              <div className="flex max-h-[50vh] justify-center overflow-hidden rounded-lg border bg-black">
+                                <video
+                                  controls
+                                  preload="metadata"
+                                  className="max-h-[50vh] w-auto max-w-full"
+                                  src={viewLesson.videoFileUrl}
+                                />
+                              </div>
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
