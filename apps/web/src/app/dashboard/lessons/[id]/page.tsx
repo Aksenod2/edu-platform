@@ -181,6 +181,8 @@ export default function StudentLessonPage() {
               <video
                 controls
                 preload="metadata"
+                controlsList="nodownload"
+                onContextMenu={(e) => e.preventDefault()}
                 className="max-h-[70vh] w-auto max-w-full"
                 src={lesson.videoFileUrl}
               />
