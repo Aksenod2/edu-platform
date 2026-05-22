@@ -89,93 +89,45 @@ function isVideoFile(fileName: string, mimeType: string): boolean {
   return okExt && okMime;
 }
 
-// include-конфиг для подгрузки преподавателей урока и его записи расписания.
-// Берём ТОЛЬКО запись, управляемую из карточки урока (managedByLesson) — это
-// «дата занятия» урока. Записи, заведённые вручную через раздел «Расписание»,
-// не относятся к этому полю и не трогаются.
-const teacherInclude = {
-  teachers: { include: { user: { select: { id: true, name: true } } } },
-  scheduleEntries: {
-    where: { managedByLesson: true },
-    orderBy: { date: 'asc' },
-    select: { date: true, startTime: true },
-  },
-} as const;
+// Статусы урока: Черновик · Запланирован · Проведён · Отменён.
+// Черновик скрыт от учеников, остальные — видны (видимость = статус).
+const LESSON_STATUSES = ['draft', 'planned', 'done', 'cancelled'] as const;
+type LessonStatusValue = (typeof LESSON_STATUSES)[number];
 
-type ScheduleEntrySlim = { date: Date; startTime: string };
-
-// Производное поле «дата занятия» урока: "YYYY-MM-DDTHH:MM" из первой записи
-// расписания (UTC-срез наивной @db.Date + startTime "HH:MM") или null.
-function deriveScheduledAt(entries?: ScheduleEntrySlim[]): string | null {
-  const entry = entries?.[0];
-  if (!entry) return null;
-  const datePart = entry.date.toISOString().slice(0, 10);
-  return `${datePart}T${entry.startTime}`;
+function isLessonStatus(value: unknown): value is LessonStatusValue {
+  return typeof value === 'string' && (LESSON_STATUSES as readonly string[]).includes(value);
 }
 
-// Преобразует урок с include-преподавателями/расписанием к плоскому виду
-// { teachers: [{id,name}], scheduledAt: string | null }
+// Нормализует входную дату "YYYY-MM-DD" → Date (наивная @db.Date) | null.
+function parseLessonDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const datePart = value.slice(0, 10);
+  return new Date(datePart);
+}
+
+const teacherInclude = {
+  teachers: { include: { user: { select: { id: true, name: true } } } },
+} as const;
+
+// Преобразует урок к плоскому виду для фронта:
+// teachers → [{id,name}], date → строка "YYYY-MM-DD" | null.
 function shapeLesson<
   T extends {
     teachers?: { user: { id: string; name: string } }[];
-    scheduleEntries?: ScheduleEntrySlim[];
+    date?: Date | null;
   },
 >(
   lesson: T,
-): Omit<T, 'teachers' | 'scheduleEntries'> & {
+): Omit<T, 'teachers' | 'date'> & {
   teachers: { id: string; name: string }[];
-  scheduledAt: string | null;
+  date: string | null;
 } {
-  const { teachers, scheduleEntries, ...rest } = lesson;
+  const { teachers, date, ...rest } = lesson;
   return {
     ...rest,
     teachers: (teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
-    scheduledAt: deriveScheduledAt(scheduleEntries),
+    date: date ? date.toISOString().slice(0, 10) : null,
   };
-}
-
-// Синхронизация записи расписания (ScheduleEntry), УПРАВЛЯЕМОЙ из карточки урока
-// (managedByLesson=true). scheduledAt — наивная локальная строка "YYYY-MM-DDTHH:MM":
-//   задана  → создаём/обновляем единственную managed-запись урока;
-//   очищена → удаляем только managed-запись урока.
-// Записи, заведённые вручную через раздел «Расписание» (managedByLesson=false),
-// НИКОГДА не трогаем — даже если у них тот же lessonId.
-// Если в строке нет времени (timePart пустой) — синхронизацию пропускаем.
-async function syncLessonSchedule(
-  lesson: { id: string; streamId: string; title: string },
-  scheduledAt: string | null | undefined,
-): Promise<void> {
-  if (scheduledAt) {
-    const [datePart, timePart] = scheduledAt.split('T');
-    const startTime = (timePart || '').slice(0, 5);
-    if (!datePart || !startTime) return; // нет полной даты+времени — пропускаем
-    const date = new Date(datePart); // @db.Date — наивная дата
-    const existing = await prisma.scheduleEntry.findFirst({
-      where: { lessonId: lesson.id, managedByLesson: true },
-      orderBy: { date: 'asc' },
-    });
-    if (existing) {
-      await prisma.scheduleEntry.update({
-        where: { id: existing.id },
-        data: { date, startTime, lessonTitle: lesson.title },
-      });
-    } else {
-      await prisma.scheduleEntry.create({
-        data: {
-          streamId: lesson.streamId,
-          lessonId: lesson.id,
-          date,
-          startTime,
-          lessonTitle: lesson.title,
-          managedByLesson: true,
-        },
-      });
-    }
-  } else {
-    await prisma.scheduleEntry.deleteMany({
-      where: { lessonId: lesson.id, managedByLesson: true },
-    });
-  }
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
@@ -194,7 +146,9 @@ export async function lessonRoutes(app: FastifyInstance) {
   const anyAuth = authenticate;
 
   // GET /lessons?streamId=xxx&mine=true — список уроков (опциональная фильтрация по streamId)
-  // Admin: все уроки (или только свои при ?mine=true); Student: только published (+ auto-publish по publishAt)
+  // Admin: все уроки (или только свои при ?mine=true); Student: все, кроме черновиков.
+  // Сортировка по порядку курса (sortOrder) — это вид «Программа»; календарь строит
+  // фронт из уроков, у которых есть date.
   app.get('/lessons', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId, mine } = request.query as { streamId?: string; mine?: string };
 
@@ -214,20 +168,10 @@ export async function lessonRoutes(app: FastifyInstance) {
     const isMine = isAdmin && mine === 'true';
     const streamFilter = streamId ? { streamId } : {};
 
-    // Auto-publish: переводим draft → published если publishAt <= now
-    await prisma.lesson.updateMany({
-      where: {
-        ...streamFilter,
-        status: 'draft',
-        publishAt: { lte: new Date() },
-      },
-      data: { status: 'published' },
-    });
-
     const lessons = await prisma.lesson.findMany({
       where: {
         ...streamFilter,
-        ...(!isAdmin && { status: { in: ['published', 'closed'] } }),
+        ...(!isAdmin && { status: { not: 'draft' } }),
         ...(isMine && { teachers: { some: { userId: request.user!.userId } } }),
       },
       include: { ...teacherInclude, stream: { select: { id: true, name: true } } },
@@ -270,16 +214,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Урок не найден' });
     }
 
-    // Auto-publish при чтении конкретного урока
-    if (lesson.status === 'draft' && lesson.publishAt && lesson.publishAt <= new Date()) {
-      await prisma.lesson.update({
-        where: { id },
-        data: { status: 'published' },
-      });
-      lesson.status = 'published';
-    }
-
-    // Студент не видит draft-уроки
+    // Студент не видит черновики
     if (!isAdmin && lesson.status === 'draft') {
       return reply.status(404).send({ error: 'Урок не найден' });
     }
@@ -300,8 +235,10 @@ export async function lessonRoutes(app: FastifyInstance) {
       videoUrl?: string;
       summary?: string;
       notes?: string;
-      publishAt?: string;
-      scheduledAt?: string | null;
+      status?: string;
+      date?: string | null;
+      startTime?: string | null;
+      meetingUrl?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
       materials?: LessonMaterial[];
@@ -313,6 +250,18 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     if (!body.title || !body.title.trim()) {
       return reply.status(400).send({ error: 'Название урока обязательно' });
+    }
+
+    if (body.status !== undefined && !isLessonStatus(body.status)) {
+      return reply.status(400).send({ error: 'Недопустимый статус' });
+    }
+
+    const status: LessonStatusValue = isLessonStatus(body.status) ? body.status : 'draft';
+    const date = parseLessonDate(body.date);
+
+    // «Запланирован» требует даты
+    if (status === 'planned' && !date) {
+      return reply.status(400).send({ error: 'Запланированному уроку нужна дата' });
     }
 
     const stream = await prisma.stream.findUnique({ where: { id: body.streamId } });
@@ -335,7 +284,10 @@ export async function lessonRoutes(app: FastifyInstance) {
         videoUrl: body.videoUrl?.trim() || null,
         summary: body.summary || null,
         notes: body.notes || null,
-        publishAt: body.publishAt ? new Date(body.publishAt) : null,
+        status,
+        date,
+        startTime: body.startTime?.trim() || null,
+        meetingUrl: body.meetingUrl?.trim() || null,
         sortOrder: body.sortOrder ?? 0,
         materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
         ...(teacherIds.length > 0 && {
@@ -345,15 +297,12 @@ export async function lessonRoutes(app: FastifyInstance) {
       include: teacherInclude,
     });
 
-    // Синхронизируем «дату занятия» с расписанием, если она передана
-    await syncLessonSchedule(lesson, body.scheduledAt);
+    // Уведомляем учеников, если урок создан сразу видимым (не черновик)
+    if (status !== 'draft') {
+      notifyEnrolledLessonVisible(lesson.id, lesson.streamId, lesson.title).catch(() => {});
+    }
 
-    const created = await prisma.lesson.findUnique({
-      where: { id: lesson.id },
-      include: teacherInclude,
-    });
-
-    return reply.status(201).send({ lesson: shapeLesson(created ?? lesson) });
+    return reply.status(201).send({ lesson: shapeLesson(lesson) });
   });
 
   // PATCH /lessons/:id — обновление урока (admin)
@@ -364,9 +313,10 @@ export async function lessonRoutes(app: FastifyInstance) {
       videoUrl?: string;
       summary?: string;
       notes?: string;
-      status?: 'draft' | 'published' | 'closed';
-      publishAt?: string | null;
-      scheduledAt?: string | null;
+      status?: string;
+      date?: string | null;
+      startTime?: string | null;
+      meetingUrl?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
       materials?: LessonMaterial[];
@@ -381,8 +331,17 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Название урока не может быть пустым' });
     }
 
-    if (body.status !== undefined && !['draft', 'published', 'closed'].includes(body.status)) {
+    if (body.status !== undefined && !isLessonStatus(body.status)) {
       return reply.status(400).send({ error: 'Недопустимый статус' });
+    }
+
+    // Итоговые статус/дата с учётом существующих значений (для проверки правила planned→date)
+    const nextStatus: LessonStatusValue = isLessonStatus(body.status)
+      ? body.status
+      : (existing.status as LessonStatusValue);
+    const nextDate = body.date !== undefined ? parseLessonDate(body.date) : existing.date;
+    if (nextStatus === 'planned' && !nextDate) {
+      return reply.status(400).send({ error: 'Запланированному уроку нужна дата' });
     }
 
     const data: Record<string, unknown> = {};
@@ -391,7 +350,9 @@ export async function lessonRoutes(app: FastifyInstance) {
     if (body.summary !== undefined) data.summary = body.summary || null;
     if (body.notes !== undefined) data.notes = body.notes || null;
     if (body.status !== undefined) data.status = body.status;
-    if (body.publishAt !== undefined) data.publishAt = body.publishAt ? new Date(body.publishAt) : null;
+    if (body.date !== undefined) data.date = parseLessonDate(body.date);
+    if (body.startTime !== undefined) data.startTime = body.startTime?.trim() || null;
+    if (body.meetingUrl !== undefined) data.meetingUrl = body.meetingUrl?.trim() || null;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
     if (body.materials !== undefined) {
       data.materials = JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials)));
@@ -415,40 +376,15 @@ export async function lessonRoutes(app: FastifyInstance) {
       ]);
     }
 
-    let lesson = await prisma.lesson.update({
+    const lesson = await prisma.lesson.update({
       where: { id },
       data,
       include: teacherInclude,
     });
 
-    // Синхронизируем «дату занятия» с расписанием ТОЛЬКО если поле передано в теле,
-    // чтобы частичные апдейты без scheduledAt не удаляли запись расписания.
-    // lessonTitle обновляется внутри хелпера (актуальный title уже в lesson).
-    if (body.scheduledAt !== undefined) {
-      await syncLessonSchedule(lesson, body.scheduledAt);
-      lesson =
-        (await prisma.lesson.findUnique({ where: { id }, include: teacherInclude })) ?? lesson;
-    } else if (body.title !== undefined) {
-      // Если поменялся только title — отразим его в существующей записи расписания
-      await prisma.scheduleEntry.updateMany({
-        where: { lessonId: id },
-        data: { lessonTitle: lesson.title },
-      });
-    }
-
-    // Notify only students enrolled in the lesson's stream when published
-    if (body.status === 'published' && existing.status !== 'published') {
-      const enrollments = await prisma.streamEnrollment.findMany({
-        where: { streamId: lesson.streamId },
-        select: { userId: true },
-      });
-      notifyMany(
-        enrollments.map((e) => e.userId),
-        'lesson_published',
-        'Новый урок опубликован',
-        `Урок «${lesson.title}» доступен для просмотра`,
-        { lessonId: lesson.id },
-      ).catch(() => {});
+    // Уведомляем учеников, когда урок становится видимым (черновик → не черновик)
+    if (body.status !== undefined && existing.status === 'draft' && lesson.status !== 'draft') {
+      notifyEnrolledLessonVisible(lesson.id, lesson.streamId, lesson.title).catch(() => {});
     }
 
     const materials = await regenerateLessonMaterialUrls(
@@ -664,4 +600,23 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     return { message: 'Урок удалён' };
   });
+}
+
+// Уведомление ученикам потока о том, что урок стал виден.
+async function notifyEnrolledLessonVisible(
+  lessonId: string,
+  streamId: string,
+  title: string,
+): Promise<void> {
+  const enrollments = await prisma.streamEnrollment.findMany({
+    where: { streamId },
+    select: { userId: true },
+  });
+  await notifyMany(
+    enrollments.map((e) => e.userId),
+    'lesson_published',
+    'Новый урок',
+    `Урок «${title}» доступен`,
+    { lessonId },
+  );
 }

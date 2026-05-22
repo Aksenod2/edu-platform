@@ -16,6 +16,12 @@ npm-debug.log*
 pnpm-debug.log*
 
 storybook-static
+
+# Playwright e2e
+test-results
+playwright-report
+apps/web/e2e/.auth
+
 .env.vps
 .env.vps.bak.*
 /deploy-config-backup/

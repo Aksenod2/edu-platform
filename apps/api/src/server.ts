@@ -13,7 +13,6 @@ import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
 import { userRoutes } from './routes/users.js';
 import { lessonRoutes } from './routes/lessons.js';
-import { scheduleRoutes } from './routes/schedule.js';
 import { assignmentRoutes } from './routes/assignments.js';
 import { profileRoutes } from './routes/profiles.js';
 import { threadRoutes } from './routes/threads.js';
@@ -43,7 +42,7 @@ await app.register(rateLimit, {
 await app.register(
   async (authScope) => {
     await authScope.register(rateLimit, {
-      max: 10,
+      max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 10,
       timeWindow: '1 minute',
     });
     await authScope.register(authRoutes);
@@ -54,7 +53,6 @@ await app.register(
 await app.register(streamRoutes);
 await app.register(userRoutes);
 await app.register(lessonRoutes);
-await app.register(scheduleRoutes);
 await app.register(assignmentRoutes);
 await app.register(profileRoutes);
 await app.register(threadRoutes);

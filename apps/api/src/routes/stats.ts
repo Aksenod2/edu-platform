@@ -59,13 +59,13 @@ export async function statsRoutes(app: FastifyInstance) {
         by: ['status'],
         _count: { status: true },
       }),
-      // schedule.thisWeek — entries from now..+7d
-      prisma.scheduleEntry.count({
-        where: { date: { gte: todayStart, lte: weekAhead } },
+      // schedule.thisWeek — запланированные уроки на ближайшие 7 дней
+      prisma.lesson.count({
+        where: { status: 'planned', date: { gte: todayStart, lte: weekAhead } },
       }),
-      // schedule.upcoming — next 5 across all streams, date >= today
-      prisma.scheduleEntry.findMany({
-        where: { date: { gte: todayStart } },
+      // schedule.upcoming — ближайшие 5 запланированных уроков по всем потокам
+      prisma.lesson.findMany({
+        where: { status: 'planned', date: { gte: todayStart } },
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         take: 5,
         include: { stream: { select: { id: true, name: true } } },
@@ -138,14 +138,14 @@ export async function statsRoutes(app: FastifyInstance) {
       }
     }
 
-    const upcoming = upcomingScheduleRaw.map((e) => ({
-      id: e.id,
-      date: e.date,
-      startTime: e.startTime,
-      lessonTitle: e.lessonTitle,
-      streamId: e.streamId,
-      streamName: e.stream.name,
-      meetingUrl: e.meetingUrl,
+    const upcoming = upcomingScheduleRaw.map((l) => ({
+      id: l.id,
+      date: l.date,
+      startTime: l.startTime,
+      lessonTitle: l.title,
+      streamId: l.streamId,
+      streamName: l.stream.name,
+      meetingUrl: l.meetingUrl,
     }));
 
     const submissionsToReview = submissionsToReviewRaw.map((s) => ({

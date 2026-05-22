@@ -34,34 +34,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Lesson, ScheduleEntry, Stream } from '@/lib/api';
+import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus, type Stream } from '@/lib/api';
 
-export type CalendarEntry = ScheduleEntry & { streamName?: string };
+/** Урок для отображения в календаре (с опциональным именем потока). */
+export type CalendarLesson = Lesson & { streamName?: string };
 
-interface CreateData {
+/** Данные для создания урока из календаря. */
+export interface CalendarCreateData {
   streamId: string;
-  lessonId: string;
+  title: string;
   date: string;
-  startTime: string;
-  notes?: string;
-  meetingUrl?: string;
+  startTime: string | null;
+  status: LessonStatus;
+  meetingUrl: string | null;
+  notes: string | null;
 }
 
-interface UpdateData {
-  date?: string;
-  startTime?: string;
-  lessonId?: string;
-  notes?: string | null;
+/** Поля для обновления урока из календаря. */
+export interface CalendarUpdateData {
+  title?: string;
+  date?: string | null;
+  startTime?: string | null;
+  status?: LessonStatus;
   meetingUrl?: string | null;
+  notes?: string | null;
 }
 
-interface ScheduleCalendarProps {
-  entries: CalendarEntry[];
+export interface ScheduleCalendarProps {
+  /** Уроки. На календаре рисуются только те, у кого есть `date`. */
+  lessons: CalendarLesson[];
   editable?: boolean;
+  /** Потоки — нужны при создании урока (выбор потока). */
   streams?: Stream[];
-  lessons?: Lesson[];
-  onCreate?: (data: CreateData) => Promise<void> | void;
-  onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
+  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
+  onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
 }
 
@@ -70,6 +76,16 @@ const MONTHS = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ];
+
+const STATUS_BADGE_VARIANT: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
+  draft: 'secondary',
+  planned: 'default',
+  done: 'outline',
+  cancelled: 'destructive',
+};
+
+/** Все 4 статуса в порядке для Select. */
+const STATUS_ORDER: LessonStatus[] = ['draft', 'planned', 'done', 'cancelled'];
 
 /** Парсит дату из ISO-строки как локальную (без UTC-сдвига). */
 function parseLocalDate(dateStr: string): Date {
@@ -94,10 +110,9 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 export function ScheduleCalendar({
-  entries,
+  lessons,
   editable = false,
   streams = [],
-  lessons = [],
   onCreate,
   onUpdate,
   onDelete,
@@ -107,20 +122,21 @@ export function ScheduleCalendar({
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  // Группировка записей по дню "YYYY-MM-DD"
-  const entriesByDay = useMemo(() => {
-    const map = new Map<string, CalendarEntry[]>();
-    for (const e of entries) {
-      const key = dateKey(parseLocalDate(e.date));
+  // Группировка уроков по дню "YYYY-MM-DD" — только те, у кого есть date.
+  const lessonsByDay = useMemo(() => {
+    const map = new Map<string, CalendarLesson[]>();
+    for (const lesson of lessons) {
+      if (!lesson.date) continue;
+      const key = dateKey(parseLocalDate(lesson.date));
       const list = map.get(key);
-      if (list) list.push(e);
-      else map.set(key, [e]);
+      if (list) list.push(lesson);
+      else map.set(key, [lesson]);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      list.sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''));
     }
     return map;
-  }, [entries]);
+  }, [lessons]);
 
   // 6×7 сетка дней (понедельник — первый), включая дни соседних месяцев
   const cells = useMemo(() => {
@@ -159,7 +175,7 @@ export function ScheduleCalendar({
     setViewMonth(today.getMonth());
   };
 
-  const selectedEntries = selectedKey ? entriesByDay.get(selectedKey) ?? [] : [];
+  const selectedLessons = selectedKey ? lessonsByDay.get(selectedKey) ?? [] : [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -199,11 +215,11 @@ export function ScheduleCalendar({
         <div className="grid grid-cols-7">
           {cells.map((day, i) => {
             const key = dateKey(day);
-            const dayEntries = entriesByDay.get(key) ?? [];
+            const dayLessons = lessonsByDay.get(key) ?? [];
             const inMonth = day.getMonth() === viewMonth;
             const isToday = isSameDay(day, today);
-            const visible = dayEntries.slice(0, 3);
-            const extra = dayEntries.length - visible.length;
+            const visible = dayLessons.slice(0, 3);
+            const extra = dayLessons.length - visible.length;
 
             return (
               <button
@@ -229,23 +245,33 @@ export function ScheduleCalendar({
                 </span>
 
                 <div className="flex flex-col gap-1">
-                  {visible.map((e) => (
+                  {visible.map((lesson) => (
                     <span
-                      key={e.id}
+                      key={lesson.id}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         setSelectedKey(key);
                       }}
-                      className="flex flex-col rounded-sm bg-secondary px-1.5 py-1 text-left text-secondary-foreground"
+                      className={cn(
+                        'flex flex-col rounded-sm bg-secondary px-1.5 py-1 text-left text-secondary-foreground',
+                        lesson.status === 'cancelled' && 'opacity-50',
+                      )}
                     >
-                      <span className="truncate text-xs font-medium leading-tight">
-                        {e.lessonTitle || e.lesson?.title}
+                      <span
+                        className={cn(
+                          'truncate text-xs font-medium leading-tight',
+                          lesson.status === 'cancelled' && 'line-through',
+                        )}
+                      >
+                        {lesson.title}
                       </span>
                       <span className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
-                        {e.streamName && (
-                          <span className="truncate">{e.streamName}</span>
+                        {lesson.streamName && (
+                          <span className="truncate">{lesson.streamName}</span>
                         )}
-                        <span className="shrink-0 font-mono">{e.startTime}</span>
+                        {lesson.startTime && (
+                          <span className="shrink-0 font-mono">{lesson.startTime}</span>
+                        )}
                       </span>
                     </span>
                   ))}
@@ -273,10 +299,9 @@ export function ScheduleCalendar({
           {selectedKey && (
             <DayDetail
               dayKey={selectedKey}
-              entries={selectedEntries}
+              lessons={selectedLessons}
               editable={editable}
               streams={streams}
-              lessons={lessons}
               onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
@@ -300,21 +325,19 @@ function formatDayTitle(dayKey: string): string {
 
 interface DayDetailProps {
   dayKey: string;
-  entries: CalendarEntry[];
+  lessons: CalendarLesson[];
   editable: boolean;
   streams: Stream[];
-  lessons: Lesson[];
-  onCreate?: (data: CreateData) => Promise<void> | void;
-  onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
+  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
+  onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
 }
 
 function DayDetail({
   dayKey,
-  entries,
+  lessons,
   editable,
   streams,
-  lessons,
   onCreate,
   onUpdate,
   onDelete,
@@ -327,46 +350,65 @@ function DayDetail({
       <SheetHeader>
         <SheetTitle className="capitalize">{formatDayTitle(dayKey)}</SheetTitle>
         <SheetDescription>
-          {entries.length > 0
-            ? `Занятий: ${entries.length}`
-            : 'На этот день занятий нет'}
+          {lessons.length > 0
+            ? `Уроков: ${lessons.length}`
+            : 'На этот день уроков нет'}
         </SheetDescription>
       </SheetHeader>
 
       <div className="flex flex-col gap-3 px-4 pb-4">
-        {entries.map((entry) =>
-          editable && editingId === entry.id ? (
+        {lessons.map((lesson) =>
+          editable && editingId === lesson.id ? (
             <EditForm
-              key={entry.id}
-              entry={entry}
-              lessons={lessons}
+              key={lesson.id}
+              lesson={lesson}
               onCancel={() => setEditingId(null)}
               onUpdate={onUpdate}
               onSaved={() => setEditingId(null)}
             />
           ) : (
-            <div key={entry.id} className="rounded-lg border bg-card p-3">
+            <div
+              key={lesson.id}
+              className={cn(
+                'rounded-lg border bg-card p-3',
+                lesson.status === 'cancelled' && 'opacity-60',
+              )}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="font-medium leading-tight">{entry.lessonTitle || entry.lesson?.title}</p>
-                  {entry.streamName && (
-                    <Badge variant="secondary" className="w-fit">
-                      {entry.streamName}
+                  <p
+                    className={cn(
+                      'font-medium leading-tight',
+                      lesson.status === 'cancelled' && 'line-through',
+                    )}
+                  >
+                    {lesson.title}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
+                      {LESSON_STATUS_LABELS[lesson.status]}
                     </Badge>
-                  )}
+                    {lesson.streamName && (
+                      <Badge variant="secondary" className="w-fit">
+                        {lesson.streamName}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-                <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                  {entry.startTime}
-                </span>
+                {lesson.startTime && (
+                  <span className="shrink-0 font-mono text-sm text-muted-foreground">
+                    {lesson.startTime}
+                  </span>
+                )}
               </div>
-              {entry.notes && (
+              {lesson.notes && (
                 <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {entry.notes}
+                  {lesson.notes}
                 </p>
               )}
-              {entry.meetingUrl && (
+              {lesson.meetingUrl && lesson.status !== 'cancelled' && (
                 <a
-                  href={entry.meetingUrl}
+                  href={lesson.meetingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-3 inline-block no-underline"
@@ -381,11 +423,11 @@ function DayDetail({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => setEditingId(entry.id)}
+                      onClick={() => setEditingId(lesson.id)}
                     >
                       Редактировать
                     </Button>
-                    <DeleteButton id={entry.id} onDelete={onDelete} />
+                    <DeleteButton id={lesson.id} onDelete={onDelete} />
                   </div>
                 </>
               )}
@@ -399,7 +441,6 @@ function DayDetail({
               <CreateForm
                 defaultDate={dayKey}
                 streams={streams}
-                lessons={lessons}
                 onCreate={onCreate}
                 onCancel={() => setShowCreate(false)}
                 onCreated={() => setShowCreate(false)}
@@ -411,7 +452,7 @@ function DayDetail({
                 className="w-full"
                 onClick={() => setShowCreate(true)}
               >
-                Добавить занятие
+                Добавить урок
               </Button>
             )}
           </div>
@@ -455,9 +496,9 @@ function DeleteButton({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Удалить запись из расписания?</AlertDialogTitle>
+          <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
           <AlertDialogDescription>
-            Запись будет удалена из расписания. Действие необратимо.
+            Урок будет удалён. Действие необратимо.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -475,35 +516,35 @@ function DeleteButton({
 }
 
 interface EditFormProps {
-  entry: CalendarEntry;
-  lessons: Lesson[];
+  lesson: CalendarLesson;
   onCancel: () => void;
   onSaved: () => void;
-  onUpdate?: (id: string, data: UpdateData) => Promise<void> | void;
+  onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
 }
 
-function EditForm({ entry, lessons, onCancel, onSaved, onUpdate }: EditFormProps) {
-  const [date, setDate] = useState(entry.date.slice(0, 10));
-  const [startTime, setStartTime] = useState(entry.startTime);
-  const [lessonId, setLessonId] = useState(entry.lessonId ?? '');
-  const [notes, setNotes] = useState(entry.notes || '');
-  const [meetingUrl, setMeetingUrl] = useState(entry.meetingUrl || '');
+function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
+  const [title, setTitle] = useState(lesson.title);
+  const [date, setDate] = useState(lesson.date ? lesson.date.slice(0, 10) : '');
+  const [startTime, setStartTime] = useState(lesson.startTime ?? '');
+  const [status, setStatus] = useState<LessonStatus>(lesson.status);
+  const [notes, setNotes] = useState(lesson.notes || '');
+  const [meetingUrl, setMeetingUrl] = useState(lesson.meetingUrl || '');
   const [saving, setSaving] = useState(false);
 
-  const streamLessons = useMemo(
-    () => lessons.filter((l) => l.streamId === entry.streamId),
-    [lessons, entry.streamId],
-  );
+  // «Запланирован» требует даты — не даём сохранить без неё.
+  const plannedWithoutDate = status === 'planned' && !date;
+  const valid = title.trim() && !plannedWithoutDate;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onUpdate || !lessonId) return;
+    if (!onUpdate || !valid) return;
     setSaving(true);
     try {
-      await onUpdate(entry.id, {
-        date,
-        startTime,
-        lessonId,
+      await onUpdate(lesson.id, {
+        title: title.trim(),
+        date: date || null,
+        startTime: startTime || null,
+        status,
         notes: notes.trim() || null,
         meetingUrl: meetingUrl.trim() || null,
       });
@@ -515,68 +556,76 @@ function EditForm({ entry, lessons, onCancel, onSaved, onUpdate }: EditFormProps
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border bg-card p-3">
+      <Field>
+        <FieldLabel htmlFor={`edit-title-${lesson.id}`}>Название урока</FieldLabel>
+        <Input
+          id={`edit-title-${lesson.id}`}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field>
-          <FieldLabel htmlFor={`edit-date-${entry.id}`}>Дата</FieldLabel>
+          <FieldLabel htmlFor={`edit-date-${lesson.id}`}>Дата</FieldLabel>
           <Input
-            id={`edit-date-${entry.id}`}
+            id={`edit-date-${lesson.id}`}
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            required
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor={`edit-time-${entry.id}`}>Время начала</FieldLabel>
+          <FieldLabel htmlFor={`edit-time-${lesson.id}`}>Время начала</FieldLabel>
           <Input
-            id={`edit-time-${entry.id}`}
+            id={`edit-time-${lesson.id}`}
             type="time"
             value={startTime}
             onChange={(e) => setStartTime(e.target.value)}
-            required
           />
         </Field>
       </div>
       <Field>
-        <FieldLabel htmlFor={`edit-lesson-${entry.id}`}>Урок</FieldLabel>
-        {streamLessons.length > 0 ? (
-          <Select value={lessonId} onValueChange={setLessonId}>
-            <SelectTrigger id={`edit-lesson-${entry.id}`} className="w-full">
-              <SelectValue placeholder="Выберите урок" />
-            </SelectTrigger>
-            <SelectContent>
-              {streamLessons.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <p className="text-sm text-muted-foreground">В этом потоке нет уроков</p>
+        <FieldLabel htmlFor={`edit-status-${lesson.id}`}>Статус</FieldLabel>
+        <Select value={status} onValueChange={(v) => setStatus(v as LessonStatus)}>
+          <SelectTrigger id={`edit-status-${lesson.id}`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_ORDER.map((s) => (
+              <SelectItem key={s} value={s}>
+                {LESSON_STATUS_LABELS[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {plannedWithoutDate && (
+          <p className="text-xs text-destructive">
+            Для статуса «Запланирован» нужно указать дату.
+          </p>
         )}
       </Field>
       <Field>
-        <FieldLabel htmlFor={`edit-notes-${entry.id}`}>Тезисы</FieldLabel>
-        <Textarea
-          id={`edit-notes-${entry.id}`}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`edit-url-${entry.id}`}>Ссылка на созвон</FieldLabel>
+        <FieldLabel htmlFor={`edit-url-${lesson.id}`}>Ссылка на созвон</FieldLabel>
         <Input
-          id={`edit-url-${entry.id}`}
+          id={`edit-url-${lesson.id}`}
           type="url"
           value={meetingUrl}
           onChange={(e) => setMeetingUrl(e.target.value)}
           placeholder="https://zoom.us/j/..."
         />
       </Field>
+      <Field>
+        <FieldLabel htmlFor={`edit-notes-${lesson.id}`}>Тезисы</FieldLabel>
+        <Textarea
+          id={`edit-notes-${lesson.id}`}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+        />
+      </Field>
       <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={saving || !lessonId}>
+        <Button type="submit" size="sm" disabled={saving || !valid}>
           {saving && <Loader2 className="animate-spin" />}
           Сохранить
         </Button>
@@ -591,32 +640,24 @@ function EditForm({ entry, lessons, onCancel, onSaved, onUpdate }: EditFormProps
 interface CreateFormProps {
   defaultDate: string;
   streams: Stream[];
-  lessons: Lesson[];
-  onCreate?: (data: CreateData) => Promise<void> | void;
+  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onCancel: () => void;
   onCreated: () => void;
 }
 
-function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreated }: CreateFormProps) {
+function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: CreateFormProps) {
   const [streamId, setStreamId] = useState(streams[0]?.id ?? '');
+  const [title, setTitle] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [startTime, setStartTime] = useState('');
-  const [lessonId, setLessonId] = useState('');
+  const [status, setStatus] = useState<LessonStatus>('planned');
   const [notes, setNotes] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const streamLessons = useMemo(
-    () => lessons.filter((l) => l.streamId === streamId),
-    [lessons, streamId],
-  );
-
-  const valid = streamId && date && startTime && lessonId;
-
-  const onStreamChange = (value: string) => {
-    setStreamId(value);
-    setLessonId('');
-  };
+  // «Запланирован» требует даты.
+  const plannedWithoutDate = status === 'planned' && !date;
+  const valid = streamId && title.trim() && !plannedWithoutDate;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -625,11 +666,12 @@ function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreat
     try {
       await onCreate({
         streamId,
-        lessonId,
+        title: title.trim(),
         date,
-        startTime,
-        notes: notes.trim() || undefined,
-        meetingUrl: meetingUrl.trim() || undefined,
+        startTime: startTime || null,
+        status,
+        meetingUrl: meetingUrl.trim() || null,
+        notes: notes.trim() || null,
       });
       onCreated();
     } finally {
@@ -639,21 +681,33 @@ function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreat
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border bg-card p-3">
-      <p className="text-sm font-medium">Новое занятие</p>
+      <p className="text-sm font-medium">Новый урок</p>
+      {streams.length > 1 && (
+        <Field>
+          <FieldLabel htmlFor="new-stream">Поток</FieldLabel>
+          <Select value={streamId} onValueChange={setStreamId}>
+            <SelectTrigger id="new-stream" className="w-full">
+              <SelectValue placeholder="Выберите поток" />
+            </SelectTrigger>
+            <SelectContent>
+              {streams.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} {s.status === 'archived' ? '(архив)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
       <Field>
-        <FieldLabel htmlFor="new-stream">Поток</FieldLabel>
-        <Select value={streamId} onValueChange={onStreamChange}>
-          <SelectTrigger id="new-stream" className="w-full">
-            <SelectValue placeholder="Выберите поток" />
-          </SelectTrigger>
-          <SelectContent>
-            {streams.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name} {s.status === 'archived' ? '(архив)' : ''}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <FieldLabel htmlFor="new-title">Название урока</FieldLabel>
+        <Input
+          id="new-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Название нового урока"
+          required
+        />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field>
@@ -663,7 +717,6 @@ function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreat
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            required
           />
         </Field>
         <Field>
@@ -673,38 +726,28 @@ function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreat
             type="time"
             value={startTime}
             onChange={(e) => setStartTime(e.target.value)}
-            required
           />
         </Field>
       </div>
       <Field>
-        <FieldLabel htmlFor="new-lesson">Урок</FieldLabel>
-        {streamLessons.length > 0 ? (
-          <Select value={lessonId} onValueChange={setLessonId}>
-            <SelectTrigger id="new-lesson" className="w-full">
-              <SelectValue placeholder="Выберите урок" />
-            </SelectTrigger>
-            <SelectContent>
-              {streamLessons.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <p className="text-sm text-muted-foreground">В этом потоке нет уроков</p>
+        <FieldLabel htmlFor="new-status">Статус</FieldLabel>
+        <Select value={status} onValueChange={(v) => setStatus(v as LessonStatus)}>
+          <SelectTrigger id="new-status" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_ORDER.map((s) => (
+              <SelectItem key={s} value={s}>
+                {LESSON_STATUS_LABELS[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {plannedWithoutDate && (
+          <p className="text-xs text-destructive">
+            Для статуса «Запланирован» нужно указать дату.
+          </p>
         )}
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="new-notes">Тезисы</FieldLabel>
-        <Textarea
-          id="new-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Краткое описание того, что будет на занятии..."
-          rows={3}
-        />
       </Field>
       <Field>
         <FieldLabel htmlFor="new-url">Ссылка на созвон</FieldLabel>
@@ -714,6 +757,16 @@ function CreateForm({ defaultDate, streams, lessons, onCreate, onCancel, onCreat
           value={meetingUrl}
           onChange={(e) => setMeetingUrl(e.target.value)}
           placeholder="https://zoom.us/j/..."
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="new-notes">Тезисы</FieldLabel>
+        <Textarea
+          id="new-notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Краткое описание того, что будет на уроке..."
+          rows={3}
         />
       </Field>
       <div className="flex items-center gap-2">

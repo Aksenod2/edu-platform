@@ -18,7 +18,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field';
-import { DateTimePicker } from '@/components/datetime-picker';
 import {
   Sheet,
   SheetContent,
@@ -63,8 +62,10 @@ import {
   getStreams,
   getTeachers,
   fileDownloadUrl,
+  LESSON_STATUS_LABELS,
   type Lesson,
   type LessonMaterial,
+  type LessonStatus,
   type Stream,
   type Teacher,
 } from '@/lib/api';
@@ -75,10 +76,11 @@ type LessonFormData = {
   videoUrl: string;
   summary: string;
   notes: string;
-  publishAt: string;
-  scheduledAt: string;
+  status: LessonStatus;
+  date: string;
+  startTime: string;
+  meetingUrl: string;
   sortOrder: number;
-  status: 'draft' | 'published' | 'closed';
   teacherIds: string[];
 };
 
@@ -87,12 +89,16 @@ const emptyForm: LessonFormData = {
   videoUrl: '',
   summary: '',
   notes: '',
-  publishAt: '',
-  scheduledAt: '',
-  sortOrder: 0,
   status: 'draft',
+  date: '',
+  startTime: '',
+  meetingUrl: '',
+  sortOrder: 0,
   teacherIds: [],
 };
+
+// Все 4 статуса в порядке для Select.
+const STATUS_ORDER: LessonStatus[] = ['draft', 'planned', 'done', 'cancelled'];
 
 function lessonToForm(lesson: Lesson): LessonFormData {
   return {
@@ -100,12 +106,29 @@ function lessonToForm(lesson: Lesson): LessonFormData {
     videoUrl: lesson.videoUrl || '',
     summary: lesson.summary || '',
     notes: lesson.notes || '',
-    publishAt: lesson.publishAt ? lesson.publishAt.slice(0, 16) : '',
-    scheduledAt: lesson.scheduledAt ? lesson.scheduledAt.slice(0, 16) : '',
-    sortOrder: lesson.sortOrder,
     status: lesson.status,
+    date: lesson.date ? lesson.date.slice(0, 10) : '',
+    startTime: lesson.startTime ?? '',
+    meetingUrl: lesson.meetingUrl ?? '',
+    sortOrder: lesson.sortOrder,
     teacherIds: (lesson.teachers ?? []).map((t) => t.id),
   };
+}
+
+/** Дата "YYYY-MM-DD" в формате "ДД.ММ.ГГГГ" (без UTC-сдвига). */
+function formatLessonDate(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU');
+}
+
+/** Дата урока уже прошла (для нуджа «пора отметить проведённым»). */
+function isPastDate(date: string): boolean {
+  if (!date) return false;
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  const d = new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d.getTime() < today.getTime();
 }
 
 // Инициалы из имени для аватара преподавателя
@@ -484,16 +507,11 @@ function LessonVideoSection({
   );
 }
 
-const statusLabels: Record<string, string> = {
-  draft: 'Черновик',
-  published: 'Опубликован',
-  closed: 'Закрыт',
-};
-
-const statusBadgeVariant: Record<string, 'secondary' | 'default' | 'destructive'> = {
+const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
   draft: 'secondary',
-  published: 'default',
-  closed: 'destructive',
+  planned: 'default',
+  done: 'outline',
+  cancelled: 'destructive',
 };
 
 export function LessonsManager({ streamId }: { streamId: string }) {
@@ -616,6 +634,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
       setError('Выберите поток для урока');
       return;
     }
+    if (form.status === 'planned' && !form.date) {
+      setError('Для статуса «Запланирован» нужно указать дату урока');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -625,9 +647,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         videoUrl: form.videoUrl.trim() || undefined,
         summary: form.summary || undefined,
         notes: form.notes || undefined,
-        publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
-        // Наивная локальная строка "YYYY-MM-DDTHH:MM" — без перевода в ISO/UTC
-        scheduledAt: form.scheduledAt ? form.scheduledAt : undefined,
+        status: form.status,
+        date: form.date || null,
+        startTime: form.startTime || null,
+        meetingUrl: form.meetingUrl.trim() || null,
         sortOrder: form.sortOrder,
         teacherIds: form.teacherIds,
       });
@@ -655,18 +678,24 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !viewLesson || !editForm.title.trim()) return;
+    if (editForm.status === 'planned' && !editForm.date) {
+      setError('Для статуса «Запланирован» нужно указать дату урока');
+      return;
+    }
     setSavingEdit(true);
     setError('');
     try {
       const { lesson } = await updateLesson(accessToken, viewLesson.id, {
         title: editForm.title.trim(),
-        videoUrl: editForm.videoUrl.trim() || undefined,
-        summary: editForm.summary || undefined,
-        notes: editForm.notes || undefined,
+        // Шлём поля всегда (даже пустыми), иначе очистку не сохранить:
+        // пустая строка на бэке превращается в null.
+        videoUrl: editForm.videoUrl.trim(),
+        summary: editForm.summary,
+        notes: editForm.notes,
         status: editForm.status,
-        publishAt: editForm.publishAt ? new Date(editForm.publishAt).toISOString() : null,
-        // Наивная локальная строка "YYYY-MM-DDTHH:MM"; null — чтобы можно было очистить
-        scheduledAt: editForm.scheduledAt ? editForm.scheduledAt : null,
+        date: editForm.date || null,
+        startTime: editForm.startTime || null,
+        meetingUrl: editForm.meetingUrl.trim() || null,
         sortOrder: editForm.sortOrder,
         teacherIds: editForm.teacherIds,
       });
@@ -895,17 +924,69 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                   </FieldDescription>
                 </Field>
 
+                <Field>
+                  <FieldLabel htmlFor="lesson-status">Статус</FieldLabel>
+                  <Select
+                    value={form.status}
+                    onValueChange={(v) =>
+                      setForm({ ...form, status: v as LessonStatus })
+                    }
+                  >
+                    <SelectTrigger id="lesson-status" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_ORDER.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {LESSON_STATUS_LABELS[s]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Черновик скрыт от студентов; остальные статусы видны. «Запланирован»
+                    требует даты.
+                  </FieldDescription>
+                  {form.status === 'planned' && !form.date && (
+                    <p className="text-xs text-destructive">
+                      Для статуса «Запланирован» нужно указать дату.
+                    </p>
+                  )}
+                </Field>
+
                 <div className="flex flex-col gap-4 sm:flex-row">
                   <Field className="flex-1">
-                    <FieldLabel htmlFor="lesson-publish">Дата публикации</FieldLabel>
-                    <DateTimePicker
-                      id="lesson-publish"
-                      value={form.publishAt}
-                      onChange={(v) => setForm({ ...form, publishAt: v })}
+                    <FieldLabel htmlFor="lesson-date">Дата</FieldLabel>
+                    <Input
+                      id="lesson-date"
+                      type="date"
+                      value={form.date}
+                      onChange={(e) => setForm({ ...form, date: e.target.value })}
                     />
-                    <FieldDescription>
-                      Когда черновик автоматически станет опубликованным.
-                    </FieldDescription>
+                    <FieldDescription>Появится в календаре уроков.</FieldDescription>
+                  </Field>
+
+                  <Field className="sm:w-40">
+                    <FieldLabel htmlFor="lesson-time">Время начала</FieldLabel>
+                    <Input
+                      id="lesson-time"
+                      type="time"
+                      value={form.startTime}
+                      onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                    />
+                  </Field>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row">
+                  <Field className="flex-1">
+                    <FieldLabel htmlFor="lesson-meeting">Ссылка на созвон</FieldLabel>
+                    <Input
+                      id="lesson-meeting"
+                      type="url"
+                      value={form.meetingUrl}
+                      onChange={(e) => setForm({ ...form, meetingUrl: e.target.value })}
+                      placeholder="https://zoom.us/j/..."
+                    />
                   </Field>
 
                   <Field className="sm:w-32">
@@ -921,18 +1002,6 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     <FieldDescription>Порядок урока в списке потока.</FieldDescription>
                   </Field>
                 </div>
-
-                <Field>
-                  <FieldLabel htmlFor="lesson-scheduled">Дата и время занятия</FieldLabel>
-                  <DateTimePicker
-                    id="lesson-scheduled"
-                    value={form.scheduledAt}
-                    onChange={(v) => setForm({ ...form, scheduledAt: v })}
-                  />
-                  <FieldDescription>
-                    Появится в расписании и календаре.
-                  </FieldDescription>
-                </Field>
 
                 <Field>
                   <FieldLabel>Преподаватели</FieldLabel>
@@ -978,7 +1047,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
               <TableHead>Преподаватели</TableHead>
               <TableHead>Видео</TableHead>
               <TableHead>Статус</TableHead>
-              <TableHead>Публикация</TableHead>
+              <TableHead>Дата</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
@@ -1031,15 +1100,12 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
-                      {statusLabels[lesson.status]}
+                      {LESSON_STATUS_LABELS[lesson.status]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground tabular-nums">
-                    {lesson.publishAt
-                      ? new Date(lesson.publishAt).toLocaleString('ru-RU', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })
+                    {lesson.date
+                      ? `${formatLessonDate(lesson.date)}${lesson.startTime ? ` · ${lesson.startTime}` : ''}`
                       : '—'}
                   </TableCell>
                   <TableCell className="text-right">
@@ -1167,29 +1233,70 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="draft">Черновик</SelectItem>
-                            <SelectItem value="published">Опубликован</SelectItem>
-                            <SelectItem value="closed">Закрыт</SelectItem>
+                            {STATUS_ORDER.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {LESSON_STATUS_LABELS[s]}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FieldDescription>
-                          Черновик не виден студентам; опубликован — доступен в уроках и материалах.
+                          Черновик скрыт от студентов; остальные статусы видны.
+                          «Запланирован» требует даты.
                         </FieldDescription>
+                        {editForm.status === 'planned' && !editForm.date && (
+                          <p className="text-xs text-destructive">
+                            Для статуса «Запланирован» нужно указать дату.
+                          </p>
+                        )}
+                        {editForm.status === 'planned' &&
+                          editForm.date &&
+                          isPastDate(editForm.date) && (
+                            <p className="text-xs text-muted-foreground">
+                              Дата урока уже прошла — возможно, пора отметить его проведённым.
+                            </p>
+                          )}
                       </Field>
 
                       <div className="flex flex-col gap-4 sm:flex-row">
                         <Field className="flex-1">
-                          <FieldLabel htmlFor="edit-publish">Дата публикации</FieldLabel>
-                          <DateTimePicker
-                            id="edit-publish"
-                            value={editForm.publishAt}
-                            onChange={(v) =>
-                              setEditForm({ ...editForm, publishAt: v })
+                          <FieldLabel htmlFor="edit-date">Дата</FieldLabel>
+                          <Input
+                            id="edit-date"
+                            type="date"
+                            value={editForm.date}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, date: e.target.value })
                             }
                           />
-                          <FieldDescription>
-                            Когда черновик автоматически станет опубликованным.
-                          </FieldDescription>
+                          <FieldDescription>Появится в календаре уроков.</FieldDescription>
+                        </Field>
+
+                        <Field className="sm:w-32">
+                          <FieldLabel htmlFor="edit-time">Время начала</FieldLabel>
+                          <Input
+                            id="edit-time"
+                            type="time"
+                            value={editForm.startTime}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, startTime: e.target.value })
+                            }
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="flex flex-col gap-4 sm:flex-row">
+                        <Field className="flex-1">
+                          <FieldLabel htmlFor="edit-meeting">Ссылка на созвон</FieldLabel>
+                          <Input
+                            id="edit-meeting"
+                            type="url"
+                            value={editForm.meetingUrl}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, meetingUrl: e.target.value })
+                            }
+                            placeholder="https://zoom.us/j/..."
+                          />
                         </Field>
 
                         <Field className="sm:w-28">
@@ -1208,20 +1315,6 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           <FieldDescription>Порядок урока в списке потока.</FieldDescription>
                         </Field>
                       </div>
-
-                      <Field>
-                        <FieldLabel htmlFor="edit-scheduled">Дата и время занятия</FieldLabel>
-                        <DateTimePicker
-                          id="edit-scheduled"
-                          value={editForm.scheduledAt}
-                          onChange={(v) =>
-                            setEditForm({ ...editForm, scheduledAt: v })
-                          }
-                        />
-                        <FieldDescription>
-                          Появится в расписании и календаре.
-                        </FieldDescription>
-                      </Field>
 
                       <Field>
                         <FieldLabel>Преподаватели</FieldLabel>
@@ -1258,12 +1351,20 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     <dl className="flex flex-col gap-5 text-sm">
                       <div className="flex flex-col gap-1">
                         <dt className="text-muted-foreground">Статус</dt>
-                        <dd>
+                        <dd className="flex flex-col gap-1">
                           <Badge
                             variant={statusBadgeVariant[viewLesson.status] ?? 'default'}
+                            className="w-fit"
                           >
-                            {statusLabels[viewLesson.status]}
+                            {LESSON_STATUS_LABELS[viewLesson.status]}
                           </Badge>
+                          {viewLesson.status === 'planned' &&
+                            viewLesson.date &&
+                            isPastDate(viewLesson.date) && (
+                              <span className="text-xs text-muted-foreground">
+                                Дата урока уже прошла — возможно, пора отметить его проведённым.
+                              </span>
+                            )}
                         </dd>
                       </div>
 
@@ -1371,26 +1472,29 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </div>
 
                       <div className="flex flex-col gap-1">
-                        <dt className="text-muted-foreground">Дата публикации</dt>
+                        <dt className="text-muted-foreground">Дата занятия</dt>
                         <dd className="tabular-nums">
-                          {viewLesson.publishAt
-                            ? new Date(viewLesson.publishAt).toLocaleString('ru-RU', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })
+                          {viewLesson.date
+                            ? `${formatLessonDate(viewLesson.date)}${viewLesson.startTime ? ` · ${viewLesson.startTime}` : ''}`
                             : '—'}
                         </dd>
                       </div>
 
                       <div className="flex flex-col gap-1">
-                        <dt className="text-muted-foreground">Дата занятия</dt>
-                        <dd className="tabular-nums">
-                          {viewLesson.scheduledAt
-                            ? new Date(viewLesson.scheduledAt).toLocaleString('ru-RU', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })
-                            : '—'}
+                        <dt className="text-muted-foreground">Ссылка на созвон</dt>
+                        <dd>
+                          {viewLesson.meetingUrl ? (
+                            <a
+                              href={viewLesson.meetingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="break-all text-primary underline underline-offset-4"
+                            >
+                              {viewLesson.meetingUrl}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </dd>
                       </div>
 

@@ -471,7 +471,15 @@ export default function StudentProfilePage() {
         </div>
 
         {/* ── Tab content ── */}
-        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-6xl w-full mx-auto">
+        {/* Чат (Сообщения) — во всю ширину до краёв (вычитаем паддинги макета);
+            Профиль/Задания — по центру с обычными отступами. */}
+        <div
+          className={`flex flex-1 flex-col min-h-0 ${
+            activeTab === 'thread'
+              ? '-mx-4 -mb-4 md:-mx-6 md:-mb-6'
+              : 'overflow-auto max-w-6xl w-full mx-auto'
+          }`}
+        >
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
