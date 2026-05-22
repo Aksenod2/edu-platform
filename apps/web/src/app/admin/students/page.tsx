@@ -55,6 +55,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 function initials(name: string) {
   return name
@@ -80,6 +90,10 @@ export default function StudentsPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // Подтверждения деструктивных действий
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [studentToReset, setStudentToReset] = useState<Student | null>(null);
 
   const fetchStudents = useCallback(async () => {
     if (!accessToken) return;
@@ -135,7 +149,6 @@ export default function StudentsPage() {
 
   const handleDelete = async (student: Student) => {
     if (!accessToken) return;
-    if (!confirm(`Удалить ученика ${student.name}?`)) return;
     try {
       await deleteStudent(accessToken, student.id);
       showMessage('Ученик удалён');
@@ -157,7 +170,6 @@ export default function StudentsPage() {
 
   const handleResetPassword = async (student: Student) => {
     if (!accessToken) return;
-    if (!confirm(`Сбросить пароль для ${student.name}?`)) return;
     try {
       const data = await resetStudentPassword(accessToken, student.id);
       showMessage(`Временный пароль: ${data.tempPassword}`);
@@ -352,12 +364,12 @@ export default function StudentsPage() {
                             <Mail />
                             Invite
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => handleResetPassword(s)}>
+                          <DropdownMenuItem onSelect={() => setStudentToReset(s)}>
                             <KeyRound />
                             Сброс пароля
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem variant="destructive" onSelect={() => handleDelete(s)}>
+                          <DropdownMenuItem variant="destructive" onSelect={() => setStudentToDelete(s)}>
                             <Trash2 />
                             Удалить
                           </DropdownMenuItem>
@@ -371,6 +383,52 @@ export default function StudentsPage() {
           </TableBody>
         </Table>
       </div>
+
+      <AlertDialog
+        open={!!studentToDelete}
+        onOpenChange={(open) => { if (!open) setStudentToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить ученика?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {studentToDelete && `Ученик ${studentToDelete.name} будет удалён.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (studentToDelete) handleDelete(studentToDelete); }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!studentToReset}
+        onOpenChange={(open) => { if (!open) setStudentToReset(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Сбросить пароль?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {studentToReset && `Для ученика ${studentToReset.name} будет сгенерирован новый временный пароль.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (studentToReset) handleResetPassword(studentToReset); }}
+            >
+              Сбросить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

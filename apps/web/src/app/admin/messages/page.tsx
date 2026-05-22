@@ -68,7 +68,7 @@ export default function AdminThreadsPage() {
   const selectedThread = threads.find((t) => t.studentId === selected);
 
   return (
-    <div className="flex h-[calc(100vh-var(--header-height))] flex-col md:flex-row">
+    <div className="flex flex-1 min-h-0 flex-col md:flex-row">
       {/* Left: conversation list */}
       <div
         className={cn(

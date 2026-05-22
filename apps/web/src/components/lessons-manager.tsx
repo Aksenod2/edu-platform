@@ -25,6 +25,16 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -190,6 +200,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const [editForm, setEditForm] = useState<LessonFormData>(emptyForm);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Подтверждение удаления урока
+  const [lessonToDelete, setLessonToDelete] = useState<Lesson | null>(null);
+
   const fetchData = useCallback(async () => {
     if (!accessToken || !streamId) return;
     setLoadingLessons(true);
@@ -305,7 +318,6 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
-    if (!confirm('Удалить этот урок? Действие необратимо.')) return;
     setError('');
     try {
       await deleteLesson(accessToken, id);
@@ -544,7 +556,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           className="size-8 text-destructive hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDelete(lesson.id);
+                            setLessonToDelete(lesson);
                           }}
                         >
                           <Trash2 />
@@ -806,7 +818,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       <Button
                         variant="ghost"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(viewLesson.id)}
+                        onClick={() => setLessonToDelete(viewLesson)}
                       >
                         <Trash2 />
                         Удалить
@@ -819,6 +831,29 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           )}
         </SheetContent>
       </Sheet>
+
+      <AlertDialog
+        open={!!lessonToDelete}
+        onOpenChange={(open) => { if (!open) setLessonToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {lessonToDelete && `Урок «${lessonToDelete.title}» будет удалён. Действие необратимо.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (lessonToDelete) handleDelete(lessonToDelete.id); }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

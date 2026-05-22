@@ -46,6 +46,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // Инициалы из имени для аватара преподавателя
 function initials(name: string): string {
@@ -74,6 +84,9 @@ export default function StreamsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Подтверждение архивирования потока
+  const [streamToArchive, setStreamToArchive] = useState<Stream | null>(null);
 
   const fetchStreams = useCallback(async () => {
     if (!accessToken) return;
@@ -130,7 +143,6 @@ export default function StreamsPage() {
 
   const handleArchive = async (id: string) => {
     if (!accessToken) return;
-    if (!confirm('Вы уверены, что хотите архивировать этот поток?')) return;
     setError('');
     try {
       await archiveStream(accessToken, id);
@@ -380,7 +392,7 @@ export default function StreamsPage() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 variant="destructive"
-                                onSelect={() => handleArchive(stream.id)}
+                                onSelect={() => setStreamToArchive(stream)}
                               >
                                 <Archive />
                                 Архивировать
@@ -397,6 +409,29 @@ export default function StreamsPage() {
           </TableBody>
         </Table>
       </div>
+
+      <AlertDialog
+        open={!!streamToArchive}
+        onOpenChange={(open) => { if (!open) setStreamToArchive(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Архивировать поток?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {streamToArchive && `Поток «${streamToArchive.name}» будет перемещён в архив.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (streamToArchive) handleArchive(streamToArchive.id); }}
+            >
+              Архивировать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -17,6 +17,17 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -418,25 +429,44 @@ function DeleteButton({
   onDelete?: (id: string) => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const handleConfirm = async () => {
+    if (!onDelete) return;
+    setBusy(true);
+    try {
+      await onDelete(id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <Button
-      variant="destructive"
-      size="sm"
-      disabled={busy}
-      onClick={async () => {
-        if (!onDelete) return;
-        if (!confirm('Удалить запись из расписания?')) return;
-        setBusy(true);
-        try {
-          await onDelete(id);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {busy && <Loader2 className="animate-spin" />}
-      Удалить
-    </Button>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm" disabled={busy}>
+          {busy && <Loader2 className="animate-spin" />}
+          Удалить
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Удалить запись из расписания?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Запись будет удалена из расписания. Действие необратимо.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Отмена</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-white hover:bg-destructive/90"
+            onClick={handleConfirm}
+          >
+            Удалить
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

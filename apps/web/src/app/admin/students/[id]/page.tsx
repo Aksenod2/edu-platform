@@ -330,7 +330,7 @@ export default function StudentProfilePage() {
 
   return (
     <>
-      <div className="flex flex-col" style={{ height: 'calc(100vh - var(--header-height))' }}>
+      <div className="flex flex-1 flex-col min-h-0">
 
         {/* ── Header ── */}
         <div className="px-4 pt-4 max-w-[900px] w-full mx-auto">
