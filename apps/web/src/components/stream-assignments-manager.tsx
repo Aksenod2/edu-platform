@@ -491,13 +491,13 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                 {/* Add URL */}
                 <div className="flex flex-col gap-1">
                   <div className="text-xs text-muted-foreground">Добавить ссылку</div>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-col gap-1.5 sm:flex-row">
                     <Input
                       type="text"
                       value={newUrlName}
                       onChange={(e) => setNewUrlName(e.target.value)}
                       placeholder="Название (опционально)"
-                      className="w-40 shrink-0"
+                      className="w-full sm:w-40 sm:shrink-0"
                     />
                     <Input
                       type="url"

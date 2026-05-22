@@ -157,7 +157,8 @@ export default function AdminThreadsPage() {
     <Tabs defaultValue="students" className="flex flex-1 min-h-0 flex-col gap-0">
       <div className="border-b px-4 py-3">
         <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
-        <TabsList>
+        <div className="-mx-1 overflow-x-auto px-1">
+          <TabsList>
           <TabsTrigger value="students">Ученики</TabsTrigger>
           <TabsTrigger value="staff">
             Штаб
@@ -183,7 +184,8 @@ export default function AdminThreadsPage() {
               </Badge>
             )}
           </TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
       </div>
 
       <TabsContent value="students" className="min-h-0 flex-1">

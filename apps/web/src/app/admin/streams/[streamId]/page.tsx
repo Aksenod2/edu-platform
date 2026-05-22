@@ -161,13 +161,15 @@ export default function StreamDetailPage() {
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Обзор</TabsTrigger>
-          <TabsTrigger value="students">Ученики</TabsTrigger>
-          <TabsTrigger value="lessons">Уроки</TabsTrigger>
-          <TabsTrigger value="assignments">Задания</TabsTrigger>
-          <TabsTrigger value="schedule">Расписание</TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1">
+          <TabsList>
+            <TabsTrigger value="overview">Обзор</TabsTrigger>
+            <TabsTrigger value="students">Ученики</TabsTrigger>
+            <TabsTrigger value="lessons">Уроки</TabsTrigger>
+            <TabsTrigger value="assignments">Задания</TabsTrigger>
+            <TabsTrigger value="schedule">Расписание</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="mt-4">
           <OverviewTab stream={stream} />

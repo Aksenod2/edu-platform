@@ -670,14 +670,14 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2">
           {stream && (
-            <h2 className="text-lg font-semibold tracking-tight">{stream.name}</h2>
+            <h2 className="truncate text-lg font-semibold tracking-tight">{stream.name}</h2>
           )}
-          {isArchived && <Badge variant="destructive">Архивный поток</Badge>}
+          {isArchived && <Badge variant="destructive" className="shrink-0">Архивный поток</Badge>}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-4">
           <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
             <Checkbox
               checked={mineOnly}

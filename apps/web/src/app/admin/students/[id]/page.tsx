@@ -407,11 +407,13 @@ export default function StudentProfilePage() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="mt-4">
-            <TabsList>
-              <TabsTrigger value="profile">Профиль</TabsTrigger>
-              <TabsTrigger value="assignments">Задания</TabsTrigger>
-              <TabsTrigger value="thread">Тред</TabsTrigger>
-            </TabsList>
+            <div className="-mx-1 overflow-x-auto px-1">
+              <TabsList>
+                <TabsTrigger value="profile">Профиль</TabsTrigger>
+                <TabsTrigger value="assignments">Задания</TabsTrigger>
+                <TabsTrigger value="thread">Тред</TabsTrigger>
+              </TabsList>
+            </div>
           </Tabs>
         </div>
 

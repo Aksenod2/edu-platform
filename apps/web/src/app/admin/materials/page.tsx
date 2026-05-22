@@ -127,7 +127,7 @@ export default function MaterialsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-5">
+      <div className="flex flex-wrap gap-3 mb-5">
         <Select value={streamFilter || 'all'} onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}>
           <SelectTrigger className="w-full max-w-xs">
             <SelectValue placeholder="Все потоки" />
