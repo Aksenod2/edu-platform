@@ -35,6 +35,7 @@ import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { StudentOnboarding } from '@/components/student-onboarding';
 
 type ScheduleItem = ScheduleEntry & { streamName: string };
 
@@ -249,6 +250,15 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : data ? (
         <>
+          {/* Онбординг — чек-лист «Первые шаги» (исчезает, когда пройден/скрыт) */}
+          {user && (
+            <StudentOnboarding
+              userId={user.id}
+              questionnaireCompleted={data.questionnaireCompleted}
+              hasSubmitted={data.submittedCount > 0}
+            />
+          )}
+
           {/* KPI strip */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
