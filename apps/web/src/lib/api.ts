@@ -99,6 +99,34 @@ export async function changePassword(
   });
 }
 
+export interface MeUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'student';
+  isActive: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+}
+
+// Самостоятельное обновление профиля текущего пользователя.
+// При смене пароля сервер возвращает новый accessToken (старые сессии инвалидируются).
+export async function updateMe(
+  accessToken: string,
+  data: {
+    name?: string;
+    email?: string;
+    currentPassword?: string;
+    newPassword?: string;
+  },
+): Promise<{ user: MeUser; accessToken?: string }> {
+  return request('/users/me', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function forgotPassword(email: string): Promise<{ message: string }> {
   return request('/auth/forgot-password', {
     method: 'POST',
