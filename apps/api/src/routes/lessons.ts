@@ -18,6 +18,17 @@ export interface LessonMaterial {
   url?: string;
 }
 
+// Подписанный временный URL загруженного видео урока по videoKey (или null).
+// Если videoKey пуст — видео загружено не было (есть только внешняя ссылка videoUrl).
+async function videoFileUrlFor(videoKey: string | null | undefined): Promise<string | null> {
+  if (!videoKey) return null;
+  try {
+    return await getFileUrl(videoKey);
+  } catch {
+    return null;
+  }
+}
+
 // Ре-подписывает временные url по s3Key для всех материалов урока.
 async function regenerateLessonMaterialUrls(
   materials: LessonMaterial[],
@@ -65,6 +76,17 @@ function isPdfOrMarkdown(fileName: string, mimeType: string): boolean {
     return true;
   }
   return PDF_MD_MIME_TYPES.has((mimeType || '').toLowerCase());
+}
+
+// Допускаем видеофайлы по расширению И mime. Проверяем оба, т.к. браузеры/ОС
+// иногда отдают пустой/неточный mime для .mov/.m4v.
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v'];
+
+function isVideoFile(fileName: string, mimeType: string): boolean {
+  const lowerName = (fileName || '').toLowerCase();
+  const okExt = VIDEO_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+  const okMime = (mimeType || '').toLowerCase().startsWith('video/');
+  return okExt && okMime;
 }
 
 // include-конфиг для подгрузки преподавателей урока и его записи расписания.
@@ -217,6 +239,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         const base = shapeLesson(lesson);
         return {
           ...base,
+          videoFileUrl: await videoFileUrlFor(lesson.videoKey),
           materials: await regenerateLessonMaterialUrls(
             (lesson.materials as unknown as LessonMaterial[]) || [],
           ),
@@ -264,8 +287,9 @@ export async function lessonRoutes(app: FastifyInstance) {
     const materials = await regenerateLessonMaterialUrls(
       (lesson.materials as unknown as LessonMaterial[]) || [],
     );
+    const videoFileUrl = await videoFileUrlFor(lesson.videoKey);
 
-    return { lesson: { ...shapeLesson(lesson), materials } };
+    return { lesson: { ...shapeLesson(lesson), materials, videoFileUrl } };
   });
 
   // POST /lessons — создание урока (admin)
@@ -430,8 +454,9 @@ export async function lessonRoutes(app: FastifyInstance) {
     const materials = await regenerateLessonMaterialUrls(
       (lesson.materials as unknown as LessonMaterial[]) || [],
     );
+    const videoFileUrl = await videoFileUrlFor(lesson.videoKey);
 
-    return { lesson: { ...shapeLesson(lesson), materials } };
+    return { lesson: { ...shapeLesson(lesson), materials, videoFileUrl } };
   });
 
   // POST /lessons/:id/materials — загрузка файла-материала урока (admin).
@@ -528,6 +553,102 @@ export async function lessonRoutes(app: FastifyInstance) {
     const materials = await regenerateLessonMaterialUrls(nextMaterials);
 
     return { materials };
+  });
+
+  // POST /lessons/:id/video — загрузка видеозаписи урока (admin).
+  // Принимается ОДИН видеофайл (mp4/webm/mov/m4v, mime video/*). Файл кладётся в
+  // FileStorage (folder 'lesson-videos'), ключ пишется в lesson.videoKey.
+  // Возвращает обновлённый урок (с подписанным videoFileUrl).
+  //
+  // ВНИМАНИЕ: лимит размера НЕ повышаем — действует общий multipart-лимит
+  // MAX_FILE_SIZE (50МБ) из server.ts. На текущем backend (файлы в PostgreSQL)
+  // большие видео не загрузить — фича рассчитана на небольшие файлы/тест.
+  // TODO: лимит поднять и перейти на presigned direct upload, когда подключат
+  // объектное хранилище (S3).
+  app.post('/lessons/:id/video', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    if (!request.isMultipart()) {
+      return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
+    }
+
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: 'Файл не найден в запросе' });
+    }
+
+    const originalName = data.filename || 'video';
+    const mimeType = data.mimetype || 'application/octet-stream';
+
+    if (!isVideoFile(originalName, mimeType)) {
+      // Слив потока, чтобы не подвиснуть на необработанном файле.
+      data.file.resume();
+      return reply.status(400).send({ error: 'Поддерживаются видеофайлы (MP4)' });
+    }
+
+    const chunks: Buffer[] = [];
+    await pipeline(
+      data.file,
+      new Writable({
+        write(chunk, _enc, cb) {
+          chunks.push(chunk);
+          cb();
+        },
+      }),
+    );
+
+    const buffer = Buffer.concat(chunks);
+
+    let uploaded: { key: string; url: string; size: number };
+    try {
+      uploaded = await uploadFile(buffer, originalName, mimeType, 'lesson-videos');
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+    }
+
+    const updated = await prisma.lesson.update({
+      where: { id },
+      data: { videoKey: uploaded.key },
+      include: teacherInclude,
+    });
+
+    const materials = await regenerateLessonMaterialUrls(
+      (updated.materials as unknown as LessonMaterial[]) || [],
+    );
+    const videoFileUrl = await videoFileUrlFor(updated.videoKey);
+
+    return reply.status(201).send({ lesson: { ...shapeLesson(updated), materials, videoFileUrl } });
+  });
+
+  // DELETE /lessons/:id/video — удаление загруженного видео урока (admin).
+  // Обнуляем videoKey; физическое удаление объекта не обязательно (как у materials).
+  app.delete('/lessons/:id/video', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    const updated = await prisma.lesson.update({
+      where: { id },
+      data: { videoKey: null },
+      include: teacherInclude,
+    });
+
+    const materials = await regenerateLessonMaterialUrls(
+      (updated.materials as unknown as LessonMaterial[]) || [],
+    );
+    const videoFileUrl = await videoFileUrlFor(updated.videoKey);
+
+    return { lesson: { ...shapeLesson(updated), materials, videoFileUrl } };
   });
 
   // DELETE /lessons/:id — удаление урока (admin)

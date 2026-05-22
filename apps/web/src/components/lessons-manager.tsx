@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { Loader2, Plus, Video, Pencil, Trash2, FileText, Paperclip, X } from 'lucide-react';
+import { Loader2, Plus, Video, Pencil, Trash2, FileText, Paperclip, X, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -58,6 +58,8 @@ import {
   deleteLesson,
   uploadLessonMaterial,
   deleteLessonMaterial,
+  uploadLessonVideo,
+  deleteLessonVideo,
   getStreams,
   getTeachers,
   type Lesson,
@@ -332,6 +334,140 @@ function LessonMaterialsSection({
   );
 }
 
+// Допустимые расширения видео (валидация дублируется на бэке).
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v'];
+
+// Секция «Видеозапись урока»: ОДИН файл (в отличие от материалов). Можно
+// загрузить/заменить/удалить видео. Внешняя ссылка videoUrl — отдельное поле
+// формы рядом, как альтернатива загрузке.
+function LessonVideoSection({
+  lessonId,
+  hasVideo,
+  onChange,
+}: {
+  lessonId: string;
+  hasVideo: boolean;
+  onChange: (lesson: Lesson) => void;
+}) {
+  const { accessToken } = useAuth();
+  const [uploading, setUploading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    if (!accessToken) return;
+    // Проверка формата на фронте. Главная валидация — на бэке.
+    const name = file.name.toLowerCase();
+    const okExt = VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+    if (!okExt) {
+      toast.error('Поддерживаются видеофайлы (MP4)');
+      return;
+    }
+    setUploading(true);
+    try {
+      const { lesson } = await uploadLessonVideo(accessToken, lessonId, file);
+      onChange(lesson);
+      toast.success(hasVideo ? 'Видео заменено' : 'Видео загружено');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки видео');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!accessToken) return;
+    try {
+      const { lesson } = await deleteLessonVideo(accessToken, lessonId);
+      onChange(lesson);
+      toast.success('Видео удалено');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления');
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
+      <FieldLabel>Видеозапись урока</FieldLabel>
+
+      {hasVideo ? (
+        <div className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm">
+          <Film className="size-4 shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate text-foreground">Видео загружено</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 shrink-0 text-destructive hover:text-destructive"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <X className="size-4" />
+            <span className="sr-only">Удалить видео</span>
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Видео не загружено.</p>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-muted-foreground">
+          {hasVideo ? 'Заменить видеофайл (MP4/WebM/MOV)' : 'Загрузить видеофайл (MP4/WebM/MOV)'}
+        </div>
+        <label
+          className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm ${uploading ? 'cursor-not-allowed opacity-60' : ''}`}
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Загрузка...
+            </>
+          ) : (
+            <>
+              <Paperclip className="size-4" />
+              {hasVideo ? 'Заменить файл' : 'Выбрать файл'}
+            </>
+          )}
+          <input
+            type="file"
+            accept="video/mp4,video/webm,.mp4,.webm,.mov,.m4v"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleUpload(file);
+                e.target.value = '';
+              }
+            }}
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Большие файлы пока ограничены лимитом сервера — загружайте небольшие записи.
+        </p>
+      </div>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить видео?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Загруженная видеозапись будет удалена из урока. Действие необратимо.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => handleDelete()}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 const statusLabels: Record<string, string> = {
   draft: 'Черновик',
   published: 'Опубликован',
@@ -495,6 +631,13 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     );
   };
 
+  // Заменяет урок целиком после загрузки/удаления видео (бэк возвращает
+  // обновлённый урок с videoKey/videoFileUrl). Синхронизирует строку таблицы.
+  const handleVideoChange = (updated: Lesson) => {
+    setViewLesson((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+    setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
+  };
+
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
     setError('');
@@ -586,7 +729,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="lesson-video">Видео URL</FieldLabel>
+                  <FieldLabel htmlFor="lesson-video">Видео URL (внешняя ссылка)</FieldLabel>
                   <Input
                     id="lesson-video"
                     type="url"
@@ -594,6 +737,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
                     placeholder="https://..."
                   />
+                  <FieldDescription>
+                    Ссылка на YouTube/Vimeo и т.п. Чтобы загрузить видеофайл, сначала
+                    сохраните урок, затем откройте его.
+                  </FieldDescription>
                 </Field>
 
                 <Field>
@@ -735,7 +882,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     <TeacherAvatars teachers={lesson.teachers} />
                   </TableCell>
                   <TableCell>
-                    {lesson.videoUrl ? (
+                    {lesson.videoFileUrl ? (
+                      <Film className="size-4 text-muted-foreground" />
+                    ) : lesson.videoUrl ? (
                       <Video className="size-4 text-muted-foreground" />
                     ) : (
                       <span className="text-muted-foreground">—</span>
@@ -808,7 +957,15 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </Field>
 
                       <Field>
-                        <FieldLabel htmlFor="edit-video">Видео URL</FieldLabel>
+                        <LessonVideoSection
+                          lessonId={viewLesson.id}
+                          hasVideo={!!viewLesson.videoFileUrl}
+                          onChange={handleVideoChange}
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="edit-video">Видео URL (внешняя ссылка)</FieldLabel>
                         <Input
                           id="edit-video"
                           type="url"
@@ -818,6 +975,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           }
                           placeholder="https://..."
                         />
+                        <FieldDescription>
+                          Альтернатива загрузке: ссылка на YouTube/Vimeo или другой источник.
+                          Если загружен файл, для студента используется он.
+                        </FieldDescription>
                       </Field>
 
                       <Field>
@@ -991,7 +1152,21 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </div>
 
                       <div className="flex flex-col gap-1">
-                        <dt className="text-muted-foreground">Видео</dt>
+                        <dt className="text-muted-foreground">Видеозапись (загруженный файл)</dt>
+                        <dd>
+                          {viewLesson.videoFileUrl ? (
+                            <span className="inline-flex items-center gap-1.5 text-foreground">
+                              <Film className="size-4 shrink-0 text-muted-foreground" />
+                              Видео загружено
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Видео URL (внешняя ссылка)</dt>
                         <dd>
                           {viewLesson.videoUrl ? (
                             <a

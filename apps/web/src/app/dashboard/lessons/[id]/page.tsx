@@ -176,25 +176,34 @@ export default function StudentLessonPage() {
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
           </div>
 
-          {/* Видео */}
-          {lesson.videoUrl && (
-            embedUrl ? (
-              <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                <iframe
-                  src={embedUrl}
-                  title={lesson.title}
-                  className="size-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-            ) : (
-              <Button asChild className="w-fit">
-                <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
-                  Смотреть видео
-                  <ExternalLink />
-                </a>
-              </Button>
+          {/* Видео: приоритет — загруженный файл (встроенный плеер),
+              иначе внешняя ссылка (embed YouTube/Vimeo или кнопка). */}
+          {lesson.videoFileUrl ? (
+            <video
+              controls
+              className="w-full rounded-lg border bg-muted"
+              src={lesson.videoFileUrl}
+            />
+          ) : (
+            lesson.videoUrl && (
+              embedUrl ? (
+                <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
+                  <iframe
+                    src={embedUrl}
+                    title={lesson.title}
+                    className="size-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : (
+                <Button asChild className="w-fit">
+                  <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
+                    Смотреть видео
+                    <ExternalLink />
+                  </a>
+                </Button>
+              )
             )
           )}
 
@@ -260,7 +269,8 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!lesson.videoUrl &&
+          {!lesson.videoFileUrl &&
+            !lesson.videoUrl &&
             !lesson.summary &&
             (!lesson.materials || lesson.materials.length === 0) &&
             assignments.length === 0 && (

@@ -374,6 +374,10 @@ export interface Lesson {
   streamId: string;
   title: string;
   videoUrl: string | null;
+  // Ключ загруженной видеозаписи в хранилище (отдельно от внешней ссылки videoUrl).
+  videoKey?: string | null;
+  // Подписанный временный URL загруженного видео (для встроенного плеера) или null.
+  videoFileUrl?: string | null;
   summary: string | null;
   notes: string | null;
   status: 'draft' | 'published' | 'closed';
@@ -496,6 +500,53 @@ export async function deleteLessonMaterial(
   s3Key: string,
 ): Promise<{ materials: LessonMaterial[] }> {
   return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Загрузка видеозаписи урока (один файл MP4/WebM/MOV). Возвращает обновлённый урок
+// с подписанным videoFileUrl. Лимит размера сейчас — общий серверный (50МБ).
+export async function uploadLessonVideo(
+  accessToken: string,
+  lessonId: string,
+  file: File,
+): Promise<{ lesson: Lesson }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/video`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { lesson: Lesson };
+}
+
+// Удаление загруженной видеозаписи урока. Возвращает обновлённый урок.
+export async function deleteLessonVideo(
+  accessToken: string,
+  lessonId: string,
+): Promise<{ lesson: Lesson }> {
+  return request(`/lessons/${lessonId}/video`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });

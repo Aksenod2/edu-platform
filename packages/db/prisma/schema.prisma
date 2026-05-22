@@ -154,6 +154,7 @@ model Lesson {
   streamId  String
   title     String
   videoUrl  String?
+  videoKey  String?
   summary   String?
   notes     String?
   status    LessonStatus @default(draft)
