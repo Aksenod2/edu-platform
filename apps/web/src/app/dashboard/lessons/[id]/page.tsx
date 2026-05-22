@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
@@ -217,6 +217,32 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
+          {/* Материалы урока (PDF/MD) */}
+          {lesson.materials && lesson.materials.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Материалы</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                {lesson.materials.map((m) => (
+                  <a
+                    key={m.s3Key}
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="no-underline"
+                  >
+                    <div className="flex items-center gap-3 rounded-md border p-3 transition-colors hover:bg-accent/50">
+                      <FileText className="size-5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate font-medium">{m.fileName}</span>
+                      <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+                    </div>
+                  </a>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Задания урока */}
           {assignments.length > 0 && (
             <Card>
@@ -248,9 +274,13 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!lesson.videoUrl && !lesson.summary && !lesson.notes && assignments.length === 0 && (
-            <p className="text-sm italic text-muted-foreground">Контент пока не добавлен.</p>
-          )}
+          {!lesson.videoUrl &&
+            !lesson.summary &&
+            !lesson.notes &&
+            (!lesson.materials || lesson.materials.length === 0) &&
+            assignments.length === 0 && (
+              <p className="text-sm italic text-muted-foreground">Контент пока не добавлен.</p>
+            )}
 
           {/* Навигация prev/next */}
           {(prev || next) && (

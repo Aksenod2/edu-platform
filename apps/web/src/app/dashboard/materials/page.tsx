@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { ChevronDown, FolderOpen, Play } from 'lucide-react';
+import { ChevronDown, FolderOpen, Play, FileText, ExternalLink } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { getStreams, getLessons, type Stream, type Lesson } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -61,12 +61,10 @@ function MaterialsContent() {
     if (selectedStreamId) fetchLessons();
   }, [selectedStreamId, fetchLessons]);
 
-  const lessonsWithMaterials = lessons.filter(
-    (l) => l.videoUrl || l.summary || l.notes,
-  );
-  const lessonsWithoutMaterials = lessons.filter(
-    (l) => !l.videoUrl && !l.summary && !l.notes,
-  );
+  const hasContent = (l: Lesson) =>
+    !!l.videoUrl || !!l.summary || !!l.notes || (l.materials?.length ?? 0) > 0;
+  const lessonsWithMaterials = lessons.filter(hasContent);
+  const lessonsWithoutMaterials = lessons.filter((l) => !hasContent(l));
 
   return (
     <>
@@ -181,6 +179,8 @@ function LessonCard({
   const hasVideo = !!lesson.videoUrl;
   const hasSummary = !!lesson.summary;
   const hasNotes = !!lesson.notes;
+  const files = lesson.materials ?? [];
+  const hasFiles = files.length > 0;
 
   return (
     <Card className="overflow-hidden p-0">
@@ -204,6 +204,7 @@ function LessonCard({
           {hasVideo && <Badge variant="default">Видео</Badge>}
           {hasSummary && <Badge variant="secondary">Краткое описание</Badge>}
           {hasNotes && <Badge variant="outline">Конспект</Badge>}
+          {hasFiles && <Badge variant="outline">Файлы</Badge>}
         </div>
 
         {/* Expand icon */}
@@ -254,6 +255,26 @@ function LessonCard({
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {lesson.notes}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Files (PDF/MD) */}
+          {hasFiles && (
+            <div>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+                Файлы (PDF/MD)
+              </p>
+              <div className="flex flex-col gap-2">
+                {files.map((m) => (
+                  <Button key={m.s3Key} asChild variant="outline" size="sm" className="w-fit">
+                    <a href={m.url} target="_blank" rel="noopener noreferrer">
+                      <FileText className="size-4" />
+                      {m.fileName}
+                      <ExternalLink className="size-4" />
+                    </a>
+                  </Button>
+                ))}
               </div>
             </div>
           )}

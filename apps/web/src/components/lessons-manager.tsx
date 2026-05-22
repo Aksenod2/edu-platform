@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2, Plus, Video, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Loader2, Plus, Video, Pencil, Trash2, FileText, Paperclip, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -54,9 +55,12 @@ import {
   createLesson,
   updateLesson,
   deleteLesson,
+  uploadLessonMaterial,
+  deleteLessonMaterial,
   getStreams,
   getTeachers,
   type Lesson,
+  type LessonMaterial,
   type Stream,
   type Teacher,
 } from '@/lib/api';
@@ -165,6 +169,164 @@ function TeacherAvatars({ teachers }: { teachers?: { id: string; name: string }[
           <AvatarFallback>{initials(t.name)}</AvatarFallback>
         </Avatar>
       ))}
+    </div>
+  );
+}
+
+// Человекочитаемый размер файла материала
+function formatSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+// Секция «Материалы (PDF/MD)» для существующего урока: загрузка, список,
+// удаление (через AlertDialog). Доступна только когда урок уже создан (есть id).
+function LessonMaterialsSection({
+  lessonId,
+  materials,
+  onChange,
+}: {
+  lessonId: string;
+  materials: LessonMaterial[];
+  onChange: (materials: LessonMaterial[]) => void;
+}) {
+  const { accessToken } = useAuth();
+  const [uploading, setUploading] = useState(false);
+  const [toDelete, setToDelete] = useState<LessonMaterial | null>(null);
+
+  const handleUpload = async (file: File) => {
+    if (!accessToken) return;
+    // Проверка формата на фронте (строго PDF/MD). Главная валидация — на бэке.
+    const name = file.name.toLowerCase();
+    const okExt = name.endsWith('.pdf') || name.endsWith('.md') || name.endsWith('.markdown');
+    if (!okExt) {
+      toast.error('Поддерживаются только PDF и MD');
+      return;
+    }
+    setUploading(true);
+    try {
+      const { materials: updated } = await uploadLessonMaterial(accessToken, lessonId, file);
+      onChange(updated);
+      toast.success('Материал добавлен');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (material: LessonMaterial) => {
+    if (!accessToken) return;
+    try {
+      const { materials: updated } = await deleteLessonMaterial(
+        accessToken,
+        lessonId,
+        material.s3Key,
+      );
+      onChange(updated);
+      toast.success('Материал удалён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления');
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
+      <FieldLabel>Материалы (PDF/MD)</FieldLabel>
+
+      {materials.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {materials.map((m) => (
+            <div
+              key={m.s3Key}
+              className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm"
+            >
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              {m.url ? (
+                <a
+                  href={m.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 truncate text-foreground underline underline-offset-4"
+                >
+                  {m.fileName}
+                </a>
+              ) : (
+                <span className="flex-1 truncate text-foreground">{m.fileName}</span>
+              )}
+              {m.size ? (
+                <span className="shrink-0 text-xs text-muted-foreground">{formatSize(m.size)}</span>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 shrink-0 text-destructive hover:text-destructive"
+                onClick={() => setToDelete(m)}
+              >
+                <X className="size-4" />
+                <span className="sr-only">Удалить материал</span>
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Материалы не добавлены.</p>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-muted-foreground">Загрузить файл (PDF или MD)</div>
+        <label
+          className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm ${uploading ? 'cursor-not-allowed opacity-60' : ''}`}
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Загрузка...
+            </>
+          ) : (
+            <>
+              <Paperclip className="size-4" />
+              Выбрать файл
+            </>
+          )}
+          <input
+            type="file"
+            accept=".pdf,.md,.markdown,application/pdf,text/markdown"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleUpload(file);
+                e.target.value = '';
+              }
+            }}
+          />
+        </label>
+      </div>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(open) => { if (!open) setToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить материал?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toDelete && `Файл «${toDelete.fileName}» будет удалён из урока. Действие необратимо.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (toDelete) handleDelete(toDelete); }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -321,6 +483,15 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     } finally {
       setSavingEdit(false);
     }
+  };
+
+  // Обновляет материалы открытого урока в локальном состоянии (после загрузки/удаления)
+  // и синхронизирует строку в таблице, чтобы не делать полный рефетч.
+  const handleMaterialsChange = (lessonId: string, materials: LessonMaterial[]) => {
+    setViewLesson((prev) => (prev && prev.id === lessonId ? { ...prev, materials } : prev));
+    setLessons((prev) =>
+      prev.map((l) => (l.id === lessonId ? { ...l, materials } : l)),
+    );
   };
 
   const handleDelete = async (id: string) => {
@@ -490,6 +661,13 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     selected={form.teacherIds}
                     onToggle={toggleFormTeacher}
                   />
+                </Field>
+
+                <Field>
+                  <FieldLabel>Материалы (PDF/MD)</FieldLabel>
+                  <p className="text-xs text-muted-foreground">
+                    Сначала сохраните урок, затем откройте его и добавьте материалы.
+                  </p>
                 </Field>
 
                 <Field orientation="horizontal">
@@ -733,6 +911,14 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           onToggle={toggleEditTeacher}
                         />
                       </Field>
+
+                      <Field>
+                        <LessonMaterialsSection
+                          lessonId={viewLesson.id}
+                          materials={viewLesson.materials ?? []}
+                          onChange={(m) => handleMaterialsChange(viewLesson.id, m)}
+                        />
+                      </Field>
                     </FieldGroup>
                   </div>
 
@@ -819,6 +1005,35 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         <dd>
                           {viewLesson.notes ? (
                             <span className="whitespace-pre-wrap">{viewLesson.notes}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Материалы (PDF/MD)</dt>
+                        <dd>
+                          {viewLesson.materials && viewLesson.materials.length > 0 ? (
+                            <div className="flex flex-col gap-1.5">
+                              {viewLesson.materials.map((m) => (
+                                <a
+                                  key={m.s3Key}
+                                  href={m.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 text-primary underline underline-offset-4 break-all"
+                                >
+                                  <FileText className="size-4 shrink-0" />
+                                  {m.fileName}
+                                  {m.size ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatSize(m.size)}
+                                    </span>
+                                  ) : null}
+                                </a>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}

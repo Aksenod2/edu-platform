@@ -359,6 +359,16 @@ export async function getTeachers(
 
 // Lessons API
 
+// Учебный материал урока — только PDF/MD. url — подписанная временная ссылка
+// (приходит с бэка), s3Key — постоянный ключ файла в хранилище.
+export interface LessonMaterial {
+  s3Key: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  url?: string;
+}
+
 export interface Lesson {
   id: string;
   streamId: string;
@@ -372,6 +382,7 @@ export interface Lesson {
   // ("YYYY-MM-DDTHH:MM" или null). Источник правды — ScheduleEntry.
   scheduledAt?: string | null;
   sortOrder: number;
+  materials?: LessonMaterial[];
   createdAt: string;
   updatedAt: string;
   teachers?: { id: string; name: string }[];
@@ -410,6 +421,7 @@ export async function createLesson(
     scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
+    materials?: LessonMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request('/lessons', {
@@ -432,12 +444,60 @@ export async function updateLesson(
     scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
+    materials?: LessonMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request(`/lessons/${id}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify(data),
+  });
+}
+
+// Загрузка файла-материала урока (PDF/MD). Возвращает обновлённый список материалов.
+export async function uploadLessonMaterial(
+  accessToken: string,
+  lessonId: string,
+  file: File,
+): Promise<{ materials: LessonMaterial[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/materials`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { materials: LessonMaterial[] };
+}
+
+// Удаление файла-материала урока по s3Key. Возвращает обновлённый список материалов.
+export async function deleteLessonMaterial(
+  accessToken: string,
+  lessonId: string,
+  s3Key: string,
+): Promise<{ materials: LessonMaterial[] }> {
+  return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 

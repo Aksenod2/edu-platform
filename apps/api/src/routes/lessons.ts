@@ -3,6 +3,69 @@ import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
+import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { pipeline } from 'node:stream/promises';
+import { Writable } from 'node:stream';
+
+// Дескриптор учебного материала урока (только PDF/MD).
+// Файл хранится в FileStorage по s3Key; url — подписанная временная ссылка,
+// которую ре-подписываем при каждой выдаче GET.
+export interface LessonMaterial {
+  s3Key: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  url?: string;
+}
+
+// Ре-подписывает временные url по s3Key для всех материалов урока.
+async function regenerateLessonMaterialUrls(
+  materials: LessonMaterial[],
+): Promise<LessonMaterial[]> {
+  return Promise.all(
+    materials.map(async (m) => {
+      if (m.s3Key) {
+        try {
+          return { ...m, url: await getFileUrl(m.s3Key) };
+        } catch {
+          return m;
+        }
+      }
+      return m;
+    }),
+  );
+}
+
+// Нормализует входной массив дескрипторов материалов (из POST/PATCH):
+// храним только s3Key/fileName/mimeType/size, url не сохраняем (он временный).
+function sanitizeLessonMaterials(input: unknown): LessonMaterial[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .filter((m) => typeof m.s3Key === 'string' && typeof m.fileName === 'string')
+    .map((m) => ({
+      s3Key: m.s3Key as string,
+      fileName: m.fileName as string,
+      mimeType: typeof m.mimeType === 'string' ? m.mimeType : 'application/octet-stream',
+      size: typeof m.size === 'number' ? m.size : 0,
+    }));
+}
+
+// Допускаем строго PDF и Markdown. mime для .md часто пустой/text/plain,
+// поэтому проверяем И mime, И расширение имени файла.
+const PDF_MD_MIME_TYPES = new Set([
+  'application/pdf',
+  'text/markdown',
+  'text/x-markdown',
+]);
+
+function isPdfOrMarkdown(fileName: string, mimeType: string): boolean {
+  const lowerName = (fileName || '').toLowerCase();
+  if (lowerName.endsWith('.pdf') || lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
+    return true;
+  }
+  return PDF_MD_MIME_TYPES.has((mimeType || '').toLowerCase());
+}
 
 // include-конфиг для подгрузки преподавателей урока и его записи расписания.
 // Берём ТОЛЬКО запись, управляемую из карточки урока (managedByLesson) — это
@@ -149,7 +212,19 @@ export async function lessonRoutes(app: FastifyInstance) {
       orderBy: { sortOrder: 'asc' },
     });
 
-    return { lessons: lessons.map(shapeLesson) };
+    const shaped = await Promise.all(
+      lessons.map(async (lesson) => {
+        const base = shapeLesson(lesson);
+        return {
+          ...base,
+          materials: await regenerateLessonMaterialUrls(
+            (lesson.materials as unknown as LessonMaterial[]) || [],
+          ),
+        };
+      }),
+    );
+
+    return { lessons: shaped };
   });
 
   // GET /lessons/:id — получить урок
@@ -186,7 +261,11 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Урок не найден' });
     }
 
-    return { lesson: shapeLesson(lesson) };
+    const materials = await regenerateLessonMaterialUrls(
+      (lesson.materials as unknown as LessonMaterial[]) || [],
+    );
+
+    return { lesson: { ...shapeLesson(lesson), materials } };
   });
 
   // POST /lessons — создание урока (admin)
@@ -201,6 +280,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       scheduledAt?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
+      materials?: LessonMaterial[];
     };
 
     if (!body.streamId) {
@@ -233,6 +313,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         notes: body.notes || null,
         publishAt: body.publishAt ? new Date(body.publishAt) : null,
         sortOrder: body.sortOrder ?? 0,
+        materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
         ...(teacherIds.length > 0 && {
           teachers: { create: teacherIds.map((userId) => ({ userId })) },
         }),
@@ -264,6 +345,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       scheduledAt?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
+      materials?: LessonMaterial[];
     };
 
     const existing = await prisma.lesson.findUnique({ where: { id } });
@@ -287,6 +369,9 @@ export async function lessonRoutes(app: FastifyInstance) {
     if (body.status !== undefined) data.status = body.status;
     if (body.publishAt !== undefined) data.publishAt = body.publishAt ? new Date(body.publishAt) : null;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+    if (body.materials !== undefined) {
+      data.materials = JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials)));
+    }
 
     // Замена набора преподавателей: удаляем текущие, создаём новые (только admin)
     if (body.teacherIds !== undefined) {
@@ -342,7 +427,107 @@ export async function lessonRoutes(app: FastifyInstance) {
       ).catch(() => {});
     }
 
-    return { lesson: shapeLesson(lesson) };
+    const materials = await regenerateLessonMaterialUrls(
+      (lesson.materials as unknown as LessonMaterial[]) || [],
+    );
+
+    return { lesson: { ...shapeLesson(lesson), materials } };
+  });
+
+  // POST /lessons/:id/materials — загрузка файла-материала урока (admin).
+  // Принимаются строго PDF и Markdown (.md/.markdown). Файл кладётся в FileStorage
+  // (folder 'lessons'), дескриптор добавляется в lesson.materials.
+  // Возвращает обновлённый список материалов урока с подписанными url.
+  app.post('/lessons/:id/materials', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    if (!request.isMultipart()) {
+      return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
+    }
+
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: 'Файл не найден в запросе' });
+    }
+
+    const originalName = data.filename || 'file';
+    const mimeType = data.mimetype || 'application/octet-stream';
+
+    if (!isPdfOrMarkdown(originalName, mimeType)) {
+      // Слив потока, чтобы не подвиснуть на необработанном файле.
+      data.file.resume();
+      return reply.status(400).send({ error: 'Поддерживаются только PDF и MD' });
+    }
+
+    const chunks: Buffer[] = [];
+    await pipeline(
+      data.file,
+      new Writable({
+        write(chunk, _enc, cb) {
+          chunks.push(chunk);
+          cb();
+        },
+      }),
+    );
+
+    const buffer = Buffer.concat(chunks);
+
+    let uploaded: { key: string; url: string; size: number };
+    try {
+      uploaded = await uploadFile(buffer, originalName, mimeType, 'lessons');
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+    }
+
+    const material: LessonMaterial = {
+      s3Key: uploaded.key,
+      fileName: originalName,
+      mimeType,
+      size: uploaded.size,
+    };
+
+    const current = sanitizeLessonMaterials(lesson.materials);
+    const nextMaterials = [...current, material];
+
+    await prisma.lesson.update({
+      where: { id },
+      data: { materials: JSON.parse(JSON.stringify(nextMaterials)) },
+    });
+
+    const materials = await regenerateLessonMaterialUrls(nextMaterials);
+
+    return reply.status(201).send({ materials });
+  });
+
+  // DELETE /lessons/:id/materials/:s3Key — удаление материала урока (admin).
+  // :s3Key передаётся URL-кодированным; убираем дескриптор из массива.
+  app.delete('/lessons/:id/materials/:s3Key', { onRequest: adminOnly }, async (request, reply) => {
+    const { id, s3Key } = request.params as { id: string; s3Key: string };
+    const key = decodeURIComponent(s3Key);
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    const current = sanitizeLessonMaterials(lesson.materials);
+    const nextMaterials = current.filter((m) => m.s3Key !== key);
+
+    await prisma.lesson.update({
+      where: { id },
+      data: { materials: JSON.parse(JSON.stringify(nextMaterials)) },
+    });
+
+    const materials = await regenerateLessonMaterialUrls(nextMaterials);
+
+    return { materials };
   });
 
   // DELETE /lessons/:id — удаление урока (admin)
