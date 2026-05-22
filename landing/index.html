@@ -360,50 +360,59 @@ h1, h2, h3, h4 {
 /* ============================================================
    HERO
    ============================================================ */
-.hero { padding-top: clamp(40px, 7vw, 90px); padding-bottom: clamp(48px, 8vw, 110px); overflow: hidden; }
+.hero { padding-top: clamp(64px, 11vw, 150px); padding-bottom: clamp(72px, 12vw, 168px); overflow: hidden; }
 .hero-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: clamp(40px, 6vw, 64px);
+  gap: clamp(48px, 7vw, 88px);
   align-items: center;
 }
 @media (min-width: 1000px) {
-  .hero-grid { grid-template-columns: 1.04fr .96fr; gap: clamp(40px, 4vw, 72px); }
+  .hero-grid { grid-template-columns: 1.08fr .92fr; gap: clamp(56px, 6vw, 104px); }
 }
 
-.hero-eyebrow { margin-bottom: 1.5rem; }
+.hero-eyebrow { margin-bottom: 2rem; }
 .hero h1 {
   font-size: clamp(2.7rem, 7.4vw, 5.6rem);
   line-height: .98;
   font-weight: 440;
   letter-spacing: -.025em;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2.2rem;
+  max-width: 15ch;
 }
 .hero h1 .em { font-style: italic; font-weight: 380; color: var(--accent); position: relative; }
 .hero h1 .em::after {
   content: ""; position: absolute; left: .02em; right: .02em; bottom: .04em; height: .07em;
   background: var(--secondary); opacity: .55; border-radius: 2px;
 }
-.hero-sub { font-size: clamp(1.05rem, 1.5vw, 1.25rem); color: var(--ink-soft); max-width: 50ch; margin-bottom: 2rem; line-height: 1.55; }
-.hero-cta { display: flex; flex-wrap: wrap; gap: .8rem; margin-bottom: 2rem; }
-.hero-trust {
-  display: flex; align-items: center; gap: .8rem;
-  font-size: .9rem; color: var(--muted);
-  padding-top: 1.6rem; border-top: var(--hairline) solid var(--line);
-  max-width: 46ch;
+.hero-sub { font-size: clamp(1.15rem, 1.7vw, 1.4rem); color: var(--ink-soft); max-width: 38ch; margin-bottom: 2.8rem; line-height: 1.5; font-weight: 400; }
+
+/* one CTA + one quiet text link */
+.hero-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 1.1rem 1.8rem; margin-bottom: 2.6rem; }
+.hero-link {
+  display: inline-flex; align-items: center; gap: .45em;
+  font-size: 1rem; font-weight: 500; color: var(--ink-soft);
+  position: relative; padding: .2em 0;
+  transition: color .25s var(--ease);
 }
-.avatars { display: inline-flex; flex: none; }
-.avatars span {
-  width: 32px; height: 32px; border-radius: 999px; margin-left: -10px;
-  border: 2px solid var(--bg); display: inline-grid; place-items: center;
-  font-size: .72rem; font-weight: 700; color: var(--accent-contrast);
+.hero-link svg { color: var(--accent); transition: transform .3s var(--ease); }
+.hero-link::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; height: 1.5px; width: 0;
+  background: var(--accent); transition: width .3s var(--ease);
+}
+.hero-link:hover { color: var(--ink); }
+.hero-link:hover::after { width: calc(100% - 1.4em); }
+.hero-link:hover svg { transform: translateX(3px); }
+
+/* tiny, subtle trust note */
+.hero-note {
+  margin: 0;
   font-family: var(--font-mono);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  color: var(--muted);
+  opacity: .85;
 }
-.avatars span:first-child { margin-left: 0; }
-.avatars span:nth-child(1) { background: var(--accent); }
-.avatars span:nth-child(2) { background: var(--secondary); }
-.avatars span:nth-child(3) { background: var(--accent-ink); }
-.avatars span:nth-child(4) { background: var(--muted); }
 
 /* hero mockup */
 .hero-art { position: relative; }
@@ -894,19 +903,18 @@ h1, h2, h3, h4 {
     <div class="wrap">
       <div class="hero-grid">
         <div class="hero-copy">
-          <div class="eyebrow hero-eyebrow hero-load" data-d="1">Российская платформа для обучения</div>
+          <div class="eyebrow hero-eyebrow hero-load" data-d="1">Российская LMS</div>
           <h1 id="hero-title" class="hero-load" data-d="2">Платформа, на которой <span class="em">держится</span> ваше обучение</h1>
-          <p class="hero-sub hero-load" data-d="3">OCHOBA собирает уроки, задания, расписание и общение со студентами в одном месте. Вы ведёте программу — платформа берёт на себя рутину.</p>
+          <p class="hero-sub hero-load" data-d="3">Всё обучение — в одном месте.</p>
           <div class="hero-cta hero-load" data-d="4">
             <a href="#cta" class="btn btn-primary btn-lg">Начать бесплатно
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
-            <a href="#how" class="btn btn-ghost btn-lg">Посмотреть, как это работает</a>
+            <a href="#how" class="hero-link">Посмотреть, как это работает
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
           </div>
-          <div class="hero-trust hero-load" data-d="5">
-            <span class="avatars" aria-hidden="true"><span>АС</span><span>ДЛ</span><span>МГ</span><span>+</span></span>
-            <span>На OCHOBA уже учатся студенты в десятках образовательных программ</span>
-          </div>
+          <p class="hero-note hero-load" data-d="5">Уже используют десятки образовательных программ</p>
         </div>
 
         <div class="hero-art hero-art-load" aria-hidden="true">
@@ -936,10 +944,7 @@ h1, h2, h3, h4 {
 
           <div class="mock mock-float">
             <div class="fh"><span class="ava">МГ</span><span class="nm">Марина Гусева<small>преподаватель · онлайн</small></span></div>
-            <div class="bubble them">Когда открывается тема по временам?</div>
             <div class="bubble me">Урок 7 уже доступен — материалы внутри 👍</div>
-            <div class="audio"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="1.6"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              <span class="wv"><i style="height:5px"></i><i style="height:11px"></i><i style="height:7px"></i><i style="height:13px"></i><i style="height:6px"></i><i style="height:10px"></i></span> 0:14</div>
           </div>
         </div>
       </div>
