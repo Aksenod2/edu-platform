@@ -35,7 +35,7 @@ function StudentMessagesContent() {
     <Tabs
       value={activeTab}
       onValueChange={handleTabChange}
-      className="-mx-4 -mb-4 flex flex-1 min-h-0 flex-col gap-0 md:mx-0 md:mb-0"
+      className="-m-4 flex flex-1 min-h-0 flex-col gap-0 md:-m-6"
     >
       <div className="border-b px-4 py-3">
         <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
