@@ -440,7 +440,7 @@ export default function StudentProfilePage() {
       <div className="flex flex-1 flex-col min-h-0">
 
         {/* ── Header ── */}
-        <div className="max-w-6xl w-full mx-auto">
+        <div>
           <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
             ← К списку учеников
           </a>
@@ -454,7 +454,7 @@ export default function StudentProfilePage() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="mt-4">
-            <div className="-mx-1 overflow-x-auto px-1">
+            <div className="-m-1.5 overflow-x-auto p-1.5">
               <TabsList>
                 <TabsTrigger value="profile">Профиль</TabsTrigger>
                 <TabsTrigger value="assignments">Задания</TabsTrigger>
@@ -471,7 +471,7 @@ export default function StudentProfilePage() {
           className={`flex flex-1 flex-col min-h-0 ${
             activeTab === 'thread'
               ? '-mx-4 -mb-4 md:-mx-6 md:-mb-6'
-              : 'overflow-auto max-w-6xl w-full mx-auto'
+              : 'overflow-auto'
           }`}
         >
 
