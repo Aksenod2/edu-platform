@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { login as apiLogin, refresh as apiRefresh, logout as apiLogout } from './api';
+import { login as apiLogin, refresh as apiRefresh, logout as apiLogout, registerAuthHandlers } from './api';
 
 interface User {
   id: string;
@@ -39,6 +39,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Not authenticated
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  // Авто-обновление access-токена при 401: api-слой дёргает эти колбэки.
+  useEffect(() => {
+    registerAuthHandlers({
+      onToken: (token) => setAccessToken(token),
+      onFail: () => {
+        setUser(null);
+        setAccessToken(null);
+      },
+    });
+    return () => registerAuthHandlers(null);
   }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<User> => {

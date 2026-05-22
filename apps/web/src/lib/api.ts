@@ -42,7 +42,46 @@ const HTTP_STATUS_MESSAGES: Record<number, string> = {
   503: 'Сервис временно недоступен',
 };
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// --- Авто-обновление access-токена при 401 -----------------------------------
+// AuthProvider регистрирует колбэки: onToken — сохранить новый токен в контексте,
+// onFail — разлогинить (refresh не удался).
+type AuthHandlers = { onToken: (token: string) => void; onFail: () => void };
+let authHandlers: AuthHandlers | null = null;
+export function registerAuthHandlers(handlers: AuthHandlers | null): void {
+  authHandlers = handlers;
+}
+
+// Общий промис обновления — чтобы параллельные 401 не дёргали refresh многократно.
+let refreshInFlight: Promise<string | null> | null = null;
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { accessToken?: string };
+        const token = data?.accessToken ?? null;
+        if (token) authHandlers?.onToken(token);
+        return token;
+      } catch {
+        return null;
+      }
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  retryOn401 = true,
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
@@ -55,6 +94,20 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     });
   } catch (err) {
     throw new Error(translateNetworkError(err));
+  }
+
+  // Истёк access-токен → тихо обновляем его и повторяем запрос один раз.
+  // Сами /auth/* не ретраим, чтобы не зациклить refresh/логин.
+  if (res.status === 401 && retryOn401 && !path.startsWith('/auth/')) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      return request<T>(
+        path,
+        { ...options, headers: { ...options.headers, Authorization: `Bearer ${newToken}` } },
+        false,
+      );
+    }
+    authHandlers?.onFail();
   }
 
   let data: Record<string, unknown>;
