@@ -184,6 +184,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<Stream | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [mineOnly, setMineOnly] = useState(false);
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [error, setError] = useState('');
 
@@ -208,7 +209,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     try {
       const [streamsData, lessonsData, teachersData] = await Promise.all([
         getStreams(accessToken),
-        getLessons(accessToken, streamId),
+        getLessons(accessToken, streamId, { mine: mineOnly }),
         getTeachers(accessToken),
       ]);
       const found = streamsData.streams.find((s) => s.id === streamId);
@@ -221,7 +222,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     } finally {
       setLoadingLessons(false);
     }
-  }, [accessToken, streamId]);
+  }, [accessToken, streamId, mineOnly]);
 
   useEffect(() => {
     if (accessToken && user?.role === 'admin') {
@@ -354,21 +355,30 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           )}
           {isArchived && <Badge variant="destructive">Архивный поток</Badge>}
         </div>
-        {!isArchived && (
-          <Button
-            variant={showForm ? 'outline' : 'default'}
-            onClick={showForm ? closeForm : openCreate}
-          >
-            {showForm ? (
-              'Отмена'
-            ) : (
-              <>
-                <Plus />
-                Добавить урок
-              </>
-            )}
-          </Button>
-        )}
+        <div className="flex items-center gap-4">
+          <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
+            <Checkbox
+              checked={mineOnly}
+              onCheckedChange={(v) => setMineOnly(v === true)}
+            />
+            Только мои
+          </label>
+          {!isArchived && (
+            <Button
+              variant={showForm ? 'outline' : 'default'}
+              onClick={showForm ? closeForm : openCreate}
+            >
+              {showForm ? (
+                'Отмена'
+              ) : (
+                <>
+                  <Plus />
+                  Добавить урок
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (

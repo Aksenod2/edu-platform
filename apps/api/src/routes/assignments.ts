@@ -604,12 +604,12 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Create ThreadEntry for submission so teacher sees it in thread
     if (status === 'submitted') {
-      // Auto-create thread if not yet exists (student may not have visited thread page)
-      let thread = await prisma.thread.findUnique({
+      // Auto-create conversation if not yet exists (student may not have visited thread page)
+      let thread = await prisma.conversation.findUnique({
         where: { studentId: sa.studentId },
       });
       if (!thread) {
-        thread = await prisma.thread.create({ data: { studentId: sa.studentId } });
+        thread = await prisma.conversation.create({ data: { studentId: sa.studentId, type: 'student' } });
       }
 
       if (thread) {
@@ -626,13 +626,13 @@ export async function assignmentRoutes(app: FastifyInstance) {
           entryMetadata.size = updated.fileSize;
         }
 
-        await prisma.threadEntry.create({
+        await prisma.conversationEntry.create({
           data: {
-            threadId: thread.id,
+            conversationId: thread.id,
             authorId: sa.studentId,
             type: updated.fileUrl ? 'file' : 'text',
             content: entryContent,
-            metadata: (entryMetadata as Parameters<typeof prisma.threadEntry.create>[0]['data']['metadata']),
+            metadata: (entryMetadata as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata']),
             assignmentId: sa.assignmentId,
           },
         });
@@ -646,12 +646,28 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Notify relevant parties about status change
     if (status === 'submitted') {
-      const admins = await prisma.user.findMany({
-        where: { role: 'admin', isActive: true, deletedAt: null },
-        select: { id: true },
-      });
+      // Адресно: уведомляем преподавателей урока, к которому привязано задание.
+      // Если урока/преподавателей нет — фолбэк на всех админов.
+      let recipientIds: string[] = [];
+      if (updated.assignment.lessonId) {
+        const lessonTeachers = await prisma.lessonTeacher.findMany({
+          where: {
+            lessonId: updated.assignment.lessonId,
+            user: { isActive: true, deletedAt: null },
+          },
+          select: { userId: true },
+        });
+        recipientIds = lessonTeachers.map((t) => t.userId);
+      }
+      if (recipientIds.length === 0) {
+        const admins = await prisma.user.findMany({
+          where: { role: 'admin', isActive: true, deletedAt: null },
+          select: { id: true },
+        });
+        recipientIds = admins.map((a) => a.id);
+      }
       notifyMany(
-        admins.map((a) => a.id),
+        recipientIds,
         'assignment_submitted',
         'Студент сдал задание',
         `${updated.student.name} сдал задание «${updated.assignment.title}»`,

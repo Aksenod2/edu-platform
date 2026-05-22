@@ -31,16 +31,19 @@ export async function streamRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
 
   // GET /streams — список потоков
-  // Admin: все потоки; Student: только активные потоки, на которые он зачислен
+  // Admin: все потоки (или только свои при ?mine=true); Student: только активные потоки, на которые он зачислен
   app.get('/streams', { onRequest: authenticate }, async (request) => {
     const isAdmin = request.user?.role === 'admin';
+    const mine = (request.query as { mine?: string }).mine === 'true';
     const streams = await prisma.stream.findMany({
-      where: isAdmin
-        ? {}
-        : {
+      where: !isAdmin
+        ? {
             status: 'active',
             enrollments: { some: { userId: request.user!.userId } },
-          },
+          }
+        : mine
+          ? { lessons: { some: { teachers: { some: { userId: request.user!.userId } } } } }
+          : {},
       include: streamTeachersInclude,
       orderBy: { createdAt: 'desc' },
     });

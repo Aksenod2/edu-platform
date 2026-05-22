@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,6 +73,7 @@ export default function StreamsPage() {
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [search, setSearch] = useState('');
+  const [mineOnly, setMineOnly] = useState(false);
   const [loadingStreams, setLoadingStreams] = useState(true);
   const [error, setError] = useState('');
 
@@ -90,7 +92,7 @@ export default function StreamsPage() {
     if (!accessToken) return;
     setLoadingStreams(true);
     try {
-      const data = await getStreams(accessToken);
+      const data = await getStreams(accessToken, { mine: mineOnly });
       setStreams(data.streams);
       setError('');
     } catch (err) {
@@ -98,7 +100,7 @@ export default function StreamsPage() {
     } finally {
       setLoadingStreams(false);
     }
-  }, [accessToken]);
+  }, [accessToken, mineOnly]);
 
   useEffect(() => {
     if (accessToken && user?.role === 'admin') {
@@ -217,14 +219,23 @@ export default function StreamsPage() {
         </Card>
       )}
 
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Поиск по названию..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-8"
-        />
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="relative max-w-sm flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Поиск по названию..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
+          <Checkbox
+            checked={mineOnly}
+            onCheckedChange={(v) => setMineOnly(v === true)}
+          />
+          Только мои потоки
+        </label>
       </div>
 
       <div className="rounded-lg border">

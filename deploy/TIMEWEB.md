@@ -1,84 +1,85 @@
 # Деплой edu-platform на Timeweb Cloud (App Platform)
 
-Проект — монорепо (pnpm + turbo) из двух деплоев + база:
+Монорепо (pnpm + turbo) разворачивается как **два отдельных приложения** App Platform
+(каждое со своим HTTPS-доменом) + **управляемый PostgreSQL**.
 
-| Ресурс | Что это | Тип в Timeweb |
+> Файлы хранятся в PostgreSQL (`fileStorage`), поэтому **S3/MinIO не нужны** — учитывай
+> размер диска БД (лимит загрузки 50 МБ/файл).
+
+## Почему именно так (ограничения платформы)
+
+App Platform в режиме Docker Compose:
+1. **`docker-compose.yml` читается ТОЛЬКО из корня репозитория** — подпапки (`deploy/api`) не поддерживаются.
+2. **HTTPS на главном домене получает только первый сервис** в compose; остальные — лишь `http://домен:порт`.
+
+Чтобы получить **два независимых HTTPS-приложения** из одного монорепо, заведены
+**две тонкие deploy-ветки**, в каждой корневой `docker-compose.yml` с **одним** сервисом:
+
+| Ветка | Корневой compose | Приложение |
 |---|---|---|
-| **PostgreSQL** | основная БД (в ней же хранятся загруженные файлы) | Облачная база данных (DBaaS) |
-| **API** | Fastify-бэкенд (`apps/api`), порт `4000`, health `/health` | App Platform → Docker Compose → `deploy/api` |
-| **Web** | Next.js-фронт (`apps/web`), порт `3000` | App Platform → Docker Compose → `deploy/web` |
+| `tw-api` | сервис `api` (`apps/api/Dockerfile`, context `.`) | бэкенд Fastify, порт 4000 |
+| `tw-web` | сервис `web` (`apps/web/Dockerfile`, context `.`) | Next.js, порт 3000 |
 
-> S3/MinIO **не нужны** — файлы лежат в PostgreSQL (`fileStorage`). Учтите это при выборе размера диска БД (лимит загрузки — 50 МБ на файл).
+`main` не трогаем — там dev-`docker-compose.yml` с `volumes` (на платформе `volumes` запрещены).
+При изменениях кода: `git merge main` → `tw-api` и `tw-web` (конфликт только по `docker-compose.yml`, берём свой).
 
-Почему Docker Compose, а не «Dockerfile»: в режиме «Dockerfile» контекст сборки = путь к проекту, а наши Dockerfile'ы собираются из **корня** монорепо. Compose позволяет задать `context: ../..` и build-args.
+## Текущий прод (21.05.2026)
+
+| Ресурс | ID | Адрес/сеть |
+|---|---|---|
+| PostgreSQL `edu-platform-db` | `4168180` | приватная сеть **Inventive Amalthea** `network-82f93…`, `192.168.0.4:5432` |
+| App `edu-platform-api` | `197168` | https://aksenod2-edu-platform-8e24.twc1.net |
+| App `edu-platform-web` | `197182` | https://aksenod2-edu-platform-b49c.twc1.net |
+
+Регион: **ru-1 / spb-3**. Тариф апсов: 2 CPU / 4 GB (preset 1018) — поднят для скорости сборки, после запуска можно понизить.
 
 ---
 
-## Шаг 0. Управляемый PostgreSQL
+## Шаг 0. PostgreSQL
 
-1. Timeweb Cloud → **Базы данных** → создать **PostgreSQL** (версия 16).
-2. После создания скопируйте строку подключения. Соберите `DATABASE_URL` вида:
-   ```
-   postgresql://USER:PASSWORD@HOST:PORT/DBNAME?schema=public&sslmode=require
-   ```
-   `sslmode=require` обычно обязателен для управляемой БД Timeweb.
-3. Миграции и сид прогонятся **автоматически** при первом старте API (`apps/api/start.sh`).
+Базы данных → создать **PostgreSQL 16**, регион **ru-1 (СПб)**. Запомни приватную сеть (см. Шаг 1).
+`DATABASE_URL = postgresql://platform:<PASSWORD>@192.168.0.4:5432/platform?schema=public`
+Миграции и сид прогоняются автоматически при старте API (`apps/api/start.sh`).
 
-## Шаг 1. Приложение API (деплоим первым)
+## Шаг 1. Приложение API (создаём первым)
 
-App Platform → **Создать приложение** →
-- **Тип:** Docker Compose
-- **Репозиторий:** `Aksenod2/edu-platform`, ветка `main` (включить авто-деплой)
-- **Путь к директории проекта:** `deploy/api`
-- **Переменные окружения** (см. таблицу ниже)
-- Запустить деплой. После успеха скопировать публичный домен API → это `<API_URL>` (вида `https://platform-api-xxxx.twc1.net`).
+App Platform → **Создать приложение** → **Docker Compose**:
+- Репозиторий `Aksenod2/edu-platform`, ветка **`tw-api`**
+- Регион **ru-1 (СПб, spb-3)** — обязательно тот же, что у БД (приватная сеть привязана к региону)
+- **Приватная сеть:** ⚠️ выбрать **существующую сеть БД** (`Inventive Amalthea`), а **не создавать новую**.
+  IP приложения — **отличный от `192.168.0.4`** (это БД), напр. `192.168.0.5`.
+  ❗️Если создать новую сеть с тем же диапазоном `192.168.0.0/24` — апп и БД окажутся в РАЗНЫХ сетях и получишь `P1001: Can't reach database`.
+- **Переменные окружения:**
 
-После первого деплоя добавьте переменную `API_BASE_URL=<API_URL>` и передеплойте (нужно, чтобы ссылки на файлы были абсолютными).
+| Ключ | Значение |
+|---|---|
+| `DATABASE_URL` | `postgresql://platform:<PASSWORD>@192.168.0.4:5432/platform?schema=public` |
+| `PORT` | `4000` |
+| `HOST` | `0.0.0.0` |
+| `NODE_ENV` | `production` |
+| `JWT_SECRET` | длинная случайная строка |
+| `API_BASE_URL` | публичный домен API (после 1-го деплоя) |
+| `CORS_ORIGIN` | публичный домен Web (после Шага 2) |
+| _(опц.)_ `SMTP_*`, `VAPID_*` | письма / web-push |
 
-### Переменные окружения API
-
-| Переменная | Значение | Обяз. |
-|---|---|---|
-| `DATABASE_URL` | строка подключения из Шага 0 | ✅ |
-| `PORT` | `4000` | ✅ |
-| `HOST` | `0.0.0.0` | ✅ |
-| `NODE_ENV` | `production` | ✅ |
-| `JWT_SECRET` | длинная случайная строка (`openssl rand -hex 32`) | ✅ |
-| `API_BASE_URL` | `<API_URL>` (после 1-го деплоя) | ✅ |
-| `CORS_ORIGIN` | `<WEB_URL>` (заполнить после Шага 2) | ✅ |
-| `JWT_EXPIRES_IN` | `15m` | ⬜ |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_FROM` / `SMTP_USER` / `SMTP_PASS` | внешний SMTP (Resend/Brevo) — для писем и сброса пароля | ⬜ |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | web-push (`npx web-push generate-vapid-keys`) | ⬜ |
-| `DEADLINE_REMINDER_HOURS` / `NOTIFICATION_RETENTION_DAYS` | тюнинг cron | ⬜ |
+После деплоя — скопировать домен API, дописать `API_BASE_URL`.
 
 ## Шаг 2. Приложение Web
 
-App Platform → **Создать приложение** →
-- **Тип:** Docker Compose
-- **Репозиторий:** `Aksenod2/edu-platform`, ветка `main`
-- **Путь к директории проекта:** `deploy/web`
-- **Переменные окружения:**
+**Docker Compose**, ветка **`tw-web`**, регион ru-1. Приватная сеть не нужна (web с БД не общается).
+- **Переменные:** `NEXT_PUBLIC_API_URL` = домен API (зашивается **при сборке** через build-arg → смена адреса требует **пересборки**, не рестарта).
 
-| Переменная | Значение | Обяз. |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `<API_URL>` из Шага 1 | ✅ |
+## Шаг 3. Связать
 
-> `NEXT_PUBLIC_API_URL` зашивается в бандл **при сборке** (через build-arg в `deploy/web/docker-compose.yml`). Если поменяете адрес API — нужен **пересбор** web, рестарта мало.
-
-После деплоя скопировать домен web → это `<WEB_URL>`.
-
-## Шаг 3. Связать API и Web
-
-Вернуться в приложение **API** → выставить `CORS_ORIGIN=<WEB_URL>` → передеплоить.
+В API проставить `CORS_ORIGIN` = домен Web.
 
 ---
 
-## После запуска
+## Грабли (важно)
 
-- Первый вход: `admin@platform.local` / `admin123` — **сразу сменить пароль** (создаётся сидом).
+- **Изменение переменных или тарифа аппа триггерит ПОЛНУЮ пересборку.** Задавай всё сразу при создании.
+- **Сборка на 1 CPU / 1 GB очень медленная** (~25 мин, `tsc`/Next упираются в ресурсы). Для сборки бери 2 CPU / 4 GB, потом можно понизить.
+- **Авто-деплой по push не работает с git-провайдером по URL** (`is_allowed_webhook=false`). Для вебхуков подключить GitHub через OAuth в панели; иначе — редеплой вручную.
+- Приватная сеть/тариф меняются **только в панели** (через API недоступно).
+- Первый вход: **`admin@platform.local` / `admin123`** → сразу сменить пароль.
 - Health-check API: `GET <API_URL>/health`.
-- Логи деплоя и рантайма — во вкладке приложения в панели.
-
-## Если сборка не видит `context: ../..`
-
-Если App Platform не разрешит контекст выше папки проекта — фолбэк: один Compose-апп с обоими сервисами в корне (web получит главный домен, API будет на `:4000`). Тогда нужен отдельный root-compose без `volumes`. Напишите — соберём.

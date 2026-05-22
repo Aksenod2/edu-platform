@@ -190,21 +190,23 @@ async function main() {
     ],
   });
 
-  // ── Сообщения (тред) ─────────────────────────────────────────────────────
-  // Тред с последней репликой от студента — чтобы инбокс «Сообщения» и фильтр
-  // «Ждут ответа» были наполнены. Тред привязан к студенту (не к потоку),
-  // поэтому пересоздаём его записи отдельно (idempotent).
-  const thread = await prisma.thread.upsert({
+  // ── Сообщения (диалог студента) ────────────────────────────────────────────
+  // Диалог с последней репликой от студента — чтобы инбокс «Сообщения» и фильтр
+  // «Ждут ответа» были наполнены. Conversation типа student уникален по studentId,
+  // поэтому записи пересоздаём отдельно (idempotent).
+  const conversation = await prisma.conversation.upsert({
     where: { studentId: student.id },
     update: {},
-    create: { studentId: student.id },
+    create: { type: 'student', studentId: student.id },
   });
-  await prisma.threadEntry.deleteMany({ where: { threadId: thread.id } });
+  await prisma.conversationEntry.deleteMany({
+    where: { conversationId: conversation.id },
+  });
   const HOUR = 60 * 60 * 1000;
-  await prisma.threadEntry.createMany({
+  await prisma.conversationEntry.createMany({
     data: [
       {
-        threadId: thread.id,
+        conversationId: conversation.id,
         authorId: teacher.id,
         type: 'comment',
         content: 'Привет! Если будут вопросы по урокам или заданиям — пиши сюда.',
@@ -212,7 +214,7 @@ async function main() {
         readAt: new Date(Date.now() - 1.5 * HOUR),
       },
       {
-        threadId: thread.id,
+        conversationId: conversation.id,
         authorId: student.id,
         type: 'text',
         content: 'Здравствуйте! Не до конца понял, как оформить CJM — можно пример?',
