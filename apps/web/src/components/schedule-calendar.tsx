@@ -433,6 +433,10 @@ function DeleteButton({
 
   const handleConfirm = async () => {
     if (!onDelete) return;
+    // Закрываем диалог ДО удаления: после удаления строка (вместе с этим
+    // компонентом и диалогом) размонтируется, и Radix может не снять
+    // pointer-events с body, заморозив страницу.
+    setOpen(false);
     setBusy(true);
     try {
       await onDelete(id);

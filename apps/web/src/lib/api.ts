@@ -99,6 +99,34 @@ export async function changePassword(
   });
 }
 
+export interface MeUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'student';
+  isActive: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+}
+
+// Самостоятельное обновление профиля текущего пользователя.
+// При смене пароля сервер возвращает новый accessToken (старые сессии инвалидируются).
+export async function updateMe(
+  accessToken: string,
+  data: {
+    name?: string;
+    email?: string;
+    currentPassword?: string;
+    newPassword?: string;
+  },
+): Promise<{ user: MeUser; accessToken?: string }> {
+  return request('/users/me', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function forgotPassword(email: string): Promise<{ message: string }> {
   return request('/auth/forgot-password', {
     method: 'POST',
@@ -331,6 +359,16 @@ export async function getTeachers(
 
 // Lessons API
 
+// Учебный материал урока — только PDF/MD. url — подписанная временная ссылка
+// (приходит с бэка), s3Key — постоянный ключ файла в хранилище.
+export interface LessonMaterial {
+  s3Key: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  url?: string;
+}
+
 export interface Lesson {
   id: string;
   streamId: string;
@@ -340,7 +378,11 @@ export interface Lesson {
   notes: string | null;
   status: 'draft' | 'published' | 'closed';
   publishAt: string | null;
+  // Производное поле «дата и время занятия» из связанной записи расписания
+  // ("YYYY-MM-DDTHH:MM" или null). Источник правды — ScheduleEntry.
+  scheduledAt?: string | null;
   sortOrder: number;
+  materials?: LessonMaterial[];
   createdAt: string;
   updatedAt: string;
   teachers?: { id: string; name: string }[];
@@ -376,8 +418,10 @@ export async function createLesson(
     summary?: string;
     notes?: string;
     publishAt?: string;
+    scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
+    materials?: LessonMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request('/lessons', {
@@ -397,14 +441,63 @@ export async function updateLesson(
     notes?: string;
     status?: 'draft' | 'published' | 'closed';
     publishAt?: string | null;
+    scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
+    materials?: LessonMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request(`/lessons/${id}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify(data),
+  });
+}
+
+// Загрузка файла-материала урока (PDF/MD). Возвращает обновлённый список материалов.
+export async function uploadLessonMaterial(
+  accessToken: string,
+  lessonId: string,
+  file: File,
+): Promise<{ materials: LessonMaterial[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/materials`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { materials: LessonMaterial[] };
+}
+
+// Удаление файла-материала урока по s3Key. Возвращает обновлённый список материалов.
+export async function deleteLessonMaterial(
+  accessToken: string,
+  lessonId: string,
+  s3Key: string,
+): Promise<{ materials: LessonMaterial[] }> {
+  return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 
@@ -883,6 +976,95 @@ export async function getThreads(accessToken: string): Promise<{ threads: Thread
   });
 }
 
+// Staff conversation (штаб-канал преподавателей) API
+
+export interface StaffEntry {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  type: ThreadEntryType;
+  content: string;
+  metadata: {
+    s3Key?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
+    title?: string;
+    [key: string]: unknown;
+  } | null;
+  createdAt: string;
+  author: { id: string; name: string; role: string };
+}
+
+export interface StaffConversationResponse {
+  conversation: { id: string };
+  entries: StaffEntry[];
+  unreadCount: number;
+}
+
+export async function getStaffConversation(
+  accessToken: string,
+): Promise<StaffConversationResponse> {
+  return request('/conversations/staff', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getStaffUnread(
+  accessToken: string,
+): Promise<{ unreadCount: number }> {
+  return request('/conversations/staff/unread', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addStaffEntry(
+  accessToken: string,
+  data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+): Promise<{ entry: StaffEntry }> {
+  return request('/conversations/staff/entries', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadStaffFile(
+  accessToken: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+): Promise<{ entry: StaffEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/conversations/staff/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { entry: StaffEntry };
+}
+
 // Notifications API
 
 export type NotificationType =
@@ -971,7 +1153,8 @@ export function getNotificationLink(
     case 'thread_entry':
       if (role === 'student') return '/dashboard/thread';
       if (m.studentId) return `/admin/students/${m.studentId}/thread`;
-      return '/admin/students';
+      // Без studentId — это сообщение из штаб-канала преподавателей.
+      return '/admin/messages';
     case 'lesson_published':
       return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
     case 'schedule_entry_created':
