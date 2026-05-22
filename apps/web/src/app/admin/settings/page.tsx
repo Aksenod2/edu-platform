@@ -108,7 +108,7 @@ export default function AdminSettingsPage() {
         rows={[
           { label: 'Email-уведомления', value: 'Включено' },
           { label: 'Push-уведомления', value: 'Включено (Web Push)' },
-          { label: 'Категории', value: 'урок / задание / дедлайн / тред', mono: true },
+          { label: 'Категории', value: 'урок / задание / дедлайн / сообщение', mono: true },
         ]}
         footer={
           <div className="flex items-center gap-3">

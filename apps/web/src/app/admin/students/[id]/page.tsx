@@ -464,7 +464,7 @@ export default function StudentProfilePage() {
               <TabsList>
                 <TabsTrigger value="profile">Профиль</TabsTrigger>
                 <TabsTrigger value="assignments">Задания</TabsTrigger>
-                <TabsTrigger value="thread">Тред</TabsTrigger>
+                <TabsTrigger value="thread">Сообщения</TabsTrigger>
               </TabsList>
             </div>
           </Tabs>
@@ -698,7 +698,7 @@ export default function StudentProfilePage() {
                   </div>
                 ) : threadEntries.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Тред пуст</span>
+                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Сообщений пока нет</span>
                   </div>
                 ) : (
                   threadEntries.map((entry, i) => (
