@@ -310,6 +310,7 @@ model ScheduleEntry {
   lessonTitle String
   notes       String?
   meetingUrl  String?
+  managedByLesson Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

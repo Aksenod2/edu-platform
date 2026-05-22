@@ -4,11 +4,14 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 
-// include-конфиг для подгрузки преподавателей урока и записей расписания.
-// scheduleEntries сортируем по дате — берём первую как «дату занятия» урока.
+// include-конфиг для подгрузки преподавателей урока и его записи расписания.
+// Берём ТОЛЬКО запись, управляемую из карточки урока (managedByLesson) — это
+// «дата занятия» урока. Записи, заведённые вручную через раздел «Расписание»,
+// не относятся к этому полю и не трогаются.
 const teacherInclude = {
   teachers: { include: { user: { select: { id: true, name: true } } } },
   scheduleEntries: {
+    where: { managedByLesson: true },
     orderBy: { date: 'asc' },
     select: { date: true, startTime: true },
   },
@@ -46,12 +49,13 @@ function shapeLesson<
   };
 }
 
-// Синхронизация записи расписания (ScheduleEntry) с «датой занятия» урока.
-// scheduledAt — наивная локальная строка "YYYY-MM-DDTHH:MM":
-//   задана  → создаём/обновляем запись (по lessonId, первую по дате);
-//   очищена → удаляем все записи урока.
-// Если в строке нет времени (timePart пустой) — синхронизацию пропускаем,
-// чтобы не создавать запись без startTime.
+// Синхронизация записи расписания (ScheduleEntry), УПРАВЛЯЕМОЙ из карточки урока
+// (managedByLesson=true). scheduledAt — наивная локальная строка "YYYY-MM-DDTHH:MM":
+//   задана  → создаём/обновляем единственную managed-запись урока;
+//   очищена → удаляем только managed-запись урока.
+// Записи, заведённые вручную через раздел «Расписание» (managedByLesson=false),
+// НИКОГДА не трогаем — даже если у них тот же lessonId.
+// Если в строке нет времени (timePart пустой) — синхронизацию пропускаем.
 async function syncLessonSchedule(
   lesson: { id: string; streamId: string; title: string },
   scheduledAt: string | null | undefined,
@@ -62,7 +66,7 @@ async function syncLessonSchedule(
     if (!datePart || !startTime) return; // нет полной даты+времени — пропускаем
     const date = new Date(datePart); // @db.Date — наивная дата
     const existing = await prisma.scheduleEntry.findFirst({
-      where: { lessonId: lesson.id },
+      where: { lessonId: lesson.id, managedByLesson: true },
       orderBy: { date: 'asc' },
     });
     if (existing) {
@@ -78,11 +82,14 @@ async function syncLessonSchedule(
           date,
           startTime,
           lessonTitle: lesson.title,
+          managedByLesson: true,
         },
       });
     }
   } else {
-    await prisma.scheduleEntry.deleteMany({ where: { lessonId: lesson.id } });
+    await prisma.scheduleEntry.deleteMany({
+      where: { lessonId: lesson.id, managedByLesson: true },
+    });
   }
 }
 

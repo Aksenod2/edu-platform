@@ -136,7 +136,11 @@ export async function conversationRoutes(app: FastifyInstance) {
       },
     });
 
-    await notifyStaff(conversation.id, entry.id, user.userId, entry.author.name, body.type, body.content);
+    // Уведомления — fire-and-forget: сбой рассылки не должен валить POST,
+    // запись уже создана (иначе админ пере-отправит → дубль).
+    notifyStaff(conversation.id, entry.id, user.userId, entry.author.name, body.type, body.content).catch(
+      () => {},
+    );
 
     return reply.status(201).send({ entry });
   });
@@ -229,7 +233,9 @@ async function handleStaffMultipartEntry(
     },
   });
 
-  await notifyStaff(conversationId, entry.id, user.userId, entry.author.name, entryType, fileName);
+  notifyStaff(conversationId, entry.id, user.userId, entry.author.name, entryType, fileName).catch(
+    () => {},
+  );
 
   return reply.status(201).send({ entry });
 }

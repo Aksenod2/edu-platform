@@ -1065,7 +1065,8 @@ export function getNotificationLink(
     case 'thread_entry':
       if (role === 'student') return '/dashboard/thread';
       if (m.studentId) return `/admin/students/${m.studentId}/thread`;
-      return '/admin/students';
+      // Без studentId — это сообщение из штаб-канала преподавателей.
+      return '/admin/messages';
     case 'lesson_published':
       return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
     case 'schedule_entry_created':
