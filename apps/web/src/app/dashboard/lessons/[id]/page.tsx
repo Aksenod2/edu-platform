@@ -203,20 +203,6 @@ export default function StudentLessonPage() {
             <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
           )}
 
-          {/* Конспект */}
-          {lesson.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Конспект</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {lesson.notes}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Материалы урока (PDF/MD) */}
           {lesson.materials && lesson.materials.length > 0 && (
             <Card>
@@ -276,7 +262,6 @@ export default function StudentLessonPage() {
 
           {!lesson.videoUrl &&
             !lesson.summary &&
-            !lesson.notes &&
             (!lesson.materials || lesson.materials.length === 0) &&
             assignments.length === 0 && (
               <p className="text-sm italic text-muted-foreground">Контент пока не добавлен.</p>

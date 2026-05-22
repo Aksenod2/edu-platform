@@ -62,7 +62,7 @@ function MaterialsContent() {
   }, [selectedStreamId, fetchLessons]);
 
   const hasContent = (l: Lesson) =>
-    !!l.videoUrl || !!l.summary || !!l.notes || (l.materials?.length ?? 0) > 0;
+    !!l.videoUrl || !!l.summary || (l.materials?.length ?? 0) > 0;
   const lessonsWithMaterials = lessons.filter(hasContent);
   const lessonsWithoutMaterials = lessons.filter((l) => !hasContent(l));
 
@@ -71,7 +71,7 @@ function MaterialsContent() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Учебные материалы</h1>
-          <p className="text-sm text-muted-foreground">Конспекты, видеозаписи и заметки к урокам</p>
+          <p className="text-sm text-muted-foreground">Видеозаписи, описания и файлы к урокам</p>
         </div>
         {streams.length > 1 ? (
           <Select
@@ -178,7 +178,6 @@ function LessonCard({
 }) {
   const hasVideo = !!lesson.videoUrl;
   const hasSummary = !!lesson.summary;
-  const hasNotes = !!lesson.notes;
   const files = lesson.materials ?? [];
   const hasFiles = files.length > 0;
 
@@ -203,7 +202,6 @@ function LessonCard({
         <div className="flex-shrink-0 flex items-center gap-2">
           {hasVideo && <Badge variant="default">Видео</Badge>}
           {hasSummary && <Badge variant="secondary">Краткое описание</Badge>}
-          {hasNotes && <Badge variant="outline">Конспект</Badge>}
           {hasFiles && <Badge variant="outline">Файлы</Badge>}
         </div>
 
@@ -240,20 +238,6 @@ function LessonCard({
               <div className="border-l-2 pl-4">
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {lesson.summary}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
-          {hasNotes && (
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-                Конспект
-              </p>
-              <div className="border-l-2 border-primary pl-4">
-                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                  {lesson.notes}
                 </p>
               </div>
             </div>

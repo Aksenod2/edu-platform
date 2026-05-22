@@ -610,16 +610,16 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="lesson-notes">Конспект</FieldLabel>
+                  <FieldLabel htmlFor="lesson-notes">Заметки преподавателя</FieldLabel>
                   <Textarea
                     id="lesson-notes"
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    placeholder="Текст конспекта..."
+                    placeholder="Заметки для преподавателей..."
                     rows={5}
                   />
                   <FieldDescription>
-                    Видно студенту на странице урока — основной текст конспекта.
+                    Видны только преподавателям, студенту не показываются.
                   </FieldDescription>
                 </Field>
 
@@ -838,18 +838,18 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </Field>
 
                       <Field>
-                        <FieldLabel htmlFor="edit-notes">Конспект</FieldLabel>
+                        <FieldLabel htmlFor="edit-notes">Заметки преподавателя</FieldLabel>
                         <Textarea
                           id="edit-notes"
                           value={editForm.notes}
                           onChange={(e) =>
                             setEditForm({ ...editForm, notes: e.target.value })
                           }
-                          placeholder="Текст конспекта..."
+                          placeholder="Заметки для преподавателей..."
                           rows={5}
                         />
                         <FieldDescription>
-                          Видно студенту на странице урока — основной текст конспекта.
+                          Видны только преподавателям, студенту не показываются.
                         </FieldDescription>
                       </Field>
 
@@ -1024,7 +1024,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </div>
 
                       <div className="flex flex-col gap-1">
-                        <dt className="text-muted-foreground">Конспект</dt>
+                        <dt className="text-muted-foreground">Заметки преподавателя</dt>
                         <dd>
                           {viewLesson.notes ? (
                             <span className="whitespace-pre-wrap">{viewLesson.notes}</span>
