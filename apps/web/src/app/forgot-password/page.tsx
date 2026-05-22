@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col items-center gap-6">
-                <CheckCircle className="size-12 text-green-500" />
+                <CheckCircle className="size-12 text-success" />
                 <a href="/login" className="text-sm underline-offset-4 hover:underline">
                   ← Вернуться ко входу
                 </a>
