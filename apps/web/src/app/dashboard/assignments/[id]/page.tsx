@@ -339,7 +339,7 @@ export default function AssignmentDetailPage({
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => router.push(`/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
+                  onClick={() => router.push(`/dashboard/messages?tab=personal&assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
                 >
                   Задать вопрос
                 </Button>
@@ -451,7 +451,7 @@ export default function AssignmentDetailPage({
                 <Button
                   variant="link"
                   className="h-auto p-0"
-                  onClick={() => router.push(`/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
+                  onClick={() => router.push(`/dashboard/messages?tab=personal&assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`)}
                 >
                   <MessageCircle className="size-3.5" />
                   Открыть в сообщениях
