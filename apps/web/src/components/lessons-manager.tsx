@@ -67,6 +67,7 @@ type LessonFormData = {
   summary: string;
   notes: string;
   publishAt: string;
+  scheduledAt: string;
   sortOrder: number;
   status: 'draft' | 'published' | 'closed';
   teacherIds: string[];
@@ -78,6 +79,7 @@ const emptyForm: LessonFormData = {
   summary: '',
   notes: '',
   publishAt: '',
+  scheduledAt: '',
   sortOrder: 0,
   status: 'draft',
   teacherIds: [],
@@ -90,6 +92,7 @@ function lessonToForm(lesson: Lesson): LessonFormData {
     summary: lesson.summary || '',
     notes: lesson.notes || '',
     publishAt: lesson.publishAt ? lesson.publishAt.slice(0, 16) : '',
+    scheduledAt: lesson.scheduledAt ? lesson.scheduledAt.slice(0, 16) : '',
     sortOrder: lesson.sortOrder,
     status: lesson.status,
     teacherIds: (lesson.teachers ?? []).map((t) => t.id),
@@ -278,6 +281,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         summary: form.summary || undefined,
         notes: form.notes || undefined,
         publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : undefined,
+        // Наивная локальная строка "YYYY-MM-DDTHH:MM" — без перевода в ISO/UTC
+        scheduledAt: form.scheduledAt ? form.scheduledAt : undefined,
         sortOrder: form.sortOrder,
         teacherIds: form.teacherIds,
       });
@@ -303,6 +308,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         notes: editForm.notes || undefined,
         status: editForm.status,
         publishAt: editForm.publishAt ? new Date(editForm.publishAt).toISOString() : null,
+        // Наивная локальная строка "YYYY-MM-DDTHH:MM"; null — чтобы можно было очистить
+        scheduledAt: editForm.scheduledAt ? editForm.scheduledAt : null,
         sortOrder: editForm.sortOrder,
         teacherIds: editForm.teacherIds,
       });
@@ -462,6 +469,19 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     />
                   </Field>
                 </div>
+
+                <Field>
+                  <FieldLabel htmlFor="lesson-scheduled">Дата и время занятия</FieldLabel>
+                  <Input
+                    id="lesson-scheduled"
+                    type="datetime-local"
+                    value={form.scheduledAt}
+                    onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Появится в расписании и календаре
+                  </p>
+                </Field>
 
                 <Field>
                   <FieldLabel>Преподаватели</FieldLabel>
@@ -691,6 +711,21 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       </div>
 
                       <Field>
+                        <FieldLabel htmlFor="edit-scheduled">Дата и время занятия</FieldLabel>
+                        <Input
+                          id="edit-scheduled"
+                          type="datetime-local"
+                          value={editForm.scheduledAt}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, scheduledAt: e.target.value })
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Появится в расписании и календаре
+                        </p>
+                      </Field>
+
+                      <Field>
                         <FieldLabel>Преподаватели</FieldLabel>
                         <TeacherPicker
                           teachers={teachers}
@@ -795,6 +830,18 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         <dd className="tabular-nums">
                           {viewLesson.publishAt
                             ? new Date(viewLesson.publishAt).toLocaleString('ru-RU', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <dt className="text-muted-foreground">Дата занятия</dt>
+                        <dd className="tabular-nums">
+                          {viewLesson.scheduledAt
+                            ? new Date(viewLesson.scheduledAt).toLocaleString('ru-RU', {
                                 dateStyle: 'short',
                                 timeStyle: 'short',
                               })

@@ -340,6 +340,9 @@ export interface Lesson {
   notes: string | null;
   status: 'draft' | 'published' | 'closed';
   publishAt: string | null;
+  // Производное поле «дата и время занятия» из связанной записи расписания
+  // ("YYYY-MM-DDTHH:MM" или null). Источник правды — ScheduleEntry.
+  scheduledAt?: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -376,6 +379,7 @@ export async function createLesson(
     summary?: string;
     notes?: string;
     publishAt?: string;
+    scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
   },
@@ -397,6 +401,7 @@ export async function updateLesson(
     notes?: string;
     status?: 'draft' | 'published' | 'closed';
     publishAt?: string | null;
+    scheduledAt?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
   },

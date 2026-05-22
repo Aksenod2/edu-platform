@@ -4,20 +4,86 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 
-// include-конфиг для подгрузки преподавателей урока
+// include-конфиг для подгрузки преподавателей урока и записей расписания.
+// scheduleEntries сортируем по дате — берём первую как «дату занятия» урока.
 const teacherInclude = {
   teachers: { include: { user: { select: { id: true, name: true } } } },
+  scheduleEntries: {
+    orderBy: { date: 'asc' },
+    select: { date: true, startTime: true },
+  },
 } as const;
 
-// Преобразует урок с include-преподавателями к плоскому виду { teachers: [{id,name}] }
-function shapeLesson<T extends { teachers?: { user: { id: string; name: string } }[] }>(
+type ScheduleEntrySlim = { date: Date; startTime: string };
+
+// Производное поле «дата занятия» урока: "YYYY-MM-DDTHH:MM" из первой записи
+// расписания (UTC-срез наивной @db.Date + startTime "HH:MM") или null.
+function deriveScheduledAt(entries?: ScheduleEntrySlim[]): string | null {
+  const entry = entries?.[0];
+  if (!entry) return null;
+  const datePart = entry.date.toISOString().slice(0, 10);
+  return `${datePart}T${entry.startTime}`;
+}
+
+// Преобразует урок с include-преподавателями/расписанием к плоскому виду
+// { teachers: [{id,name}], scheduledAt: string | null }
+function shapeLesson<
+  T extends {
+    teachers?: { user: { id: string; name: string } }[];
+    scheduleEntries?: ScheduleEntrySlim[];
+  },
+>(
   lesson: T,
-): Omit<T, 'teachers'> & { teachers: { id: string; name: string }[] } {
-  const { teachers, ...rest } = lesson;
+): Omit<T, 'teachers' | 'scheduleEntries'> & {
+  teachers: { id: string; name: string }[];
+  scheduledAt: string | null;
+} {
+  const { teachers, scheduleEntries, ...rest } = lesson;
   return {
     ...rest,
     teachers: (teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+    scheduledAt: deriveScheduledAt(scheduleEntries),
   };
+}
+
+// Синхронизация записи расписания (ScheduleEntry) с «датой занятия» урока.
+// scheduledAt — наивная локальная строка "YYYY-MM-DDTHH:MM":
+//   задана  → создаём/обновляем запись (по lessonId, первую по дате);
+//   очищена → удаляем все записи урока.
+// Если в строке нет времени (timePart пустой) — синхронизацию пропускаем,
+// чтобы не создавать запись без startTime.
+async function syncLessonSchedule(
+  lesson: { id: string; streamId: string; title: string },
+  scheduledAt: string | null | undefined,
+): Promise<void> {
+  if (scheduledAt) {
+    const [datePart, timePart] = scheduledAt.split('T');
+    const startTime = (timePart || '').slice(0, 5);
+    if (!datePart || !startTime) return; // нет полной даты+времени — пропускаем
+    const date = new Date(datePart); // @db.Date — наивная дата
+    const existing = await prisma.scheduleEntry.findFirst({
+      where: { lessonId: lesson.id },
+      orderBy: { date: 'asc' },
+    });
+    if (existing) {
+      await prisma.scheduleEntry.update({
+        where: { id: existing.id },
+        data: { date, startTime, lessonTitle: lesson.title },
+      });
+    } else {
+      await prisma.scheduleEntry.create({
+        data: {
+          streamId: lesson.streamId,
+          lessonId: lesson.id,
+          date,
+          startTime,
+          lessonTitle: lesson.title,
+        },
+      });
+    }
+  } else {
+    await prisma.scheduleEntry.deleteMany({ where: { lessonId: lesson.id } });
+  }
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
@@ -125,6 +191,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       summary?: string;
       notes?: string;
       publishAt?: string;
+      scheduledAt?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
     };
@@ -166,7 +233,15 @@ export async function lessonRoutes(app: FastifyInstance) {
       include: teacherInclude,
     });
 
-    return reply.status(201).send({ lesson: shapeLesson(lesson) });
+    // Синхронизируем «дату занятия» с расписанием, если она передана
+    await syncLessonSchedule(lesson, body.scheduledAt);
+
+    const created = await prisma.lesson.findUnique({
+      where: { id: lesson.id },
+      include: teacherInclude,
+    });
+
+    return reply.status(201).send({ lesson: shapeLesson(created ?? lesson) });
   });
 
   // PATCH /lessons/:id — обновление урока (admin)
@@ -179,6 +254,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       notes?: string;
       status?: 'draft' | 'published' | 'closed';
       publishAt?: string | null;
+      scheduledAt?: string | null;
       sortOrder?: number;
       teacherIds?: string[];
     };
@@ -223,11 +299,26 @@ export async function lessonRoutes(app: FastifyInstance) {
       ]);
     }
 
-    const lesson = await prisma.lesson.update({
+    let lesson = await prisma.lesson.update({
       where: { id },
       data,
       include: teacherInclude,
     });
+
+    // Синхронизируем «дату занятия» с расписанием ТОЛЬКО если поле передано в теле,
+    // чтобы частичные апдейты без scheduledAt не удаляли запись расписания.
+    // lessonTitle обновляется внутри хелпера (актуальный title уже в lesson).
+    if (body.scheduledAt !== undefined) {
+      await syncLessonSchedule(lesson, body.scheduledAt);
+      lesson =
+        (await prisma.lesson.findUnique({ where: { id }, include: teacherInclude })) ?? lesson;
+    } else if (body.title !== undefined) {
+      // Если поменялся только title — отразим его в существующей записи расписания
+      await prisma.scheduleEntry.updateMany({
+        where: { lessonId: id },
+        data: { lessonTitle: lesson.title },
+      });
+    }
 
     // Notify only students enrolled in the lesson's stream when published
     if (body.status === 'published' && existing.status !== 'published') {
