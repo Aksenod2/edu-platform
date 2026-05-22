@@ -112,6 +112,10 @@ export default function StudentProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Отмечаем, что вкладка уже загружалась, чтобы не дёргать запрос повторно.
+  // Раньше условием было `.length === 0`, и для пустого треда/списка это
+  // зацикливало загрузку (спиннер мигал поверх «Тред пуст»).
+  const fetchedRef = useRef({ thread: false, assignments: false, summary: false });
 
   const fetchProfile = useCallback(async () => {
     if (!accessToken || !studentId) return;
@@ -170,18 +174,34 @@ export default function StudentProfilePage() {
     if (accessToken && studentId) fetchProfile();
   }, [accessToken, studentId, fetchProfile]);
 
+  // При смене ученика сбрасываем «уже загружено» и устаревшие данные вкладок,
+  // чтобы они перезагрузились для нового ученика.
   useEffect(() => {
-    if (accessToken && studentId && activeTab === 'assignments') {
-      if (assignments.length === 0 && !loadingAssignments) fetchAssignments();
-      if (!assignmentsSummary && !loadingSummary) fetchSummary();
-    }
-  }, [accessToken, studentId, activeTab, assignments.length, loadingAssignments, fetchAssignments, assignmentsSummary, loadingSummary, fetchSummary]);
+    fetchedRef.current = { thread: false, assignments: false, summary: false };
+    setThreadEntries([]);
+    setAssignments([]);
+    setAssignmentsSummary(null);
+  }, [studentId]);
 
   useEffect(() => {
-    if (accessToken && studentId && activeTab === 'thread' && threadEntries.length === 0 && !loadingThread) {
+    if (accessToken && studentId && activeTab === 'assignments') {
+      if (!fetchedRef.current.assignments && !loadingAssignments) {
+        fetchedRef.current.assignments = true;
+        fetchAssignments();
+      }
+      if (!fetchedRef.current.summary && !loadingSummary) {
+        fetchedRef.current.summary = true;
+        fetchSummary();
+      }
+    }
+  }, [accessToken, studentId, activeTab, loadingAssignments, fetchAssignments, loadingSummary, fetchSummary]);
+
+  useEffect(() => {
+    if (accessToken && studentId && activeTab === 'thread' && !fetchedRef.current.thread && !loadingThread) {
+      fetchedRef.current.thread = true;
       fetchThread();
     }
-  }, [accessToken, studentId, activeTab, threadEntries.length, loadingThread, fetchThread]);
+  }, [accessToken, studentId, activeTab, loadingThread, fetchThread]);
 
   useEffect(() => {
     if (activeTab === 'thread') {
