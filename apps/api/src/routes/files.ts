@@ -84,11 +84,46 @@ export async function fileRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'File not found' });
     }
 
-    return reply
+    const data = Buffer.from(file.data);
+    const total = data.length;
+
+    // Общие заголовки. Accept-Ranges сообщает браузеру, что можно запрашивать
+    // диапазоны — это нужно для <video> (перемотка) и обязательно для Safari/iOS,
+    // который не воспроизводит видео без ответа 206 на Range-запрос.
+    reply
+      .header('Accept-Ranges', 'bytes')
       .header('Content-Type', file.mimeType)
-      .header('Content-Length', file.size)
       .header('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`)
-      .header('Cache-Control', 'private, max-age=3600')
-      .send(Buffer.from(file.data));
+      .header('Cache-Control', 'private, max-age=3600');
+
+    const rangeHeader = request.headers.range;
+    const match = rangeHeader ? /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim()) : null;
+
+    if (match) {
+      let start = match[1] === '' ? NaN : parseInt(match[1], 10);
+      let end = match[2] === '' ? NaN : parseInt(match[2], 10);
+
+      if (Number.isNaN(start) && !Number.isNaN(end)) {
+        // bytes=-N — последние N байт
+        start = Math.max(total - end, 0);
+        end = total - 1;
+      } else {
+        if (Number.isNaN(start)) start = 0;
+        if (Number.isNaN(end) || end >= total) end = total - 1;
+      }
+
+      if (start > end || start >= total) {
+        return reply.status(416).header('Content-Range', `bytes */${total}`).send();
+      }
+
+      const chunk = data.subarray(start, end + 1);
+      return reply
+        .status(206)
+        .header('Content-Range', `bytes ${start}-${end}/${total}`)
+        .header('Content-Length', chunk.length)
+        .send(chunk);
+    }
+
+    return reply.header('Content-Length', total).send(data);
   });
 }
