@@ -16,3 +16,6 @@ npm-debug.log*
 pnpm-debug.log*
 
 storybook-static
+.env.vps
+.env.vps.bak.*
+/deploy-config-backup/
