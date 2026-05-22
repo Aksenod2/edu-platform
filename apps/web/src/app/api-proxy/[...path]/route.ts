@@ -18,6 +18,12 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
   if (authorization) headers.set('authorization', authorization);
   const cookie = request.headers.get('cookie');
   if (cookie) headers.set('cookie', cookie);
+  // Пробрасываем Range/If-Range — иначе <video> не перематывается, а Safari/iOS
+  // вообще не играет (нужен ответ 206 на Range-запрос).
+  const range = request.headers.get('range');
+  if (range) headers.set('range', range);
+  const ifRange = request.headers.get('if-range');
+  if (ifRange) headers.set('if-range', ifRange);
 
   const init: RequestInit = {
     method: request.method,
@@ -39,10 +45,23 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
 
   const upstream = await fetch(url.toString(), init);
 
-  // Build the response headers
+  // Build the response headers. Пробрасываем заголовки, важные для файлов и
+  // потокового видео (Range), плюс кэш/тип/имя.
   const responseHeaders = new Headers();
-  const ct = upstream.headers.get('content-type');
-  if (ct) responseHeaders.set('content-type', ct);
+  const passthrough = [
+    'content-type',
+    'content-length',
+    'content-range',
+    'accept-ranges',
+    'content-disposition',
+    'cache-control',
+    'etag',
+    'last-modified',
+  ];
+  for (const name of passthrough) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
 
   // Forward Set-Cookie headers using getSetCookie() — Headers.forEach()
   // does not reliably expose set-cookie in Node.js fetch implementation
@@ -53,9 +72,9 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
     }
   }
 
-  const body = await upstream.arrayBuffer();
-
-  return new NextResponse(body, {
+  // Стримим тело как есть (без буферизации в память) — важно для больших видео
+  // и сохранения статуса 206/416 при Range.
+  return new NextResponse(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
     headers: responseHeaders,

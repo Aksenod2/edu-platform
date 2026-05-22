@@ -386,7 +386,7 @@ export default function StudentProfilePage() {
       <div className="flex flex-1 flex-col min-h-0">
 
         {/* ── Header ── */}
-        <div className="px-4 pt-4 max-w-[900px] w-full mx-auto">
+        <div className="px-4 pt-4 max-w-6xl w-full mx-auto">
           <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
             ← К списку учеников
           </a>
@@ -464,14 +464,14 @@ export default function StudentProfilePage() {
               <TabsList>
                 <TabsTrigger value="profile">Профиль</TabsTrigger>
                 <TabsTrigger value="assignments">Задания</TabsTrigger>
-                <TabsTrigger value="thread">Тред</TabsTrigger>
+                <TabsTrigger value="thread">Сообщения</TabsTrigger>
               </TabsList>
             </div>
           </Tabs>
         </div>
 
         {/* ── Tab content ── */}
-        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-[900px] w-full mx-auto">
+        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-6xl w-full mx-auto">
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
@@ -698,7 +698,7 @@ export default function StudentProfilePage() {
                   </div>
                 ) : threadEntries.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Тред пуст</span>
+                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Сообщений пока нет</span>
                   </div>
                 ) : (
                   threadEntries.map((entry, i) => (

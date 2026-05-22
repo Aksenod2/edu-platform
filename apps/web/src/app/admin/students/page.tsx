@@ -349,7 +349,7 @@ export default function StudentsPage() {
                           <DropdownMenuItem asChild>
                             <Link href={`/admin/students/${s.id}/thread`}>
                               <MessageSquare />
-                              Тред
+                              Сообщения
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />

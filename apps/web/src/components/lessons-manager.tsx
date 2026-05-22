@@ -504,6 +504,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const allMode = !streamId;
 
   const [stream, setStream] = useState<Stream | null>(null);
+  // Список потоков для выбора при создании урока в режиме «Все потоки».
+  const [allStreams, setAllStreams] = useState<Stream[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
@@ -513,6 +515,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   // Create form (separate inline affordance)
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<LessonFormData>(emptyForm);
+  // Поток для создаваемого урока в режиме «Все потоки» (иначе берём streamId пропа).
+  const [createStreamId, setCreateStreamId] = useState('');
+  // Видеофайл, выбранный при создании урока: грузим его сразу после создания
+  // (эндпоинт загрузки видео требует id уже существующего урока).
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Row-view Sheet (view-first, then in-place edit — Variant A)
@@ -536,6 +543,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
       ]);
       const found = streamId ? streamsData.streams.find((s) => s.id === streamId) : null;
       setStream(found || null);
+      setAllStreams(streamsData.streams.filter((s) => s.status === 'active'));
       // В режиме «все потоки» группируем по имени потока, затем по порядку урока.
       setLessons(
         [...lessonsData.lessons].sort((a, b) => {
@@ -563,12 +571,16 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const openCreate = () => {
     setForm(emptyForm);
+    setVideoFile(null);
+    setCreateStreamId('');
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
     setForm(emptyForm);
+    setVideoFile(null);
+    setCreateStreamId('');
   };
 
   // --- Row view / in-place edit ---
@@ -598,12 +610,17 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetStreamId = allMode ? createStreamId : streamId;
     if (!accessToken || !form.title.trim()) return;
+    if (!targetStreamId) {
+      setError('Выберите поток для урока');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
-      await createLesson(accessToken, {
-        streamId,
+      const { lesson: created } = await createLesson(accessToken, {
+        streamId: targetStreamId,
         title: form.title.trim(),
         videoUrl: form.videoUrl.trim() || undefined,
         summary: form.summary || undefined,
@@ -614,6 +631,18 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         sortOrder: form.sortOrder,
         teacherIds: form.teacherIds,
       });
+      // Если при создании выбрали видеофайл — грузим его в только что созданный урок.
+      if (videoFile) {
+        try {
+          await uploadLessonVideo(accessToken, created.id, videoFile);
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? `Урок создан, но видео не загрузилось: ${err.message}`
+              : 'Урок создан, но видео не загрузилось',
+          );
+        }
+      }
       closeForm();
       await fetchData();
     } catch (err) {
@@ -716,11 +745,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
             />
             Только мои
           </label>
-          {allMode ? (
-            <span className="text-sm text-muted-foreground whitespace-nowrap">
-              Выберите поток, чтобы добавить урок
-            </span>
-          ) : !isArchived && (
+          {(allMode || !isArchived) && (
             <Button
               variant={showForm ? 'outline' : 'default'}
               onClick={showForm ? closeForm : openCreate}
@@ -752,6 +777,24 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           <CardContent>
             <form onSubmit={handleCreate}>
               <FieldGroup>
+                {allMode && (
+                  <Field>
+                    <FieldLabel htmlFor="lesson-stream">Поток *</FieldLabel>
+                    <Select value={createStreamId} onValueChange={setCreateStreamId}>
+                      <SelectTrigger id="lesson-stream" className="w-full">
+                        <SelectValue placeholder="Выберите поток" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allStreams.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
+
                 <Field>
                   <FieldLabel htmlFor="lesson-title">Название *</FieldLabel>
                   <Input
@@ -764,6 +807,52 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field>
+                  <FieldLabel>Видеозапись урока</FieldLabel>
+                  <div className="flex flex-col gap-2 rounded-lg border bg-muted p-4">
+                    {videoFile ? (
+                      <div className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm">
+                        <Film className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-foreground">{videoFile.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => setVideoFile(null)}
+                        >
+                          <X className="size-4" />
+                          <span className="sr-only">Убрать видео</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm">
+                        <Paperclip className="size-4" />
+                        Выбрать видеофайл (MP4/WebM/MOV)
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,.mp4,.webm,.mov,.m4v"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const name = file.name.toLowerCase();
+                            if (!VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+                              toast.error('Поддерживаются видеофайлы (MP4)');
+                            } else {
+                              setVideoFile(file);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Загрузится после создания урока. Большие файлы пока ограничены лимитом сервера.
+                    </p>
+                  </div>
+                </Field>
+
+                <Field>
                   <FieldLabel htmlFor="lesson-video">Видео URL (внешняя ссылка)</FieldLabel>
                   <Input
                     id="lesson-video"
@@ -773,8 +862,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     placeholder="https://..."
                   />
                   <FieldDescription>
-                    Ссылка на YouTube/Vimeo и т.п. Чтобы загрузить видеофайл, сначала
-                    сохраните урок, затем откройте его.
+                    Альтернатива загрузке: ссылка на YouTube/Vimeo. Если выбран файл, для
+                    студента используется он.
                   </FieldDescription>
                 </Field>
 
@@ -862,7 +951,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field orientation="horizontal">
-                  <Button type="submit" disabled={submitting || !form.title.trim()}>
+                  <Button
+                    type="submit"
+                    disabled={submitting || !form.title.trim() || (allMode && !createStreamId)}
+                  >
                     {submitting && <Loader2 className="animate-spin" />}
                     {submitting ? 'Сохранение...' : 'Создать'}
                   </Button>
@@ -1202,10 +1294,20 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         <dt className="text-muted-foreground">Видеозапись (загруженный файл)</dt>
                         <dd>
                           {viewLesson.videoFileUrl ? (
-                            <span className="inline-flex items-center gap-1.5 text-foreground">
-                              <Film className="size-4 shrink-0 text-muted-foreground" />
-                              Видео загружено
-                            </span>
+                            <div className="flex flex-col gap-1.5">
+                              <span className="inline-flex items-center gap-1.5 text-foreground">
+                                <Film className="size-4 shrink-0 text-muted-foreground" />
+                                Видео загружено
+                              </span>
+                              <div className="flex max-h-[50vh] justify-center overflow-hidden rounded-lg border bg-black">
+                                <video
+                                  controls
+                                  preload="metadata"
+                                  className="max-h-[50vh] w-auto max-w-full"
+                                  src={viewLesson.videoFileUrl}
+                                />
+                              </div>
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}

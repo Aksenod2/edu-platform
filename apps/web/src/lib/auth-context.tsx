@@ -9,6 +9,7 @@ interface User {
   name: string;
   role: 'admin' | 'student';
   mustChangePassword: boolean;
+  avatarUrl?: string | null;
   questionnaireCompleted?: boolean;
 }
 

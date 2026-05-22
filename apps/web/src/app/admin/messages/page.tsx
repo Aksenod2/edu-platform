@@ -6,16 +6,11 @@ import { useAuth } from '@/lib/auth-context';
 import {
   getThreads,
   getStaffUnread,
-  getStreamConversations,
-  getStreamConversation,
-  addStreamEntry,
-  uploadStreamFile,
   getCohortConversations,
   getCohortConversation,
   addCohortEntry,
   uploadCohortFile,
   type ThreadSummary,
-  type StreamConversationSummary,
   type CohortConversationSummary,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -63,9 +58,6 @@ export default function AdminThreadsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [staffUnread, setStaffUnread] = useState(0);
 
-  const [streams, setStreams] = useState<StreamConversationSummary[]>([]);
-  const [selectedStream, setSelectedStream] = useState<string | null>(null);
-
   const [cohorts, setCohorts] = useState<CohortConversationSummary[]>([]);
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null);
 
@@ -92,16 +84,6 @@ export default function AdminThreadsPage() {
     }
   }, [accessToken]);
 
-  const fetchStreams = useCallback(async () => {
-    if (!accessToken) return;
-    try {
-      const { streams: list } = await getStreamConversations(accessToken);
-      setStreams(list);
-    } catch {
-      // Список потоков не критичен — молча игнорируем ошибку.
-    }
-  }, [accessToken]);
-
   const fetchCohorts = useCallback(async () => {
     if (!accessToken) return;
     try {
@@ -116,29 +98,13 @@ export default function AdminThreadsPage() {
     if (accessToken) {
       fetchThreads();
       fetchStaffUnread();
-      fetchStreams();
       fetchCohorts();
     }
-  }, [accessToken, fetchThreads, fetchStaffUnread, fetchStreams, fetchCohorts]);
+  }, [accessToken, fetchThreads, fetchStaffUnread, fetchCohorts]);
 
   const visible = threads.filter((t) => (filter === 'waiting' ? t.unanswered : true));
   const waitingCount = threads.filter((t) => t.unanswered).length;
   const selectedThread = threads.find((t) => t.studentId === selected);
-
-  const streamsUnread = streams.reduce((sum, s) => sum + s.unreadCount, 0);
-  const selectedStreamSummary = streams.find((s) => s.streamId === selectedStream);
-
-  // Источник данных ленты для выбранного потока — функции, привязанные к streamId.
-  // useMemo с зависимостью от selectedStream, чтобы StaffConversation перезагружался
-  // (через key) и не пересоздавал источник на каждый рендер.
-  const streamSource: ConversationSource | null = useMemo(() => {
-    if (!selectedStream) return null;
-    return {
-      load: (token) => getStreamConversation(token, selectedStream),
-      send: (token, data) => addStreamEntry(token, selectedStream, data),
-      uploadFile: (token, file, type) => uploadStreamFile(token, selectedStream, file, type),
-    };
-  }, [selectedStream]);
 
   const cohortsUnread = cohorts.reduce((sum, s) => sum + s.unreadCount, 0);
   const selectedCohortSummary = cohorts.find((s) => s.streamId === selectedCohort);
@@ -168,16 +134,8 @@ export default function AdminThreadsPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="streams">
-            Потоки
-            {streamsUnread > 0 && (
-              <Badge variant="destructive" className="ml-1">
-                {streamsUnread}
-              </Badge>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="cohorts">
-            Общие потоков
+            Чаты потоков
             {cohortsUnread > 0 && (
               <Badge variant="destructive" className="ml-1">
                 {cohortsUnread}
@@ -311,99 +269,6 @@ export default function AdminThreadsPage() {
 
       <TabsContent value="staff" className="flex min-h-0 flex-1 flex-col">
         <StaffConversation onRead={fetchStaffUnread} />
-      </TabsContent>
-
-      <TabsContent value="streams" className="flex min-h-0 flex-1 flex-col">
-        <div className="flex flex-1 min-h-0 flex-col md:flex-row">
-          {/* Left: stream list */}
-          <div
-            className={cn(
-              'flex w-full flex-col border-b md:w-80 md:shrink-0 md:border-r md:border-b-0 lg:w-96',
-              selectedStream && 'hidden md:flex',
-            )}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {streams.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">
-                  Нет общих потоков (с несколькими преподавателями)
-                </p>
-              ) : (
-                <ul>
-                  {streams.map((s) => (
-                    <li key={s.streamId}>
-                      <button
-                        onClick={() => setSelectedStream(s.streamId)}
-                        className={cn(
-                          'flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent',
-                          selectedStream === s.streamId && 'bg-accent',
-                        )}
-                      >
-                        <Avatar className="size-9 shrink-0">
-                          <AvatarFallback className="text-xs">
-                            <Users className="size-4" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-sm font-medium">{s.name}</span>
-                            {s.unreadCount > 0 && (
-                              <Badge variant="secondary" className="shrink-0">
-                                {s.unreadCount}
-                              </Badge>
-                            )}
-                          </div>
-                          {s.status === 'archived' && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">Архив</p>
-                          )}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          {/* Right: selected stream conversation */}
-          <div
-            className={cn(
-              'min-h-0 min-w-0 flex-1 flex-col',
-              selectedStream ? 'flex' : 'hidden md:flex',
-            )}
-          >
-            {selectedStream && streamSource ? (
-              <>
-                {/* Mobile back + header */}
-                <div className="flex items-center gap-2 border-b p-3 md:px-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="md:hidden"
-                    onClick={() => setSelectedStream(null)}
-                  >
-                    <ChevronLeft />
-                  </Button>
-                  <span className="truncate font-medium">{selectedStreamSummary?.name}</span>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <StaffConversation
-                    key={selectedStream}
-                    source={streamSource}
-                    onRead={fetchStreams}
-                    placeholder="Сообщение в поток..."
-                    emptyText="В этом потоке пока нет сообщений"
-                    loadErrorText="Ошибка загрузки чата потока"
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-                <MessagesSquare className="size-10 opacity-40" />
-                <p className="text-sm">Выберите поток</p>
-              </div>
-            )}
-          </div>
-        </div>
       </TabsContent>
 
       <TabsContent value="cohorts" className="flex min-h-0 flex-1 flex-col">

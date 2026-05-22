@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { updateMe, purgeAllFiles } from '@/lib/api';
+import { updateMe, purgeAllFiles, uploadMyAvatar, deleteMyAvatar } from '@/lib/api';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,16 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 export default function AdminProfilePage() {
   const { user, accessToken, setAccessToken, setUser } = useAuth();
 
@@ -43,6 +54,11 @@ export default function AdminProfilePage() {
 
   // Обслуживание: удаление всех загруженных файлов (сброс тестовых данных).
   const [purging, setPurging] = useState(false);
+
+  // Аватар.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [removingAvatar, setRemovingAvatar] = useState(false);
 
   if (!user) return null;
 
@@ -134,6 +150,38 @@ export default function AdminProfilePage() {
     }
   }
 
+  async function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Сбрасываем значение, чтобы повторный выбор того же файла снова срабатывал.
+    e.target.value = '';
+    if (!file || !accessToken || !user) return;
+
+    setUploadingAvatar(true);
+    try {
+      const { avatarUrl } = await uploadMyAvatar(accessToken, file);
+      setUser({ ...user, avatarUrl });
+      toast.success('Аватар обновлён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки аватара');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  async function handleAvatarRemove() {
+    if (!accessToken || !user) return;
+    setRemovingAvatar(true);
+    try {
+      await deleteMyAvatar(accessToken);
+      setUser({ ...user, avatarUrl: null });
+      toast.success('Аватар удалён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления аватара');
+    } finally {
+      setRemovingAvatar(false);
+    }
+  }
+
   return (
     <>
       <div className="flex items-start justify-between gap-4">
@@ -146,6 +194,56 @@ export default function AdminProfilePage() {
       </div>
 
       <div className="mt-4 flex max-w-xl flex-col gap-6">
+        {/* Аватар */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Аватар</CardTitle>
+            <CardDescription>
+              Фото профиля отображается в шапке и боковом меню
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <Avatar size="lg">
+                {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.name} /> : null}
+                <AvatarFallback>{initials(user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploadingAvatar || removingAvatar}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploadingAvatar && <Loader2 className="animate-spin" />}
+                  {uploadingAvatar ? 'Загрузка...' : 'Загрузить фото'}
+                </Button>
+                {user.avatarUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={uploadingAvatar || removingAvatar}
+                    onClick={handleAvatarRemove}
+                  >
+                    {removingAvatar && <Loader2 className="animate-spin" />}
+                    {removingAvatar ? 'Удаление...' : 'Удалить'}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Форматы: PNG, JPEG, WebP.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Личные данные */}
         <Card>
           <CardHeader>
