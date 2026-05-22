@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { updateMe } from '@/lib/api';
+import { updateMe, purgeAllFiles } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function AdminProfilePage() {
   const { user, accessToken, setAccessToken, setUser } = useAuth();
@@ -29,6 +40,9 @@ export default function AdminProfilePage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Обслуживание: удаление всех загруженных файлов (сброс тестовых данных).
+  const [purging, setPurging] = useState(false);
 
   if (!user) return null;
 
@@ -104,6 +118,19 @@ export default function AdminProfilePage() {
       toast.error(err instanceof Error ? err.message : 'Ошибка смены пароля');
     } finally {
       setSavingPassword(false);
+    }
+  }
+
+  async function handlePurgeFiles() {
+    if (!accessToken) return;
+    setPurging(true);
+    try {
+      const r = await purgeAllFiles(accessToken);
+      toast.success(`Удалено файлов: ${r.deletedFiles}. Ссылки очищены.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления файлов');
+    } finally {
+      setPurging(false);
     }
   }
 
@@ -217,6 +244,42 @@ export default function AdminProfilePage() {
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        {/* Обслуживание */}
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle>Обслуживание</CardTitle>
+            <CardDescription>
+              Удалить все загруженные файлы (видео уроков, материалы, вложения и
+              сдачи). Полезно для сброса тестовых данных. Действие необратимо.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={purging}>
+                  {purging && <Loader2 className="animate-spin" />}
+                  {purging ? 'Удаление...' : 'Удалить все файлы'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Удалить все загруженные файлы?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Будут безвозвратно удалены все файлы и очищены ссылки на них в
+                    уроках, заданиях, сдачах и чатах. Это нельзя отменить.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Отмена</AlertDialogCancel>
+                  <AlertDialogAction onClick={handlePurgeFiles}>
+                    Удалить всё
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </div>

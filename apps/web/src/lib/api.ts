@@ -375,6 +375,21 @@ export function fileDownloadUrl(url: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}download=1`;
 }
 
+/** Удалить ВСЕ загруженные файлы и обнулить ссылки на них (только admin). Необратимо. */
+export async function purgeAllFiles(accessToken: string): Promise<{
+  deletedFiles: number;
+  clearedLessonVideos: number;
+  clearedLessonMaterials: number;
+  clearedAssignmentMaterials: number;
+  clearedSubmissionFiles: number;
+  deletedFileMessages: number;
+}> {
+  return request('/admin/files', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export interface Lesson {
   id: string;
   streamId: string;

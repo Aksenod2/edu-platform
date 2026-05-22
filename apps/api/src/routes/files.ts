@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@platform/db';
 import { verifyFileSignature, readFile } from '../lib/s3.js';
 import { verifyAccessToken } from '../lib/jwt.js';
+import { requireRole } from '../middleware/auth.js';
 
 /**
  * Resolve a Bearer token (JWT or `sk_` API key) to an admin user.
@@ -48,6 +49,34 @@ async function isAdminBearer(request: FastifyRequest): Promise<boolean> {
 }
 
 export async function fileRoutes(app: FastifyInstance) {
+  // DELETE /admin/files — удалить ВСЕ загруженные файлы (admin).
+  // Чистит хранилище PostgreSQL и обнуляет ссылки на файлы в уроках/заданиях/
+  // сдачах, а также удаляет файловые/аудио-сообщения. Нужно для сброса тестовых
+  // данных при переходе на S3 (новые файлы поедут в S3). Необратимо.
+  app.delete('/admin/files', { onRequest: requireRole('admin') }, async () => {
+    const [files, lessonsVideo, lessonsMat, assignments, subs, fileMsgs] =
+      await prisma.$transaction([
+        prisma.fileStorage.deleteMany({}),
+        prisma.lesson.updateMany({ where: { NOT: { videoKey: null } }, data: { videoKey: null } }),
+        prisma.lesson.updateMany({ data: { materials: [] } }),
+        prisma.assignment.updateMany({ data: { materials: [] } }),
+        prisma.studentAssignment.updateMany({
+          where: { OR: [{ NOT: { fileUrl: null } }, { NOT: { fileName: null } }] },
+          data: { fileUrl: null, fileName: null, fileSize: null },
+        }),
+        prisma.conversationEntry.deleteMany({ where: { type: { in: ['file', 'audio'] } } }),
+      ]);
+
+    return {
+      deletedFiles: files.count,
+      clearedLessonVideos: lessonsVideo.count,
+      clearedLessonMaterials: lessonsMat.count,
+      clearedAssignmentMaterials: assignments.count,
+      clearedSubmissionFiles: subs.count,
+      deletedFileMessages: fileMsgs.count,
+    };
+  });
+
   // GET /files/:key - serve file from PostgreSQL storage.
   // Access is granted if EITHER:
   //   (a) the query carries a valid, non-expired signature, OR
