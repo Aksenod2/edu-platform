@@ -454,7 +454,7 @@ export default function StudentAssignmentsPage() {
                                   className="h-auto p-0"
                                   onClick={() =>
                                     router.push(
-                                      `/dashboard/thread?assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`,
+                                      `/dashboard/messages?tab=personal&assignmentId=${a.id}&title=${encodeURIComponent(a.title || '')}`,
                                     )
                                   }
                                 >
@@ -497,7 +497,7 @@ export default function StudentAssignmentsPage() {
                             size="sm"
                             onClick={() =>
                               router.push(
-                                `/dashboard/thread?assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`,
+                                `/dashboard/messages?tab=personal&assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`,
                               )
                             }
                           >
