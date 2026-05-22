@@ -251,8 +251,9 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 @media (min-width: 900px) { .nav { display: flex; } }
 
 .header-actions { display: flex; align-items: center; gap: 0.5rem; }
-.header-actions .btn-ghost { display: none; }
-@media (min-width: 640px) { .header-actions .btn-ghost { display: inline-flex; } }
+/* «Войти» — главная кнопка для существующих пользователей: показываем всегда,
+   в т.ч. на мобильных (раньше была скрыта до 640px и оставалась только в подвале). */
+.header-actions .btn-ghost { display: inline-flex; }
 
 /* ============================================================
    Hero
