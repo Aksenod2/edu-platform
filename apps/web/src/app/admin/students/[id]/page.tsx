@@ -471,7 +471,7 @@ export default function StudentProfilePage() {
         </div>
 
         {/* ── Tab content ── */}
-        <div className="flex-1 overflow-auto max-w-[900px] w-full mx-auto">
+        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-[900px] w-full mx-auto">
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
@@ -750,7 +750,7 @@ export default function StudentProfilePage() {
                       e.target.style.height = 'auto';
                       e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
                     }}
-                    placeholder={inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'}
+                    placeholder={inputMode === 'comment' ? 'Сообщение ученику' : 'Приватная заметка'}
                     rows={1}
                     className={[
                       'flex-1 rounded-lg px-3 py-2 text-sm text-foreground resize-none overflow-hidden leading-normal border outline-none',
