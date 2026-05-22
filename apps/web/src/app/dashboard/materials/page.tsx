@@ -283,7 +283,7 @@ function LessonCard({
 export default function MaterialsPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex h-full items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     }>

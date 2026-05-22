@@ -96,7 +96,7 @@ export function StudentCohortView() {
   // Один поток — сразу лента на всю высоту.
   if (singleStream && selected && source) {
     return (
-      <div className="flex h-full w-full flex-1 flex-col min-h-0">
+      <div className="flex w-full flex-1 flex-col min-h-0">
         <StaffConversation
           key={selected}
           source={source}
@@ -111,7 +111,7 @@ export function StudentCohortView() {
 
   // Несколько потоков — список слева, лента справа (как в админке).
   return (
-    <div className="flex h-full min-h-0 flex-col md:flex-row">
+    <div className="flex flex-1 min-h-0 flex-col md:flex-row">
       {/* Left: stream list */}
       <div
         className={cn(
@@ -156,7 +156,7 @@ export function StudentCohortView() {
       </div>
 
       {/* Right: selected stream conversation */}
-      <div className={cn('min-h-0 flex-1 flex-col', selected ? 'flex' : 'hidden md:flex')}>
+      <div className={cn('min-h-0 min-w-0 flex-1 flex-col', selected ? 'flex' : 'hidden md:flex')}>
         {selected && source ? (
           <>
             {/* Mobile back + header */}
@@ -171,7 +171,7 @@ export function StudentCohortView() {
               </Button>
               <span className="truncate font-medium">{selectedSummary?.name}</span>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col">
               <StaffConversation
                 key={selected}
                 source={source}

@@ -146,8 +146,8 @@ export default function AdminThreadsPage() {
         </div>
       </div>
 
-      <TabsContent value="students" className="min-h-0 flex-1">
-        <div className="flex h-full min-h-0 flex-col md:flex-row">
+      <TabsContent value="students" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 min-h-0 flex-col md:flex-row">
       {/* Left: conversation list */}
       <div
         className={cn(
@@ -234,7 +234,7 @@ export default function AdminThreadsPage() {
       </div>
 
       {/* Right: selected conversation */}
-      <div className={cn('min-h-0 flex-1 flex-col', selected ? 'flex' : 'hidden md:flex')}>
+      <div className={cn('min-h-0 min-w-0 flex-1 flex-col', selected ? 'flex' : 'hidden md:flex')}>
         {selected ? (
           <>
             {/* Mobile back + header */}
@@ -249,7 +249,7 @@ export default function AdminThreadsPage() {
               </Button>
               <span className="truncate font-medium">{selectedThread?.studentName}</span>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col">
               <ThreadConversation
                 key={selected}
                 studentId={selected}
@@ -267,12 +267,12 @@ export default function AdminThreadsPage() {
         </div>
       </TabsContent>
 
-      <TabsContent value="staff" className="min-h-0 flex-1">
+      <TabsContent value="staff" className="flex min-h-0 flex-1 flex-col">
         <StaffConversation onRead={fetchStaffUnread} />
       </TabsContent>
 
-      <TabsContent value="cohorts" className="min-h-0 flex-1">
-        <div className="flex h-full min-h-0 flex-col md:flex-row">
+      <TabsContent value="cohorts" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 min-h-0 flex-col md:flex-row">
           {/* Left: cohort list (все потоки) */}
           <div
             className={cn(
@@ -325,7 +325,7 @@ export default function AdminThreadsPage() {
           {/* Right: selected cohort conversation */}
           <div
             className={cn(
-              'min-h-0 flex-1 flex-col',
+              'min-h-0 min-w-0 flex-1 flex-col',
               selectedCohort ? 'flex' : 'hidden md:flex',
             )}
           >
@@ -343,7 +343,7 @@ export default function AdminThreadsPage() {
                   </Button>
                   <span className="truncate font-medium">{selectedCohortSummary?.name}</span>
                 </div>
-                <div className="min-h-0 flex-1">
+                <div className="flex min-h-0 flex-1 flex-col">
                   <StaffConversation
                     key={selectedCohort}
                     source={cohortSource}

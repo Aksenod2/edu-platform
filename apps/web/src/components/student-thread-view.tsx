@@ -247,7 +247,7 @@ export function StudentThreadView() {
   const hasText = textContent.trim().length > 0;
 
   return (
-    <div className="flex h-full w-full flex-1 flex-col min-h-0">
+    <div className="flex w-full flex-1 flex-col min-h-0">
       {/* Messages */}
       <div
         ref={scrollRef}
