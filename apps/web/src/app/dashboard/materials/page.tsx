@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { ChevronDown, FolderOpen, Play } from 'lucide-react';
@@ -30,70 +30,112 @@ function formatLessonDate(date: string): string {
   });
 }
 
+/** Урок личной полки: к стандартному уроку добавлено имя потока для бейджа. */
+type ShelfLesson = Lesson & { streamName?: string };
+
+/** Спец-значение фильтра «Все потоки» (агрегированный вид по умолчанию). */
+const ALL_STREAMS = '__all__';
+
 function MaterialsContent() {
   const { user, accessToken } = useAuth();
   const searchParams = useSearchParams();
 
   const [streams, setStreams] = useState<Stream[]>([]);
-  const [selectedStreamId, setSelectedStreamId] = useState<string>(searchParams.get('streamId') || '');
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  // По умолчанию — агрегированный вид «Все потоки». Если в URL пришёл streamId — открываем его.
+  const [selectedStreamId, setSelectedStreamId] = useState<string>(
+    searchParams.get('streamId') || ALL_STREAMS,
+  );
+  const [lessons, setLessons] = useState<ShelfLesson[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Загружаем ВСЕ активные потоки студента и сразу собираем уроки со всех — личная полка.
   useEffect(() => {
     if (!accessToken || !user) return;
-    getStreams(accessToken)
-      .then((data) => {
-        const active = data.streams.filter((s) => s.status === 'active');
-        setStreams(active);
-        if (!selectedStreamId && active.length > 0) {
-          setSelectedStreamId(active[0].id);
-        }
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков'));
-  }, [accessToken, user, selectedStreamId]);
-
-  const fetchLessons = useCallback(async () => {
-    if (!accessToken || !selectedStreamId) return;
+    let cancelled = false;
     setLoadingData(true);
-    try {
-      const data = await getLessons(accessToken, selectedStreamId);
-      // Студенту видны все недрафтовые уроки (черновики бэкенд и так не отдаёт).
-      setLessons(data.lessons.filter((l) => l.status !== 'draft'));
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки материалов');
-    } finally {
-      setLoadingData(false);
-    }
-  }, [accessToken, selectedStreamId]);
+    (async () => {
+      try {
+        const data = await getStreams(accessToken);
+        const active = data.streams.filter((s) => s.status === 'active');
+        if (cancelled) return;
+        setStreams(active);
 
-  useEffect(() => {
-    if (selectedStreamId) fetchLessons();
-  }, [selectedStreamId, fetchLessons]);
+        // Параллельно тянем уроки каждого потока и склеиваем в единый список.
+        const results = await Promise.all(
+          active.map((s) =>
+            getLessons(accessToken, s.id)
+              .then((res) =>
+                res.lessons
+                  // Студенту видны только недрафтовые уроки (черновики бэкенд и так не отдаёт).
+                  .filter((l) => l.status !== 'draft')
+                  // TODO: позже здесь добавится более строгая фильтрация «только пройденные
+                  // уроки» (per-progress gating) — после рефактора модели прогресса.
+                  .map<ShelfLesson>((l) => ({
+                    ...l,
+                    streamName: l.stream?.name ?? s.name,
+                  })),
+              )
+              .catch(() => [] as ShelfLesson[]),
+          ),
+        );
+        if (cancelled) return;
+        setLessons(results.flat());
+        setError('');
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Ошибка загрузки материалов');
+      } finally {
+        if (!cancelled) setLoadingData(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, user]);
+
+  const showStreamBadge = selectedStreamId === ALL_STREAMS;
+
+  // Фильтр по выбранному потоку применяется к уже собранному списку (client-side).
+  const visibleLessons =
+    selectedStreamId === ALL_STREAMS
+      ? lessons
+      : lessons.filter((l) => l.streamId === selectedStreamId);
+
+  // Стабильная сортировка: сначала по потоку, затем по дате (более новые выше),
+  // затем по sortOrder. Уроки без даты не должны ронять сравнение.
+  const sortedLessons = [...visibleLessons].sort((a, b) => {
+    const byStream = (a.streamName ?? '').localeCompare(b.streamName ?? '', 'ru');
+    if (byStream !== 0) return byStream;
+    const dateA = a.date ?? '';
+    const dateB = b.date ?? '';
+    if (dateA !== dateB) return dateB.localeCompare(dateA);
+    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  });
 
   const hasContent = (l: Lesson) =>
     !!l.videoUrl || !!l.summary || (l.materials?.length ?? 0) > 0;
-  const lessonsWithMaterials = lessons.filter(hasContent);
-  const lessonsWithoutMaterials = lessons.filter((l) => !hasContent(l));
+  const lessonsWithMaterials = sortedLessons.filter(hasContent);
+  const lessonsWithoutMaterials = sortedLessons.filter((l) => !hasContent(l));
 
   return (
     <>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Учебные материалы</h1>
-          <p className="text-sm text-muted-foreground">Видеозаписи, описания и файлы к урокам</p>
+          <h1 className="text-2xl font-bold tracking-tight">Материалы</h1>
+          <p className="text-sm text-muted-foreground">Всё, к чему у вас есть доступ</p>
         </div>
         {streams.length > 1 ? (
           <Select
             value={selectedStreamId}
             onValueChange={(value) => { setSelectedStreamId(value); setExpandedId(null); }}
           >
-            <SelectTrigger className="w-full max-w-[200px]">
+            <SelectTrigger className="w-full max-w-[220px]">
               <SelectValue placeholder="Поток" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={ALL_STREAMS}>Все потоки</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
@@ -109,11 +151,11 @@ function MaterialsContent() {
         </Alert>
       )}
 
-      {/* Stats bar */}
-      {!loadingData && lessons.length > 0 && (
+      {/* Stats bar — по текущему видимому набору */}
+      {!loadingData && sortedLessons.length > 0 && (
         <div className="mb-6 mt-4 flex items-center gap-6 border-b pb-4">
           <div className="text-center">
-            <p className="text-xl font-bold text-foreground">{lessons.length}</p>
+            <p className="text-xl font-bold text-foreground">{sortedLessons.length}</p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Уроков</p>
           </div>
           <Separator orientation="vertical" className="h-8" />
@@ -124,7 +166,7 @@ function MaterialsContent() {
           <Separator orientation="vertical" className="h-8" />
           <div className="text-center">
             <p className="text-xl font-bold text-foreground">
-              {lessons.filter((l) => l.videoUrl).length}
+              {sortedLessons.filter((l) => l.videoUrl).length}
             </p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Видео</p>
           </div>
@@ -135,12 +177,12 @@ function MaterialsContent() {
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
-      ) : lessons.length === 0 ? (
+      ) : sortedLessons.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3 text-center text-muted-foreground">
           <FolderOpen className="size-10 opacity-50" aria-hidden />
           <p className="text-sm font-medium text-foreground">Материалов пока нет</p>
           <p className="text-sm max-w-xs">
-            Преподаватель ещё не добавил материалы к урокам этого потока
+            Преподаватель ещё не добавил материалы к вашим урокам
           </p>
         </div>
       ) : (
@@ -153,6 +195,7 @@ function MaterialsContent() {
               index={idx + 1}
               expanded={expandedId === lesson.id}
               onToggle={() => setExpandedId(expandedId === lesson.id ? null : lesson.id)}
+              streamName={showStreamBadge ? lesson.streamName : undefined}
             />
           ))}
 
@@ -166,6 +209,7 @@ function MaterialsContent() {
                 {lessonsWithoutMaterials.map((l) => (
                   <p key={l.id} className="text-xs text-muted-foreground">
                     · {l.title}
+                    {showStreamBadge && l.streamName ? ` — ${l.streamName}` : ''}
                   </p>
                 ))}
               </div>
@@ -182,11 +226,14 @@ function LessonCard({
   index,
   expanded,
   onToggle,
+  streamName,
 }: {
   lesson: Lesson;
   index: number;
   expanded: boolean;
   onToggle: () => void;
+  /** Имя потока — показываем бейджем в режиме «Все потоки». */
+  streamName?: string;
 }) {
   const hasVideo = !!lesson.videoUrl;
   const hasSummary = !!lesson.summary;
@@ -205,9 +252,18 @@ function LessonCard({
           {String(index).padStart(2, '0')}
         </span>
 
-        {/* Title */}
-        <span className="flex-1 text-sm font-medium text-foreground truncate">
-          {lesson.title}
+        {/* Title + stream */}
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-medium text-foreground truncate">
+            {lesson.title}
+          </span>
+          {streamName && (
+            <span className="mt-1 inline-flex">
+              <Badge variant="outline" className="text-muted-foreground font-normal">
+                {streamName}
+              </Badge>
+            </span>
+          )}
         </span>
 
         {/* Material badges */}
