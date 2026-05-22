@@ -242,7 +242,7 @@ export default function StudentThreadPage() {
   const hasText = textContent.trim().length > 0;
 
   return (
-    <div className="flex w-full flex-1 flex-col min-h-0">
+    <div className="-mx-4 -mb-4 flex w-full flex-1 flex-col min-h-0 md:mx-0 md:mb-0">
       {/* Page header */}
       <div className="border-b px-4 pb-3 pt-4">
         <Button

@@ -90,8 +90,8 @@ export default function StudentCohortPage() {
   // Один поток — сразу лента на всю высоту.
   if (singleStream && selected && source) {
     return (
-      <div className="flex w-full flex-1 flex-col min-h-0">
-        <div className="border-b px-1 pb-3">
+      <div className="-mx-4 -mb-4 flex w-full flex-1 flex-col min-h-0 md:mx-0 md:mb-0">
+        <div className="border-b px-4 pb-3">
           <h1 className="text-2xl font-bold tracking-tight">Чат потока</h1>
           <p className="mt-1 text-sm text-muted-foreground">{selectedSummary?.name}</p>
         </div>
@@ -111,8 +111,8 @@ export default function StudentCohortPage() {
 
   // Несколько потоков — список слева, лента справа (как в админке).
   return (
-    <div className="flex w-full flex-1 flex-col min-h-0">
-      <div className="border-b px-1 pb-3">
+    <div className="-mx-4 -mb-4 flex w-full flex-1 flex-col min-h-0 md:mx-0 md:mb-0">
+      <div className="border-b px-4 pb-3">
         <h1 className="text-2xl font-bold tracking-tight">Чат потока</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Общий чат участников вашего потока
