@@ -14,5 +14,15 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - API_BASE_URL=${API_BASE_URL}
       - CORS_ORIGIN=${CORS_ORIGIN}
+      # SMTP — отправка писем (сброс пароля, уведомления). Значения задаются в панели Timeweb.
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      # VAPID — web-push уведомления.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_SUBJECT=${VAPID_SUBJECT}
     ports:
       - "4000:4000"
