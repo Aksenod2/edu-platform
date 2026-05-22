@@ -4,6 +4,16 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  // Сид создаёт дефолтные аккаунты ТОЛЬКО при первичной инициализации — когда в
+  // БД ещё нет ни одного админа. На уже настроенной БД (есть реальные админы)
+  // ничего не делаем, иначе дефолтные admin@/teacher@ с паролем admin123
+  // возвращались бы после их удаления/переименования (дыра в безопасности).
+  const adminCount = await prisma.user.count({ where: { role: 'admin' } });
+  if (adminCount > 0) {
+    console.log(`Seed: пропущен — в БД уже есть админы (${adminCount}). Дефолтные аккаунты не пересоздаются.`);
+    return;
+  }
+
   const adminHash = await bcrypt.hash('admin123', 12);
   const studentHash = await bcrypt.hash('student123', 12);
 
