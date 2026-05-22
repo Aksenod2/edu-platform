@@ -48,14 +48,16 @@ const STUDENTS = [
 ];
 
 async function api(path, init = {}) {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-    },
-  });
+  const headers = {
+    Authorization: `Bearer ${API_KEY}`,
+    ...(init.headers || {}),
+  };
+  // Content-Type ставим только при наличии тела: Fastify отклоняет пустое
+  // JSON-тело (HTTP 400) — из-за этого падал bodyless POST (reset-password).
+  if (init.body !== undefined && init.body !== null) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
   const text = await res.text();
   let body;
   try {
