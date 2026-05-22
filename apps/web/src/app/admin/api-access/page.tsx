@@ -370,7 +370,6 @@ export default function ApiAccessPage() {
                     ['GET', '/student-assignments?studentId=:id', 'Задания ученика'],
                     ['GET', '/threads/:studentId', 'Лента ученика'],
                     ['POST', '/threads/:studentId/entries', 'Добавить запись в ленту'],
-                    ['GET', '/schedule', 'Расписание'],
                     ['GET', '/stats', 'Сводная статистика'],
                     ['GET', '/files/*', 'Скачать файл (по подписи или админским Bearer)'],
                   ] as const).map(([method, path, desc]) => (

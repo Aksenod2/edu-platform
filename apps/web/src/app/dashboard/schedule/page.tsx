@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getStreams, getSchedule, type Stream } from '@/lib/api';
+import { getStreams, getLessons, type Stream } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ScheduleCalendar, type CalendarEntry } from '@/components/schedule-calendar';
+import { ScheduleCalendar, type CalendarLesson } from '@/components/schedule-calendar';
 
 const ALL_STREAMS = '__all__';
 
@@ -21,7 +21,7 @@ export default function StudentSchedulePage() {
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
-  const [entries, setEntries] = useState<CalendarEntry[]>([]);
+  const [lessons, setLessons] = useState<CalendarLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -34,17 +34,19 @@ export default function StudentSchedulePage() {
       setStreams(activeStreams);
 
       const results = await Promise.all(
-        activeStreams.map((s) => getSchedule(accessToken, s.id)),
+        activeStreams.map((s) => getLessons(accessToken, s.id)),
       );
-      const merged: CalendarEntry[] = results.flatMap((res, i) => {
+      const merged: CalendarLesson[] = results.flatMap((res, i) => {
         const s = activeStreams[i]!;
-        return res.schedule.map((e) => ({
-          ...e,
-          streamName: s.name,
-          stream: { id: s.id, name: s.name },
-        }));
+        return res.lessons
+          // На календаре показываем только уроки, у которых задана дата.
+          .filter((l) => l.date)
+          .map((l) => ({
+            ...l,
+            streamName: l.stream?.name ?? s.name,
+          }));
       });
-      setEntries(merged);
+      setLessons(merged);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
@@ -57,10 +59,10 @@ export default function StudentSchedulePage() {
     fetchAll();
   }, [fetchAll]);
 
-  const visibleEntries =
+  const visibleLessons =
     filterStreamId === ALL_STREAMS
-      ? entries
-      : entries.filter((e) => e.streamId === filterStreamId);
+      ? lessons
+      : lessons.filter((l) => l.streamId === filterStreamId);
 
   return (
     <>
@@ -98,7 +100,7 @@ export default function StudentSchedulePage() {
         </div>
       ) : (
         <div className="mt-4">
-          <ScheduleCalendar entries={visibleEntries} />
+          <ScheduleCalendar lessons={visibleLessons} editable={false} />
         </div>
       )}
     </>

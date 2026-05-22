@@ -65,7 +65,9 @@ import { LessonsManager } from '@/components/lessons-manager';
 import { StreamAssignmentsManager } from '@/components/stream-assignments-manager';
 import {
   ScheduleCalendar,
-  type CalendarEntry,
+  type CalendarLesson,
+  type CalendarCreateData,
+  type CalendarUpdateData,
 } from '@/components/schedule-calendar';
 import {
   getStream,
@@ -73,14 +75,12 @@ import {
   enrollStudents,
   unenrollStudent,
   getStudents,
-  getSchedule,
   getLessons,
-  createScheduleEntry,
-  updateScheduleEntry,
-  deleteScheduleEntry,
+  createLesson,
+  updateLesson,
+  deleteLesson,
   type StreamWithCounts,
   type Student,
-  type Lesson,
 } from '@/lib/api';
 
 export default function StreamDetailPage() {
@@ -198,8 +198,7 @@ export default function StreamDetailPage() {
 function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
   const { accessToken } = useAuth();
 
-  const [entries, setEntries] = useState<CalendarEntry[]>([]);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [lessons, setLessons] = useState<CalendarLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -207,18 +206,13 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [scheduleData, lessonsData] = await Promise.all([
-        getSchedule(accessToken, stream.id),
-        getLessons(accessToken, stream.id),
-      ]);
-      setEntries(
-        scheduleData.schedule.map((e) => ({
-          ...e,
+      const lessonsData = await getLessons(accessToken, stream.id);
+      setLessons(
+        lessonsData.lessons.map((l) => ({
+          ...l,
           streamName: stream.name,
-          stream: { id: stream.id, name: stream.name },
         })),
       );
-      setLessons(lessonsData.lessons);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
@@ -231,49 +225,48 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
     fetchAll();
   }, [fetchAll]);
 
-  const handleCreate = async (data: {
-    streamId: string;
-    lessonId: string;
-    date: string;
-    startTime: string;
-    notes?: string;
-    meetingUrl?: string;
-  }) => {
+  const handleCreate = async (data: CalendarCreateData) => {
     if (!accessToken) return;
     try {
-      await createScheduleEntry(accessToken, data);
+      await createLesson(accessToken, {
+        streamId: stream.id,
+        title: data.title,
+        date: data.date || null,
+        startTime: data.startTime,
+        status: data.status,
+        meetingUrl: data.meetingUrl,
+        notes: data.notes ?? undefined,
+      });
       await fetchAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка создания записи');
+      toast.error(err instanceof Error ? err.message : 'Ошибка создания урока');
     }
   };
 
-  const handleUpdate = async (
-    id: string,
-    data: {
-      date?: string;
-      startTime?: string;
-      lessonId?: string;
-      notes?: string | null;
-      meetingUrl?: string | null;
-    },
-  ) => {
+  const handleUpdate = async (id: string, data: CalendarUpdateData) => {
     if (!accessToken) return;
     try {
-      await updateScheduleEntry(accessToken, id, data);
+      await updateLesson(accessToken, id, {
+        title: data.title,
+        date: data.date,
+        startTime: data.startTime,
+        status: data.status,
+        meetingUrl: data.meetingUrl,
+        notes: data.notes ?? undefined,
+      });
       await fetchAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка обновления записи');
+      toast.error(err instanceof Error ? err.message : 'Ошибка обновления урока');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
     try {
-      await deleteScheduleEntry(accessToken, id);
+      await deleteLesson(accessToken, id);
       await fetchAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка удаления записи');
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления урока');
     }
   };
 
@@ -294,9 +287,8 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
       )}
       <ScheduleCalendar
         editable
-        entries={entries}
-        streams={[stream]}
         lessons={lessons}
+        streams={[stream]}
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
@@ -401,9 +393,9 @@ function OverviewTab({ stream }: { stream: StreamWithCounts }) {
             </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href="/admin/schedule">
+            <Link href="/admin/lessons">
               <CalendarDays />
-              Расписание
+              Календарь
             </Link>
           </Button>
         </CardContent>

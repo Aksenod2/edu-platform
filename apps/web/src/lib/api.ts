@@ -490,6 +490,17 @@ export async function purgeAllFiles(accessToken: string): Promise<{
   });
 }
 
+// Статус урока: Черновик · Запланирован · Проведён · Отменён.
+// Черновик скрыт от учеников; статус управляет видимостью.
+export type LessonStatus = 'draft' | 'planned' | 'done' | 'cancelled';
+
+export const LESSON_STATUS_LABELS: Record<LessonStatus, string> = {
+  draft: 'Черновик',
+  planned: 'Запланирован',
+  done: 'Проведён',
+  cancelled: 'Отменён',
+};
+
 export interface Lesson {
   id: string;
   streamId: string;
@@ -501,11 +512,13 @@ export interface Lesson {
   videoFileUrl?: string | null;
   summary: string | null;
   notes: string | null;
-  status: 'draft' | 'published' | 'closed';
-  publishAt: string | null;
-  // Производное поле «дата и время занятия» из связанной записи расписания
-  // ("YYYY-MM-DDTHH:MM" или null). Источник правды — ScheduleEntry.
-  scheduledAt?: string | null;
+  status: LessonStatus;
+  // Дата занятия "YYYY-MM-DD" (или null, если урок ещё не назначен на дату).
+  date: string | null;
+  // Время начала "HH:MM" (или null).
+  startTime: string | null;
+  // Ссылка на созвон (или null).
+  meetingUrl: string | null;
   sortOrder: number;
   materials?: LessonMaterial[];
   createdAt: string;
@@ -546,8 +559,10 @@ export async function createLesson(
     videoUrl?: string;
     summary?: string;
     notes?: string;
-    publishAt?: string;
-    scheduledAt?: string | null;
+    status?: LessonStatus;
+    date?: string | null;
+    startTime?: string | null;
+    meetingUrl?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
     materials?: LessonMaterial[];
@@ -568,9 +583,10 @@ export async function updateLesson(
     videoUrl?: string;
     summary?: string;
     notes?: string;
-    status?: 'draft' | 'published' | 'closed';
-    publishAt?: string | null;
-    scheduledAt?: string | null;
+    status?: LessonStatus;
+    date?: string | null;
+    startTime?: string | null;
+    meetingUrl?: string | null;
     sortOrder?: number;
     teacherIds?: string[];
     materials?: LessonMaterial[];
@@ -682,78 +698,6 @@ export async function deleteLesson(
   id: string,
 ): Promise<{ message: string }> {
   return request(`/lessons/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-}
-
-// Schedule API
-
-export interface ScheduleEntry {
-  id: string;
-  streamId: string;
-  lessonId: string | null;
-  date: string;
-  startTime: string;
-  lessonTitle: string;
-  notes: string | null;
-  meetingUrl: string | null;
-  createdAt: string;
-  updatedAt: string;
-  stream?: { id: string; name: string };
-  lesson?: { id: string; title: string } | null;
-}
-
-export async function getSchedule(
-  accessToken: string,
-  streamId: string,
-): Promise<{ schedule: ScheduleEntry[] }> {
-  return request(`/schedule?streamId=${encodeURIComponent(streamId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-}
-
-export async function createScheduleEntry(
-  accessToken: string,
-  data: {
-    streamId: string;
-    lessonId: string;
-    date: string;
-    startTime: string;
-    notes?: string;
-    meetingUrl?: string;
-  },
-): Promise<{ entry: ScheduleEntry }> {
-  return request('/schedule', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateScheduleEntry(
-  accessToken: string,
-  id: string,
-  data: {
-    date?: string;
-    startTime?: string;
-    lessonId?: string;
-    notes?: string | null;
-    meetingUrl?: string | null;
-  },
-): Promise<{ entry: ScheduleEntry }> {
-  return request(`/schedule/${id}`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify(data),
-  });
-}
-
-export async function deleteScheduleEntry(
-  accessToken: string,
-  id: string,
-): Promise<{ success: boolean }> {
-  return request(`/schedule/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1498,7 +1442,7 @@ export function getNotificationLink(
     case 'lesson_published':
       return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
     case 'schedule_entry_created':
-      return role === 'student' ? '/dashboard/schedule' : '/admin/schedule';
+      return role === 'student' ? '/dashboard/schedule' : '/admin/lessons';
     default:
       return null;
   }

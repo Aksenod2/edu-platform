@@ -9,7 +9,9 @@ import {
   getLesson,
   getLessons,
   getStudentAssignments,
+  LESSON_STATUS_LABELS,
   type Lesson,
+  type LessonStatus,
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
@@ -64,16 +66,11 @@ function parseVideoEmbed(url: string): string | null {
   return null;
 }
 
-const statusLabels: Record<string, string> = {
-  draft: 'Черновик',
-  published: 'Опубликован',
-  closed: 'Закрыт',
-};
-
-const statusBadgeVariant: Record<string, 'secondary' | 'default' | 'destructive'> = {
+const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
   draft: 'secondary',
-  published: 'default',
-  closed: 'destructive',
+  planned: 'default',
+  done: 'outline',
+  cancelled: 'destructive',
 };
 
 export default function StudentLessonPage() {
@@ -171,7 +168,7 @@ export default function StudentLessonPage() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
-                {statusLabels[lesson.status] ?? lesson.status}
+                {LESSON_STATUS_LABELS[lesson.status] ?? lesson.status}
               </Badge>
             </div>
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>

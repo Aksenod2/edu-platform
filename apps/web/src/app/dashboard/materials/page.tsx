@@ -20,6 +20,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+/** Дата "YYYY-MM-DD" в формате "Д месяц ГГГГ" (без UTC-сдвига). */
+function formatLessonDate(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 function MaterialsContent() {
   const { user, accessToken } = useAuth();
   const searchParams = useSearchParams();
@@ -49,7 +59,8 @@ function MaterialsContent() {
     setLoadingData(true);
     try {
       const data = await getLessons(accessToken, selectedStreamId);
-      setLessons(data.lessons.filter((l) => l.status === 'published'));
+      // Студенту видны все недрафтовые уроки (черновики бэкенд и так не отдаёт).
+      setLessons(data.lessons.filter((l) => l.status !== 'draft'));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки материалов');
@@ -260,9 +271,9 @@ function LessonCard({
 
           {/* Metadata */}
           <div className="pt-2 border-t flex items-center gap-4">
-            {lesson.publishAt && (
+            {lesson.date && (
               <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                {new Date(lesson.publishAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                {formatLessonDate(lesson.date)}
               </p>
             )}
             <Button

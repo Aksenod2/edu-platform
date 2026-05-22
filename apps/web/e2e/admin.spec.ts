@@ -42,11 +42,10 @@ test.describe('Админ-кабинет', () => {
     await expect(page.getByRole('button', { name: 'Добавить урок' })).toBeVisible();
   });
 
-  test('расписание: переключатель «Таблица» показывает таблицу', async ({ page }) => {
-    await page.goto('/admin/schedule');
-    await page.getByRole('button', { name: 'Таблица' }).click();
-    await expect(page.getByText('Урок/Занятие')).toBeVisible();
-    await expect(page.getByText('Ссылка на созвон')).toBeVisible();
+  test('уроки: переключатель «Календарь» показывает календарь', async ({ page }) => {
+    await page.goto('/admin/lessons');
+    await page.getByRole('button', { name: 'Календарь' }).click();
+    await expect(page.getByRole('button', { name: 'Сегодня' })).toBeVisible();
   });
 
   test('сообщения: есть «Чаты потоков», нет вкладки «Потоки»', async ({ page }) => {

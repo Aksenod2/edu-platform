@@ -19,8 +19,9 @@ enum StreamStatus {
 
 enum LessonStatus {
   draft
-  published
-  closed
+  planned
+  done
+  cancelled
 }
 
 enum AssignmentType {
@@ -132,7 +133,6 @@ model Stream {
 
   lessons         Lesson[]
   assignments     Assignment[]
-  scheduleEntries ScheduleEntry[]
   enrollments     StreamEnrollment[]
   conversations   Conversation[]
 }
@@ -160,7 +160,9 @@ model Lesson {
   summary   String?
   notes     String?
   status    LessonStatus @default(draft)
-  publishAt DateTime?
+  date      DateTime?    @db.Date
+  startTime String?
+  meetingUrl String?
   sortOrder Int          @default(0)
   materials Json         @default("[]")
   createdAt DateTime     @default(now())
@@ -168,7 +170,6 @@ model Lesson {
 
   stream          Stream          @relation(fields: [streamId], references: [id], onDelete: Cascade)
   assignments     Assignment[]
-  scheduleEntries ScheduleEntry[]
   teachers        LessonTeacher[]
 
   @@index([streamId])
@@ -307,26 +308,6 @@ model TeacherNote {
   author  User @relation("AuthoredNotes", fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
-}
-
-model ScheduleEntry {
-  id          String   @id @default(uuid())
-  streamId    String
-  lessonId    String?
-  date        DateTime @db.Date
-  startTime   String
-  lessonTitle String
-  notes       String?
-  meetingUrl  String?
-  managedByLesson Boolean @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  stream Stream  @relation(fields: [streamId], references: [id], onDelete: Cascade)
-  lesson Lesson? @relation(fields: [lessonId], references: [id], onDelete: SetNull)
-
-  @@index([streamId])
-  @@index([lessonId])
 }
 
 model Notification {

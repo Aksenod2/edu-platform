@@ -59,7 +59,6 @@ const ADMIN_NAV: NavGroup[] = [
       { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
       { label: 'Потоки', href: '/admin/streams', icon: Layers },
       { label: 'Уроки', href: '/admin/lessons', icon: BookOpen },
-      { label: 'Расписание', href: '/admin/schedule', icon: Calendar },
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
       { label: 'Профиль', href: '/admin/profile', icon: User },
     ],

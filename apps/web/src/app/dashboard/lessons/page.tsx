@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 
 function isUpcoming(lesson: Lesson): boolean {
-  return Boolean(lesson.publishAt && new Date(lesson.publishAt).getTime() > Date.now());
+  return lesson.status === 'planned';
 }
 
 function StudentLessonsContent() {
@@ -118,7 +118,7 @@ function StudentLessonsContent() {
         <div className="flex flex-col gap-3">
           {lessons.map((lesson, index) => {
             const upcoming = isUpcoming(lesson);
-            const closed = lesson.status === 'closed';
+            const cancelled = lesson.status === 'cancelled';
 
             return (
               <Link
@@ -126,7 +126,9 @@ function StudentLessonsContent() {
                 href={`/dashboard/lessons/${lesson.id}`}
                 className="no-underline"
               >
-                <Card className="p-0 transition-colors hover:bg-accent/50">
+                <Card
+                  className={`p-0 transition-colors hover:bg-accent/50${cancelled ? ' opacity-60' : ''}`}
+                >
                   <CardContent className="flex items-center gap-4 px-5 py-4">
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
                       {index + 1}
@@ -136,10 +138,10 @@ function StudentLessonsContent() {
                         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Урок {index + 1}
                         </span>
-                        {upcoming ? (
-                          <Badge variant="secondary">Скоро</Badge>
-                        ) : closed ? (
-                          <Badge variant="destructive">Недоступен</Badge>
+                        {cancelled ? (
+                          <Badge variant="destructive">Отменён</Badge>
+                        ) : upcoming ? (
+                          <Badge variant="secondary">Запланирован</Badge>
                         ) : (
                           <Badge>Доступен</Badge>
                         )}

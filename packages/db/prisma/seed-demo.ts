@@ -12,7 +12,7 @@ const STREAM_NAME = 'UX-дизайн: основы';
 const DAY = 24 * 60 * 60 * 1000;
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY);
-// Только дата (для ScheduleEntry @db.Date), без времени.
+// Только дата (для Lesson.date @db.Date), без времени.
 const dateOnly = (d: Date) => new Date(d.toISOString().slice(0, 10));
 
 async function getOrCreateUser(
@@ -69,8 +69,9 @@ async function main() {
       summary: 'Что такое UX, чем отличается от UI, этапы дизайн-процесса и роли в команде.',
       notes: 'Ключевые этапы: research → define → ideate → prototype → test. Не путать UX и UI.',
       videoUrl: 'https://www.youtube.com/watch?v=ux-intro-demo',
-      status: 'published',
-      publishAt: daysAgo(20),
+      status: 'done',
+      date: dateOnly(daysAgo(10)),
+      startTime: '19:00',
       sortOrder: 1,
       teachers: { create: { userId: teacher.id } },
     },
@@ -83,34 +84,36 @@ async function main() {
       summary: 'Методы качественного исследования: интервью, наблюдение, путь пользователя.',
       notes: 'Открытые вопросы, без подсказок. 5–7 респондентов обычно достаточно.',
       videoUrl: 'https://www.youtube.com/watch?v=ux-research-demo',
-      status: 'published',
-      publishAt: daysAgo(13),
+      status: 'done',
+      date: dateOnly(daysAgo(3)),
+      startTime: '19:00',
       sortOrder: 2,
       teachers: { create: { userId: teacher.id } },
     },
   });
 
-  const lesson3 = await prisma.lesson.create({
+  await prisma.lesson.create({
     data: {
       streamId: stream.id,
       title: 'Прототипирование и вайрфреймы',
       summary: 'От лоу-фай вайрфреймов к интерактивному прототипу. Принципы и инструменты.',
       notes: 'Сначала структура и логика, потом визуал. Прототип — для проверки гипотез.',
-      status: 'published',
-      publishAt: daysAgo(6),
+      status: 'planned',
+      date: dateOnly(daysFromNow(2)),
+      startTime: '19:00',
+      meetingUrl: 'https://meet.google.com/demo-ux-room',
       sortOrder: 3,
       teachers: { create: { userId: teacher.id } },
     },
   });
 
-  // Черновик с будущей датой публикации — чтобы было что «настраивать».
-  const lesson4 = await prisma.lesson.create({
+  // Черновик — урок в подготовке, ученикам пока не виден.
+  await prisma.lesson.create({
     data: {
       streamId: stream.id,
       title: 'Юзабилити-тестирование',
       summary: 'Как планировать и проводить тесты удобства, считать метрики и формулировать выводы.',
       status: 'draft',
-      publishAt: daysFromNow(7),
       sortOrder: 4,
       teachers: { create: { userId: teacher.id } },
     },
@@ -160,36 +163,6 @@ async function main() {
     },
   });
 
-  // ── Расписание ───────────────────────────────────────────────────────────
-  const meetingUrl = 'https://meet.google.com/demo-ux-room';
-  await prisma.scheduleEntry.createMany({
-    data: [
-      {
-        streamId: stream.id,
-        lessonId: lesson3.id,
-        date: dateOnly(daysFromNow(2)),
-        startTime: '19:00',
-        lessonTitle: lesson3.title,
-        meetingUrl,
-      },
-      {
-        streamId: stream.id,
-        lessonId: lesson4.id,
-        date: dateOnly(daysFromNow(5)),
-        startTime: '18:30',
-        lessonTitle: lesson4.title,
-        meetingUrl,
-      },
-      {
-        streamId: stream.id,
-        lessonId: lesson1.id,
-        date: dateOnly(daysAgo(3)),
-        startTime: '19:00',
-        lessonTitle: lesson1.title,
-      },
-    ],
-  });
-
   // ── Сообщения (диалог студента) ────────────────────────────────────────────
   // Диалог с последней репликой от студента — чтобы инбокс «Сообщения» и фильтр
   // «Ждут ответа» были наполнены. Conversation типа student уникален по studentId,
@@ -225,8 +198,8 @@ async function main() {
   });
 
   console.log(
-    `Demo seed готов: поток «${STREAM_NAME}» — 4 урока (3 опубликовано, 1 черновик), ` +
-      `2 задания, 3 записи расписания, тред с вопросом от студента. Студент: ${student.email}`,
+    `Demo seed готов: поток «${STREAM_NAME}» — 4 урока (2 проведено, 1 запланирован, 1 черновик), ` +
+      `2 задания, тред с вопросом от студента. Студент: ${student.email}`,
   );
 }
 

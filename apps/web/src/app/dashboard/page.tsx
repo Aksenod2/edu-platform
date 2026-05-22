@@ -22,11 +22,11 @@ import {
   getStreams,
   getStudentAssignments,
   getNotifications,
-  getSchedule,
+  getLessons,
   getProfile,
   type Stream,
   type StudentAssignment,
-  type ScheduleEntry,
+  type Lesson,
 } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,18 +37,31 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { StudentOnboarding } from '@/components/student-onboarding';
 
-type ScheduleItem = ScheduleEntry & { streamName: string };
+// Ближайшее занятие = урок с датой и статусом «Запланирован».
+type ScheduleItem = Lesson & { streamName: string };
 
+/** Дата "YYYY-MM-DD" в человекочитаемом виде (без UTC-сдвига). */
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString('ru-RU', {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'long',
     weekday: 'short',
   });
 }
 
+/** Локальная дата из "YYYY-MM-DD" (без UTC-сдвига). */
+function parseLocalDate(date: string): Date {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
+}
+
 function formatRelative(date: string): string {
-  return new Date(date).toLocaleDateString('ru-RU', {
+  // Поддержка как ISO-строк (дедлайны), так и дат "YYYY-MM-DD" (уроки).
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(date.slice(0, 10)) && date.length <= 10
+    ? parseLocalDate(date)
+    : new Date(date);
+  return d.toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'short',
   });
@@ -164,11 +177,11 @@ export default function DashboardPage() {
         const { streams } = await getStreams(accessToken);
         const activeStreams = streams.filter((s: Stream) => s.status === 'active');
 
-        const [saData, notifData, profileData, scheduleResults] = await Promise.all([
+        const [saData, notifData, profileData, lessonResults] = await Promise.all([
           getStudentAssignments(accessToken),
           getNotifications(accessToken),
           getProfile(accessToken, user.id),
-          Promise.all(activeStreams.map((s) => getSchedule(accessToken, s.id))),
+          Promise.all(activeStreams.map((s) => getLessons(accessToken, s.id))),
         ]);
 
         if (cancelled) return;
@@ -189,19 +202,25 @@ export default function DashboardPage() {
         const needsRevision = assignments.filter((sa) => sa.status === 'needs_revision');
         const awaitingReview = assignments.filter((sa) => sa.status === 'submitted');
 
-        const upcoming: ScheduleItem[] = scheduleResults
+        const upcoming: ScheduleItem[] = lessonResults
           .flatMap((res, i) => {
             const stream = activeStreams[i]!;
-            return res.schedule.map((e) => ({
-              ...e,
-              streamName: e.stream?.name ?? stream.name,
+            return res.lessons.map((l) => ({
+              ...l,
+              streamName: l.stream?.name ?? stream.name,
             }));
           })
-          .filter((e) => new Date(e.date) >= startOfDay(now))
+          // Ближайшие занятия — запланированные уроки с датой, начиная с сегодня.
+          .filter(
+            (l): l is ScheduleItem & { date: string } =>
+              l.status === 'planned' &&
+              l.date != null &&
+              parseLocalDate(l.date) >= startOfDay(now),
+          )
           .sort((a, b) => compareSchedule(a, b));
 
         const lessonsNext7Days = upcoming.filter((e) => {
-          const d = new Date(e.date);
+          const d = parseLocalDate(e.date!);
           return d >= startOfDay(now) && d <= in7Days;
         }).length;
 
@@ -418,7 +437,7 @@ export default function DashboardPage() {
                     data.upcoming.map((e) => (
                       <div key={e.id} className="flex flex-col gap-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{e.lessonTitle}</span>
+                          <span className="text-sm font-medium">{e.title}</span>
                           <Badge variant="outline" className="shrink-0">
                             {e.streamName}
                           </Badge>
@@ -426,7 +445,8 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <CalendarDays className="size-3" />
                           <span className="tabular-nums">
-                            {formatDate(e.date)} · {e.startTime}
+                            {e.date ? formatDate(e.date) : ''}
+                            {e.startTime ? ` · ${e.startTime}` : ''}
                           </span>
                           {e.meetingUrl && (
                             <a
@@ -493,9 +513,9 @@ function startOfDay(date: Date): Date {
 }
 
 function compareSchedule(a: ScheduleItem, b: ScheduleItem): number {
-  const byDate = a.date.localeCompare(b.date);
+  const byDate = (a.date ?? '').slice(0, 10).localeCompare((b.date ?? '').slice(0, 10));
   if (byDate !== 0) return byDate;
-  return a.startTime.localeCompare(b.startTime);
+  return (a.startTime ?? '').localeCompare(b.startTime ?? '');
 }
 
 function detailWithStream(sa: StudentAssignment): string {
