@@ -12,11 +12,15 @@
   каталог `/root/edu-platform/`. Стек: Docker Compose (`docker-compose.vps.yml`) + Caddy
   (reverse-proxy, TLS, домены губу.рф / 0снова.рф). Переменные окружения — в `.env.vps`
   НА СЕРВЕРЕ (в репозиторий не коммитятся: там ключи S3/SMTP и пр.).
-- **Доставка кода в прод — НЕ автоматическая из `main`.** В репозитории нет VPS-деплоя
-  (ни webhook, ни CI на сервер). Чтобы изменения попали в прод, на VPS нужно `git pull` +
-  пересборка контейнеров (`docker compose -f docker-compose.vps.yml up -d --build`). Это
-  делается с доступом к VPS (терминальный Claude). **Пуш в `main` сам по себе прод не
-  обновляет.**
+- **Доставка кода в прод — АВТОМАТИЧЕСКАЯ из `main`.** Прод тянется сам: GitHub Action
+  `.github/workflows/vps-deploy.yml` на каждый push в `main` (и по `workflow_dispatch`)
+  заходит на VPS по SSH (секреты `VPS_SSH_*`) и выполняет `git fetch origin main` +
+  `git reset --hard origin/main` + `docker compose --env-file .env.vps -f
+  docker-compose.vps.yml up -d --build` + `docker image prune -f`. **Значит мерж/пуш в
+  `main` сам выкатывает изменения на прод** — отдельно заходить на VPS не нужно. Следить
+  за статусом выката — во вкладке Actions (workflow «Deploy to VPS»). Ручной запуск —
+  тем же `workflow_dispatch`. Из облачной (web) сессии прямого SSH к VPS нет, но это и не
+  требуется — деплоит CI.
 - **Timeweb App Platform СНЕСЁН.** Поэтому это МЁРТВОЕ ЛЕГАСИ — не использовать и не верить:
   GitHub Action `timeweb-deploy.yml`, ветки `tw-api`/`tw-web`, `deploy/compose/*`,
   `deploy/TIMEWEB.md`, домен `api.губу.рф`, любые «авто-деплой по push → App Platform».
