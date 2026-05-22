@@ -202,8 +202,8 @@ function LessonCard({
         {/* Material badges */}
         <div className="flex-shrink-0 flex items-center gap-2">
           {hasVideo && <Badge variant="default">Видео</Badge>}
-          {hasSummary && <Badge variant="secondary">Конспект</Badge>}
-          {hasNotes && <Badge variant="outline">Заметки</Badge>}
+          {hasSummary && <Badge variant="secondary">Краткое описание</Badge>}
+          {hasNotes && <Badge variant="outline">Конспект</Badge>}
         </div>
 
         {/* Expand icon */}
@@ -234,7 +234,7 @@ function LessonCard({
           {hasSummary && (
             <div>
               <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-                Конспект
+                Краткое описание
               </p>
               <div className="border-l-2 pl-4">
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
@@ -248,7 +248,7 @@ function LessonCard({
           {hasNotes && (
             <div>
               <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-                Заметки преподавателя
+                Конспект
               </p>
               <div className="border-l-2 border-primary pl-4">
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
