@@ -25,7 +25,7 @@ export default function AdminStudentThreadPage() {
         <h1 className="text-lg font-bold tracking-tight">Тред ученика</h1>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col">
         <ThreadConversation studentId={studentId} />
       </div>
     </div>

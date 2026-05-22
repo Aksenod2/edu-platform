@@ -217,7 +217,7 @@ export function StaffConversation({
   const hasContent = content.trim().length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {error && (
         <Alert variant="destructive" className="m-3">
           <AlertDescription className="flex items-center justify-between gap-2">
