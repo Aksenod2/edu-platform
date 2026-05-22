@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from "@platform/ui/lib/utils"
 import { useAuth } from '@/lib/auth-context';
@@ -28,8 +28,19 @@ export function LoginForm({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (user.mustChangePassword) {
+      router.replace('/change-password');
+    } else if (user.role === 'admin') {
+      router.replace('/admin');
+    } else {
+      router.replace('/dashboard');
+    }
+  }, [user, authLoading, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
