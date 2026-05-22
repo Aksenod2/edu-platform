@@ -48,6 +48,7 @@ enum ConversationType {
   student
   staff
   stream
+  cohort
 }
 
 enum NotificationType {
@@ -132,7 +133,7 @@ model Stream {
   assignments     Assignment[]
   scheduleEntries ScheduleEntry[]
   enrollments     StreamEnrollment[]
-  conversation    Conversation?
+  conversations   Conversation[]
 }
 
 model StreamEnrollment {
@@ -154,6 +155,7 @@ model Lesson {
   streamId  String
   title     String
   videoUrl  String?
+  videoKey  String?
   summary   String?
   notes     String?
   status    LessonStatus @default(draft)
@@ -234,13 +236,17 @@ model Conversation {
   id        String           @id @default(uuid())
   type      ConversationType
   studentId String?          @unique
-  streamId  String?          @unique
+  streamId  String?
   createdAt DateTime         @default(now())
 
   student User?               @relation(fields: [studentId], references: [id], onDelete: Cascade)
   stream  Stream?             @relation(fields: [streamId], references: [id], onDelete: Cascade)
   entries ConversationEntry[]
   reads   ConversationRead[]
+
+  // Один streamId может иметь несколько каналов разных типов:
+  // type='stream' (преподский чат потока) и type='cohort' (общий чат потока).
+  @@unique([type, streamId])
 }
 
 model ConversationEntry {

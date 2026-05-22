@@ -1,0 +1,50 @@
+# Гейт качества: type-check + lint + сборка web + автотесты api.
+# Красный чек блокирует мердж PR. Деплой-ветки (tw-api/tw-web), которые форс-пушит
+# workflow timeweb-deploy.yml, намеренно НЕ запускают CI.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'claude/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @platform/db db:generate
+
+      - name: Type-check (api + web + db)
+        run: pnpm type-check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build web
+        run: pnpm --filter @platform/web build
+
+      - name: Test api
+        run: pnpm --filter @platform/api test

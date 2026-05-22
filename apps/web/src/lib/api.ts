@@ -374,6 +374,10 @@ export interface Lesson {
   streamId: string;
   title: string;
   videoUrl: string | null;
+  // Ключ загруженной видеозаписи в хранилище (отдельно от внешней ссылки videoUrl).
+  videoKey?: string | null;
+  // Подписанный временный URL загруженного видео (для встроенного плеера) или null.
+  videoFileUrl?: string | null;
   summary: string | null;
   notes: string | null;
   status: 'draft' | 'published' | 'closed';
@@ -496,6 +500,53 @@ export async function deleteLessonMaterial(
   s3Key: string,
 ): Promise<{ materials: LessonMaterial[] }> {
   return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Загрузка видеозаписи урока (один файл MP4/WebM/MOV). Возвращает обновлённый урок
+// с подписанным videoFileUrl. Лимит размера сейчас — общий серверный (50МБ).
+export async function uploadLessonVideo(
+  accessToken: string,
+  lessonId: string,
+  file: File,
+): Promise<{ lesson: Lesson }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/video`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { lesson: Lesson };
+}
+
+// Удаление загруженной видеозаписи урока. Возвращает обновлённый урок.
+export async function deleteLessonVideo(
+  accessToken: string,
+  lessonId: string,
+): Promise<{ lesson: Lesson }> {
+  return request(`/lessons/${lessonId}/video`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1042,6 +1093,170 @@ export async function uploadStaffFile(
   let res: Response;
   try {
     res = await fetch(`${API_URL}/conversations/staff/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { entry: StaffEntry };
+}
+
+// Stream conversations (пер-поточные чаты преподавателей «общих» потоков) API
+//
+// Записи и ответ структурно совпадают со штабом — переиспользуем StaffEntry.
+
+export interface StreamConversationSummary {
+  streamId: string;
+  name: string;
+  status: 'active' | 'archived';
+  unreadCount: number;
+}
+
+export interface StreamConversationResponse {
+  conversation: { id: string; streamId: string };
+  entries: StaffEntry[];
+  unreadCount: number;
+}
+
+export async function getStreamConversations(
+  accessToken: string,
+): Promise<{ streams: StreamConversationSummary[] }> {
+  return request('/conversations/streams', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getStreamConversation(
+  accessToken: string,
+  streamId: string,
+): Promise<StreamConversationResponse> {
+  return request(`/conversations/stream/${streamId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addStreamEntry(
+  accessToken: string,
+  streamId: string,
+  data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+): Promise<{ entry: StaffEntry }> {
+  return request(`/conversations/stream/${streamId}/entries`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadStreamFile(
+  accessToken: string,
+  streamId: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+): Promise<{ entry: StaffEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/conversations/stream/${streamId}/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { entry: StaffEntry };
+}
+
+// Cohort conversations (общий чат потока: все студенты потока + преподаватели) API
+//
+// Записи и ответ структурно совпадают со штабом — переиспользуем StaffEntry.
+
+export interface CohortConversationSummary {
+  streamId: string;
+  name: string;
+  status: 'active' | 'archived';
+  unreadCount: number;
+}
+
+export interface CohortConversationResponse {
+  conversation: { id: string; streamId: string };
+  entries: StaffEntry[];
+  unreadCount: number;
+}
+
+export async function getCohortConversations(
+  accessToken: string,
+): Promise<{ streams: CohortConversationSummary[] }> {
+  return request('/conversations/cohorts', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getCohortConversation(
+  accessToken: string,
+  streamId: string,
+): Promise<CohortConversationResponse> {
+  return request(`/conversations/cohort/${streamId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addCohortEntry(
+  accessToken: string,
+  streamId: string,
+  data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+): Promise<{ entry: StaffEntry }> {
+  return request(`/conversations/cohort/${streamId}/entries`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadCohortFile(
+  accessToken: string,
+  streamId: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+): Promise<{ entry: StaffEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/conversations/cohort/${streamId}/entries`, {
       method: 'POST',
       credentials: 'include',
       headers: { Authorization: `Bearer ${accessToken}` },

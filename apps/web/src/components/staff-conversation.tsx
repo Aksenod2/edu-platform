@@ -8,6 +8,7 @@ import {
   addStaffEntry,
   uploadStaffFile,
   type StaffEntry,
+  type ThreadEntryType,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,11 +35,53 @@ function formatBytes(size: number) {
 }
 
 /**
- * Лента общего штаб-канала преподавателей с inline-композером.
- * Лёгкий аналог ThreadConversation без студент-специфики (сдачи/ревью):
- * штаб — групповой чат всех админов между собой.
+ * Источник данных ленты — позволяет одному компоненту обслуживать и штаб,
+ * и пер-поточный чат. Функции уже привязаны к нужному endpoint/streamId
+ * вызывающей стороной; токен передаётся отдельным аргументом.
  */
-export function StaffConversation({ onRead }: { onRead?: () => void }) {
+export interface ConversationSource {
+  /** Загрузить ленту (открытие = прочтение на бэкенде). */
+  load: (accessToken: string) => Promise<{ entries: StaffEntry[] }>;
+  /** Отправить текст/ссылку. */
+  send: (
+    accessToken: string,
+    data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+  ) => Promise<{ entry: StaffEntry }>;
+  /** Загрузить файл/аудио. */
+  uploadFile: (
+    accessToken: string,
+    file: File,
+    type: 'file' | 'audio',
+  ) => Promise<{ entry: StaffEntry }>;
+}
+
+// Источник по умолчанию — штаб-канал.
+const STAFF_SOURCE: ConversationSource = {
+  load: (token) => getStaffConversation(token),
+  send: (token, data) => addStaffEntry(token, data),
+  uploadFile: (token, file, type) => uploadStaffFile(token, file, type),
+};
+
+/**
+ * Лента группового канала преподавателей (штаб или пер-поточный чат) с inline-композером.
+ * Лёгкий аналог ThreadConversation без студент-специфики (сдачи/ревью).
+ *
+ * По умолчанию обслуживает штаб-канал. Для пер-поточного чата передайте `source`
+ * с функциями, привязанными к конкретному потоку, плюс `placeholder`/`emptyText`.
+ */
+export function StaffConversation({
+  onRead,
+  source = STAFF_SOURCE,
+  placeholder = 'Сообщение в штаб...',
+  emptyText = 'В штабе пока нет сообщений',
+  loadErrorText = 'Ошибка загрузки штаба',
+}: {
+  onRead?: () => void;
+  source?: ConversationSource;
+  placeholder?: string;
+  emptyText?: string;
+  loadErrorText?: string;
+}) {
   const { accessToken, user } = useAuth();
   const myId = user?.id ?? '';
 
@@ -60,17 +103,17 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const data = await getStaffConversation(accessToken);
+      const data = await source.load(accessToken);
       setEntries(data.entries);
       setError('');
       // Открытие ленты сбросило непрочитанное на бэкенде — обновим бейдж вкладки.
       onRead?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки штаба');
+      setError(err instanceof Error ? err.message : loadErrorText);
     } finally {
       setLoading(false);
     }
-  }, [accessToken, onRead]);
+  }, [accessToken, onRead, source, loadErrorText]);
 
   useEffect(() => {
     fetchConversation();
@@ -88,7 +131,7 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
     if (!accessToken || !content.trim()) return;
     setSending(true);
     try {
-      const { entry } = await addStaffEntry(accessToken, {
+      const { entry } = await source.send(accessToken, {
         type: 'text',
         content: content.trim(),
       });
@@ -105,7 +148,7 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
     if (!accessToken || !linkUrl.trim()) return;
     setSending(true);
     try {
-      const { entry } = await addStaffEntry(accessToken, {
+      const { entry } = await source.send(accessToken, {
         type: 'link',
         content: linkUrl.trim(),
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
@@ -130,7 +173,7 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
     }
     setSending(true);
     try {
-      const { entry } = await uploadStaffFile(accessToken, file, 'file');
+      const { entry } = await source.uploadFile(accessToken, file, 'file');
       setEntries((prev) => [...prev, entry]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
@@ -163,7 +206,7 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-muted-foreground">В штабе пока нет сообщений</p>
+            <p className="text-sm text-muted-foreground">{emptyText}</p>
           </div>
         ) : (
           <div className="mt-auto flex flex-col gap-2">
@@ -248,7 +291,7 @@ export function StaffConversation({ onRead }: { onRead?: () => void }) {
           <Textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Сообщение в штаб..."
+            placeholder={placeholder}
             rows={1}
             className="max-h-40 min-h-9 flex-1 resize-none"
             onKeyDown={(e) => {
