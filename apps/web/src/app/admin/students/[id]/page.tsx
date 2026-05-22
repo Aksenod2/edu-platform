@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -477,7 +477,7 @@ export default function StudentProfilePage() {
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
-            <div className="grid items-start gap-6 py-4 lg:grid-cols-2">
+            <div className="grid items-stretch gap-6 py-4 lg:grid-cols-2">
 
               {/* Баланс кошелька */}
               <section className="lg:col-span-2">
@@ -628,78 +628,82 @@ export default function StudentProfilePage() {
               </section>
 
               {/* Анкета */}
-              <section>
-                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3">Анкета (Задание №0)</h2>
-                {profile ? (
-                  <Card>
-                    <CardContent className="space-y-3">
-                    <div>
-                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Резюме</span>
-                      <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{profile.resume || '—'}</p>
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle>Анкета (Задание №0)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {profile ? (
+                    <div className="space-y-3">
+                      <div>
+                        <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Резюме</span>
+                        <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{profile.resume || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Портфолио</span>
+                        <p className="mt-1 text-sm text-foreground">{profile.portfolio || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Контакты</span>
+                        <p className="mt-1 text-sm text-foreground">
+                          {profile.contacts
+                            ? `Email: ${(profile.contacts as { email?: string; telegram?: string }).email || '—'}, Telegram: ${(profile.contacts as { email?: string; telegram?: string }).telegram || '—'}`
+                            : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Направление</span>
+                        <p className="mt-1 text-sm text-foreground">{profile.direction || '—'}</p>
+                      </div>
+                      {profile.questionnaireCompletedAt ? (
+                        <span className="block font-mono text-xs text-muted-foreground">
+                          Заполнена: {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
+                        </span>
+                      ) : (
+                        <span className="block font-mono text-xs text-destructive">Анкета не заполнена</span>
+                      )}
                     </div>
-                    <div>
-                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Портфолио</span>
-                      <p className="mt-1 text-sm text-foreground">{profile.portfolio || '—'}</p>
-                    </div>
-                    <div>
-                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Контакты</span>
-                      <p className="mt-1 text-sm text-foreground">
-                        {profile.contacts
-                          ? `Email: ${(profile.contacts as { email?: string; telegram?: string }).email || '—'}, Telegram: ${(profile.contacts as { email?: string; telegram?: string }).telegram || '—'}`
-                          : '—'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">Направление</span>
-                      <p className="mt-1 text-sm text-foreground">{profile.direction || '—'}</p>
-                    </div>
-                    {profile.questionnaireCompletedAt ? (
-                      <span className="block font-mono text-xs text-muted-foreground">
-                        Заполнена: {new Date(profile.questionnaireCompletedAt).toLocaleDateString('ru-RU')}
-                      </span>
-                    ) : (
-                      <span className="block font-mono text-xs text-destructive">Анкета не заполнена</span>
-                    )}
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <p className="text-muted-foreground text-sm">Ученик ещё не заполнил анкету.</p>
-                )}
-              </section>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">Ученик ещё не заполнил анкету.</p>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Заметки преподавателя */}
-              <section>
-                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3">Наблюдения преподавателя</h2>
-                <form onSubmit={handleAddNote} className="mb-5">
-                  <Textarea
-                    value={noteContent}
-                    onChange={(e) => setNoteContent(e.target.value)}
-                    placeholder="Добавить наблюдение или заметку..."
-                    rows={3}
-                    className="mb-2 resize-none"
-                  />
-                  <Button type="submit" disabled={!noteContent.trim() || savingNote}>
-                    {savingNote && <Loader2 className="animate-spin" />}
-                    {savingNote ? 'Сохранение...' : 'Добавить заметку'}
-                  </Button>
-                </form>
-                {notes && notes.length > 0 ? (
-                  <div className="flex flex-col gap-3">
-                    {notes.map((note: TeacherNote) => (
-                      <Card key={note.id}>
-                        <CardContent>
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle>Наблюдения преподавателя</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleAddNote} className="mb-5">
+                    <Textarea
+                      value={noteContent}
+                      onChange={(e) => setNoteContent(e.target.value)}
+                      placeholder="Добавить наблюдение или заметку..."
+                      rows={3}
+                      className="mb-2 resize-none"
+                    />
+                    <Button type="submit" disabled={!noteContent.trim() || savingNote}>
+                      {savingNote && <Loader2 className="animate-spin" />}
+                      {savingNote ? 'Сохранение...' : 'Добавить заметку'}
+                    </Button>
+                  </form>
+                  {notes && notes.length > 0 ? (
+                    <div className="flex flex-col gap-3">
+                      {notes.map((note: TeacherNote) => (
+                        <div key={note.id} className="rounded-md border p-3">
                           <p className="m-0 text-sm text-foreground whitespace-pre-wrap">{note.content}</p>
                           <span className="block font-mono text-xs mt-2 text-muted-foreground">
                             {note.author.name} — {new Date(note.createdAt).toLocaleString('ru-RU')}
                           </span>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">Заметок пока нет.</p>
-                )}
-              </section>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">Заметок пока нет.</p>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
 
