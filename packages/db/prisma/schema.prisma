@@ -93,6 +93,7 @@ model User {
   apiKeys                 ApiKey[]
   enrollments             StreamEnrollment[]
   taughtLessons           LessonTeacher[]
+  ownedStreams            Stream[]                 @relation("StreamOwner")
 }
 
 model ApiKey {
@@ -128,13 +129,17 @@ model Stream {
   id        String       @id @default(uuid())
   name      String
   status    StreamStatus @default(active)
+  ownerId   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
+  owner           User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   lessons         Lesson[]
   assignments     Assignment[]
   enrollments     StreamEnrollment[]
   conversations   Conversation[]
+
+  @@index([ownerId])
 }
 
 model StreamEnrollment {

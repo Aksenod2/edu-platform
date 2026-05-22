@@ -271,6 +271,9 @@ export interface Stream {
   updatedAt: string;
   teachers?: { id: string; name: string }[];
   shared?: boolean;
+  // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
+  ownerId?: string | null;
+  owner?: { id: string; name: string } | null;
 }
 
 export async function getStreams(
@@ -297,12 +300,12 @@ export async function createStream(
 export async function updateStream(
   accessToken: string,
   id: string,
-  name: string,
+  data: { name?: string; ownerId?: string | null },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(data),
   });
 }
 

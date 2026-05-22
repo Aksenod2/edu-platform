@@ -20,6 +20,7 @@ function deriveStreamTeachers(
 }
 
 const streamTeachersInclude = {
+  owner: { select: { id: true, name: true } },
   lessons: {
     select: {
       teachers: { include: { user: { select: { id: true, name: true } } } },
@@ -42,14 +43,15 @@ export async function streamRoutes(app: FastifyInstance) {
             enrollments: { some: { userId: request.user!.userId } },
           }
         : mine
-          ? { lessons: { some: { teachers: { some: { userId: request.user!.userId } } } } }
+          ? { ownerId: request.user!.userId }
           : {},
       include: streamTeachersInclude,
       orderBy: { createdAt: 'desc' },
     });
     return {
-      streams: streams.map(({ lessons, ...stream }) => ({
+      streams: streams.map(({ lessons, owner, ...stream }) => ({
         ...stream,
+        owner,
         ...deriveStreamTeachers(lessons),
       })),
     };
@@ -63,17 +65,18 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Название потока обязательно' });
     }
 
+    // Создающий администратор становится ведущим потока.
     const stream = await prisma.stream.create({
-      data: { name: name.trim() },
+      data: { name: name.trim(), ownerId: request.user!.userId },
     });
 
     return reply.status(201).send({ stream });
   });
 
-  // PATCH /streams/:id — обновление потока
+  // PATCH /streams/:id — обновление потока (название и/или ведущий)
   app.patch('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { name } = request.body as { name?: string };
+    const { name, ownerId } = request.body as { name?: string; ownerId?: string | null };
 
     const existing = await prisma.stream.findUnique({ where: { id } });
     if (!existing) {
@@ -84,10 +87,22 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Название потока не может быть пустым' });
     }
 
+    // Если задаётся ведущий — проверяем, что это существующий администратор.
+    if (ownerId !== undefined && ownerId !== null) {
+      const owner = await prisma.user.findFirst({
+        where: { id: ownerId, role: 'admin', deletedAt: null },
+        select: { id: true },
+      });
+      if (!owner) {
+        return reply.status(400).send({ error: 'Ведущий должен быть существующим администратором' });
+      }
+    }
+
     const stream = await prisma.stream.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
+        ...(ownerId !== undefined && { ownerId }),
       },
     });
 

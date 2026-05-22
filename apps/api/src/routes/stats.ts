@@ -70,6 +70,10 @@ export async function statsRoutes(app: FastifyInstance) {
         take: 5,
         include: { stream: { select: { id: true, name: true } } },
       }),
+      // TODO (ведущий потока): отсортировать списки «Требует внимания» так, чтобы
+      // ученики потоков, где текущий админ — ведущий (stream.ownerId), шли первыми.
+      // Не сделано намеренно: затрагивает три разнотипных списка (submissions/threads/
+      // onboarding) и горячий endpoint; нужен джойн ученик → enrollment → ownerId.
       // attention.submissionsToReview — status submitted, newest first, top 8
       prisma.studentAssignment.findMany({
         where: { status: 'submitted' },

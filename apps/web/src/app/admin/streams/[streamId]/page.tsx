@@ -30,6 +30,13 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -79,8 +86,11 @@ import {
   createLesson,
   updateLesson,
   deleteLesson,
+  getTeachers,
+  updateStream,
   type StreamWithCounts,
   type Student,
+  type Teacher,
 } from '@/lib/api';
 
 export default function StreamDetailPage() {
@@ -172,7 +182,7 @@ export default function StreamDetailPage() {
         </div>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab stream={stream} />
+          <OverviewTab stream={stream} onOwnerChange={fetchStream} />
         </TabsContent>
 
         <TabsContent value="students" className="mt-4">
@@ -307,9 +317,73 @@ function initials(name: string): string {
     .join('');
 }
 
-function OverviewTab({ stream }: { stream: StreamWithCounts }) {
+// Сентинел «без ведущего» — Radix Select не допускает пустую строку как value.
+const NO_OWNER = 'none';
+
+function OverviewTab({
+  stream,
+  onOwnerChange,
+}: {
+  stream: StreamWithCounts;
+  onOwnerChange: () => void;
+}) {
+  const { accessToken } = useAuth();
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [savingOwner, setSavingOwner] = useState(false);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    getTeachers(accessToken)
+      .then((data) => setTeachers(data.teachers))
+      .catch(() => {});
+  }, [accessToken]);
+
+  // Назначить/сменить/снять ведущего потока.
+  const handleOwnerChange = async (value: string) => {
+    if (!accessToken) return;
+    setSavingOwner(true);
+    try {
+      await updateStream(accessToken, stream.id, {
+        ownerId: value === NO_OWNER ? null : value,
+      });
+      onOwnerChange();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка назначения ведущего');
+    } finally {
+      setSavingOwner(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ведущий</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Select
+            value={stream.ownerId ?? NO_OWNER}
+            onValueChange={handleOwnerChange}
+            disabled={savingOwner}
+          >
+            <SelectTrigger className="w-[260px]">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_OWNER}>Без ведущего</SelectItem>
+              {teachers.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {savingOwner && (
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">Преподаватели</CardTitle>

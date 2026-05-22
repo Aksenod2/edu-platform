@@ -9,7 +9,9 @@ import {
   createStream,
   updateStream,
   archiveStream,
+  getTeachers,
   type Stream,
+  type Teacher,
 } from '@/lib/api';
 import {
   Loader2,
@@ -20,6 +22,7 @@ import {
   ClipboardList,
   SquarePen,
   Archive,
+  UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +51,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -77,6 +85,7 @@ export default function StreamsPage() {
   const { user, accessToken } = useAuth();
 
   const [streams, setStreams] = useState<Stream[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [search, setSearch] = useState('');
   const [mineOnly, setMineOnly] = useState(false);
   const [loadingStreams, setLoadingStreams] = useState(true);
@@ -113,6 +122,14 @@ export default function StreamsPage() {
     }
   }, [accessToken, user, fetchStreams]);
 
+  // Список администраторов для пикера ведущего (грузим один раз).
+  useEffect(() => {
+    if (!accessToken || user?.role !== 'admin') return;
+    getTeachers(accessToken)
+      .then((data) => setTeachers(data.teachers))
+      .catch(() => {});
+  }, [accessToken, user]);
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !newName.trim()) return;
@@ -135,7 +152,7 @@ export default function StreamsPage() {
     setSaving(true);
     setError('');
     try {
-      await updateStream(accessToken, id, editName.trim());
+      await updateStream(accessToken, id, { name: editName.trim() });
       setEditingId(null);
       setEditName('');
       await fetchStreams();
@@ -143,6 +160,18 @@ export default function StreamsPage() {
       setError(err instanceof Error ? err.message : 'Ошибка обновления потока');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Назначить/сменить/снять ведущего потока. ownerId === null снимает ведущего.
+  const handleSetOwner = async (id: string, ownerId: string | null) => {
+    if (!accessToken) return;
+    setError('');
+    try {
+      await updateStream(accessToken, id, { ownerId });
+      await fetchStreams();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка назначения ведущего');
     }
   };
 
@@ -248,6 +277,7 @@ export default function StreamsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Название</TableHead>
+              <TableHead>Ведущий</TableHead>
               <TableHead>Преподаватели</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Создан</TableHead>
@@ -259,6 +289,7 @@ export default function StreamsPage() {
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -267,7 +298,7 @@ export default function StreamsPage() {
               ))
             ) : filteredStreams.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   Потоки не найдены
                 </TableCell>
               </TableRow>
@@ -323,6 +354,13 @@ export default function StreamsPage() {
                       </div>
                     ) : (
                       <span className="font-medium">{stream.name}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {stream.owner ? (
+                      <span>{stream.owner.name}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -403,6 +441,29 @@ export default function StreamsPage() {
                             <SquarePen />
                             Редактировать
                           </DropdownMenuItem>
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <UserCog />
+                              Ведущий
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuRadioGroup
+                                value={stream.ownerId ?? ''}
+                                onValueChange={(value) =>
+                                  handleSetOwner(stream.id, value || null)
+                                }
+                              >
+                                <DropdownMenuRadioItem value="">
+                                  Без ведущего
+                                </DropdownMenuRadioItem>
+                                {teachers.map((t) => (
+                                  <DropdownMenuRadioItem key={t.id} value={t.id}>
+                                    {t.name}
+                                  </DropdownMenuRadioItem>
+                                ))}
+                              </DropdownMenuRadioGroup>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
                           {stream.status === 'active' && (
                             <>
                               <DropdownMenuSeparator />
