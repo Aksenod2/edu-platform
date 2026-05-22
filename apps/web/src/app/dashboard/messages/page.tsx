@@ -47,11 +47,11 @@ function StudentMessagesContent() {
         </div>
       </div>
 
-      <TabsContent value="personal" className="min-h-0 flex-1">
+      <TabsContent value="personal" className="flex min-h-0 flex-1 flex-col">
         <StudentThreadView />
       </TabsContent>
 
-      <TabsContent value="cohort" className="min-h-0 flex-1">
+      <TabsContent value="cohort" className="flex min-h-0 flex-1 flex-col">
         <StudentCohortView />
       </TabsContent>
     </Tabs>

@@ -1,0 +1,3 @@
+xn--90ad2cb.xn--p1ai, xn--0-8sbf7bfq.xn--p1ai {
+    reverse_proxy web:3000
+}

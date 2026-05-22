@@ -21,3 +21,7 @@ storybook-static
 test-results
 playwright-report
 apps/web/e2e/.auth
+
+.env.vps
+.env.vps.bak.*
+/deploy-config-backup/

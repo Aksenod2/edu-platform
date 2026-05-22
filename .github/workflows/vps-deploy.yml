@@ -1,0 +1,23 @@
+name: Deploy to VPS
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "set -e; export GIT_TERMINAL_PROMPT=0; cd /root/edu-platform && git fetch --quiet origin main && git reset --hard origin/main && docker compose --env-file .env.vps -f docker-compose.vps.yml up -d --build && docker image prune -f"
