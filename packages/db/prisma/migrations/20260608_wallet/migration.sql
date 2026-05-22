@@ -1,0 +1,21 @@
+-- Кошелёк студента: ручной баланс (в копейках) + история операций.
+-- Пополнение/списание делает администратор вручную; студент видит баланс и историю.
+
+ALTER TABLE "User" ADD COLUMN "balanceKopecks" INTEGER NOT NULL DEFAULT 0;
+
+CREATE TYPE "WalletTxKind" AS ENUM ('topup', 'debit');
+
+CREATE TABLE "WalletTransaction" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "amount" INTEGER NOT NULL,
+    "kind" "WalletTxKind" NOT NULL,
+    "note" TEXT,
+    "createdBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "WalletTransaction_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "WalletTransaction_userId_idx" ON "WalletTransaction"("userId");
+
+ALTER TABLE "WalletTransaction" ADD CONSTRAINT "WalletTransaction_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

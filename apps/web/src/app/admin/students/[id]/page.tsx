@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Wallet } from 'lucide-react';
 
 const THREAD_POLL_INTERVAL_MS = 5000;
 import { toast } from 'sonner';
@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog,
@@ -42,12 +44,17 @@ import {
   getThread,
   addThreadEntry,
   uploadThreadFile,
+  getWallet,
+  topupWallet,
+  debitWallet,
+  formatKopecks,
   type ProfileResponse,
   type TeacherNote,
   type StudentAssignment,
   type AssignmentsSummary,
   type ThreadEntry,
   type ThreadEntryType,
+  type WalletTransaction,
 } from '@/lib/api';
 
 type Tab = 'profile' | 'assignments' | 'thread';
@@ -91,6 +98,16 @@ export default function StudentProfilePage() {
   // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
   const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
 
+  // Wallet state (баланс кошелька + история операций; суммы в копейках)
+  const [balanceKopecks, setBalanceKopecks] = useState<number | null>(null);
+  const [walletTx, setWalletTx] = useState<WalletTransaction[]>([]);
+  const [loadingWallet, setLoadingWallet] = useState(false);
+  const [topupRubles, setTopupRubles] = useState('');
+  const [topupNote, setTopupNote] = useState('');
+  const [debitRubles, setDebitRubles] = useState('');
+  const [debitNote, setDebitNote] = useState('');
+  const [walletSubmitting, setWalletSubmitting] = useState(false);
+
   // Thread state
   const [threadEntries, setThreadEntries] = useState<ThreadEntry[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -123,6 +140,20 @@ export default function StudentProfilePage() {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки профиля');
     } finally {
       setLoadingProfile(false);
+    }
+  }, [accessToken, studentId]);
+
+  const fetchWallet = useCallback(async () => {
+    if (!accessToken || !studentId) return;
+    setLoadingWallet(true);
+    try {
+      const result = await getWallet(accessToken, studentId);
+      setBalanceKopecks(result.balanceKopecks);
+      setWalletTx(result.transactions);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки баланса');
+    } finally {
+      setLoadingWallet(false);
     }
   }, [accessToken, studentId]);
 
@@ -166,8 +197,11 @@ export default function StudentProfilePage() {
   }, [accessToken, studentId]);
 
   useEffect(() => {
-    if (accessToken && studentId) fetchProfile();
-  }, [accessToken, studentId, fetchProfile]);
+    if (accessToken && studentId) {
+      fetchProfile();
+      fetchWallet();
+    }
+  }, [accessToken, studentId, fetchProfile, fetchWallet]);
 
   // При смене ученика сбрасываем «уже загружено» и устаревшие данные вкладок,
   // чтобы они перезагрузились для нового ученика.
@@ -241,6 +275,65 @@ export default function StudentProfilePage() {
       toast.error(err instanceof Error ? err.message : 'Ошибка добавления заметки');
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  // Рубли (строка из инпута) → копейки (целое). null, если ввод некорректный.
+  const rublesToKopecks = (input: string): number | null => {
+    const normalized = input.trim().replace(',', '.');
+    if (!normalized) return null;
+    const rubles = Number(normalized);
+    if (!Number.isFinite(rubles) || rubles <= 0) return null;
+    return Math.round(rubles * 100);
+  };
+
+  const handleTopup = async () => {
+    if (!accessToken) return;
+    const amountKopecks = rublesToKopecks(topupRubles);
+    if (amountKopecks === null) {
+      toast.error('Введите корректную сумму в рублях');
+      return;
+    }
+    setWalletSubmitting(true);
+    try {
+      const { balanceKopecks: newBalance, transaction } = await topupWallet(accessToken, studentId, {
+        amountKopecks,
+        note: topupNote.trim() || undefined,
+      });
+      setBalanceKopecks(newBalance);
+      setWalletTx((prev) => [transaction, ...prev]);
+      setTopupRubles('');
+      setTopupNote('');
+      toast.success('Баланс пополнен');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка пополнения');
+    } finally {
+      setWalletSubmitting(false);
+    }
+  };
+
+  const handleDebit = async () => {
+    if (!accessToken) return;
+    const amountKopecks = rublesToKopecks(debitRubles);
+    if (amountKopecks === null) {
+      toast.error('Введите корректную сумму в рублях');
+      return;
+    }
+    setWalletSubmitting(true);
+    try {
+      const { balanceKopecks: newBalance, transaction } = await debitWallet(accessToken, studentId, {
+        amountKopecks,
+        note: debitNote.trim() || undefined,
+      });
+      setBalanceKopecks(newBalance);
+      setWalletTx((prev) => [transaction, ...prev]);
+      setDebitRubles('');
+      setDebitNote('');
+      toast.success('Списано с баланса');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка списания');
+    } finally {
+      setWalletSubmitting(false);
     }
   };
 
@@ -385,6 +478,154 @@ export default function StudentProfilePage() {
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
             <div className="grid items-start gap-6 py-4 lg:grid-cols-2">
+
+              {/* Баланс кошелька */}
+              <section className="lg:col-span-2">
+                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3 flex items-center gap-2">
+                  <Wallet className="size-5" /> Баланс
+                </h2>
+                <Card>
+                  <CardContent className="space-y-5">
+                    {/* Текущий баланс */}
+                    <div>
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                        Текущий баланс
+                      </span>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                        {loadingWallet && balanceKopecks === null
+                          ? '…'
+                          : formatKopecks(balanceKopecks ?? 0)}
+                      </p>
+                    </div>
+
+                    {/* Операции: пополнить / списать */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {/* Пополнить */}
+                      <div className="flex flex-col gap-2 rounded-lg border p-3">
+                        <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                          Пополнить
+                        </span>
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="topup-amount" className="sr-only">Сумма пополнения, ₽</Label>
+                          <Input
+                            id="topup-amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            placeholder="Сумма, ₽"
+                            value={topupRubles}
+                            onChange={(e) => setTopupRubles(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Комментарий (необязательно)"
+                            value={topupNote}
+                            onChange={(e) => setTopupNote(e.target.value)}
+                          />
+                          <Button
+                            onClick={handleTopup}
+                            disabled={walletSubmitting || !topupRubles.trim()}
+                            className="w-fit"
+                          >
+                            {walletSubmitting && <Loader2 className="animate-spin" />}
+                            Пополнить
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Списать */}
+                      <div className="flex flex-col gap-2 rounded-lg border p-3">
+                        <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                          Списать
+                        </span>
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="debit-amount" className="sr-only">Сумма списания, ₽</Label>
+                          <Input
+                            id="debit-amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            placeholder="Сумма, ₽"
+                            value={debitRubles}
+                            onChange={(e) => setDebitRubles(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Комментарий (необязательно)"
+                            value={debitNote}
+                            onChange={(e) => setDebitNote(e.target.value)}
+                          />
+                          <Button
+                            variant="secondary"
+                            onClick={handleDebit}
+                            disabled={walletSubmitting || !debitRubles.trim()}
+                            className="w-fit"
+                          >
+                            {walletSubmitting && <Loader2 className="animate-spin" />}
+                            Списать
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* История операций */}
+                    <div>
+                      <span className="block font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
+                        История операций
+                      </span>
+                      {loadingWallet && walletTx.length === 0 ? (
+                        <div className="flex justify-center p-4">
+                          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : walletTx.length === 0 ? (
+                        <p className="text-muted-foreground text-sm">Операций пока нет.</p>
+                      ) : (
+                        <div className="rounded-lg border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Операция</TableHead>
+                                <TableHead className="text-right">Сумма</TableHead>
+                                <TableHead>Комментарий</TableHead>
+                                <TableHead>Кто</TableHead>
+                                <TableHead>Дата</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {walletTx.map((tx) => {
+                                const isTopup = tx.kind === 'topup';
+                                return (
+                                  <TableRow key={tx.id}>
+                                    <TableCell>
+                                      <Badge variant={isTopup ? 'default' : 'secondary'}>
+                                        {isTopup ? 'Пополнение' : 'Списание'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell
+                                      className={`text-right tabular-nums font-medium ${
+                                        isTopup ? 'text-foreground' : 'text-destructive'
+                                      }`}
+                                    >
+                                      {isTopup ? '+' : '−'}{formatKopecks(tx.amount)}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground whitespace-pre-wrap">
+                                      {tx.note || '—'}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">{tx.createdBy || '—'}</TableCell>
+                                    <TableCell className="text-muted-foreground tabular-nums">
+                                      {new Date(tx.createdAt).toLocaleString('ru-RU')}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
 
               {/* Анкета */}
               <section>

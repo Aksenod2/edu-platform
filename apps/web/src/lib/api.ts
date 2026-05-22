@@ -378,6 +378,8 @@ export interface Student {
   inviteExpiresAt?: string | null;
   deletedAt?: string | null;
   submittedCount?: number;
+  // Баланс кошелька в копейках (UI отображает в рублях).
+  balanceKopecks?: number;
 }
 
 export async function getStudents(
@@ -934,6 +936,66 @@ export async function submitStudentAssignment(
     throw new Error(serverMsg || HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`);
   }
   return result as { studentAssignment: StudentAssignment };
+}
+
+// Wallet API
+//
+// Деньги хранятся/передаются в КОПЕЙКАХ (целое число), UI показывает рубли.
+
+export type WalletTxKind = 'topup' | 'debit';
+
+export interface WalletTransaction {
+  id: string;
+  userId: string;
+  amount: number; // в копейках; всегда положительное, знак определяется kind
+  kind: WalletTxKind;
+  note: string | null;
+  createdBy: string | null; // имя администратора, сделавшего операцию
+  createdAt: string;
+}
+
+export interface WalletResponse {
+  balanceKopecks: number;
+  transactions: WalletTransaction[];
+}
+
+/** Форматирует копейки в рубли: 123456 → «1 234 ₽». */
+export function formatKopecks(kopecks: number): string {
+  const rubles = Math.round(kopecks) / 100;
+  return `${rubles.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+}
+
+export async function getWallet(
+  accessToken: string,
+  studentId: string,
+): Promise<WalletResponse> {
+  return request(`/students/${encodeURIComponent(studentId)}/wallet`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function topupWallet(
+  accessToken: string,
+  studentId: string,
+  data: { amountKopecks: number; note?: string },
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction }> {
+  return request(`/students/${encodeURIComponent(studentId)}/wallet/topup`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function debitWallet(
+  accessToken: string,
+  studentId: string,
+  data: { amountKopecks: number; note?: string },
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction }> {
+  return request(`/students/${encodeURIComponent(studentId)}/wallet/debit`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
 }
 
 // Profiles API

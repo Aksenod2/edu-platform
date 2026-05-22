@@ -40,6 +40,7 @@ export async function userRoutes(app: FastifyInstance) {
         name: true,
         role: true,
         isActive: true,
+        balanceKopecks: true,
         createdAt: true,
         inviteToken: true,
         inviteExpiresAt: true,

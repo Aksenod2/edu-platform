@@ -23,6 +23,7 @@ import {
   deleteStudent,
   inviteStudent,
   resetStudentPassword,
+  formatKopecks,
   type Student,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -259,6 +260,7 @@ export default function StudentsPage() {
               <TableHead>Имя</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Статус</TableHead>
+              <TableHead className="text-right">Баланс</TableHead>
               <TableHead>Создан</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>
             </TableRow>
@@ -275,13 +277,14 @@ export default function StudentsPage() {
                   </TableCell>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
                 </TableRow>
               ))
             ) : students.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   Ученики не найдены
                 </TableCell>
               </TableRow>
@@ -322,6 +325,9 @@ export default function StudentsPage() {
                     ) : (
                       <Badge variant="destructive">Заблокирован</Badge>
                     )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {formatKopecks(s.balanceKopecks ?? 0)}
                   </TableCell>
                   <TableCell className="text-muted-foreground tabular-nums">
                     {new Date(s.createdAt).toLocaleDateString('ru-RU')}

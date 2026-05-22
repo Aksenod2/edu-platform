@@ -52,6 +52,11 @@ enum ConversationType {
   cohort
 }
 
+enum WalletTxKind {
+  topup
+  debit
+}
+
 enum NotificationType {
   lesson_published
   assignment_created
@@ -71,6 +76,7 @@ model User {
   avatarKey          String?
   isActive           Boolean   @default(true)
   mustChangePassword Boolean   @default(false)
+  balanceKopecks     Int       @default(0)
   inviteToken        String?   @unique
   inviteExpiresAt    DateTime?
   resetToken         String?   @unique
@@ -94,6 +100,7 @@ model User {
   enrollments             StreamEnrollment[]
   taughtLessons           LessonTeacher[]
   ownedStreams            Stream[]                 @relation("StreamOwner")
+  walletTransactions      WalletTransaction[]      @relation("WalletTxUser")
 }
 
 model ApiKey {
@@ -372,4 +379,17 @@ model FileStorage {
   createdAt DateTime @default(now())
 
   @@index([key])
+}
+
+model WalletTransaction {
+  id          String        @id @default(uuid())
+  userId      String
+  amount      Int           // в копейках; для topup положительное, для debit положительное (знак определяется kind)
+  kind        WalletTxKind
+  note        String?
+  createdBy   String?       // имя администратора, сделавшего операцию
+  createdAt   DateTime      @default(now())
+  user        User          @relation("WalletTxUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
