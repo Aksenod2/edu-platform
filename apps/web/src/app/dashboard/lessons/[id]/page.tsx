@@ -180,6 +180,9 @@ export default function StudentLessonPage() {
             <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
               <video
                 controls
+                preload="metadata"
+                controlsList="nodownload"
+                onContextMenu={(e) => e.preventDefault()}
                 className="max-h-[70vh] w-auto max-w-full"
                 src={lesson.videoFileUrl}
               />

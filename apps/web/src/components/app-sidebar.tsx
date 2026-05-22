@@ -50,6 +50,10 @@ import {
 type NavItem = { label: string; href: string; icon: LucideIcon };
 type NavGroup = { label: string; items: NavItem[] };
 
+// Версия сборки. NEXT_PUBLIC_APP_VERSION прокидывается build-аргументом при
+// деплое (см. scripts/vps-up.sh) и инлайнится в бандл — обновляется каждый push.
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev';
+
 const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Управление',
@@ -149,6 +153,9 @@ export function AppSidebar({
 
       <SidebarFooter>
         <NavUser />
+        <div className="px-2 pb-1 text-center text-[10px] tabular-nums text-muted-foreground group-data-[collapsible=icon]:hidden">
+          {APP_VERSION}
+        </div>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
