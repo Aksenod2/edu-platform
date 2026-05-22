@@ -13,6 +13,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Контролируемый пикер даты-времени на shadcn (Calendar в Popover + поле времени).
 // Значение наружу — наивная локальная строка "YYYY-MM-DDTHH:MM" или "" (пусто).
@@ -45,6 +52,10 @@ function pad(n: number): string {
   return String(n).padStart(2, "0")
 }
 
+// Списки для селектов времени.
+const HOURS = Array.from({ length: 24 }, (_, i) => pad(i))
+const MINUTES = Array.from({ length: 60 }, (_, i) => pad(i))
+
 // Собирает наивную строку "YYYY-MM-DDTHH:MM" из локальной даты и времени.
 function buildValue(date: Date | undefined, time: string): string {
   if (!date) return ""
@@ -64,6 +75,7 @@ export function DateTimePicker({
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false)
   const { date, time } = parseValue(value)
+  const [hh = "", mm = ""] = time ? time.split(":") : []
 
   const handleSelectDay = (day: Date | undefined) => {
     if (!day) {
@@ -73,10 +85,14 @@ export function DateTimePicker({
     onChange(buildValue(day, time))
   }
 
-  const handleTimeChange = (newTime: string) => {
-    // Время без выбранной даты не имеет смысла — игнорируем, пока нет дня.
+  // Смена часов/минут. Время без выбранной даты не имеет смысла — игнорируем.
+  const handleHour = (h: string) => {
     if (!date) return
-    onChange(buildValue(date, newTime))
+    onChange(buildValue(date, `${h}:${mm || "00"}`))
+  }
+  const handleMinute = (m: string) => {
+    if (!date) return
+    onChange(buildValue(date, `${hh || "00"}:${m}`))
   }
 
   const handleClear = (e: React.MouseEvent) => {
@@ -126,26 +142,32 @@ export function DateTimePicker({
           autoFocus
         />
         <div className="flex items-center gap-2 border-t p-3">
-          <label
-            htmlFor={id ? `${id}-time` : undefined}
-            className="text-sm text-muted-foreground"
-          >
-            Время
-          </label>
-          <input
-            id={id ? `${id}-time` : undefined}
-            type="time"
-            value={time}
-            disabled={!date}
-            onChange={(e) => handleTimeChange(e.target.value)}
-            className={cn(
-              "h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30",
-              "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              // Иконка часов нативного поля окрашивается в текущий цвет текста,
-              // чтобы корректно выглядеть в тёмной теме.
-              "[&::-webkit-calendar-picker-indicator]:opacity-60 dark:[&::-webkit-calendar-picker-indicator]:invert"
-            )}
-          />
+          <span className="text-sm text-muted-foreground">Время</span>
+          <Select value={hh} onValueChange={handleHour} disabled={!date}>
+            <SelectTrigger className="flex-1" aria-label="Часы">
+              <SelectValue placeholder="чч" />
+            </SelectTrigger>
+            <SelectContent className="max-h-56">
+              {HOURS.map((h) => (
+                <SelectItem key={h} value={h}>
+                  {h}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-muted-foreground">:</span>
+          <Select value={mm} onValueChange={handleMinute} disabled={!date}>
+            <SelectTrigger className="flex-1" aria-label="Минуты">
+              <SelectValue placeholder="мм" />
+            </SelectTrigger>
+            <SelectContent className="max-h-56">
+              {MINUTES.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </PopoverContent>
     </Popover>
