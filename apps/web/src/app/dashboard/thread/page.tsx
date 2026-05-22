@@ -30,6 +30,9 @@ import {
   uploadThreadFile,
   type ThreadEntry,
 } from '@/lib/api';
+import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+
+const POLL_INTERVAL_MS = 5000;
 
 export default function StudentThreadPage() {
   const { user, accessToken } = useAuth();
@@ -53,8 +56,15 @@ export default function StudentThreadPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const didInitialScroll = useRef(false);
+  // Прижата ли лента к низу — чтобы поллинг не дёргал скролл при чтении истории.
+  const stickToBottom = useRef(true);
+  const entriesLenRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    entriesLenRef.current = entries.length;
+  }, [entries]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -71,29 +81,45 @@ export default function StudentThreadPage() {
     window.history.replaceState({}, '', url.pathname);
   };
 
-  const fetchThread = useCallback(async () => {
-    if (!accessToken || !user) return;
-    setLoadingData(true);
-    try {
-      const data = await getThread(accessToken, user.id);
-      setEntries(data.entries);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки сообщений');
-    } finally {
-      setLoadingData(false);
-    }
-  }, [accessToken, user]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!accessToken || !user) return;
+      if (!silent) setLoadingData(true);
+      try {
+        const data = await getThread(accessToken, user.id);
+        setEntries((prev) => (silent ? mergeById(data.entries, prev) : data.entries));
+      } catch (err) {
+        if (!silent) toast.error(err instanceof Error ? err.message : 'Ошибка загрузки сообщений');
+      } finally {
+        if (!silent) setLoadingData(false);
+      }
+    },
+    [accessToken, user],
+  );
 
   useEffect(() => {
-    if (accessToken && user?.role === 'student') fetchThread();
-  }, [accessToken, user, fetchThread]);
+    if (accessToken && user?.role === 'student') load(false);
+  }, [accessToken, user, load]);
 
-  // Прокрутка к последнему сообщению: мгновенно при первой загрузке, плавно — при новых.
+  usePolling(() => load(true), POLL_INTERVAL_MS, !!accessToken && user?.role === 'student');
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (el) stickToBottom.current = isNearBottom(el);
+  };
+
+  // Прокрутка к низу: мгновенно при первой загрузке; при новых сообщениях —
+  // только если пользователь у низа (или сам только что отправил).
   useEffect(() => {
     if (loadingData || entries.length === 0) return;
-    const behavior: ScrollBehavior = didInitialScroll.current ? 'smooth' : 'auto';
-    bottomRef.current?.scrollIntoView({ behavior });
-    didInitialScroll.current = true;
+    if (!didInitialScroll.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      didInitialScroll.current = true;
+      return;
+    }
+    if (stickToBottom.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [entries, loadingData]);
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -112,6 +138,7 @@ export default function StudentThreadPage() {
         content: textContent.trim(),
         ...(activeContext && { assignmentId: activeContext.id }),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setTextContent('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -132,6 +159,7 @@ export default function StudentThreadPage() {
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
         ...(activeContext && { assignmentId: activeContext.id }),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setLinkUrl('');
       setLinkTitle('');
@@ -150,6 +178,7 @@ export default function StudentThreadPage() {
     setSending(true);
     try {
       const { entry } = await uploadThreadFile(accessToken, user.id, file, 'file', activeContext?.id);
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
@@ -192,6 +221,7 @@ export default function StudentThreadPage() {
     try {
       const file = new File([audioBlob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
       const { entry } = await uploadThreadFile(accessToken, user.id, file, 'audio', activeContext?.id);
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setAudioBlob(null);
       setRecordingTime(0);
@@ -231,7 +261,11 @@ export default function StudentThreadPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex flex-1 flex-col overflow-y-auto px-4 py-4"
+      >
         {loadingData ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />

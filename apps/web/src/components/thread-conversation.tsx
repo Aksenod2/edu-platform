@@ -31,6 +31,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
+import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+
+const POLL_INTERVAL_MS = 5000;
 
 function initials(name: string) {
   return name
@@ -86,43 +89,69 @@ export function ThreadConversation({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const didInitialScroll = useRef(false);
+  // Прижата ли лента к низу — чтобы поллинг не дёргал скролл, когда читают историю.
+  const stickToBottom = useRef(true);
+  const entriesLenRef = useRef(0);
+  useEffect(() => {
+    entriesLenRef.current = entries.length;
+  }, [entries]);
 
-  const fetchThread = useCallback(async () => {
-    if (!accessToken || !studentId) return;
-    setLoading(true);
-    try {
-      const [data, saData] = await Promise.all([
-        getThread(accessToken, studentId),
-        getStudentAssignments(accessToken, { studentId }),
-      ]);
-      setStudentName(data.student.name);
-      setEntries(data.entries);
-      setStudentAssignments(saData.studentAssignments);
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки треда');
-    } finally {
-      setLoading(false);
-    }
-  }, [accessToken, studentId]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!accessToken || !studentId) return;
+      if (!silent) setLoading(true);
+      try {
+        const [data, saData] = await Promise.all([
+          getThread(accessToken, studentId),
+          getStudentAssignments(accessToken, { studentId }),
+        ]);
+        const prevLen = entriesLenRef.current;
+        setStudentName(data.student.name);
+        setEntries((prev) => (silent ? mergeById(data.entries, prev) : data.entries));
+        setStudentAssignments(saData.studentAssignments);
+        setError('');
+        // Пришли новые сообщения — обновим список тредов/бейджи в инбоксе.
+        if (silent && data.entries.length > prevLen) onReplied?.();
+      } catch (err) {
+        if (!silent) setError(err instanceof Error ? err.message : 'Ошибка загрузки треда');
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [accessToken, studentId, onReplied],
+  );
 
   useEffect(() => {
-    fetchThread();
-  }, [fetchThread]);
+    load(false);
+  }, [load]);
 
-  // Прокрутка к последнему сообщению: мгновенно при первой загрузке треда,
-  // плавно — при появлении новых сообщений.
+  usePolling(() => load(true), POLL_INTERVAL_MS);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (el) stickToBottom.current = isNearBottom(el);
+  };
+
+  // Прокрутка к низу: мгновенно при первой загрузке треда; при новых сообщениях —
+  // только если пользователь у низа (или сам только что ответил).
   useEffect(() => {
     if (loading || entries.length === 0) return;
-    const behavior: ScrollBehavior = didInitialScroll.current ? 'smooth' : 'auto';
-    bottomRef.current?.scrollIntoView({ behavior });
-    didInitialScroll.current = true;
+    if (!didInitialScroll.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      didInitialScroll.current = true;
+      return;
+    }
+    if (stickToBottom.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [entries, loading]);
 
-  // Сбрасываем флаг при переключении ученика, чтобы новый тред скроллился мгновенно.
+  // Сбрасываем флаги при переключении ученика, чтобы новый тред скроллился мгновенно.
   useEffect(() => {
     didInitialScroll.current = false;
+    stickToBottom.current = true;
   }, [studentId]);
 
   const handleSend = async () => {
@@ -133,6 +162,7 @@ export function ThreadConversation({
         type: inputMode as ThreadEntryType,
         content: content.trim(),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setContent('');
       onReplied?.();
@@ -152,6 +182,7 @@ export function ThreadConversation({
         content: linkUrl.trim(),
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setLinkUrl('');
       setLinkTitle('');
@@ -174,6 +205,7 @@ export function ThreadConversation({
     setSending(true);
     try {
       const { entry } = await uploadThreadFile(accessToken, studentId, file, 'file');
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       onReplied?.();
     } catch (err) {
@@ -221,7 +253,11 @@ export function ThreadConversation({
       )}
 
       {/* Messages */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4"
+      >
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />

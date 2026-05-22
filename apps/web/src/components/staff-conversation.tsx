@@ -17,6 +17,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
+import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+
+const POLL_INTERVAL_MS = 5000;
 
 function initials(name: string) {
   return name
@@ -97,34 +100,59 @@ export function StaffConversation({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const didInitialScroll = useRef(false);
+  // Прижата ли лента к низу — если пользователь прокрутил историю вверх, не
+  // дёргаем его скролл при поллинге новых сообщений.
+  const stickToBottom = useRef(true);
+  const entriesLenRef = useRef(0);
+  useEffect(() => {
+    entriesLenRef.current = entries.length;
+  }, [entries]);
 
-  const fetchConversation = useCallback(async () => {
-    if (!accessToken) return;
-    setLoading(true);
-    try {
-      const data = await source.load(accessToken);
-      setEntries(data.entries);
-      setError('');
-      // Открытие ленты сбросило непрочитанное на бэкенде — обновим бейдж вкладки.
-      onRead?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : loadErrorText);
-    } finally {
-      setLoading(false);
-    }
-  }, [accessToken, onRead, source, loadErrorText]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!accessToken) return;
+      if (!silent) setLoading(true);
+      try {
+        const data = await source.load(accessToken);
+        const prevLen = entriesLenRef.current;
+        setEntries((prev) => (silent ? mergeById(data.entries, prev) : data.entries));
+        setError('');
+        // Открытие/новые сообщения сбросили непрочитанное на бэкенде — обновим бейдж.
+        if (!silent || data.entries.length > prevLen) onRead?.();
+      } catch (err) {
+        if (!silent) setError(err instanceof Error ? err.message : loadErrorText);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [accessToken, onRead, source, loadErrorText],
+  );
 
   useEffect(() => {
-    fetchConversation();
-  }, [fetchConversation]);
+    load(false);
+  }, [load]);
 
-  // Прокрутка к низу: мгновенно при первой загрузке, плавно — при новых сообщениях.
+  usePolling(() => load(true), POLL_INTERVAL_MS);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (el) stickToBottom.current = isNearBottom(el);
+  };
+
+  // Прокрутка к низу: мгновенно при первой загрузке; при новых сообщениях —
+  // только если пользователь и так у низа (или сам только что отправил).
   useEffect(() => {
     if (loading || entries.length === 0) return;
-    const behavior: ScrollBehavior = didInitialScroll.current ? 'smooth' : 'auto';
-    bottomRef.current?.scrollIntoView({ behavior });
-    didInitialScroll.current = true;
+    if (!didInitialScroll.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      didInitialScroll.current = true;
+      return;
+    }
+    if (stickToBottom.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [entries, loading]);
 
   const handleSend = async () => {
@@ -135,6 +163,7 @@ export function StaffConversation({
         type: 'text',
         content: content.trim(),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setContent('');
     } catch (err) {
@@ -153,6 +182,7 @@ export function StaffConversation({
         content: linkUrl.trim(),
         ...(linkTitle.trim() ? { metadata: { title: linkTitle.trim() } } : {}),
       });
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
       setLinkUrl('');
       setLinkTitle('');
@@ -174,6 +204,7 @@ export function StaffConversation({
     setSending(true);
     try {
       const { entry } = await source.uploadFile(accessToken, file, 'file');
+      stickToBottom.current = true;
       setEntries((prev) => [...prev, entry]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
@@ -199,7 +230,11 @@ export function StaffConversation({
       )}
 
       {/* Messages */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4"
+      >
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />

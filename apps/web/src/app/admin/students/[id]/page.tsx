@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
 import { Loader2 } from 'lucide-react';
+
+const THREAD_POLL_INTERVAL_MS = 5000;
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -111,7 +114,14 @@ export default function StudentProfilePage() {
   const [sendingThread, setSendingThread] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Прижата ли лента треда к низу — чтобы поллинг не дёргал скролл при чтении истории.
+  const threadStick = useRef(true);
+  const threadLenRef = useRef(0);
+  useEffect(() => {
+    threadLenRef.current = threadEntries.length;
+  }, [threadEntries]);
   // Отмечаем, что вкладка уже загружалась, чтобы не дёргать запрос повторно.
   // Раньше условием было `.length === 0`, и для пустого треда/списка это
   // зацикливало загрузку (спиннер мигал поверх «Тред пуст»).
@@ -203,8 +213,29 @@ export default function StudentProfilePage() {
     }
   }, [accessToken, studentId, activeTab, loadingThread, fetchThread]);
 
+  // Тихий рефреш треда для поллинга: без спиннера, со слиянием по id.
+  const refreshThreadSilently = useCallback(async () => {
+    if (!accessToken || !studentId) return;
+    try {
+      const result = await getThread(accessToken, studentId);
+      setThreadEntries((prev) => mergeById(result.entries, prev));
+    } catch {
+      // тихий рефреш — ошибки не показываем
+    }
+  }, [accessToken, studentId]);
+
+  usePolling(refreshThreadSilently, THREAD_POLL_INTERVAL_MS, activeTab === 'thread');
+
+  const handleThreadScroll = () => {
+    const el = threadScrollRef.current;
+    if (el) threadStick.current = isNearBottom(el);
+  };
+
+  // Прокрутка к низу при появлении новых сообщений — только если пользователь
+  // у низа ленты (или сам только что отправил). Иначе не мешаем читать историю.
   useEffect(() => {
-    if (activeTab === 'thread') {
+    if (activeTab !== 'thread' || threadEntries.length === 0) return;
+    if (threadStick.current) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [threadEntries, activeTab]);
@@ -283,6 +314,7 @@ export default function StudentProfilePage() {
         type: inputMode as ThreadEntryType,
         content: threadContent.trim(),
       });
+      threadStick.current = true;
       setThreadEntries((prev) => [...prev, entry]);
       setThreadContent('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -303,6 +335,7 @@ export default function StudentProfilePage() {
     setSendingThread(true);
     try {
       const { entry } = await uploadThreadFile(accessToken, studentId, file, 'file');
+      threadStick.current = true;
       setThreadEntries((prev) => [...prev, entry]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
@@ -654,7 +687,11 @@ export default function StudentProfilePage() {
           {activeTab === 'thread' && (
             <div className="flex flex-col flex-1 min-h-0">
               {/* Thread messages */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              <div
+                ref={threadScrollRef}
+                onScroll={handleThreadScroll}
+                className="flex-1 overflow-y-auto p-4 flex flex-col gap-2"
+              >
                 {loadingThread ? (
                   <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="size-8 animate-spin text-muted-foreground" />
