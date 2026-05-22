@@ -513,6 +513,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   // Create form (separate inline affordance)
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<LessonFormData>(emptyForm);
+  // Видеофайл, выбранный при создании урока: грузим его сразу после создания
+  // (эндпоинт загрузки видео требует id уже существующего урока).
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Row-view Sheet (view-first, then in-place edit — Variant A)
@@ -563,12 +566,14 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
   const openCreate = () => {
     setForm(emptyForm);
+    setVideoFile(null);
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
     setForm(emptyForm);
+    setVideoFile(null);
   };
 
   // --- Row view / in-place edit ---
@@ -602,7 +607,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     setSubmitting(true);
     setError('');
     try {
-      await createLesson(accessToken, {
+      const { lesson: created } = await createLesson(accessToken, {
         streamId,
         title: form.title.trim(),
         videoUrl: form.videoUrl.trim() || undefined,
@@ -614,6 +619,18 @@ export function LessonsManager({ streamId }: { streamId: string }) {
         sortOrder: form.sortOrder,
         teacherIds: form.teacherIds,
       });
+      // Если при создании выбрали видеофайл — грузим его в только что созданный урок.
+      if (videoFile) {
+        try {
+          await uploadLessonVideo(accessToken, created.id, videoFile);
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? `Урок создан, но видео не загрузилось: ${err.message}`
+              : 'Урок создан, но видео не загрузилось',
+          );
+        }
+      }
       closeForm();
       await fetchData();
     } catch (err) {
@@ -764,6 +781,52 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 </Field>
 
                 <Field>
+                  <FieldLabel>Видеозапись урока</FieldLabel>
+                  <div className="flex flex-col gap-2 rounded-lg border bg-muted p-4">
+                    {videoFile ? (
+                      <div className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm">
+                        <Film className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-foreground">{videoFile.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => setVideoFile(null)}
+                        >
+                          <X className="size-4" />
+                          <span className="sr-only">Убрать видео</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm">
+                        <Paperclip className="size-4" />
+                        Выбрать видеофайл (MP4/WebM/MOV)
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,.mp4,.webm,.mov,.m4v"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const name = file.name.toLowerCase();
+                            if (!VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+                              toast.error('Поддерживаются видеофайлы (MP4)');
+                            } else {
+                              setVideoFile(file);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Загрузится после создания урока. Большие файлы пока ограничены лимитом сервера.
+                    </p>
+                  </div>
+                </Field>
+
+                <Field>
                   <FieldLabel htmlFor="lesson-video">Видео URL (внешняя ссылка)</FieldLabel>
                   <Input
                     id="lesson-video"
@@ -773,8 +836,8 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     placeholder="https://..."
                   />
                   <FieldDescription>
-                    Ссылка на YouTube/Vimeo и т.п. Чтобы загрузить видеофайл, сначала
-                    сохраните урок, затем откройте его.
+                    Альтернатива загрузке: ссылка на YouTube/Vimeo. Если выбран файл, для
+                    студента используется он.
                   </FieldDescription>
                 </Field>
 
