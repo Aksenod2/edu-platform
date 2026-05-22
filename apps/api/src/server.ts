@@ -43,7 +43,7 @@ await app.register(rateLimit, {
 await app.register(
   async (authScope) => {
     await authScope.register(rateLimit, {
-      max: 10,
+      max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 10,
       timeWindow: '1 minute',
     });
     await authScope.register(authRoutes);
