@@ -687,9 +687,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     try {
       const { lesson } = await updateLesson(accessToken, viewLesson.id, {
         title: editForm.title.trim(),
-        videoUrl: editForm.videoUrl.trim() || undefined,
-        summary: editForm.summary || undefined,
-        notes: editForm.notes || undefined,
+        // Шлём поля всегда (даже пустыми), иначе очистку не сохранить:
+        // пустая строка на бэке превращается в null.
+        videoUrl: editForm.videoUrl.trim(),
+        summary: editForm.summary,
+        notes: editForm.notes,
         status: editForm.status,
         date: editForm.date || null,
         startTime: editForm.startTime || null,
