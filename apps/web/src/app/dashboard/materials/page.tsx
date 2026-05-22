@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { ChevronDown, FolderOpen, Play, FileText, ExternalLink } from 'lucide-react';
+import { ChevronDown, FolderOpen, Play } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { getStreams, getLessons, type Stream, type Lesson } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { MaterialRow } from '@/components/material-row';
 import {
   Select,
   SelectContent,
@@ -251,13 +252,7 @@ function LessonCard({
               </p>
               <div className="flex flex-col gap-2">
                 {files.map((m) => (
-                  <Button key={m.s3Key} asChild variant="outline" size="sm" className="w-fit">
-                    <a href={m.url} target="_blank" rel="noopener noreferrer">
-                      <FileText className="size-4" />
-                      {m.fileName}
-                      <ExternalLink className="size-4" />
-                    </a>
-                  </Button>
+                  <MaterialRow key={m.s3Key} material={m} />
                 ))}
               </div>
             </div>

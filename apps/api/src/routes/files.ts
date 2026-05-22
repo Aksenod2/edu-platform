@@ -59,7 +59,11 @@ export async function fileRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'File key required' });
     }
 
-    const { exp, sig } = request.query as { exp?: string; sig?: string };
+    const { exp, sig, download } = request.query as {
+      exp?: string;
+      sig?: string;
+      download?: string;
+    };
 
     // (a) Signature first — never 401 before this check.
     let authorized = false;
@@ -87,13 +91,17 @@ export async function fileRoutes(app: FastifyInstance) {
     const data = Buffer.from(file.data);
     const total = data.length;
 
+    // ?download=1 — отдать как вложение (форс-скачивание), иначе inline (просмотр).
+    // download нужен, т.к. HTML-атрибут download не работает для кросс-доменных ссылок.
+    const disposition = download ? 'attachment' : 'inline';
+
     // Общие заголовки. Accept-Ranges сообщает браузеру, что можно запрашивать
     // диапазоны — это нужно для <video> (перемотка) и обязательно для Safari/iOS,
     // который не воспроизводит видео без ответа 206 на Range-запрос.
     reply
       .header('Accept-Ranges', 'bytes')
       .header('Content-Type', file.mimeType)
-      .header('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`)
+      .header('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.fileName)}"`)
       .header('Cache-Control', 'private, max-age=3600');
 
     const rangeHeader = request.headers.range;

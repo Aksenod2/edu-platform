@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { Loader2, Plus, Video, Pencil, Trash2, FileText, Paperclip, X, Film } from 'lucide-react';
+import { Loader2, Plus, Video, Pencil, Trash2, FileText, Paperclip, X, Film, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -62,11 +62,13 @@ import {
   deleteLessonVideo,
   getStreams,
   getTeachers,
+  fileDownloadUrl,
   type Lesson,
   type LessonMaterial,
   type Stream,
   type Teacher,
 } from '@/lib/api';
+import { MaterialRow } from '@/components/material-row';
 
 type LessonFormData = {
   title: string;
@@ -262,6 +264,20 @@ function LessonMaterialsSection({
               {m.size ? (
                 <span className="shrink-0 text-xs text-muted-foreground">{formatSize(m.size)}</span>
               ) : null}
+              {m.url && (
+                <Button
+                  asChild
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 shrink-0 text-muted-foreground"
+                >
+                  <a href={fileDownloadUrl(m.url)} title="Скачать">
+                    <Download className="size-4" />
+                    <span className="sr-only">Скачать материал</span>
+                  </a>
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -1243,21 +1259,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           {viewLesson.materials && viewLesson.materials.length > 0 ? (
                             <div className="flex flex-col gap-1.5">
                               {viewLesson.materials.map((m) => (
-                                <a
-                                  key={m.s3Key}
-                                  href={m.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-2 text-primary underline underline-offset-4 break-all"
-                                >
-                                  <FileText className="size-4 shrink-0" />
-                                  {m.fileName}
-                                  {m.size ? (
-                                    <span className="text-xs text-muted-foreground">
-                                      {formatSize(m.size)}
-                                    </span>
-                                  ) : null}
-                                </a>
+                                <MaterialRow key={m.s3Key} material={m} />
                               ))}
                             </div>
                           ) : (

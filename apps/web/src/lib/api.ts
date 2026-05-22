@@ -369,6 +369,12 @@ export interface LessonMaterial {
   url?: string;
 }
 
+/** Добавляет download=1 к подписанному URL файла для форс-скачивания (вложением). */
+export function fileDownloadUrl(url: string): string {
+  if (!url) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`;
+}
+
 export interface Lesson {
   id: string;
   streamId: string;
