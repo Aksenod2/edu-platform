@@ -38,7 +38,7 @@ export default function AdminLessonsPage() {
   const [streams, setStreams] = useState<Stream[]>([]);
   // 'all' — показывать уроки всех потоков (с колонкой «Поток»); иначе id потока.
   const [selectedStreamId, setSelectedStreamId] = useState<string>(ALL_STREAMS);
-  const [viewMode, setViewMode] = useState<ViewMode>('program');
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -67,9 +67,9 @@ export default function AdminLessonsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Уроки</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Календарь</h1>
           <p className="text-sm text-muted-foreground">
-            Программа курса и календарь занятий
+            Календарь занятий и список уроков
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -79,7 +79,7 @@ export default function AdminLessonsPage() {
               size="sm"
               onClick={() => setViewMode('program')}
             >
-              Программа
+              Список
             </Button>
             <Button
               variant={viewMode === 'calendar' ? 'default' : 'ghost'}

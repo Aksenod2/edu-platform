@@ -61,11 +61,10 @@ const ADMIN_NAV: NavGroup[] = [
     label: 'Управление',
     items: [
       { label: 'Обзор', href: '/admin', icon: LayoutGrid },
-      { label: 'Сегодня', href: '/admin/today', icon: CalendarDays },
       { label: 'Ученики', href: '/admin/students', icon: Users },
       { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
       { label: 'Потоки', href: '/admin/streams', icon: Layers },
-      { label: 'Уроки', href: '/admin/lessons', icon: BookOpen },
+      { label: 'Календарь', href: '/admin/lessons', icon: CalendarDays },
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
       { label: 'Профиль', href: '/admin/profile', icon: User },
     ],
