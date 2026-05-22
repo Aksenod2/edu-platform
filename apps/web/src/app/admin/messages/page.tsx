@@ -1,9 +1,18 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Loader2, MessagesSquare, ChevronLeft } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Loader2, MessagesSquare, ChevronLeft, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getThreads, getStaffUnread, type ThreadSummary } from '@/lib/api';
+import {
+  getThreads,
+  getStaffUnread,
+  getStreamConversations,
+  getStreamConversation,
+  addStreamEntry,
+  uploadStreamFile,
+  type ThreadSummary,
+  type StreamConversationSummary,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -11,7 +20,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ThreadConversation } from '@/components/thread-conversation';
-import { StaffConversation } from '@/components/staff-conversation';
+import { StaffConversation, type ConversationSource } from '@/components/staff-conversation';
 import { cn } from '@platform/ui/lib/utils';
 
 function initials(name: string) {
@@ -49,6 +58,9 @@ export default function AdminThreadsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [staffUnread, setStaffUnread] = useState(0);
 
+  const [streams, setStreams] = useState<StreamConversationSummary[]>([]);
+  const [selectedStream, setSelectedStream] = useState<string | null>(null);
+
   const fetchThreads = useCallback(async () => {
     if (!accessToken) return;
     try {
@@ -72,16 +84,42 @@ export default function AdminThreadsPage() {
     }
   }, [accessToken]);
 
+  const fetchStreams = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const { streams: list } = await getStreamConversations(accessToken);
+      setStreams(list);
+    } catch {
+      // Список потоков не критичен — молча игнорируем ошибку.
+    }
+  }, [accessToken]);
+
   useEffect(() => {
     if (accessToken) {
       fetchThreads();
       fetchStaffUnread();
+      fetchStreams();
     }
-  }, [accessToken, fetchThreads, fetchStaffUnread]);
+  }, [accessToken, fetchThreads, fetchStaffUnread, fetchStreams]);
 
   const visible = threads.filter((t) => (filter === 'waiting' ? t.unanswered : true));
   const waitingCount = threads.filter((t) => t.unanswered).length;
   const selectedThread = threads.find((t) => t.studentId === selected);
+
+  const streamsUnread = streams.reduce((sum, s) => sum + s.unreadCount, 0);
+  const selectedStreamSummary = streams.find((s) => s.streamId === selectedStream);
+
+  // Источник данных ленты для выбранного потока — функции, привязанные к streamId.
+  // useMemo с зависимостью от selectedStream, чтобы StaffConversation перезагружался
+  // (через key) и не пересоздавал источник на каждый рендер.
+  const streamSource: ConversationSource | null = useMemo(() => {
+    if (!selectedStream) return null;
+    return {
+      load: (token) => getStreamConversation(token, selectedStream),
+      send: (token, data) => addStreamEntry(token, selectedStream, data),
+      uploadFile: (token, file, type) => uploadStreamFile(token, selectedStream, file, type),
+    };
+  }, [selectedStream]);
 
   return (
     <Tabs defaultValue="students" className="flex flex-1 min-h-0 flex-col gap-0">
@@ -94,6 +132,14 @@ export default function AdminThreadsPage() {
             {staffUnread > 0 && (
               <Badge variant="destructive" className="ml-1">
                 {staffUnread}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="streams">
+            Потоки
+            {streamsUnread > 0 && (
+              <Badge variant="destructive" className="ml-1">
+                {streamsUnread}
               </Badge>
             )}
           </TabsTrigger>
@@ -223,6 +269,99 @@ export default function AdminThreadsPage() {
 
       <TabsContent value="staff" className="min-h-0 flex-1">
         <StaffConversation onRead={fetchStaffUnread} />
+      </TabsContent>
+
+      <TabsContent value="streams" className="min-h-0 flex-1">
+        <div className="flex h-full min-h-0 flex-col md:flex-row">
+          {/* Left: stream list */}
+          <div
+            className={cn(
+              'flex w-full flex-col border-b md:w-80 md:shrink-0 md:border-r md:border-b-0 lg:w-96',
+              selectedStream && 'hidden md:flex',
+            )}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {streams.length === 0 ? (
+                <p className="p-8 text-center text-sm text-muted-foreground">
+                  Нет общих потоков (с несколькими преподавателями)
+                </p>
+              ) : (
+                <ul>
+                  {streams.map((s) => (
+                    <li key={s.streamId}>
+                      <button
+                        onClick={() => setSelectedStream(s.streamId)}
+                        className={cn(
+                          'flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent',
+                          selectedStream === s.streamId && 'bg-accent',
+                        )}
+                      >
+                        <Avatar className="size-9 shrink-0">
+                          <AvatarFallback className="text-xs">
+                            <Users className="size-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium">{s.name}</span>
+                            {s.unreadCount > 0 && (
+                              <Badge variant="secondary" className="shrink-0">
+                                {s.unreadCount}
+                              </Badge>
+                            )}
+                          </div>
+                          {s.status === 'archived' && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">Архив</p>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* Right: selected stream conversation */}
+          <div
+            className={cn(
+              'min-h-0 flex-1 flex-col',
+              selectedStream ? 'flex' : 'hidden md:flex',
+            )}
+          >
+            {selectedStream && streamSource ? (
+              <>
+                {/* Mobile back + header */}
+                <div className="flex items-center gap-2 border-b p-3 md:px-4">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="md:hidden"
+                    onClick={() => setSelectedStream(null)}
+                  >
+                    <ChevronLeft />
+                  </Button>
+                  <span className="truncate font-medium">{selectedStreamSummary?.name}</span>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <StaffConversation
+                    key={selectedStream}
+                    source={streamSource}
+                    onRead={fetchStreams}
+                    placeholder="Сообщение в поток..."
+                    emptyText="В этом потоке пока нет сообщений"
+                    loadErrorText="Ошибка загрузки чата потока"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+                <MessagesSquare className="size-10 opacity-40" />
+                <p className="text-sm">Выберите поток</p>
+              </div>
+            )}
+          </div>
+        </div>
       </TabsContent>
     </Tabs>
   );
