@@ -3,8 +3,15 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   transpilePackages: ['@platform/db', '@platform/ui'],
+  async redirects() {
+    return [{ source: '/promo', destination: '/', permanent: true }];
+  },
   async rewrites() {
-    return [{ source: '/promo', destination: '/promo.html' }];
+    return {
+      beforeFiles: [{ source: '/', destination: '/promo.html' }],
+      afterFiles: [],
+      fallback: [],
+    };
   },
 };
 
