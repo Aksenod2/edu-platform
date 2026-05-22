@@ -483,6 +483,10 @@ const statusBadgeVariant: Record<string, 'secondary' | 'default' | 'destructive'
 export function LessonsManager({ streamId }: { streamId: string }) {
   const { user, accessToken } = useAuth();
 
+  // Пустой streamId → режим «Все потоки»: показываем уроки всех потоков и
+  // колонку «Поток». Создание урока в этом режиме недоступно (нужен поток).
+  const allMode = !streamId;
+
   const [stream, setStream] = useState<Stream | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -506,17 +510,26 @@ export function LessonsManager({ streamId }: { streamId: string }) {
   const [lessonToDelete, setLessonToDelete] = useState<Lesson | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!accessToken || !streamId) return;
+    if (!accessToken) return;
     setLoadingLessons(true);
     try {
       const [streamsData, lessonsData, teachersData] = await Promise.all([
         getStreams(accessToken),
-        getLessons(accessToken, streamId, { mine: mineOnly }),
+        getLessons(accessToken, streamId || undefined, { mine: mineOnly }),
         getTeachers(accessToken),
       ]);
-      const found = streamsData.streams.find((s) => s.id === streamId);
+      const found = streamId ? streamsData.streams.find((s) => s.id === streamId) : null;
       setStream(found || null);
-      setLessons([...lessonsData.lessons].sort((a, b) => a.sortOrder - b.sortOrder));
+      // В режиме «все потоки» группируем по имени потока, затем по порядку урока.
+      setLessons(
+        [...lessonsData.lessons].sort((a, b) => {
+          if (!streamId) {
+            const byStream = (a.stream?.name ?? '').localeCompare(b.stream?.name ?? '', 'ru');
+            if (byStream !== 0) return byStream;
+          }
+          return a.sortOrder - b.sortOrder;
+        }),
+      );
       setTeachers(teachersData.teachers);
       setError('');
     } catch (err) {
@@ -672,9 +685,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex min-w-0 items-center gap-2">
-          {stream && (
+          {allMode ? (
+            <h2 className="truncate text-lg font-semibold tracking-tight">Все уроки</h2>
+          ) : stream ? (
             <h2 className="truncate text-lg font-semibold tracking-tight">{stream.name}</h2>
-          )}
+          ) : null}
           {isArchived && <Badge variant="destructive" className="shrink-0">Архивный поток</Badge>}
         </div>
         <div className="flex shrink-0 items-center gap-4">
@@ -685,7 +700,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
             />
             Только мои
           </label>
-          {!isArchived && (
+          {allMode ? (
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              Выберите поток, чтобы добавить урок
+            </span>
+          ) : !isArchived && (
             <Button
               variant={showForm ? 'outline' : 'default'}
               onClick={showForm ? closeForm : openCreate}
@@ -847,6 +866,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
             <TableRow>
               <TableHead className="w-[60px]">#</TableHead>
               <TableHead>Название</TableHead>
+              {allMode && <TableHead>Поток</TableHead>}
               <TableHead>Преподаватели</TableHead>
               <TableHead>Видео</TableHead>
               <TableHead>Статус</TableHead>
@@ -857,14 +877,14 @@ export function LessonsManager({ streamId }: { streamId: string }) {
           <TableBody>
             {loadingLessons ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={allMode ? 8 : 7} className="h-24 text-center">
                   <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : lessons.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  Уроков пока нет. Добавьте первый урок.
+                <TableCell colSpan={allMode ? 8 : 7} className="h-24 text-center text-muted-foreground">
+                  Уроков пока нет.{allMode ? '' : ' Добавьте первый урок.'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -878,6 +898,17 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     {lesson.sortOrder}
                   </TableCell>
                   <TableCell className="font-medium">{lesson.title}</TableCell>
+                  {allMode && (
+                    <TableCell className="text-muted-foreground">
+                      {lesson.stream?.name ? (
+                        <Badge variant="outline" className="font-normal">
+                          {lesson.stream.name}
+                        </Badge>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <TeacherAvatars teachers={lesson.teachers} />
                   </TableCell>

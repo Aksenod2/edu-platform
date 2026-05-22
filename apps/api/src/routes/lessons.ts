@@ -230,7 +230,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         ...(!isAdmin && { status: { in: ['published', 'closed'] } }),
         ...(isMine && { teachers: { some: { userId: request.user!.userId } } }),
       },
-      include: teacherInclude,
+      include: { ...teacherInclude, stream: { select: { id: true, name: true } } },
       orderBy: { sortOrder: 'asc' },
     });
 

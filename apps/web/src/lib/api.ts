@@ -390,16 +390,20 @@ export interface Lesson {
   createdAt: string;
   updatedAt: string;
   teachers?: { id: string; name: string }[];
+  // Поток урока (для режима «Все потоки» на странице уроков).
+  stream?: { id: string; name: string };
 }
 
 export async function getLessons(
   accessToken: string,
-  streamId: string,
+  streamId?: string,
   options?: { mine?: boolean },
 ): Promise<{ lessons: Lesson[] }> {
-  const params = new URLSearchParams({ streamId });
+  const params = new URLSearchParams();
+  if (streamId) params.set('streamId', streamId);
   if (options?.mine) params.set('mine', 'true');
-  return request(`/lessons?${params.toString()}`, {
+  const qs = params.toString();
+  return request(`/lessons${qs ? `?${qs}` : ''}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

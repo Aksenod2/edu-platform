@@ -18,7 +18,8 @@ export default function AdminLessonsPage() {
   const { user, accessToken } = useAuth();
 
   const [streams, setStreams] = useState<Stream[]>([]);
-  const [selectedStreamId, setSelectedStreamId] = useState<string>('');
+  // 'all' — показывать уроки всех потоков (с колонкой «Поток»); иначе id потока.
+  const [selectedStreamId, setSelectedStreamId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -28,11 +29,9 @@ export default function AdminLessonsPage() {
     try {
       const { streams: allStreams } = await getStreams(accessToken);
       setStreams(allStreams);
-      setSelectedStreamId((prev) => {
-        if (prev && allStreams.some((s) => s.id === prev)) return prev;
-        const active = allStreams.find((s) => s.status !== 'archived');
-        return active?.id ?? allStreams[0]?.id ?? '';
-      });
+      setSelectedStreamId((prev) =>
+        prev === 'all' || allStreams.some((s) => s.id === prev) ? prev : 'all',
+      );
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков');
@@ -58,6 +57,7 @@ export default function AdminLessonsPage() {
               <SelectValue placeholder="Поток" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">Все потоки</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name} {s.status === 'archived' ? '(архив)' : ''}
@@ -82,9 +82,9 @@ export default function AdminLessonsPage() {
         <p className="text-sm text-muted-foreground">
           Потоков пока нет. Создайте поток, чтобы добавлять уроки.
         </p>
-      ) : selectedStreamId ? (
-        <LessonsManager streamId={selectedStreamId} />
-      ) : null}
+      ) : (
+        <LessonsManager streamId={selectedStreamId === 'all' ? '' : selectedStreamId} />
+      )}
     </div>
   );
 }
