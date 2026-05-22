@@ -171,7 +171,7 @@ export default function StreamDetailPage() {
       </div>
 
       <Tabs defaultValue="overview">
-        <div className="-mx-1 overflow-x-auto px-1">
+        <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
             <TabsTrigger value="students">Ученики</TabsTrigger>

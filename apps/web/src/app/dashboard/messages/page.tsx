@@ -39,7 +39,7 @@ function StudentMessagesContent() {
     >
       <div className="border-b px-4 py-3">
         <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
-        <div className="-mx-1 overflow-x-auto px-1">
+        <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="personal">С преподавателем</TabsTrigger>
             <TabsTrigger value="cohort">Чат потока</TabsTrigger>
