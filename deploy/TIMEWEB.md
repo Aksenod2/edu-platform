@@ -1,5 +1,10 @@
 # Деплой edu-platform на Timeweb Cloud (App Platform)
 
+> ⛔ **МЁРТВОЕ ЛЕГАСИ (с 2026-05-22). Не использовать.** App Platform снесён, прод переехал
+> на VPS (Docker Compose + Caddy). Актуальный деплой описан в `CLAUDE.md`, раздел
+> «Прод и деплой». Этот файл, GitHub Action `timeweb-deploy.yml`, ветки `tw-api`/`tw-web`
+> и `deploy/compose/*` оставлены только как исторический контекст.
+
 Монорепо (pnpm + turbo) разворачивается как **два отдельных приложения** App Platform
 (каждое со своим HTTPS-доменом) + **управляемый PostgreSQL**.
 
