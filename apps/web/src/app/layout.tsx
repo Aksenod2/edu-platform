@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/lib/auth-context';
 import { NotificationsProvider } from '@/lib/notifications-context';
 import { PushManager } from '@/lib/push-manager';
+import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
@@ -12,15 +13,22 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <body>
-        <AuthProvider>
-          <NotificationsProvider>
-            <PushManager />
-            {children}
-            <Toaster />
-          </NotificationsProvider>
-        </AuthProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
+          <AuthProvider>
+            <NotificationsProvider>
+              <PushManager />
+              {children}
+              <Toaster />
+            </NotificationsProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

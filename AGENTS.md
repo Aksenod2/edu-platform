@@ -10,7 +10,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## The Rules
 1. **Use shadcn/ui components directly. Do NOT use `@platform/ui` atoms/molecules.**
 2. **Build pages from shadcn/ui blocks** — see https://ui.shadcn.com/blocks
-3. **Light theme only** — standard shadcn/ui zinc theme. No dark theme, no Nothing Phone theme.
+3. **Светлая и тёмная темы** — стандартная shadcn/ui (neutral, oklch). Тема переключается тумблером (солнце/луна) в шапке через `next-themes` (класс `.dark` на `<html>`); токены — в `globals.css` (`:root` и `.dark`). По умолчанию светлая. Используй семантические токены (`bg-background`, `text-foreground`, `bg-card`, `text-muted-foreground` и т.п.), а НЕ хардкод-цвета (`bg-white`, `text-black`), чтобы обе темы работали. Никакой Nothing Phone темы.
 
 ## How to add components and blocks
 
