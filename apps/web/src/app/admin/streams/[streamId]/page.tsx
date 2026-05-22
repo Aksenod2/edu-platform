@@ -30,6 +30,11 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Table,
   TableBody,
   TableCell,
@@ -314,7 +319,18 @@ function OverviewTab({ stream }: { stream: StreamWithCounts }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">Преподаватели</CardTitle>
-          {stream.shared && <Badge variant="secondary">Общий</Badge>}
+          {stream.shared && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="cursor-default">
+                  Общий
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                Поток считается общим, если по его урокам больше одного преподавателя.
+              </TooltipContent>
+            </Tooltip>
+          )}
         </CardHeader>
         <CardContent>
           {stream.teachers && stream.teachers.length > 0 ? (

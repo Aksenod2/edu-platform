@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field';
 import {
   Sheet,
   SheetContent,
@@ -604,6 +604,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     placeholder="Краткое описание урока..."
                     rows={3}
                   />
+                  <FieldDescription>
+                    Видно студенту в «Материалах» — короткий анонс урока.
+                  </FieldDescription>
                 </Field>
 
                 <Field>
@@ -615,6 +618,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     placeholder="Текст конспекта..."
                     rows={5}
                   />
+                  <FieldDescription>
+                    Видно студенту на странице урока — основной текст конспекта.
+                  </FieldDescription>
                 </Field>
 
                 <div className="flex flex-col gap-4 sm:flex-row">
@@ -626,6 +632,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       value={form.publishAt}
                       onChange={(e) => setForm({ ...form, publishAt: e.target.value })}
                     />
+                    <FieldDescription>
+                      Когда черновик автоматически станет опубликованным.
+                    </FieldDescription>
                   </Field>
 
                   <Field className="sm:w-32">
@@ -638,6 +647,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                         setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })
                       }
                     />
+                    <FieldDescription>Порядок урока в списке потока.</FieldDescription>
                   </Field>
                 </div>
 
@@ -649,9 +659,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                     value={form.scheduledAt}
                     onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Появится в расписании и календаре
-                  </p>
+                  <FieldDescription>
+                    Появится в расписании и календаре.
+                  </FieldDescription>
                 </Field>
 
                 <Field>
@@ -822,6 +832,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           placeholder="Краткое описание урока..."
                           rows={3}
                         />
+                        <FieldDescription>
+                          Видно студенту в «Материалах» — короткий анонс урока.
+                        </FieldDescription>
                       </Field>
 
                       <Field>
@@ -835,6 +848,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                           placeholder="Текст конспекта..."
                           rows={5}
                         />
+                        <FieldDescription>
+                          Видно студенту на странице урока — основной текст конспекта.
+                        </FieldDescription>
                       </Field>
 
                       <Field>
@@ -857,6 +873,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                             <SelectItem value="closed">Закрыт</SelectItem>
                           </SelectContent>
                         </Select>
+                        <FieldDescription>
+                          Черновик не виден студентам; опубликован — доступен в уроках и материалах.
+                        </FieldDescription>
                       </Field>
 
                       <div className="flex flex-col gap-4 sm:flex-row">
@@ -870,6 +889,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                               setEditForm({ ...editForm, publishAt: e.target.value })
                             }
                           />
+                          <FieldDescription>
+                            Когда черновик автоматически станет опубликованным.
+                          </FieldDescription>
                         </Field>
 
                         <Field className="sm:w-28">
@@ -885,6 +907,7 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                               })
                             }
                           />
+                          <FieldDescription>Порядок урока в списке потока.</FieldDescription>
                         </Field>
                       </div>
 
@@ -898,9 +921,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                             setEditForm({ ...editForm, scheduledAt: e.target.value })
                           }
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Появится в расписании и календаре
-                        </p>
+                        <FieldDescription>
+                          Появится в расписании и календаре.
+                        </FieldDescription>
                       </Field>
 
                       <Field>

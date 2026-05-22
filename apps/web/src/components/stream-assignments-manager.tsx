@@ -407,6 +407,9 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                       <SelectItem value="long">Длинное</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Короткое — ответ в одно поле; длинное — развёрнутая работа с файлами.
+                  </p>
                 </div>
 
                 <div className="flex flex-1 flex-col gap-2">
@@ -435,6 +438,9 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                     value={form.dueDate}
                     onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Срок виден студенту; сдачу после него не блокирует.
+                  </p>
                 </div>
               </div>
 
@@ -648,29 +654,34 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                   {assigningId === a.id && (
                     <TableRow key={`assign-${a.id}`} className="bg-muted/50 hover:bg-muted/50">
                       <TableCell colSpan={6}>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <Select value={assignStudentId} onValueChange={setAssignStudentId}>
-                            <SelectTrigger className="min-w-[220px]">
-                              <SelectValue placeholder="— Выбрать ученика —" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {students.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            disabled={!assignStudentId}
-                            onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
-                          >
-                            Назначить ученику
-                          </Button>
-                          <Button variant="secondary" onClick={() => handleAssignStream(a.id)}>
-                            Выдать всему потоку
-                          </Button>
-                          <Button variant="ghost" onClick={() => setAssigningId(null)}>
-                            Отмена
-                          </Button>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Select value={assignStudentId} onValueChange={setAssignStudentId}>
+                              <SelectTrigger className="min-w-[220px]">
+                                <SelectValue placeholder="— Выбрать ученика —" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {students.map((s) => (
+                                  <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              disabled={!assignStudentId}
+                              onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
+                            >
+                              Назначить ученику
+                            </Button>
+                            <Button variant="secondary" onClick={() => handleAssignStream(a.id)}>
+                              Выдать всему потоку
+                            </Button>
+                            <Button variant="ghost" onClick={() => setAssigningId(null)}>
+                              Отмена
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            «Выдать всему потоку» создаст задание всем зачисленным студентам потока.
+                          </p>
                         </div>
                       </TableCell>
                     </TableRow>

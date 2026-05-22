@@ -28,6 +28,11 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -335,7 +340,18 @@ export default function StreamsPage() {
                             </Avatar>
                           ))}
                         </div>
-                        {stream.shared && <Badge variant="secondary">Общий</Badge>}
+                        {stream.shared && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="secondary" className="cursor-default">
+                                Общий
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Поток считается общим, если по его урокам больше одного преподавателя.
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </div>
                     ) : (
                       <span className="text-muted-foreground">—</span>

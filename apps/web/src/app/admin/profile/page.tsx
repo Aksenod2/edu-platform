@@ -202,6 +202,9 @@ export default function AdminProfilePage() {
                   aria-invalid={confirmPassword !== '' && confirmPassword !== newPassword}
                 />
               </div>
+              <p className="text-sm text-muted-foreground">
+                После смены пароля сессии на других устройствах завершатся.
+              </p>
               <div>
                 <Button
                   type="submit"

@@ -184,6 +184,9 @@ export default function ApiKeysPage() {
                         required
                         autoFocus
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Ключ даёт полный админ-доступ к API и не имеет срока действия. Храните в секрете.
+                      </p>
                     </div>
                     <div className="flex gap-2">
                       <Button type="submit" size="sm" disabled={creating}>
