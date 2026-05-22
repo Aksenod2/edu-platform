@@ -2,9 +2,34 @@ import type { FastifyInstance } from 'fastify';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { prisma } from '@platform/db';
+import { pipeline } from 'node:stream/promises';
+import { Writable } from 'node:stream';
 import { signAccessToken } from '../lib/jwt.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
+import { uploadFile, getFileUrl } from '../lib/s3.js';
+
+// Подписанный временный URL аватара пользователя по avatarKey (или null).
+async function avatarUrlFor(avatarKey: string | null | undefined): Promise<string | null> {
+  if (!avatarKey) return null;
+  try {
+    return await getFileUrl(avatarKey);
+  } catch {
+    return null;
+  }
+}
+
+// Допускаем строго PNG/JPEG/WebP. Проверяем И mime, И расширение имени файла,
+// т.к. браузеры/ОС иногда отдают неточный mime.
+const AVATAR_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const AVATAR_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
+
+function isAvatarImage(fileName: string, mimeType: string): boolean {
+  const lowerName = (fileName || '').toLowerCase();
+  const okExt = AVATAR_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+  const okMime = AVATAR_MIME_TYPES.has((mimeType || '').toLowerCase());
+  return okExt && okMime;
+}
 
 // Простая проверка формата email (как в HTML5 type=email, без избыточной строгости).
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -64,6 +89,7 @@ export async function authRoutes(app: FastifyInstance) {
         name: user.name,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        avatarUrl: await avatarUrlFor(user.avatarKey),
         questionnaireCompleted: user.role === 'student'
           ? !!user.studentProfile?.questionnaireCompletedAt
           : undefined,
@@ -127,6 +153,7 @@ export async function authRoutes(app: FastifyInstance) {
         name: storedToken.user.name,
         role: storedToken.user.role,
         mustChangePassword: storedToken.user.mustChangePassword,
+        avatarUrl: await avatarUrlFor(storedToken.user.avatarKey),
         questionnaireCompleted: storedToken.user.role === 'student'
           ? !!storedToken.user.studentProfile?.questionnaireCompletedAt
           : undefined,
@@ -386,6 +413,7 @@ export async function authRoutes(app: FastifyInstance) {
         role: true,
         isActive: true,
         mustChangePassword: true,
+        avatarKey: true,
         createdAt: true,
       },
     });
@@ -398,6 +426,88 @@ export async function authRoutes(app: FastifyInstance) {
       accessToken = signAccessToken({ userId: updated.id, role: updated.role });
     }
 
-    return { user: updated, accessToken };
+    const { avatarKey, ...userFields } = updated;
+    return {
+      user: { ...userFields, avatarUrl: await avatarUrlFor(avatarKey) },
+      accessToken,
+    };
+  });
+
+  // POST /users/me/avatar — загрузка аватара текущего пользователя (любой
+  // аутентифицированный). Принимается ОДИН файл-изображение (PNG/JPEG/WebP).
+  // Файл кладётся в хранилище (folder 'avatars'), ключ пишется в user.avatarKey.
+  // Возвращает подписанный временный avatarUrl.
+  app.post('/users/me/avatar', { onRequest: authenticate }, async (request, reply) => {
+    const userId = request.user!.userId;
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt !== null) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    if (!request.isMultipart()) {
+      return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
+    }
+
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: 'Файл не найден в запросе' });
+    }
+
+    const originalName = data.filename || 'avatar';
+    const mimeType = data.mimetype || 'application/octet-stream';
+
+    if (!isAvatarImage(originalName, mimeType)) {
+      // Слив потока, чтобы не подвиснуть на необработанном файле.
+      data.file.resume();
+      return reply.status(400).send({ error: 'Поддерживаются изображения PNG, JPEG и WebP' });
+    }
+
+    const chunks: Buffer[] = [];
+    await pipeline(
+      data.file,
+      new Writable({
+        write(chunk, _enc, cb) {
+          chunks.push(chunk);
+          cb();
+        },
+      }),
+    );
+
+    const buffer = Buffer.concat(chunks);
+
+    let uploaded: { key: string; url: string; size: number };
+    try {
+      uploaded = await uploadFile(buffer, originalName, mimeType, 'avatars');
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { avatarKey: uploaded.key },
+    });
+
+    return reply.status(201).send({ avatarUrl: await getFileUrl(uploaded.key) });
+  });
+
+  // DELETE /users/me/avatar — удаление аватара текущего пользователя.
+  // Обнуляем avatarKey (физическое удаление объекта не обязательно).
+  app.delete('/users/me/avatar', { onRequest: authenticate }, async (request, reply) => {
+    const userId = request.user!.userId;
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt !== null) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { avatarKey: null },
+    });
+
+    return { avatarUrl: null };
   });
 }
