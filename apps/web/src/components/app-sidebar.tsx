@@ -92,8 +92,13 @@ export function AppSidebar({
   ...props
 }: ComponentProps<typeof Sidebar> & { role: 'admin' | 'student' }) {
   const pathname = usePathname();
+  const { isMobile, setOpenMobile } = useSidebar();
   const nav = role === 'admin' ? ADMIN_NAV : STUDENT_NAV;
   const rootHref = role === 'admin' ? '/admin' : '/dashboard';
+
+  function closeOnMobile() {
+    if (isMobile) setOpenMobile(false);
+  }
 
   function isActive(href: string) {
     if (href === rootHref) return pathname === rootHref;
@@ -106,7 +111,7 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg">
-              <Link href={rootHref}>
+              <Link href={rootHref} onClick={closeOnMobile}>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold tracking-tight">OCHOBA</span>
                   <span className="text-xs text-muted-foreground">
@@ -131,7 +136,7 @@ export function AppSidebar({
                     isActive={isActive(item.href)}
                     tooltip={item.label}
                   >
-                    <Link href={item.href}>
+                    <Link href={item.href} onClick={closeOnMobile}>
                       <item.icon />
                       <span>{item.label}</span>
                     </Link>
