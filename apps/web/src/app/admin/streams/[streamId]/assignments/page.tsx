@@ -33,7 +33,7 @@ export default function AssignmentsPage() {
   }, [accessToken, user, fetchStream]);
 
   return (
-    <div className="mx-auto max-w-[1000px] p-4">
+    <div className="flex flex-col">
       <div className="mb-6">
         <Button
           variant="ghost"

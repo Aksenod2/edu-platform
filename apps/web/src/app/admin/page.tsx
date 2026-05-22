@@ -229,11 +229,11 @@ export default function AdminPage() {
 
                 <Separator />
 
-                {/* Треды без ответа */}
+                {/* Сообщения без ответа */}
                 <div className="flex flex-col gap-1">
                   <SectionHeader
                     icon={MessageSquare}
-                    title="Треды без ответа"
+                    title="Сообщения без ответа"
                     count={stats.attention.unansweredThreads.length}
                   />
                   <div className="mt-1 flex flex-col">

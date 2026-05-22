@@ -180,11 +180,13 @@ export default function StudentLessonPage() {
           {/* Видео: приоритет — загруженный файл (встроенный плеер),
               иначе внешняя ссылка (embed YouTube/Vimeo или кнопка). */}
           {lesson.videoFileUrl ? (
-            <video
-              controls
-              className="w-full rounded-lg border bg-muted"
-              src={lesson.videoFileUrl}
-            />
+            <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
+              <video
+                controls
+                className="max-h-[70vh] w-auto max-w-full"
+                src={lesson.videoFileUrl}
+              />
+            </div>
           ) : (
             lesson.videoUrl && (
               embedUrl ? (

@@ -241,7 +241,7 @@ export default function AssignmentDetailPage() {
                                 size="sm"
                                 onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
                               >
-                                Тред
+                                Сообщения
                               </Button>
                             )}
                             {sa.status === 'submitted' && (

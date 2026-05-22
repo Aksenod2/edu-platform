@@ -13,6 +13,7 @@ interface AuthResponse {
     name: string;
     role: 'admin' | 'student';
     mustChangePassword: boolean;
+    avatarUrl?: string | null;
     questionnaireCompleted?: boolean;
   };
 }
@@ -159,6 +160,7 @@ export interface MeUser {
   role: 'admin' | 'student';
   isActive: boolean;
   mustChangePassword: boolean;
+  avatarUrl?: string | null;
   createdAt: string;
 }
 
@@ -177,6 +179,51 @@ export async function updateMe(
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify(data),
+  });
+}
+
+// Загрузка аватара текущего пользователя (PNG/JPEG/WebP). Возвращает подписанный
+// временный URL загруженного аватара.
+export async function uploadMyAvatar(
+  accessToken: string,
+  file: File,
+): Promise<{ avatarUrl: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/users/me/avatar`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { avatarUrl: string };
+}
+
+// Удаление аватара текущего пользователя.
+export async function deleteMyAvatar(
+  accessToken: string,
+): Promise<{ avatarUrl: null }> {
+  return request('/users/me/avatar', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 
