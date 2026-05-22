@@ -386,7 +386,7 @@ export default function StudentProfilePage() {
       <div className="flex flex-1 flex-col min-h-0">
 
         {/* ── Header ── */}
-        <div className="px-4 pt-4 max-w-[900px] w-full mx-auto">
+        <div className="px-4 pt-4 max-w-6xl w-full mx-auto">
           <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
             ← К списку учеников
           </a>
@@ -471,7 +471,7 @@ export default function StudentProfilePage() {
         </div>
 
         {/* ── Tab content ── */}
-        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-[900px] w-full mx-auto">
+        <div className="flex flex-1 flex-col min-h-0 overflow-auto max-w-6xl w-full mx-auto">
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
