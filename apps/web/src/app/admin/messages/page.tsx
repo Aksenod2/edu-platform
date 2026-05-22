@@ -3,13 +3,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Loader2, MessagesSquare, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getThreads, type ThreadSummary } from '@/lib/api';
+import { getThreads, getStaffUnread, type ThreadSummary } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ThreadConversation } from '@/components/thread-conversation';
+import { StaffConversation } from '@/components/staff-conversation';
 import { cn } from '@platform/ui/lib/utils';
 
 function initials(name: string) {
@@ -45,6 +47,7 @@ export default function AdminThreadsPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<string | null>(null);
+  const [staffUnread, setStaffUnread] = useState(0);
 
   const fetchThreads = useCallback(async () => {
     if (!accessToken) return;
@@ -59,16 +62,46 @@ export default function AdminThreadsPage() {
     }
   }, [accessToken]);
 
+  const fetchStaffUnread = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const { unreadCount } = await getStaffUnread(accessToken);
+      setStaffUnread(unreadCount);
+    } catch {
+      // Бейдж штаба не критичен — молча игнорируем ошибку счётчика.
+    }
+  }, [accessToken]);
+
   useEffect(() => {
-    if (accessToken) fetchThreads();
-  }, [accessToken, fetchThreads]);
+    if (accessToken) {
+      fetchThreads();
+      fetchStaffUnread();
+    }
+  }, [accessToken, fetchThreads, fetchStaffUnread]);
 
   const visible = threads.filter((t) => (filter === 'waiting' ? t.unanswered : true));
   const waitingCount = threads.filter((t) => t.unanswered).length;
   const selectedThread = threads.find((t) => t.studentId === selected);
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col md:flex-row">
+    <Tabs defaultValue="students" className="flex flex-1 min-h-0 flex-col gap-0">
+      <div className="border-b px-4 py-3">
+        <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
+        <TabsList>
+          <TabsTrigger value="students">Ученики</TabsTrigger>
+          <TabsTrigger value="staff">
+            Штаб
+            {staffUnread > 0 && (
+              <Badge variant="destructive" className="ml-1">
+                {staffUnread}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="students" className="min-h-0 flex-1">
+        <div className="flex h-full min-h-0 flex-col md:flex-row">
       {/* Left: conversation list */}
       <div
         className={cn(
@@ -77,7 +110,6 @@ export default function AdminThreadsPage() {
         )}
       >
         <div className="flex flex-col gap-3 p-4">
-          <h1 className="text-xl font-bold tracking-tight">Сообщения</h1>
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -186,6 +218,12 @@ export default function AdminThreadsPage() {
           </div>
         )}
       </div>
-    </div>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="staff" className="min-h-0 flex-1">
+        <StaffConversation onRead={fetchStaffUnread} />
+      </TabsContent>
+    </Tabs>
   );
 }

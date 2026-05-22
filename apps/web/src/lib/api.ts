@@ -888,6 +888,95 @@ export async function getThreads(accessToken: string): Promise<{ threads: Thread
   });
 }
 
+// Staff conversation (штаб-канал преподавателей) API
+
+export interface StaffEntry {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  type: ThreadEntryType;
+  content: string;
+  metadata: {
+    s3Key?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
+    title?: string;
+    [key: string]: unknown;
+  } | null;
+  createdAt: string;
+  author: { id: string; name: string; role: string };
+}
+
+export interface StaffConversationResponse {
+  conversation: { id: string };
+  entries: StaffEntry[];
+  unreadCount: number;
+}
+
+export async function getStaffConversation(
+  accessToken: string,
+): Promise<StaffConversationResponse> {
+  return request('/conversations/staff', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getStaffUnread(
+  accessToken: string,
+): Promise<{ unreadCount: number }> {
+  return request('/conversations/staff/unread', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addStaffEntry(
+  accessToken: string,
+  data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+): Promise<{ entry: StaffEntry }> {
+  return request('/conversations/staff/entries', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadStaffFile(
+  accessToken: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+): Promise<{ entry: StaffEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/conversations/staff/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { entry: StaffEntry };
+}
+
 // Notifications API
 
 export type NotificationType =
