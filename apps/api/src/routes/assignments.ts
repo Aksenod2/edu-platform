@@ -147,13 +147,28 @@ export async function assignmentRoutes(app: FastifyInstance) {
       },
     });
 
-    // Notify only students enrolled in the assignment's stream
+    // Студенты, зачисленные на поток задания
     const enrollments = await prisma.streamEnrollment.findMany({
       where: { streamId: body.streamId },
       select: { userId: true },
     });
+    const studentIds = enrollments.map((e) => e.userId);
+
+    // Автоматически выдаём задание всем зачисленным студентам потока
+    if (studentIds.length > 0) {
+      await prisma.studentAssignment.createMany({
+        data: studentIds.map((studentId) => ({
+          assignmentId: assignment.id,
+          studentId,
+          status: 'assigned' as const,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Уведомляем только зачисленных студентов
     notifyMany(
-      enrollments.map((e) => e.userId),
+      studentIds,
       'assignment_created',
       'Новое задание',
       `Добавлено задание «${assignment.title}»`,
@@ -270,132 +285,6 @@ export async function assignmentRoutes(app: FastifyInstance) {
     };
 
     return reply.status(201).send({ material });
-  });
-
-  // POST /assignments/:id/assign — назначить задание группе или конкретному студенту
-  app.post('/assignments/:id/assign', { onRequest: adminOnly }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const body = request.body as {
-      studentId?: string;
-      groupId?: string;
-    };
-
-    const assignment = await prisma.assignment.findUnique({ where: { id } });
-    if (!assignment) {
-      return reply.status(404).send({ error: 'Задание не найдено' });
-    }
-
-    if (body.studentId) {
-      // Назначить конкретному студенту
-      const student = await prisma.user.findUnique({ where: { id: body.studentId } });
-      if (!student || student.role !== 'student') {
-        return reply.status(404).send({ error: 'Ученик не найден' });
-      }
-
-      const existing = await prisma.studentAssignment.findUnique({
-        where: { assignmentId_studentId: { assignmentId: id, studentId: body.studentId } },
-      });
-      if (existing) {
-        return reply.status(409).send({ error: 'Задание уже назначено этому ученику' });
-      }
-
-      const sa = await prisma.studentAssignment.create({
-        data: {
-          assignmentId: id,
-          studentId: body.studentId,
-          status: 'assigned',
-        },
-        include: {
-          student: { select: { id: true, name: true, email: true } },
-        },
-      });
-
-      return reply.status(201).send({ studentAssignment: sa });
-    }
-
-    if (body.groupId) {
-      // Назначить группе — в MVP группа = поток (streamId)
-      // Помечаем задание как групповое и назначаем каждому студенту
-      await prisma.assignment.update({
-        where: { id },
-        data: { groupId: body.groupId },
-      });
-
-      const students = await prisma.user.findMany({
-        where: { role: 'student', isActive: true, deletedAt: null },
-      });
-
-      const results = [];
-      for (const student of students) {
-        const existing = await prisma.studentAssignment.findUnique({
-          where: { assignmentId_studentId: { assignmentId: id, studentId: student.id } },
-        });
-        if (!existing) {
-          const sa = await prisma.studentAssignment.create({
-            data: {
-              assignmentId: id,
-              studentId: student.id,
-              status: 'assigned',
-            },
-          });
-          results.push(sa);
-        }
-      }
-
-      return reply.status(201).send({ assigned: results.length, message: `Задание назначено ${results.length} ученикам` });
-    }
-
-    return reply.status(400).send({ error: 'Укажите studentId или groupId' });
-  });
-
-  // POST /assignments/:assignmentId/assign-stream — назначить задание всем студентам потока (admin)
-  app.post('/assignments/:assignmentId/assign-stream', { onRequest: adminOnly }, async (request, reply) => {
-    const { assignmentId } = request.params as { assignmentId: string };
-    const { streamId } = request.body as { streamId?: string };
-
-    if (!streamId) {
-      return reply.status(400).send({ error: 'streamId обязателен' });
-    }
-
-    const assignment = await prisma.assignment.findUnique({ where: { id: assignmentId } });
-    if (!assignment) {
-      return reply.status(404).send({ error: 'Задание не найдено' });
-    }
-
-    if (assignment.streamId !== streamId) {
-      return reply.status(400).send({ error: 'Задание не принадлежит указанному потоку' });
-    }
-
-    // Студенты, зачисленные на поток
-    const enrollments = await prisma.streamEnrollment.findMany({
-      where: { streamId },
-      select: { userId: true },
-    });
-    const studentIds = enrollments.map((e) => e.userId);
-
-    if (studentIds.length === 0) {
-      return reply.send({ assigned: 0 });
-    }
-
-    const result = await prisma.studentAssignment.createMany({
-      data: studentIds.map((studentId) => ({
-        assignmentId,
-        studentId,
-        status: 'assigned' as const,
-      })),
-      skipDuplicates: true,
-    });
-
-    // Уведомляем только зачисленных студентов о новом задании
-    notifyMany(
-      studentIds,
-      'assignment_created',
-      'Новое задание',
-      `Вам назначено задание «${assignment.title}»`,
-      { assignmentId: assignment.id, streamId },
-    ).catch(() => {});
-
-    return reply.send({ assigned: result.count });
   });
 
   // GET /students/:id/assignments-summary — сводная статистика по статусам для ученика (admin)

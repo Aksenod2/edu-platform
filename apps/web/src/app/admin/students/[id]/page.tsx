@@ -32,21 +32,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 import {
   getProfile,
   addTeacherNote,
   getStudentAssignments,
   updateStudentAssignment,
-  getAssignments,
-  assignAssignment,
   getStudentAssignmentsSummary,
   getThread,
   addThreadEntry,
@@ -54,7 +45,6 @@ import {
   type ProfileResponse,
   type TeacherNote,
   type StudentAssignment,
-  type Assignment,
   type AssignmentsSummary,
   type ThreadEntry,
   type ThreadEntryType,
@@ -98,13 +88,6 @@ export default function StudentProfilePage() {
   const [assignmentsSummary, setAssignmentsSummary] = useState<AssignmentsSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [pendingRevision, setPendingRevision] = useState<StudentAssignment | null>(null);
-
-  // Assign modal state
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [allAssignments, setAllAssignments] = useState<Assignment[]>([]);
-  const [loadingAllAssignments, setLoadingAllAssignments] = useState(false);
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
-  const [assigning, setAssigning] = useState(false);
 
   // Thread state
   const [threadEntries, setThreadEntries] = useState<ThreadEntry[]>([]);
@@ -274,38 +257,6 @@ export default function StudentProfilePage() {
     }
   };
 
-  const handleOpenAssignModal = async () => {
-    setShowAssignModal(true);
-    setSelectedAssignmentId('');
-    if (allAssignments.length === 0) {
-      setLoadingAllAssignments(true);
-      try {
-        const result = await getAssignments(accessToken!);
-        setAllAssignments(result.assignments);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Ошибка загрузки заданий');
-      } finally {
-        setLoadingAllAssignments(false);
-      }
-    }
-  };
-
-  const handleAssignToStudent = async () => {
-    if (!accessToken || !selectedAssignmentId) return;
-    setAssigning(true);
-    try {
-      await assignAssignment(accessToken, selectedAssignmentId, { studentId });
-      toast.success(`Задание назначено ${data?.student?.name || ''}`);
-      setShowAssignModal(false);
-      setSelectedAssignmentId('');
-      await Promise.all([fetchAssignments(), fetchSummary()]);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка назначения задания');
-    } finally {
-      setAssigning(false);
-    }
-  };
-
   const handleSendThread = async () => {
     if (!accessToken || !threadContent.trim()) return;
     setSendingThread(true);
@@ -398,65 +349,7 @@ export default function StudentProfilePage() {
                 {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
               </p>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <Button size="sm" onClick={handleOpenAssignModal}>
-                + Назначить задание
-              </Button>
-            </div>
           </div>
-
-          {/* Assign modal */}
-          {showAssignModal && (
-            <div className="mt-3 p-4 rounded-sm border bg-muted">
-              <div className="flex justify-between items-center mb-3">
-                <strong className="text-foreground text-sm">
-                  Назначить задание ученику {student.name}
-                </strong>
-                <button
-                  onClick={() => setShowAssignModal(false)}
-                  className="bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground text-lg leading-none"
-                >
-                  ×
-                </button>
-              </div>
-              {loadingAllAssignments ? (
-                <div className="flex justify-center p-4"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-              ) : allAssignments.length === 0 ? (
-                <p className="text-muted-foreground text-sm">Нет доступных заданий. Создайте задание в разделе потока.</p>
-              ) : (
-                <>
-                  <Select
-                    value={selectedAssignmentId}
-                    onValueChange={setSelectedAssignmentId}
-                  >
-                    <SelectTrigger className="w-full mb-3">
-                      <SelectValue placeholder="Выберите задание..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allAssignments.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.title} {a.stream ? `(${a.stream.name})` : ''} — {a.type === 'short' ? 'Короткое' : 'Длинное'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={handleAssignToStudent}
-                      disabled={!selectedAssignmentId || assigning}
-                    >
-                      {assigning && <Loader2 className="animate-spin" />}
-                      Назначить
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(false)}>
-                      Отмена
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="mt-4">

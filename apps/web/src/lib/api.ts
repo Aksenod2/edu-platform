@@ -852,30 +852,6 @@ export async function deleteAssignment(
   });
 }
 
-export async function assignAssignment(
-  accessToken: string,
-  id: string,
-  data: { studentId?: string; groupId?: string },
-): Promise<{ studentAssignment?: StudentAssignment; assigned?: number; message?: string }> {
-  return request(`/assignments/${id}/assign`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify(data),
-  });
-}
-
-export async function assignAssignmentToStream(
-  accessToken: string,
-  assignmentId: string,
-  streamId: string,
-): Promise<{ assigned: number }> {
-  return request(`/assignments/${assignmentId}/assign-stream`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ streamId }),
-  });
-}
-
 export async function getStudentAssignments(
   accessToken: string,
   params?: { streamId?: string; status?: string; studentId?: string },

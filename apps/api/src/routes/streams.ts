@@ -178,6 +178,25 @@ export async function streamRoutes(app: FastifyInstance) {
         data: validStudents.map((s) => ({ streamId: id, userId: s.id })),
         skipDuplicates: true,
       });
+
+      // Бэкфилл: выдаём только что зачисленным студентам все существующие
+      // задания потока. skipDuplicates делает повторное зачисление безопасным.
+      const assignments = await prisma.assignment.findMany({
+        where: { streamId: id },
+        select: { id: true },
+      });
+      if (assignments.length > 0) {
+        await prisma.studentAssignment.createMany({
+          data: validStudents.flatMap((s) =>
+            assignments.map((a) => ({
+              assignmentId: a.id,
+              studentId: s.id,
+              status: 'assigned' as const,
+            })),
+          ),
+          skipDuplicates: true,
+        });
+      }
     }
 
     const enrollments = await prisma.streamEnrollment.findMany({

@@ -46,19 +46,15 @@ import {
   createAssignment,
   updateAssignment,
   deleteAssignment,
-  assignAssignment,
-  assignAssignmentToStream,
   uploadAssignmentMaterial,
   getStreams,
   getLessons,
-  getStudents,
   getStudentAssignments,
   updateStudentAssignment,
   type Assignment,
   type AssignmentMaterial,
   type Stream,
   type Lesson,
-  type Student,
   type StudentAssignment,
 } from '@/lib/api';
 
@@ -103,7 +99,6 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<Stream | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [formError, setFormError] = useState('');
 
@@ -118,10 +113,6 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
   const [newUrlName, setNewUrlName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
-
-  // Assign modal
-  const [assigningId, setAssigningId] = useState<string | null>(null);
-  const [assignStudentId, setAssignStudentId] = useState('');
 
   // Detail view
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -138,17 +129,15 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
     if (!accessToken || !streamId) return;
     setLoadingData(true);
     try {
-      const [streamsData, assignmentsData, lessonsData, studentsData] = await Promise.all([
+      const [streamsData, assignmentsData, lessonsData] = await Promise.all([
         getStreams(accessToken),
         getAssignments(accessToken, streamId),
         getLessons(accessToken, streamId),
-        getStudents(accessToken),
       ]);
       const found = streamsData.streams.find((s) => s.id === streamId);
       setStream(found || null);
       setAssignments(assignmentsData.assignments);
       setLessons(lessonsData.lessons);
-      setStudents(studentsData.users.filter((u) => u.role === 'student'));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -279,38 +268,6 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
       await fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка удаления');
-    }
-  };
-
-  const handleAssign = async (assignmentId: string, studentId?: string, groupId?: string) => {
-    if (!accessToken) return;
-    try {
-      await assignAssignment(accessToken, assignmentId, { studentId, groupId });
-      setAssigningId(null);
-      setAssignStudentId('');
-      toast.success('Задание назначено');
-      await fetchData();
-      if (viewingId === assignmentId) {
-        await loadStudentAssignments(assignmentId);
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка назначения');
-    }
-  };
-
-  const handleAssignStream = async (assignmentId: string) => {
-    if (!accessToken) return;
-    try {
-      const { assigned } = await assignAssignmentToStream(accessToken, assignmentId, streamId);
-      setAssigningId(null);
-      setAssignStudentId('');
-      toast.success(`Выдано: ${assigned}`);
-      await fetchData();
-      if (viewingId === assignmentId) {
-        await loadStudentAssignments(assignmentId);
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка выдачи');
     }
   };
 
@@ -633,13 +590,6 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                         >
                           {viewingId === a.id ? 'Скрыть' : 'Назначения'}
                         </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => { setAssigningId(a.id); setAssignStudentId(''); }}
-                        >
-                          Назначить
-                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
                           Ред.
                         </Button>
@@ -649,43 +599,6 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                       </div>
                     </TableCell>
                   </TableRow>
-
-                  {/* Assign modal inline */}
-                  {assigningId === a.id && (
-                    <TableRow key={`assign-${a.id}`} className="bg-muted/50 hover:bg-muted/50">
-                      <TableCell colSpan={6}>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <Select value={assignStudentId} onValueChange={setAssignStudentId}>
-                              <SelectTrigger className="min-w-[220px]">
-                                <SelectValue placeholder="— Выбрать ученика —" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {students.map((s) => (
-                                  <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              disabled={!assignStudentId}
-                              onClick={() => assignStudentId && handleAssign(a.id, assignStudentId)}
-                            >
-                              Назначить ученику
-                            </Button>
-                            <Button variant="secondary" onClick={() => handleAssignStream(a.id)}>
-                              Выдать всему потоку
-                            </Button>
-                            <Button variant="ghost" onClick={() => setAssigningId(null)}>
-                              Отмена
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            «Выдать всему потоку» создаст задание всем зачисленным студентам потока.
-                          </p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
 
                   {/* Student assignments detail */}
                   {viewingId === a.id && (
@@ -721,7 +634,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                           </div>
                         ) : studentAssignments.length === 0 ? (
                           <p className="py-2 text-sm text-muted-foreground">
-                            Нет назначений. Используйте «Назначить» для добавления учеников.
+                            Нет назначений. Задание выдаётся автоматически всем зачисленным студентам потока.
                           </p>
                         ) : (
                           <div className="rounded-lg border bg-card">
