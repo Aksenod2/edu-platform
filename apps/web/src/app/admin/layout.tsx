@@ -35,7 +35,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <AppSidebar role="admin" />
-      <SidebarInset>
+      <SidebarInset className="h-svh overflow-hidden">
         <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
@@ -44,7 +44,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <NotificationBell />
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
