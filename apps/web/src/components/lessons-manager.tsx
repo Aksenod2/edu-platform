@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field';
+import { DateTimePicker } from '@/components/datetime-picker';
 import {
   Sheet,
   SheetContent,
@@ -626,11 +627,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                 <div className="flex flex-col gap-4 sm:flex-row">
                   <Field className="flex-1">
                     <FieldLabel htmlFor="lesson-publish">Дата публикации</FieldLabel>
-                    <Input
+                    <DateTimePicker
                       id="lesson-publish"
-                      type="datetime-local"
                       value={form.publishAt}
-                      onChange={(e) => setForm({ ...form, publishAt: e.target.value })}
+                      onChange={(v) => setForm({ ...form, publishAt: v })}
                     />
                     <FieldDescription>
                       Когда черновик автоматически станет опубликованным.
@@ -653,11 +653,10 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
                 <Field>
                   <FieldLabel htmlFor="lesson-scheduled">Дата и время занятия</FieldLabel>
-                  <Input
+                  <DateTimePicker
                     id="lesson-scheduled"
-                    type="datetime-local"
                     value={form.scheduledAt}
-                    onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
+                    onChange={(v) => setForm({ ...form, scheduledAt: v })}
                   />
                   <FieldDescription>
                     Появится в расписании и календаре.
@@ -881,12 +880,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
                       <div className="flex flex-col gap-4 sm:flex-row">
                         <Field className="flex-1">
                           <FieldLabel htmlFor="edit-publish">Дата публикации</FieldLabel>
-                          <Input
+                          <DateTimePicker
                             id="edit-publish"
-                            type="datetime-local"
                             value={editForm.publishAt}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, publishAt: e.target.value })
+                            onChange={(v) =>
+                              setEditForm({ ...editForm, publishAt: v })
                             }
                           />
                           <FieldDescription>
@@ -913,12 +911,11 @@ export function LessonsManager({ streamId }: { streamId: string }) {
 
                       <Field>
                         <FieldLabel htmlFor="edit-scheduled">Дата и время занятия</FieldLabel>
-                        <Input
+                        <DateTimePicker
                           id="edit-scheduled"
-                          type="datetime-local"
                           value={editForm.scheduledAt}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, scheduledAt: e.target.value })
+                          onChange={(v) =>
+                            setEditForm({ ...editForm, scheduledAt: v })
                           }
                         />
                         <FieldDescription>
