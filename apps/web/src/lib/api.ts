@@ -1198,6 +1198,88 @@ export async function uploadStreamFile(
   return data as { entry: StaffEntry };
 }
 
+// Cohort conversations (общий чат потока: все студенты потока + преподаватели) API
+//
+// Записи и ответ структурно совпадают со штабом — переиспользуем StaffEntry.
+
+export interface CohortConversationSummary {
+  streamId: string;
+  name: string;
+  status: 'active' | 'archived';
+  unreadCount: number;
+}
+
+export interface CohortConversationResponse {
+  conversation: { id: string; streamId: string };
+  entries: StaffEntry[];
+  unreadCount: number;
+}
+
+export async function getCohortConversations(
+  accessToken: string,
+): Promise<{ streams: CohortConversationSummary[] }> {
+  return request('/conversations/cohorts', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getCohortConversation(
+  accessToken: string,
+  streamId: string,
+): Promise<CohortConversationResponse> {
+  return request(`/conversations/cohort/${streamId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function addCohortEntry(
+  accessToken: string,
+  streamId: string,
+  data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
+): Promise<{ entry: StaffEntry }> {
+  return request(`/conversations/cohort/${streamId}/entries`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadCohortFile(
+  accessToken: string,
+  streamId: string,
+  file: File,
+  type: 'file' | 'audio' = 'file',
+): Promise<{ entry: StaffEntry }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/conversations/cohort/${streamId}/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { entry: StaffEntry };
+}
+
 // Notifications API
 
 export type NotificationType =
