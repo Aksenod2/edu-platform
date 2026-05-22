@@ -347,18 +347,16 @@ export default function StudentProfilePage() {
       <div className="flex flex-1 flex-col min-h-0">
 
         {/* ── Header ── */}
-        <div className="px-4 pt-4 max-w-6xl w-full mx-auto">
+        <div className="max-w-6xl w-full mx-auto">
           <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
             ← К списку учеников
           </a>
 
-          <div className="flex items-start justify-between mt-2 mb-1 gap-3">
-            <div className="min-w-0">
-              <h1 className="m-0 mb-1 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
-              <p className="text-muted-foreground m-0 text-sm">
-                {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
-              </p>
-            </div>
+          <div className="mt-2 mb-1 min-w-0">
+            <h1 className="m-0 mb-1 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
+            <p className="text-muted-foreground m-0 text-sm">
+              {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
+            </p>
           </div>
 
           {/* Tabs */}
@@ -386,7 +384,7 @@ export default function StudentProfilePage() {
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
-            <div className="p-4">
+            <div className="grid items-start gap-6 py-4 lg:grid-cols-2">
 
               {/* Анкета */}
               <section>
@@ -429,7 +427,7 @@ export default function StudentProfilePage() {
               </section>
 
               {/* Заметки преподавателя */}
-              <section className="mt-8">
+              <section>
                 <h2 className="text-xl font-bold tracking-tight text-foreground mb-3">Наблюдения преподавателя</h2>
                 <form onSubmit={handleAddNote} className="mb-5">
                   <Textarea
@@ -466,7 +464,7 @@ export default function StudentProfilePage() {
 
           {/* ── Assignments tab ── */}
           {activeTab === 'assignments' && (
-            <div className="p-4">
+            <div className="py-4">
               {/* Summary block */}
               {(assignmentsSummary || loadingSummary) && (
                 <div className="grid gap-3 mb-4 p-3 bg-muted border rounded-lg [grid-template-columns:repeat(auto-fit,minmax(110px,1fr))]">
@@ -496,18 +494,14 @@ export default function StudentProfilePage() {
                   { key: 'needs_revision', label: 'На доработке' },
                   { key: 'overdue',        label: 'Просрочено' },
                 ].map(({ key, label }) => (
-                  <button
+                  <Button
                     key={key}
+                    size="sm"
+                    variant={statusFilter === key ? 'default' : 'outline'}
                     onClick={() => setStatusFilter(key)}
-                    className={[
-                      'px-3 py-1 rounded-full text-sm cursor-pointer border transition-colors',
-                      statusFilter === key
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border bg-transparent text-muted-foreground hover:text-foreground',
-                    ].join(' ')}
                   >
                     {label}
-                  </button>
+                  </Button>
                 ))}
               </div>
 
