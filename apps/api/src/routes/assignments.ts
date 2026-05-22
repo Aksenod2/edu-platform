@@ -93,6 +93,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       streamId: string;
       title: string;
       description?: string;
+      criteria?: string | null;
       type?: 'short' | 'long';
       tags?: string[];
       dueDate?: string;
@@ -136,6 +137,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         streamId: body.streamId,
         title: body.title.trim(),
         description: body.description || null,
+        criteria: body.criteria || null,
         type: body.type || 'short',
         tags: body.tags || [],
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
@@ -184,6 +186,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     const body = request.body as {
       title?: string;
       description?: string;
+      criteria?: string | null;
       type?: 'short' | 'long';
       tags?: string[];
       dueDate?: string | null;
@@ -217,6 +220,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) data.title = body.title.trim();
     if (body.description !== undefined) data.description = body.description || null;
+    if (body.criteria !== undefined) data.criteria = body.criteria || null;
     if (body.type !== undefined) data.type = body.type;
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
@@ -397,6 +401,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     let status: string | undefined;
     let answerText: string | undefined;
     let studentComment: string | undefined;
+    let reviewText: string | undefined;
     let fileBuffer: Buffer | null = null;
     let fileName = '';
     let fileMimeType = '';
@@ -418,6 +423,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
           if (part.fieldname === 'status') status = value;
           else if (part.fieldname === 'answerText') answerText = value;
           else if (part.fieldname === 'studentComment') studentComment = value;
+          else if (part.fieldname === 'reviewText') reviewText = value;
         }
       }
     } else {
@@ -425,6 +431,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       status = body.status;
       answerText = body.answerText;
       studentComment = body.studentComment;
+      reviewText = body.reviewText;
     }
 
     const sa = await prisma.studentAssignment.findUnique({
@@ -472,6 +479,16 @@ export async function assignmentRoutes(app: FastifyInstance) {
         data.fileName = fileName;
         data.fileSize = uploaded.size;
       }
+    }
+    // Разбор работы: вердикт (reviewed/needs_revision) + текст разбора + автор.
+    // Автор — имя проверяющего админа (в будущем может быть «Claude»).
+    if (status === 'reviewed' || status === 'needs_revision') {
+      if (reviewText !== undefined) data.reviewText = reviewText || null;
+      const reviewer = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      data.reviewedBy = reviewer?.name || null;
     }
     if (status === 'reviewed') {
       data.reviewedAt = new Date();

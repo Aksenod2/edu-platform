@@ -88,6 +88,8 @@ export default function StudentProfilePage() {
   const [assignmentsSummary, setAssignmentsSummary] = useState<AssignmentsSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [pendingRevision, setPendingRevision] = useState<StudentAssignment | null>(null);
+  // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
+  const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
 
   // Thread state
   const [threadEntries, setThreadEntries] = useState<ThreadEntry[]>([]);
@@ -246,8 +248,16 @@ export default function StudentProfilePage() {
     if (!accessToken) return;
     setUpdatingId(saId);
     try {
-      const { studentAssignment } = await updateStudentAssignment(accessToken, saId, { status });
+      const { studentAssignment } = await updateStudentAssignment(accessToken, saId, {
+        status,
+        reviewText: reviewTexts[saId]?.trim() || undefined,
+      });
       setAssignments((prev) => prev.map((a) => (a.id === saId ? studentAssignment : a)));
+      setReviewTexts((prev) => {
+        const next = { ...prev };
+        delete next[saId];
+        return next;
+      });
       fetchSummary();
       toast.success('Статус обновлён');
     } catch (err) {
@@ -546,22 +556,33 @@ export default function StudentProfilePage() {
                             </TableCell>
                             <TableCell>
                               {sa.status === 'submitted' && (
-                                <div className="flex gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
-                                    disabled={updatingId === sa.id}
-                                  >
-                                    Принять
-                                  </Button>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => setPendingRevision(sa)}
-                                    disabled={updatingId === sa.id}
-                                  >
-                                    На доработку
-                                  </Button>
+                                <div className="flex flex-col gap-1.5">
+                                  <Textarea
+                                    value={reviewTexts[sa.id] ?? ''}
+                                    onChange={(e) =>
+                                      setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }))
+                                    }
+                                    placeholder="Разбор работы (вердикт + комментарий). Видит студент."
+                                    rows={3}
+                                    className="min-w-[240px]"
+                                  />
+                                  <div className="flex gap-1.5">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
+                                      disabled={updatingId === sa.id}
+                                    >
+                                      Принять
+                                    </Button>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => setPendingRevision(sa)}
+                                      disabled={updatingId === sa.id}
+                                    >
+                                      На доработку
+                                    </Button>
+                                  </div>
                                 </div>
                               )}
                               {sa.status === 'assigned' && (

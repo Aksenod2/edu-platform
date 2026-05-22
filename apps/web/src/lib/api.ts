@@ -719,6 +719,7 @@ export interface Assignment {
   lessonId: string | null;
   title: string;
   description: string | null;
+  criteria: string | null;
   type: 'short' | 'long';
   tags: string[];
   dueDate: string | null;
@@ -742,6 +743,8 @@ export interface StudentAssignment {
   fileSize: number | null;
   fileSignedUrl?: string;
   studentComment: string | null;
+  reviewText: string | null;
+  reviewedBy: string | null;
   submittedAt: string | null;
   reviewedAt: string | null;
   createdAt: string;
@@ -775,6 +778,7 @@ export async function createAssignment(
     streamId: string;
     title: string;
     description?: string;
+    criteria?: string | null;
     type?: 'short' | 'long';
     tags?: string[];
     dueDate?: string;
@@ -795,6 +799,7 @@ export async function updateAssignment(
   data: {
     title?: string;
     description?: string;
+    criteria?: string | null;
     type?: 'short' | 'long';
     tags?: string[];
     dueDate?: string | null;
@@ -869,7 +874,7 @@ export async function getStudentAssignments(
 export async function updateStudentAssignment(
   accessToken: string,
   id: string,
-  data: { status: 'submitted' | 'reviewed' | 'needs_revision' },
+  data: { status: 'submitted' | 'reviewed' | 'needs_revision'; reviewText?: string },
 ): Promise<{ studentAssignment: StudentAssignment }> {
   return request(`/student-assignments/${id}`, {
     method: 'PATCH',

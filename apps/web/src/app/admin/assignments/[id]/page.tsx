@@ -14,6 +14,8 @@ import { ChevronLeft, Link2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -48,6 +50,8 @@ export default function AssignmentDetailPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
+  const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
 
   const fetchData = useCallback(async () => {
     if (!accessToken || !assignmentId) return;
@@ -75,7 +79,15 @@ export default function AssignmentDetailPage() {
     if (!accessToken) return;
     setUpdatingId(saId);
     try {
-      await updateStudentAssignment(accessToken, saId, { status });
+      await updateStudentAssignment(accessToken, saId, {
+        status,
+        reviewText: reviewTexts[saId]?.trim() || undefined,
+      });
+      setReviewTexts((prev) => {
+        const next = { ...prev };
+        delete next[saId];
+        return next;
+      });
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления');
@@ -234,37 +246,56 @@ export default function AssignmentDetailPage() {
                             : '—'}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            {sa.student && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
-                              >
-                                Сообщения
-                              </Button>
-                            )}
+                          <div className="flex flex-col gap-2">
                             {sa.status === 'submitted' && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  disabled={updatingId === sa.id}
-                                  onClick={() => handleStatusChange(sa.id, 'reviewed')}
-                                >
-                                  {updatingId === sa.id && <Loader2 className="animate-spin" />}
-                                  Принять
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={updatingId === sa.id}
-                                  onClick={() => handleStatusChange(sa.id, 'needs_revision')}
-                                >
-                                  {updatingId === sa.id && <Loader2 className="animate-spin" />}
-                                  На доработку
-                                </Button>
-                              </>
+                              <div className="flex flex-col gap-1.5">
+                                <Label htmlFor={`review-${sa.id}`} className="text-xs text-muted-foreground">
+                                  Разбор работы (вердикт + комментарий)
+                                </Label>
+                                <Textarea
+                                  id={`review-${sa.id}`}
+                                  value={reviewTexts[sa.id] ?? ''}
+                                  onChange={(e) =>
+                                    setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }))
+                                  }
+                                  placeholder="Что получилось, что доработать. Видит студент."
+                                  rows={3}
+                                  className="min-w-[260px]"
+                                />
+                              </div>
                             )}
+                            <div className="flex items-center gap-2">
+                              {sa.student && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
+                                >
+                                  Сообщения
+                                </Button>
+                              )}
+                              {sa.status === 'submitted' && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    disabled={updatingId === sa.id}
+                                    onClick={() => handleStatusChange(sa.id, 'reviewed')}
+                                  >
+                                    {updatingId === sa.id && <Loader2 className="animate-spin" />}
+                                    Принять
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={updatingId === sa.id}
+                                    onClick={() => handleStatusChange(sa.id, 'needs_revision')}
+                                  >
+                                    {updatingId === sa.id && <Loader2 className="animate-spin" />}
+                                    На доработку
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>

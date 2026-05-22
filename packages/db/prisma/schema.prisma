@@ -195,6 +195,7 @@ model Assignment {
   streamId    String
   title       String
   description String?
+  criteria    String?
   type        AssignmentType @default(short)
   tags        String[]       @default([])
   dueDate     DateTime?
@@ -222,6 +223,8 @@ model StudentAssignment {
   fileName       String?
   fileSize       Int?
   studentComment String?
+  reviewText     String?
+  reviewedBy     String?
   submittedAt    DateTime?
   reviewedAt     DateTime?
   createdAt      DateTime                @default(now())

@@ -61,6 +61,7 @@ import {
 type AssignmentFormData = {
   title: string;
   description: string;
+  criteria: string;
   type: 'short' | 'long';
   tags: string;
   dueDate: string;
@@ -70,6 +71,7 @@ type AssignmentFormData = {
 const emptyForm: AssignmentFormData = {
   title: '',
   description: '',
+  criteria: '',
   type: 'short',
   tags: '',
   dueDate: '',
@@ -167,6 +169,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
     setForm({
       title: a.title,
       description: a.description || '',
+      criteria: a.criteria || '',
       type: a.type,
       tags: a.tags.join(', '),
       dueDate: a.dueDate ? a.dueDate.slice(0, 16) : '',
@@ -231,6 +234,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
         await updateAssignment(accessToken, editingId, {
           title: form.title.trim(),
           description: form.description || undefined,
+          criteria: form.criteria.trim() || null,
           type: form.type,
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
@@ -242,6 +246,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
           streamId,
           title: form.title.trim(),
           description: form.description || undefined,
+          criteria: form.criteria.trim() || undefined,
           type: form.type,
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
@@ -347,6 +352,20 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                   placeholder="Описание задания в формате Markdown..."
                   rows={5}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="criteria">Критерии проверки</Label>
+                <Textarea
+                  id="criteria"
+                  value={form.criteria}
+                  onChange={(e) => setForm({ ...form, criteria: e.target.value })}
+                  placeholder="Что должно быть в работе, чтобы засчитать (пример: назвал продукт, посчитал CAC и LTV, сделал вывод)"
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Планка для проверки: что считается хорошей сдачей. Видят преподаватели.
+                </p>
               </div>
 
               <div className="flex flex-col gap-4 sm:flex-row">

@@ -306,7 +306,38 @@ export default function AssignmentDetailPage({
               </section>
             )}
 
-            {/* Teacher feedback */}
+            {/* Разбор работы: вердикт + текст разбора + автор. Виден после проверки
+                (и при «прошёл», и при «не прошёл, на доработку»). */}
+            {(sa.status === 'reviewed' || sa.status === 'needs_revision') && (sa.reviewText || sa.reviewedBy) && (
+              <section className="mb-6">
+                <Alert variant={sa.status === 'reviewed' ? 'default' : 'destructive'}>
+                  <AlertDescription>
+                    <div className="flex flex-col gap-2">
+                      <span className="text-sm font-semibold text-foreground">
+                        {sa.status === 'reviewed' ? 'Прошёл' : 'Не прошёл, на доработку'}
+                      </span>
+                      {sa.reviewText && (
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap m-0 text-muted-foreground">
+                          {sa.reviewText}
+                        </p>
+                      )}
+                      {sa.reviewedBy && (
+                        <span className="text-xs text-muted-foreground">
+                          Проверил: {sa.reviewedBy}
+                        </span>
+                      )}
+                      {sa.reviewedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}
+                        </span>
+                      )}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              </section>
+            )}
+
+            {/* Дополнительный фидбек учителя из переписки (если оставлен комментарий к работе). */}
             {sa.status === 'reviewed' && feedback && (
               <section className="mb-6">
                 <div className="p-4 rounded-md border bg-muted">
@@ -322,11 +353,6 @@ export default function AssignmentDetailPage({
                   <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap m-0">
                     {feedback.content}
                   </p>
-                  {sa.reviewedAt && (
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Проверено: {new Date(sa.reviewedAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}
-                    </p>
-                  )}
                 </div>
               </section>
             )}
