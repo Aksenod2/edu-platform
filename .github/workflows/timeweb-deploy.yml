@@ -28,12 +28,14 @@ jobs:
           git checkout -B tw-api "$GITHUB_SHA"
           cp deploy/compose/api.yml docker-compose.yml
           git add docker-compose.yml
-          git commit -m "deploy: sync tw-api from main ${GITHUB_SHA::7}"
+          # --allow-empty: если корневой docker-compose.yml в main уже совпадает,
+          # коммит всё равно создаётся, чтобы сдвинуть HEAD и запустить пересборку.
+          git commit --allow-empty -m "deploy: sync tw-api from main ${GITHUB_SHA::7}"
           git push -f origin tw-api
       - name: Sync tw-web
         run: |
           git checkout -B tw-web "$GITHUB_SHA"
           cp deploy/compose/web.yml docker-compose.yml
           git add docker-compose.yml
-          git commit -m "deploy: sync tw-web from main ${GITHUB_SHA::7}"
+          git commit --allow-empty -m "deploy: sync tw-web from main ${GITHUB_SHA::7}"
           git push -f origin tw-web
