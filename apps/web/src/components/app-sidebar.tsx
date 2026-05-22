@@ -8,6 +8,7 @@ import {
   Users,
   Layers,
   Calendar,
+  CalendarDays,
   KeyRound,
   BookOpen,
   ClipboardList,
@@ -59,6 +60,7 @@ const ADMIN_NAV: NavGroup[] = [
     label: 'Управление',
     items: [
       { label: 'Обзор', href: '/admin', icon: LayoutGrid },
+      { label: 'Сегодня', href: '/admin/today', icon: CalendarDays },
       { label: 'Ученики', href: '/admin/students', icon: Users },
       { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
       { label: 'Потоки', href: '/admin/streams', icon: Layers },
