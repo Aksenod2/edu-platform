@@ -228,15 +228,20 @@ export default function ZoomIntegrationPage() {
                   <span className="font-medium">App Credentials</span>.
                 </li>
                 <li>
-                  На вкладке <span className="font-medium">Scopes</span> добавьте права:{' '}
+                  На вкладке <span className="font-medium">Scopes</span> добавьте два права:{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    meeting:write:meeting:admin
+                  </code>{' '}
+                  (создание встреч) и{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    user:read:user:admin
+                  </code>{' '}
+                  (проверка подключения). Если в приложении старый формат scope&apos;ов —
+                  используйте эквиваленты{' '}
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                     meeting:write:admin
-                  </code>
-                  ,{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    meeting:read:admin
-                  </code>
-                  ,{' '}
+                  </code>{' '}
+                  и{' '}
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                     user:read:admin
                   </code>
