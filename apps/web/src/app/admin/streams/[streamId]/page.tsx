@@ -98,6 +98,7 @@ import {
   type LessonStatus,
   type Assignment,
 } from '@/lib/api';
+import { HintCallout } from '@/components/hint-callout';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
 const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
@@ -319,6 +320,14 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <HintCallout
+        storageKey="eduhint:stream-schedule-tab"
+        title="Расписание = когда урок идёт этой группе"
+      >
+        Поставьте урок на дату — получится занятие (урок × этот поток × дата).
+        Один урок можно проводить разным потокам в разные дни.
+      </HintCallout>
+
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -401,6 +410,15 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <HintCallout
+        storageKey="eduhint:stream-lessons-tab"
+        title="Уроки этого потока"
+      >
+        Это уроки из копилки, поставленные в расписание группы. «Снять с потока»
+        убирает занятие из расписания — сам урок-блок и его контент остаются в
+        копилке.
+      </HintCallout>
+
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Уроки потока</h2>
         <Button asChild>
@@ -582,6 +600,15 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <HintCallout
+        storageKey="eduhint:stream-assignments-tab"
+        title="Задания приходят из уроков"
+      >
+        Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этому потоку:
+        ученики сдают, вы проверяете. Само ДЗ создаётся и редактируется на
+        странице урока.
+      </HintCallout>
+
       <h2 className="text-lg font-semibold tracking-tight">Задания потока</h2>
 
       {error && (

@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getLessons, createLessonBlock } from '@/lib/api';
 import { type LessonBlock } from '@/components/lessons/lesson-block';
 import { initials } from '@/components/lessons/teacher-picker';
+import { HintCallout } from '@/components/hint-callout';
 
 export default function AdminLessonsPage() {
   const router = useRouter();
@@ -86,6 +87,12 @@ export default function AdminLessonsPage() {
           Создать урок
         </Button>
       </div>
+
+      <HintCallout storageKey="eduhint:lessons-pool" title="Урок — это переиспользуемый блок">
+        Здесь живёт копилка уроков: видео, конспект, материалы и ДЗ. Один урок
+        можно проводить в разных потоках — не нужно создавать его заново. Когда и
+        кому его провести — настраивается в расписании потока.
+      </HintCallout>
 
       <div className="relative max-w-sm">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

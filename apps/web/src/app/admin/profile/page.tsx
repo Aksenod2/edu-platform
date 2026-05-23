@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Card,
   CardContent,
@@ -59,6 +60,40 @@ export default function AdminProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
+
+  // Подсказки: тумблер «Показывать подсказки» = НЕ eduhint:disabled.
+  // Читаем localStorage только после монтирования (избегаем рассинхрона гидрации).
+  const [hintsEnabled, setHintsEnabled] = useState(true);
+  useEffect(() => {
+    try {
+      setHintsEnabled(window.localStorage.getItem('eduhint:disabled') !== '1');
+    } catch {
+      // Приватный режим: оставляем дефолт (подсказки включены).
+    }
+  }, []);
+
+  // ВКЛ → снимаем глобальный рубильник И сбрасываем все индивидуальные скрытия
+  // (ключи с префиксом eduhint:), чтобы подсказки снова показались.
+  // ВЫКЛ → ставим глобальный рубильник eduhint:disabled = '1'.
+  const handleHintsToggle = (next: boolean) => {
+    setHintsEnabled(next);
+    try {
+      if (next) {
+        const keys: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i);
+          if (key && key.startsWith('eduhint:')) keys.push(key);
+        }
+        for (const key of keys) window.localStorage.removeItem(key);
+        toast.success('Подсказки снова будут показываться');
+      } else {
+        window.localStorage.setItem('eduhint:disabled', '1');
+        toast.success('Подсказки скрыты');
+      }
+    } catch {
+      // Приватный режим: настройка не сохранится между сессиями.
+    }
+  };
 
   if (!user) return null;
 
@@ -342,6 +377,29 @@ export default function AdminProfilePage() {
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        {/* Подсказки */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Подсказки</CardTitle>
+            <CardDescription>
+              Короткие пояснения в интерфейсе для тех, кто только осваивает
+              платформу.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="hints-toggle" className="cursor-pointer">
+                Показывать подсказки
+              </Label>
+              <Switch
+                id="hints-toggle"
+                checked={hintsEnabled}
+                onCheckedChange={handleHintsToggle}
+              />
+            </div>
           </CardContent>
         </Card>
 

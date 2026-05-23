@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { HintCallout } from '@/components/hint-callout';
 
 function formatDate(date: string): string {
   return new Date(date).toLocaleDateString('ru-RU', {
@@ -154,6 +155,12 @@ export default function AdminPage() {
           Ключевые метрики, задачи на проверку и ближайшие занятия
         </p>
       </div>
+
+      <HintCallout storageKey="eduhint:intro-model" title="Как устроена платформа">
+        Коротко о модели: урок — переиспользуемый блок с контентом и ДЗ (живёт в
+        копилке); поток — группа учеников; расписание — когда урок проводят
+        конкретному потоку. Один урок можно вести в нескольких потоках.
+      </HintCallout>
 
       {error && (
         <Alert variant="destructive">

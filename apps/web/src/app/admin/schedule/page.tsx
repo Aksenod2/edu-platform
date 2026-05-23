@@ -30,6 +30,7 @@ import {
 import { WeekView } from '@/components/schedule/week-view';
 import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
 import type { ScheduleLesson } from '@/components/schedule/utils';
+import { HintCallout } from '@/components/hint-callout';
 
 const ALL_STREAMS = '__all__';
 type ViewMode = 'week' | 'month';
@@ -166,6 +167,12 @@ export default function AdminSchedulePage() {
           )}
         </div>
       </div>
+
+      <HintCallout storageKey="eduhint:schedule-global" title="Все занятия всех потоков">
+        Каждое занятие — это урок, поставленный конкретному потоку на дату.
+        Выберите поток вверху, чтобы планировать и редактировать занятия прямо в
+        календаре.
+      </HintCallout>
 
       <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
         <TabsList>

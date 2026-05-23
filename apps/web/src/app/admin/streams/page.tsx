@@ -71,6 +71,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { HintCallout } from '@/components/hint-callout';
 
 // Инициалы из имени для аватара преподавателя
 function initials(name: string): string {
@@ -228,6 +229,12 @@ export default function StreamsPage() {
           )}
         </Button>
       </div>
+
+      <HintCallout storageKey="eduhint:streams-list" title="Поток — это учебная группа">
+        Поток — это группа учеников. В него зачисляют учеников и составляют
+        расписание из уроков копилки. Один и тот же урок может идти в нескольких
+        потоках.
+      </HintCallout>
 
       {error && (
         <Alert variant="destructive">
