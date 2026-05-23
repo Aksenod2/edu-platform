@@ -4,6 +4,7 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { createZoomMeeting, shouldAutoCreate } from '../lib/zoom.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -148,6 +149,56 @@ function parseLessonDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const datePart = value.slice(0, 10);
   return new Date(datePart);
+}
+
+// Собирает локальное время старта встречи 'YYYY-MM-DDTHH:MM:00' из даты занятия
+// и времени начала (HH:MM). Если времени нет — возвращает null (Zoom создаст
+// встречу без фиксированного времени, type 1).
+function buildZoomStartTime(date: Date, startTime: string | null | undefined): string | null {
+  if (!startTime || !startTime.trim()) return null;
+  const datePart = date.toISOString().slice(0, 10);
+  const time = startTime.trim().slice(0, 5); // HH:MM
+  return `${datePart}T${time}:00`;
+}
+
+// Пытается автоматически создать встречу Zoom для занятия под аккаунтом текущего
+// преподавателя и вернуть её join_url. Возвращает null, если автосоздание не
+// требуется/недоступно или ссылка уже задана (ручная/сохранённая — не перезатираем).
+//
+// УСТОЙЧИВОСТЬ: любые ошибки Zoom гасятся (логируем warn и возвращаем null) —
+// планирование занятия не должно падать из-за интеграции.
+async function maybeCreateMeetingUrl(
+  app: FastifyInstance,
+  userId: string,
+  opts: {
+    date: Date | null;
+    startTime: string | null | undefined;
+    bodyMeetingUrl: string | null | undefined;
+    existingMeetingUrl: string | null | undefined;
+    topic: string;
+  },
+): Promise<string | null> {
+  // Нужна дата занятия (без даты не планируем встречу).
+  if (!opts.date) return null;
+  // Ручной meetingUrl всегда уважаем; существующую/сохранённую ссылку не перезатираем.
+  if (opts.bodyMeetingUrl && opts.bodyMeetingUrl.trim()) return null;
+  if (opts.existingMeetingUrl && opts.existingMeetingUrl.trim()) return null;
+
+  try {
+    if (!(await shouldAutoCreate(userId))) return null;
+    const { joinUrl } = await createZoomMeeting(userId, {
+      topic: opts.topic,
+      startTime: buildZoomStartTime(opts.date, opts.startTime),
+      durationMinutes: 60,
+    });
+    return joinUrl;
+  } catch (err) {
+    app.log.warn(
+      { err, userId },
+      'Не удалось автоматически создать встречу Zoom — продолжаем без ссылки',
+    );
+    return null;
+  }
 }
 
 // Без `as const`: вложенный orderBy видео — массив, а Prisma-тип LessonInclude
@@ -617,6 +668,18 @@ export async function lessonRoutes(app: FastifyInstance) {
       }
     }
 
+    // Автосоздание встречи Zoom: только если дата задана, ручной meetingUrl не
+    // передан и Session ещё нет (новый блок — сохранённой ссылки тоже нет).
+    // Ошибки Zoom не валят планирование (см. maybeCreateMeetingUrl).
+    const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+      date,
+      startTime: body.startTime,
+      bodyMeetingUrl: body.meetingUrl,
+      existingMeetingUrl: null,
+      topic: block.title,
+    });
+    const meetingUrl = body.meetingUrl?.trim() || autoMeetingUrl || null;
+
     // 3) Session потока несёт расписание/статус/видео.
     const session = await prisma.session.upsert({
       where: { streamId_lessonId: { streamId: body.streamId, lessonId: block.id } },
@@ -626,13 +689,13 @@ export async function lessonRoutes(app: FastifyInstance) {
         status,
         date,
         startTime: body.startTime?.trim() || null,
-        meetingUrl: body.meetingUrl?.trim() || null,
+        meetingUrl,
       },
       update: {
         status,
         date,
         startTime: body.startTime?.trim() || null,
-        meetingUrl: body.meetingUrl?.trim() || null,
+        meetingUrl,
       },
       select: sessionSelect,
     });
@@ -772,12 +835,36 @@ export async function lessonRoutes(app: FastifyInstance) {
     // ── Обновление расписания (Session) — только если задан streamId ─────────
     let session: SessionProjection = existingSession;
     if (streamId && scheduleTouched) {
+      // Итоговая дата занятия после правки (для проверки и автосоздания встречи).
+      const nextDate =
+        body.date !== undefined ? parseLessonDate(body.date) : existingSession?.date ?? null;
+      // Итоговое время начала (для start_time встречи).
+      const nextStartTime =
+        body.startTime !== undefined
+          ? body.startTime?.trim() || null
+          : existingSession?.startTime ?? null;
+
+      // Автосоздание встречи Zoom: дата задана, ручной meetingUrl не передан и у
+      // занятия ещё нет сохранённой ссылки (не перезатираем ручную/существующую).
+      // Не создаём новый митинг на каждый PATCH — только когда ссылки нет.
+      const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+        date: nextDate,
+        startTime: nextStartTime,
+        bodyMeetingUrl: body.meetingUrl,
+        existingMeetingUrl: existingSession?.meetingUrl ?? null,
+        topic: block.title,
+      });
+
       const sessionUpdate: Record<string, unknown> = {};
       if (body.status !== undefined) sessionUpdate.status = body.status;
       if (body.date !== undefined) sessionUpdate.date = parseLessonDate(body.date);
       if (body.startTime !== undefined) sessionUpdate.startTime = body.startTime?.trim() || null;
-      if (body.meetingUrl !== undefined)
+      if (body.meetingUrl !== undefined) {
         sessionUpdate.meetingUrl = body.meetingUrl?.trim() || null;
+      } else if (autoMeetingUrl) {
+        // meetingUrl не трогали явно, но автоматически создали встречу — сохраняем.
+        sessionUpdate.meetingUrl = autoMeetingUrl;
+      }
 
       const created = await prisma.session.upsert({
         where: { streamId_lessonId: { streamId, lessonId: id } },
@@ -787,7 +874,7 @@ export async function lessonRoutes(app: FastifyInstance) {
           status: isLessonStatus(body.status) ? body.status : 'draft',
           date: body.date !== undefined ? parseLessonDate(body.date) : null,
           startTime: body.startTime?.trim() || null,
-          meetingUrl: body.meetingUrl?.trim() || null,
+          meetingUrl: body.meetingUrl?.trim() || autoMeetingUrl || null,
         },
         update: sessionUpdate,
         select: sessionSelect,
