@@ -29,7 +29,19 @@ import { integrationRoutes } from './routes/integrations.js';
 import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
 import { startCronJobs } from './lib/cron.js';
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    // Не логировать чувствительные заголовки запроса/ответа: токены авторизации,
+    // подпись вебхука Zoom и cookie. Fastify по умолчанию пишет req.headers в логи
+    // (serializers req/res) — redact заменяет эти поля на [Redacted].
+    redact: [
+      'req.headers.authorization',
+      'req.headers["x-zm-signature"]',
+      'req.headers.cookie',
+      'res.headers["set-cookie"]',
+    ],
+  },
+});
 
 await app.register(cors, {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -98,5 +110,5 @@ try {
 
 // File storage uses PostgreSQL - no bucket init needed
 
-// Start cron jobs: deadline reminders & notification cleanup
+// Start cron jobs: deadline reminders, notification cleanup & Zoom webhook cleanup
 startCronJobs();

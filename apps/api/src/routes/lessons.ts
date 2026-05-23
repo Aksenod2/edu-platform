@@ -277,10 +277,15 @@ type SessionProjection = {
 //   - status/date/startTime/meetingUrl — из Session (если Session нет: draft / null),
 //   - видео: предпочитаем Session.videoKey/videoUrl блочным.
 // materials/videoFileUrl ре-подписываются вызывающим (они асинхронные).
-function projectLesson(
+// Экспортируется для unit-тестов проекции (в частности admin-only recordingError).
+export function projectLesson(
   block: LessonBlock,
   streamId: string | null,
   session: SessionProjection,
+  // recordingError — деталь для админа (текст ошибки автозагрузки). Студентам не
+  // отдаём (раскрывает внутренности обработки), поэтому для не-админа зануляем.
+  // По умолчанию true: admin-only роуты (POST/PATCH) не меняют поведение.
+  isAdmin = true,
 ): {
   id: string;
   streamId: string | null;
@@ -343,7 +348,8 @@ function projectLesson(
     // Статус автозагрузки записи Zoom и источник итогов (для UI). Вне потока
     // (Session нет) — null, как и для занятий без созвона Zoom.
     recordingStatus: session?.recordingStatus ?? null,
-    recordingError: session?.recordingError ?? null,
+    // recordingError — только админам (текст ошибки чувствителен); студенту — null.
+    recordingError: isAdmin ? session?.recordingError ?? null : null,
     summarySource: session?.summarySource ?? null,
   };
 }
@@ -423,7 +429,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       const visible = isAdmin ? blocks : [];
 
       const shaped = await Promise.all(
-        visible.map((block) => finalizeLesson(projectLesson(block, null, null), block)),
+        visible.map((block) => finalizeLesson(projectLesson(block, null, null, isAdmin), block)),
       );
       return { lessons: shaped };
     }
@@ -491,7 +497,7 @@ export async function lessonRoutes(app: FastifyInstance) {
     const shaped = await Promise.all(
       visibleBlocks.map((block) => {
         const s = sessionByLesson.get(block.id) ?? null;
-        const projected = projectLesson(block, streamId, s as SessionProjection);
+        const projected = projectLesson(block, streamId, s as SessionProjection, isAdmin);
         return finalizeLesson(projected, block).then((full) => ({
           ...full,
           // Контекст потока для режима «Все потоки» / бейджей.
@@ -581,7 +587,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       session = visibleSession as SessionProjection;
     }
 
-    const projected = projectLesson(block, contextStreamId, session);
+    const projected = projectLesson(block, contextStreamId, session, isAdmin);
     const full = await finalizeLesson(projected, block);
 
     // Старый ответ включал lesson.assignments (массив). В новой модели у блока —

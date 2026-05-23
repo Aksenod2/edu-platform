@@ -12,6 +12,13 @@ const DEADLINE_REMINDER_HOURS = Number(process.env.DEADLINE_REMINDER_HOURS) || 2
  */
 const NOTIFICATION_RETENTION_DAYS = Number(process.env.NOTIFICATION_RETENTION_DAYS) || 90;
 
+/**
+ * Auto-delete processed/failed Zoom webhook events older than N days (default: 30).
+ * Записи нужны лишь для идемпотентности недавних доставок — старые можно чистить.
+ */
+const ZOOM_WEBHOOK_EVENT_RETENTION_DAYS =
+  Number(process.env.ZOOM_WEBHOOK_EVENT_RETENTION_DAYS) || 30;
+
 let cronStarted = false;
 
 export function startCronJobs(): void {
@@ -33,6 +40,15 @@ export function startCronJobs(): void {
       await cleanupOldNotifications();
     } catch (err) {
       console.error('[cron] cleanup notifications error', err);
+    }
+  });
+
+  // Auto-cleanup old processed/failed Zoom webhook events — every day at 03:30
+  cron.schedule('30 3 * * *', async () => {
+    try {
+      await cleanupOldZoomWebhookEvents();
+    } catch (err) {
+      console.error('[cron] cleanup zoom webhook events error', err);
     }
   });
 
@@ -100,5 +116,21 @@ async function cleanupOldNotifications(): Promise<void> {
   });
   if (count > 0) {
     console.log(`[cron] deleted ${count} old notifications (older than ${NOTIFICATION_RETENTION_DAYS} days)`);
+  }
+}
+
+// Чистит уже обработанные/проваленные события вебхуков Zoom старше N дней.
+// Не трогаем status='received' (вдруг ещё в обработке / зависшие — пусть видны).
+async function cleanupOldZoomWebhookEvents(): Promise<void> {
+  const cutoff = new Date(
+    Date.now() - ZOOM_WEBHOOK_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const { count } = await prisma.zoomWebhookEvent.deleteMany({
+    where: { status: { in: ['processed', 'failed'] }, createdAt: { lt: cutoff } },
+  });
+  if (count > 0) {
+    console.log(
+      `[cron] deleted ${count} old Zoom webhook events (older than ${ZOOM_WEBHOOK_EVENT_RETENTION_DAYS} days)`,
+    );
   }
 }
