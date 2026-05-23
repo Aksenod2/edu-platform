@@ -298,7 +298,14 @@ export async function userRoutes(app: FastifyInstance) {
     const [studentAssignments, thread] = await Promise.all([
       prisma.studentAssignment.findMany({
         where: { studentId: id },
-        include: { assignment: { select: { title: true } } },
+        include: {
+          session: {
+            include: {
+              lesson: { select: { assignmentTitle: true, title: true } },
+              stream: { select: { name: true } },
+            },
+          },
+        },
         orderBy: { createdAt: 'asc' },
       }),
       prisma.conversation.findUnique({
@@ -319,10 +326,10 @@ export async function userRoutes(app: FastifyInstance) {
             fileMap.set(sa.fileUrl, sa.fileName ?? sa.fileUrl);
           }
         }
-        const { assignment, ...rest } = sa;
+        const { session, ...rest } = sa;
         return {
           ...rest,
-          assignmentTitle: assignment.title,
+          assignmentTitle: session.lesson.assignmentTitle,
           status: sa.status,
           fileUrl,
         };

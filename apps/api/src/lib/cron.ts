@@ -43,39 +43,39 @@ async function sendDeadlineReminders(): Promise<void> {
   const windowStart = new Date();
   const windowEnd = new Date(windowStart.getTime() + DEADLINE_REMINDER_HOURS * 60 * 60 * 1000);
 
-  // Find assignments with dueDate in the reminder window
-  const assignments = await prisma.assignment.findMany({
+  // Find sessions with a due assignment in the reminder window
+  const sessions = await prisma.session.findMany({
     where: {
       dueDate: { gte: windowStart, lte: windowEnd },
+      lesson: { hasAssignment: true },
     },
-    select: {
-      id: true,
-      title: true,
-      dueDate: true,
+    include: {
+      lesson: true,
+      stream: true,
       studentAssignments: {
         where: { status: { in: ['assigned'] } },
-        select: { studentId: true },
+        include: { student: true },
       },
     },
   });
 
-  for (const assignment of assignments) {
-    if (!assignment.dueDate) continue;
+  for (const session of sessions) {
+    if (!session.dueDate) continue;
 
-    const formattedDate = assignment.dueDate.toLocaleDateString('ru-RU', {
+    const formattedDate = session.dueDate.toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
       hour: '2-digit',
       minute: '2-digit',
     });
 
-    for (const sa of assignment.studentAssignments) {
+    for (const sa of session.studentAssignments) {
       // Avoid duplicate: check if reminder was already sent this window
       const existingReminder = await prisma.notification.findFirst({
         where: {
           userId: sa.studentId,
           type: 'deadline_reminder',
-          metadata: { path: ['assignmentId'], equals: assignment.id },
+          metadata: { path: ['sessionId'], equals: session.id },
           createdAt: { gte: new Date(Date.now() - DEADLINE_REMINDER_HOURS * 60 * 60 * 1000) },
         },
       });
@@ -86,8 +86,8 @@ async function sendDeadlineReminders(): Promise<void> {
         userId: sa.studentId,
         type: 'deadline_reminder',
         title: 'Дедлайн приближается',
-        body: `Срок сдачи задания «${assignment.title}» — ${formattedDate}`,
-        metadata: { assignmentId: assignment.id },
+        body: `Срок сдачи задания «${session.lesson.assignmentTitle}» — ${formattedDate}`,
+        metadata: { sessionId: session.id, lessonId: session.lessonId },
       });
     }
   }

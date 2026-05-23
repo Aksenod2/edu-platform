@@ -50,16 +50,22 @@ async function isAdminBearer(request: FastifyRequest): Promise<boolean> {
 
 export async function fileRoutes(app: FastifyInstance) {
   // DELETE /admin/files — удалить ВСЕ загруженные файлы (admin).
-  // Чистит хранилище PostgreSQL и обнуляет ссылки на файлы в уроках/заданиях/
-  // сдачах, а также удаляет файловые/аудио-сообщения. Нужно для сброса тестовых
-  // данных при переходе на S3 (новые файлы поедут в S3). Необратимо.
+  // Чистит хранилище PostgreSQL и обнуляет ссылки на файлы в уроках (включая
+  // материалы заданий, свёрнутые в Lesson), сессиях и сдачах, а также удаляет
+  // файловые/аудио-сообщения. Нужно для сброса тестовых данных при переходе на
+  // S3 (новые файлы поедут в S3). Необратимо.
   app.delete('/admin/files', { onRequest: requireRole('admin') }, async () => {
-    const [files, lessonsVideo, lessonsMat, assignments, subs, fileMsgs] =
+    const [files, lessonsVideo, lessonsMat, sessionsVideo, subs, fileMsgs] =
       await prisma.$transaction([
         prisma.fileStorage.deleteMany({}),
         prisma.lesson.updateMany({ where: { NOT: { videoKey: null } }, data: { videoKey: null } }),
-        prisma.lesson.updateMany({ data: { materials: [] } }),
-        prisma.assignment.updateMany({ data: { materials: [] } }),
+        // Очищаем материалы блока урока И вложенные материалы задания (свёрнуты в Lesson).
+        prisma.lesson.updateMany({ data: { assignmentMaterials: [], materials: [] } }),
+        // Записи проводятся на уровне сессии (per-run recordings) — обнуляем видео сессий.
+        prisma.session.updateMany({
+          where: { OR: [{ NOT: { videoKey: null } }, { NOT: { videoUrl: null } }] },
+          data: { videoKey: null, videoUrl: null },
+        }),
         prisma.studentAssignment.updateMany({
           where: { OR: [{ NOT: { fileUrl: null } }, { NOT: { fileName: null } }] },
           data: { fileUrl: null, fileName: null, fileSize: null },
@@ -71,7 +77,7 @@ export async function fileRoutes(app: FastifyInstance) {
       deletedFiles: files.count,
       clearedLessonVideos: lessonsVideo.count,
       clearedLessonMaterials: lessonsMat.count,
-      clearedAssignmentMaterials: assignments.count,
+      clearedSessionVideos: sessionsVideo.count,
       clearedSubmissionFiles: subs.count,
       deletedFileMessages: fileMsgs.count,
     };

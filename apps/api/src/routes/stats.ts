@@ -59,16 +59,19 @@ export async function statsRoutes(app: FastifyInstance) {
         by: ['status'],
         _count: { status: true },
       }),
-      // schedule.thisWeek — запланированные уроки на ближайшие 7 дней
-      prisma.lesson.count({
+      // schedule.thisWeek — запланированные сессии на ближайшие 7 дней
+      prisma.session.count({
         where: { status: 'planned', date: { gte: todayStart, lte: weekAhead } },
       }),
-      // schedule.upcoming — ближайшие 5 запланированных уроков по всем потокам
-      prisma.lesson.findMany({
+      // schedule.upcoming — ближайшие 5 запланированных сессий по всем потокам
+      prisma.session.findMany({
         where: { status: 'planned', date: { gte: todayStart } },
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         take: 5,
-        include: { stream: { select: { id: true, name: true } } },
+        include: {
+          lesson: { select: { title: true } },
+          stream: { select: { id: true, name: true } },
+        },
       }),
       // TODO (ведущий потока): отсортировать списки «Требует внимания» так, чтобы
       // ученики потоков, где текущий админ — ведущий (stream.ownerId), шли первыми.
@@ -83,7 +86,7 @@ export async function statsRoutes(app: FastifyInstance) {
           id: true,
           submittedAt: true,
           student: { select: { id: true, name: true } },
-          assignment: { select: { title: true } },
+          session: { select: { lesson: { select: { assignmentTitle: true } } } },
         },
       }),
       // attention.unansweredThreads — latest entry per thread; keep threads whose
@@ -142,21 +145,21 @@ export async function statsRoutes(app: FastifyInstance) {
       }
     }
 
-    const upcoming = upcomingScheduleRaw.map((l) => ({
-      id: l.id,
-      date: l.date,
-      startTime: l.startTime,
-      lessonTitle: l.title,
-      streamId: l.streamId,
-      streamName: l.stream.name,
-      meetingUrl: l.meetingUrl,
+    const upcoming = upcomingScheduleRaw.map((s) => ({
+      id: s.id,
+      date: s.date,
+      startTime: s.startTime,
+      lessonTitle: s.lesson.title,
+      streamId: s.streamId,
+      streamName: s.stream.name,
+      meetingUrl: s.meetingUrl,
     }));
 
     const submissionsToReview = submissionsToReviewRaw.map((s) => ({
       studentAssignmentId: s.id,
       studentId: s.student.id,
       studentName: s.student.name,
-      assignmentTitle: s.assignment.title,
+      assignmentTitle: s.session.lesson.assignmentTitle,
       submittedAt: s.submittedAt,
     }));
 
