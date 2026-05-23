@@ -1,12 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { prisma, type ZoomIntegration } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { encryptSecret, decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
 import { getZoomIntegration, getZoomAccessToken } from '../lib/zoom.js';
 
-// Безопасный публичный вид настроек Zoom: секрет НЕ отдаём.
-// secretSet — есть ли сохранённый секрет; secretLast4 — последние 4 символа
-// расшифрованного секрета (только если ключ шифрования есть и расшифровка удалась).
+// Безопасный публичный вид настроек Zoom: секреты НЕ отдаём.
+// secretSet/secretTokenSet — есть ли сохранённый секрет/Secret Token;
+// secretLast4/secretTokenLast4 — последние 4 символа расшифрованного значения
+// (только если ключ шифрования есть и расшифровка удалась).
+// webhookId — публичный неугадываемый id для персонального URL вебхука.
 interface ZoomIntegrationPublic {
   enabled: boolean;
   autoCreateMeeting: boolean;
@@ -14,6 +17,9 @@ interface ZoomIntegrationPublic {
   clientId: string | null;
   secretSet: boolean;
   secretLast4: string | null;
+  secretTokenSet: boolean;
+  secretTokenLast4: string | null;
+  webhookId: string | null;
   lastTestedAt: Date | null;
   lastTestOk: boolean | null;
   encryptionKeySet: boolean;
@@ -36,6 +42,19 @@ function toPublic(integration: ZoomIntegration | null): ZoomIntegrationPublic {
     }
   }
 
+  // Secret Token вебхука — та же схема, что у clientSecret.
+  const tokenEnc = integration?.secretTokenEnc ?? null;
+  const secretTokenSet = Boolean(tokenEnc);
+  let secretTokenLast4: string | null = null;
+  if (tokenEnc && keySet) {
+    try {
+      const plain = decryptSecret(tokenEnc);
+      secretTokenLast4 = plain.slice(-4);
+    } catch {
+      secretTokenLast4 = null;
+    }
+  }
+
   return {
     enabled: integration?.enabled ?? false,
     autoCreateMeeting: integration?.autoCreateMeeting ?? false,
@@ -43,6 +62,9 @@ function toPublic(integration: ZoomIntegration | null): ZoomIntegrationPublic {
     clientId: integration?.clientId ?? null,
     secretSet,
     secretLast4,
+    secretTokenSet,
+    secretTokenLast4,
+    webhookId: integration?.webhookId ?? null,
     lastTestedAt: integration?.lastTestedAt ?? null,
     lastTestOk: integration?.lastTestOk ?? null,
     encryptionKeySet: keySet,
@@ -67,15 +89,18 @@ export async function integrationRoutes(app: FastifyInstance) {
       accountId?: string;
       clientId?: string;
       clientSecret?: string;
+      secretToken?: string;
     };
 
-    // Готовим поля, которые меняем. Секрет — отдельно (требует шифрования).
+    // Готовим поля, которые меняем. Секреты — отдельно (требуют шифрования).
     const data: {
       enabled?: boolean;
       autoCreateMeeting?: boolean;
       accountId?: string | null;
       clientId?: string | null;
       clientSecretEnc?: string;
+      secretTokenEnc?: string;
+      webhookId?: string;
     } = {};
 
     if (typeof body.enabled === 'boolean') data.enabled = body.enabled;
@@ -99,7 +124,34 @@ export async function integrationRoutes(app: FastifyInstance) {
       }
     }
 
+    // secretToken (Webhook Secret Token): та же схема, что у clientSecret.
+    if (typeof body.secretToken === 'string' && body.secretToken.length > 0) {
+      if (!isEncryptionKeySet()) {
+        return reply
+          .status(400)
+          .send({ error: 'Не настроен ключ шифрования APP_ENCRYPTION_KEY на сервере' });
+      }
+      try {
+        data.secretTokenEnc = encryptSecret(body.secretToken);
+      } catch {
+        return reply
+          .status(400)
+          .send({ error: 'Не настроен ключ шифрования APP_ENCRYPTION_KEY на сервере' });
+      }
+    }
+
     const userId = request.user!.userId;
+
+    // webhookId — стабильный публичный id для персонального URL вебхука.
+    // Генерируем один раз: при первом сохранении или если у записи его ещё нет.
+    const existing = await prisma.zoomIntegration.findUnique({
+      where: { userId },
+      select: { webhookId: true },
+    });
+    if (!existing?.webhookId) {
+      data.webhookId = randomUUID();
+    }
+
     const integration = await prisma.zoomIntegration.upsert({
       where: { userId },
       update: data,
@@ -110,6 +162,8 @@ export async function integrationRoutes(app: FastifyInstance) {
         accountId: data.accountId ?? null,
         clientId: data.clientId ?? null,
         clientSecretEnc: data.clientSecretEnc ?? null,
+        secretTokenEnc: data.secretTokenEnc ?? null,
+        webhookId: data.webhookId ?? randomUUID(),
       },
     });
 

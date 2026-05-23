@@ -162,8 +162,8 @@ function buildZoomStartTime(date: Date, startTime: string | null | undefined): s
 }
 
 // Пытается создать встречу Zoom для занятия под аккаунтом текущего преподавателя
-// и вернуть её join_url. Возвращает null, если создание не требуется/недоступно
-// или ссылка уже задана (ручная/сохранённая — не перезатираем).
+// и вернуть её join_url вместе с meetingId. Возвращает null, если создание не
+// требуется/недоступно или ссылка уже задана (ручная/сохранённая — не перезатираем).
 //
 // Поле opts.generateMeeting управляет тем, КОГДА создавать встречу:
 //   - true      → создавать по запросу фронта даже при выключенном глобальном
@@ -187,7 +187,7 @@ async function maybeCreateMeetingUrl(
     topic: string;
     generateMeeting?: boolean;
   },
-): Promise<string | null> {
+): Promise<{ joinUrl: string; meetingId: string } | null> {
   // Явный отказ от генерации (даже при включённом тумблере).
   if (opts.generateMeeting === false) return null;
   // Нужна дата занятия (без даты не планируем встречу).
@@ -204,12 +204,12 @@ async function maybeCreateMeetingUrl(
         ? await canCreateMeeting(userId)
         : await shouldAutoCreate(userId);
     if (!ok) return null;
-    const { joinUrl } = await createZoomMeeting(userId, {
+    const { joinUrl, meetingId } = await createZoomMeeting(userId, {
       topic: opts.topic,
       startTime: buildZoomStartTime(opts.date, opts.startTime),
       durationMinutes: 60,
     });
-    return joinUrl;
+    return { joinUrl, meetingId };
   } catch (err) {
     app.log.warn(
       { err, userId },
@@ -697,7 +697,7 @@ export async function lessonRoutes(app: FastifyInstance) {
     // и Session ещё нет (новый блок — сохранённой ссылки тоже нет). generateMeeting
     // позволяет сгенерировать ссылку по запросу даже при выключенном тумблере.
     // Ошибки Zoom не валят планирование (см. maybeCreateMeetingUrl).
-    const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+    const autoMeeting = await maybeCreateMeetingUrl(app, request.user!.userId, {
       date,
       startTime: body.startTime,
       bodyMeetingUrl: body.meetingUrl,
@@ -705,7 +705,9 @@ export async function lessonRoutes(app: FastifyInstance) {
       topic: block.title,
       generateMeeting: body.generateMeeting,
     });
-    const meetingUrl = body.meetingUrl?.trim() || autoMeetingUrl || null;
+    const meetingUrl = body.meetingUrl?.trim() || autoMeeting?.joinUrl || null;
+    // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
+    const zoomMeetingId = autoMeeting?.meetingId ?? null;
 
     // 3) Session потока несёт расписание/статус/видео.
     const session = await prisma.session.upsert({
@@ -717,12 +719,14 @@ export async function lessonRoutes(app: FastifyInstance) {
         date,
         startTime: body.startTime?.trim() || null,
         meetingUrl,
+        ...(zoomMeetingId ? { zoomMeetingId } : {}),
       },
       update: {
         status,
         date,
         startTime: body.startTime?.trim() || null,
         meetingUrl,
+        ...(zoomMeetingId ? { zoomMeetingId } : {}),
       },
       select: sessionSelect,
     });
@@ -886,7 +890,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       // ещё нет сохранённой ссылки (не перезатираем ручную/существующую). Не создаём
       // новый митинг на каждый PATCH — только когда ссылки нет. generateMeeting
       // позволяет сгенерировать ссылку по запросу даже при выключенном тумблере.
-      const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+      const autoMeeting = await maybeCreateMeetingUrl(app, request.user!.userId, {
         date: nextDate,
         startTime: nextStartTime,
         bodyMeetingUrl: body.meetingUrl,
@@ -901,9 +905,13 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (body.startTime !== undefined) sessionUpdate.startTime = body.startTime?.trim() || null;
       if (body.meetingUrl !== undefined) {
         sessionUpdate.meetingUrl = body.meetingUrl?.trim() || null;
-      } else if (autoMeetingUrl) {
+      } else if (autoMeeting) {
         // meetingUrl не трогали явно, но автоматически создали встречу — сохраняем.
-        sessionUpdate.meetingUrl = autoMeetingUrl;
+        sessionUpdate.meetingUrl = autoMeeting.joinUrl;
+      }
+      // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
+      if (autoMeeting) {
+        sessionUpdate.zoomMeetingId = autoMeeting.meetingId;
       }
 
       const created = await prisma.session.upsert({
@@ -914,7 +922,8 @@ export async function lessonRoutes(app: FastifyInstance) {
           status: isLessonStatus(body.status) ? body.status : 'draft',
           date: body.date !== undefined ? parseLessonDate(body.date) : null,
           startTime: body.startTime?.trim() || null,
-          meetingUrl: body.meetingUrl?.trim() || autoMeetingUrl || null,
+          meetingUrl: body.meetingUrl?.trim() || autoMeeting?.joinUrl || null,
+          ...(autoMeeting ? { zoomMeetingId: autoMeeting.meetingId } : {}),
         },
         update: sessionUpdate,
         select: sessionSelect,

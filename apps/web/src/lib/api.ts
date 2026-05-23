@@ -1997,9 +1997,11 @@ export async function createLessonBlock(
 }
 
 // --- Интеграция Zoom (Система → Интеграции) ----------------------------------
-// Безопасный вид настроек: секрет не отдаётся, доступен лишь признак secretSet
-// и последние 4 символа (secretLast4). encryptionKeySet сообщает, настроен ли
-// на сервере ключ шифрования (без него секрет нельзя сохранить/проверить).
+// Безопасный вид настроек: секреты не отдаются, доступны лишь признаки наличия
+// (secretSet/secretTokenSet) и последние 4 символа (secretLast4/secretTokenLast4).
+// encryptionKeySet сообщает, настроен ли на сервере ключ шифрования (без него
+// секреты нельзя сохранить/проверить). webhookId — публичный id персонального
+// URL вебхука Zoom (/webhooks/zoom/<webhookId>).
 export interface ZoomIntegrationConfig {
   enabled: boolean;
   autoCreateMeeting: boolean;
@@ -2007,6 +2009,9 @@ export interface ZoomIntegrationConfig {
   clientId: string | null;
   secretSet: boolean;
   secretLast4: string | null;
+  secretTokenSet: boolean;
+  secretTokenLast4: string | null;
+  webhookId: string | null;
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
   encryptionKeySet: boolean;
@@ -2019,8 +2024,9 @@ export async function getZoomIntegration(accessToken: string): Promise<ZoomInteg
   });
 }
 
-// Сохранить настройки Zoom. clientSecret передавать только при изменении —
-// пустое/отсутствующее значение оставляет сохранённый секрет без изменений.
+// Сохранить настройки Zoom. clientSecret/secretToken передавать только при
+// изменении — пустое/отсутствующее значение оставляет сохранённый секрет без
+// изменений.
 export async function updateZoomIntegration(
   accessToken: string,
   data: {
@@ -2029,6 +2035,7 @@ export async function updateZoomIntegration(
     accountId?: string;
     clientId?: string;
     clientSecret?: string;
+    secretToken?: string;
   },
 ): Promise<ZoomIntegrationConfig> {
   return request('/admin/integrations/zoom', {
