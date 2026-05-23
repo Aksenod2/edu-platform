@@ -17,11 +17,17 @@ enum StreamStatus {
   archived
 }
 
-enum LessonStatus {
+enum SessionStatus {
   draft
   planned
   done
   cancelled
+}
+
+enum ProgramType {
+  course
+  intensive
+  mentorship
 }
 
 enum AssignmentType {
@@ -68,22 +74,22 @@ enum NotificationType {
 }
 
 model User {
-  id                 String    @id @default(uuid())
-  email              String    @unique
-  passwordHash       String
-  role               UserRole  @default(student)
-  name               String
-  avatarKey          String?
-  isActive           Boolean   @default(true)
-  mustChangePassword Boolean   @default(false)
-  balanceKopecks     Int       @default(0)
-  inviteToken        String?   @unique
-  inviteExpiresAt    DateTime?
-  resetToken         String?   @unique
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String
+  role                UserRole  @default(student)
+  name                String
+  avatarKey           String?
+  isActive            Boolean   @default(true)
+  mustChangePassword  Boolean   @default(false)
+  balanceKopecks      Int       @default(0)
+  inviteToken         String?   @unique
+  inviteExpiresAt     DateTime?
+  resetToken          String?   @unique
   resetTokenExpiresAt DateTime?
-  deletedAt          DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   refreshTokens           RefreshToken[]
   studentAssignments      StudentAssignment[]
@@ -100,6 +106,7 @@ model User {
   enrollments             StreamEnrollment[]
   taughtLessons           LessonTeacher[]
   ownedStreams            Stream[]                 @relation("StreamOwner")
+  ownedPrograms           Program[]                @relation("ProgramOwner")
   walletTransactions      WalletTransaction[]      @relation("WalletTxUser")
 }
 
@@ -137,16 +144,18 @@ model Stream {
   name      String
   status    StreamStatus @default(active)
   ownerId   String?
+  programId String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  owner           User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  lessons         Lesson[]
-  assignments     Assignment[]
-  enrollments     StreamEnrollment[]
-  conversations   Conversation[]
+  owner         User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  program       Program?           @relation(fields: [programId], references: [id], onDelete: SetNull)
+  sessions      Session[]
+  enrollments   StreamEnrollment[]
+  conversations Conversation[]
 
   @@index([ownerId])
+  @@index([programId])
 }
 
 model StreamEnrollment {
@@ -164,27 +173,28 @@ model StreamEnrollment {
 }
 
 model Lesson {
-  id        String       @id @default(uuid())
-  streamId  String
-  title     String
-  videoUrl  String?
-  videoKey  String?
-  summary   String?
-  notes     String?
-  status    LessonStatus @default(draft)
-  date      DateTime?    @db.Date
-  startTime String?
-  meetingUrl String?
-  sortOrder Int          @default(0)
-  materials Json         @default("[]")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                    String          @id @default(uuid())
+  title                 String
+  videoUrl              String?
+  videoKey              String?
+  summary               String?
+  notes                 String?
+  materials             Json            @default("[]")
+  sortOrder             Int             @default(0)
+  hasAssignment         Boolean         @default(false)
+  assignmentTitle       String?
+  assignmentDescription String?
+  assignmentCriteria    String?
+  assignmentType        AssignmentType?
+  assignmentTags        String[]        @default([])
+  assignmentMaterials   Json            @default("[]")
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
-  stream          Stream          @relation(fields: [streamId], references: [id], onDelete: Cascade)
-  assignments     Assignment[]
-  teachers        LessonTeacher[]
-
-  @@index([streamId])
+  teachers            LessonTeacher[]
+  programLessons      ProgramLesson[]
+  sessions            Session[]
+  conversationEntries ConversationEntry[]
 }
 
 model LessonTeacher {
@@ -201,33 +211,64 @@ model LessonTeacher {
   @@index([userId])
 }
 
-model Assignment {
-  id          String         @id @default(uuid())
-  lessonId    String?
-  streamId    String
-  title       String
-  description String?
-  criteria    String?
-  type        AssignmentType @default(short)
-  tags        String[]       @default([])
-  dueDate     DateTime?
-  groupId     String?
-  materials   Json           @default("[]")
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+model Program {
+  id           String      @id @default(uuid())
+  name         String
+  type         ProgramType @default(course)
+  ownerId      String?
+  whatYouLearn String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  lesson             Lesson?             @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  owner          User?           @relation("ProgramOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  programLessons ProgramLesson[]
+  streams        Stream[]
+
+  @@index([ownerId])
+}
+
+model ProgramLesson {
+  id        String   @id @default(uuid())
+  programId String
+  lessonId  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  lesson  Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, lessonId])
+  @@index([programId])
+  @@index([lessonId])
+}
+
+model Session {
+  id         String        @id @default(uuid())
+  streamId   String
+  lessonId   String
+  status     SessionStatus @default(planned)
+  date       DateTime?     @db.Date
+  startTime  String?
+  meetingUrl String?
+  videoUrl   String?
+  videoKey   String?
+  dueDate    DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
-  conversationEntries ConversationEntry[]
 
+  @@unique([streamId, lessonId])
   @@index([streamId])
   @@index([lessonId])
+  @@index([status, date])
 }
 
 model StudentAssignment {
   id             String                  @id @default(uuid())
-  assignmentId   String
+  sessionId      String
   studentId      String
   status         StudentAssignmentStatus @default(assigned)
   content        String?
@@ -242,11 +283,12 @@ model StudentAssignment {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
 
-  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  student    User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@unique([assignmentId, studentId])
+  @@unique([sessionId, studentId])
   @@index([studentId])
+  @@index([sessionId])
 }
 
 model Conversation {
@@ -273,13 +315,13 @@ model ConversationEntry {
   type           ThreadEntryType @default(text)
   content        String
   metadata       Json?
-  assignmentId   String?
+  lessonId       String?
   createdAt      DateTime        @default(now())
   readAt         DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   author       User         @relation("AuthoredEntries", fields: [authorId], references: [id], onDelete: Cascade)
-  assignment   Assignment?  @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  lesson       Lesson?      @relation(fields: [lessonId], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
   @@index([authorId])
@@ -382,14 +424,14 @@ model FileStorage {
 }
 
 model WalletTransaction {
-  id          String        @id @default(uuid())
-  userId      String
-  amount      Int           // в копейках; для topup положительное, для debit положительное (знак определяется kind)
-  kind        WalletTxKind
-  note        String?
-  createdBy   String?       // имя администратора, сделавшего операцию
-  createdAt   DateTime      @default(now())
-  user        User          @relation("WalletTxUser", fields: [userId], references: [id], onDelete: Cascade)
+  id        String       @id @default(uuid())
+  userId    String
+  amount    Int // в копейках; для topup положительное, для debit положительное (знак определяется kind)
+  kind      WalletTxKind
+  note      String?
+  createdBy String? // имя администратора, сделавшего операцию
+  createdAt DateTime     @default(now())
+  user      User         @relation("WalletTxUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
