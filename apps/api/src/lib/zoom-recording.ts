@@ -179,6 +179,34 @@ export async function processRecordingForSession(params: {
   }
 }
 
+// Помечает запись занятия ОЖИДАЕМОЙ (recordingStatus='pending') на событии
+// meeting.ended. Смысл: между концом созвона и приходом recording.completed Zoom
+// обрабатывает облачную запись минуты-часы; без этой пометки проведённое занятие
+// показывало студенту ложное «запись недоступна». 'pending' = «запись готовится».
+//
+// БЕЗОПАСНОСТЬ/ИДЕМПОТЕНТНОСТЬ: переводим в pending ТОЛЬКО когда videoKey ещё нет
+// и текущий статус не входит в ['processing','ready','pending','failed'] — то есть
+// не перетираем уже идущую/готовую/упавшую/уже помеченную обработку. Условие — в
+// WHERE updateMany (атомарно), как в застолблении processing выше.
+//
+// ВАЖНО: если у занятия не было облачной записи, recording.completed может не прийти
+// никогда → статус так и останется 'pending'. Это приемлемо (лучше «готовится», чем
+// ложное «недоступна»); таймаут намеренно НЕ городим.
+export async function markRecordingPending(params: { sessionId: string }): Promise<void> {
+  const { sessionId } = params;
+  await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      videoKey: null,
+      OR: [
+        { recordingStatus: null },
+        { recordingStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+      ],
+    },
+    data: { recordingStatus: 'pending' },
+  });
+}
+
 // Собирает текст резюме из объекта Zoom (overview + details). details может быть
 // массивом секций { label?, summary? } или строкой — приводим к читаемому тексту.
 export function buildSummaryText(summary: ZoomMeetingSummary | null): string | null {

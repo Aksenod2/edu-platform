@@ -23,6 +23,7 @@ import {
   pickMainRecording,
   buildSummaryText,
   processRecordingForSession,
+  markRecordingPending,
 } from '../zoom-recording.js';
 import type { ZoomRecordingFile } from '../zoom.js';
 import { prisma } from '@platform/db';
@@ -371,5 +372,47 @@ describe('processRecordingForSession — recordingError без сырых дет
     expect(failCall[0].data.recordingError).toBe('Не удалось обработать запись Zoom');
     expect(failCall[0].data.recordingError).not.toContain('zoom.us');
     expect(failCall[0].data.recordingError).not.toContain('secret-token');
+  });
+});
+
+describe('markRecordingPending — пометка записи «готовится» на meeting.ended (P5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it('ставит pending атомарно через updateMany c защитным WHERE-условием', async () => {
+    await markRecordingPending({ sessionId: 'sess-1' });
+
+    // Условие должно пускать pending ТОЛЬКО при videoKey IS NULL и статусе вне
+    // ['processing','ready','pending','failed'] — иначе перетёрли бы обработку.
+    expect(db.session.updateMany).toHaveBeenCalledTimes(1);
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'sess-1',
+        videoKey: null,
+        OR: [
+          { recordingStatus: null },
+          { recordingStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+        ],
+      },
+      data: { recordingStatus: 'pending' },
+    });
+  });
+
+  it('не выполняет update() напрямую — только условный updateMany (без перетирания)', async () => {
+    await markRecordingPending({ sessionId: 'sess-1' });
+
+    // Никакого безусловного session.update — единственный путь записи это updateMany
+    // с WHERE-фильтром, что и обеспечивает идемпотентность/безопасность.
+    expect(db.session.update).not.toHaveBeenCalled();
+  });
+
+  it('count===0 (статус уже processing/ready/pending/failed) → ничего не падает', async () => {
+    // WHERE не совпал → 0 обновлённых строк; функция просто завершается без ошибки.
+    db.session.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(markRecordingPending({ sessionId: 'sess-1' })).resolves.toBeUndefined();
+    expect(db.session.update).not.toHaveBeenCalled();
   });
 });

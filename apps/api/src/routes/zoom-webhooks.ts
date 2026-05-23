@@ -13,6 +13,7 @@ import { decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  markRecordingPending,
 } from '../lib/zoom-recording.js';
 
 // Окно допустимого расхождения времени запроса (анти-replay): 5 минут.
@@ -94,7 +95,11 @@ async function processEventAsync(
       });
 
       if (session) {
-        if (event === 'recording.completed') {
+        if (event === 'meeting.ended') {
+          // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
+          // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
+          await markRecordingPending({ sessionId: session.id });
+        } else if (event === 'recording.completed') {
           await processRecordingForSession({
             sessionId: session.id,
             meetingId,
@@ -247,7 +252,11 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
 
     // Тяжёлую работу (скачивание/резюме) делаем асинхронно, чтобы Zoom не
     // ретраил по таймауту. Отвечаем 200 сразу.
-    if (event === 'recording.completed' || event === 'meeting.summary_completed') {
+    if (
+      event === 'meeting.ended' ||
+      event === 'recording.completed' ||
+      event === 'meeting.summary_completed'
+    ) {
       void processEventAsync(
         app,
         webhookEventId,
