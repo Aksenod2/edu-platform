@@ -303,7 +303,7 @@ export async function createStream(
 export async function updateStream(
   accessToken: string,
   id: string,
-  data: { name?: string; ownerId?: string | null },
+  data: { name?: string; ownerId?: string | null; programId?: string | null },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
     method: 'PATCH',
