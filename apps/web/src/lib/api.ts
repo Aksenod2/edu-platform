@@ -571,6 +571,14 @@ export interface Lesson {
   assignmentType?: AssignmentType | null;
   assignmentTags?: string[];
   assignmentMaterials?: AssignmentMaterial[];
+  // Автосбор записи/итогов Zoom (Волна 2). Поля проецируются из Session занятия;
+  // вне потока или без созвона Zoom — null/отсутствуют.
+  // recordingStatus: none | pending | processing | ready | failed.
+  recordingStatus?: string | null;
+  // Текст ошибки автозагрузки записи (для показа в UI), если recordingStatus = 'failed'.
+  recordingError?: string | null;
+  // Источник итогов занятия: 'zoom_ai' (AI Companion) | 'manual' (ввёл преподаватель).
+  summarySource?: string | null;
 }
 
 export async function getLessons(

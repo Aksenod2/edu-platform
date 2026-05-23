@@ -260,6 +260,12 @@ type SessionProjection = {
   meetingUrl: string | null;
   videoUrl: string | null;
   videoKey: string | null;
+  // Итоги конкретного занятия потока + автосбор записи Zoom (Волна 2).
+  // Все поля nullable — фича аддитивна; для старых данных останутся null.
+  summary: string | null;
+  summarySource: string | null;
+  recordingStatus: string | null;
+  recordingError: string | null;
 } | null;
 
 // Преобразует пару (блок урока, его Session в контексте потока) к ПЛОСКОЙ форме
@@ -298,6 +304,11 @@ function projectLesson(
   createdAt: Date;
   updatedAt: Date;
   teachers: { id: string; name: string }[];
+  // Автосбор записи/итогов Zoom (Волна 2). Аддитивно: для уроков без Session
+  // или со старыми данными — null, поведение не меняется.
+  recordingStatus: string | null;
+  recordingError: string | null;
+  summarySource: string | null;
 } {
   // Видео: Session перекрывает блок (запись конкретного занятия важнее блочной).
   const videoKey = session?.videoKey ?? block.videoKey;
@@ -310,7 +321,9 @@ function projectLesson(
     title: block.title,
     videoUrl,
     videoKey,
-    summary: block.summary,
+    // Итоги конкретного занятия (Session.summary) приоритетнее блочных
+    // (Lesson.summary). Для старых данных Session.summary = null → блочное.
+    summary: session?.summary ?? block.summary,
     notes: block.notes,
     status: session?.status ?? 'draft',
     date: date ? date.toISOString().slice(0, 10) : null,
@@ -327,6 +340,11 @@ function projectLesson(
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
     teachers: (block.teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+    // Статус автозагрузки записи Zoom и источник итогов (для UI). Вне потока
+    // (Session нет) — null, как и для занятий без созвона Zoom.
+    recordingStatus: session?.recordingStatus ?? null,
+    recordingError: session?.recordingError ?? null,
+    summarySource: session?.summarySource ?? null,
   };
 }
 
@@ -364,6 +382,11 @@ const sessionSelect = {
   meetingUrl: true,
   videoUrl: true,
   videoKey: true,
+  // Итоги занятия + автосбор записи Zoom (Волна 2).
+  summary: true,
+  summarySource: true,
+  recordingStatus: true,
+  recordingError: true,
 } as const;
 
 export async function lessonRoutes(app: FastifyInstance) {
