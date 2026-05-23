@@ -18,6 +18,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field';
+import { TeacherPicker, initials } from '@/components/lessons/teacher-picker';
+import { formatSize } from '@/components/lessons/lesson-materials-section';
 import {
   Sheet,
   SheetContent,
@@ -132,59 +134,6 @@ function isPastDate(date: string): boolean {
 }
 
 // Инициалы из имени для аватара преподавателя
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('');
-}
-
-// Чек-лист выбора преподавателей (admins) для урока
-function TeacherPicker({
-  teachers,
-  selected,
-  onToggle,
-}: {
-  teachers: Teacher[];
-  selected: string[];
-  onToggle: (id: string) => void;
-}) {
-  if (teachers.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Нет доступных преподавателей.
-      </p>
-    );
-  }
-  return (
-    <div className="max-h-48 overflow-y-auto rounded-lg border">
-      <ul className="divide-y">
-        {teachers.map((teacher) => (
-          <li key={teacher.id}>
-            <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/50">
-              <Checkbox
-                checked={selected.includes(teacher.id)}
-                onCheckedChange={() => onToggle(teacher.id)}
-              />
-              <Avatar size="sm">
-                <AvatarFallback>{initials(teacher.name)}</AvatarFallback>
-              </Avatar>
-              <div className="flex min-w-0 flex-col">
-                <span className="truncate text-sm font-medium">{teacher.name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {teacher.email}
-                </span>
-              </div>
-            </label>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 // Ряд аватаров преподавателей урока с инициалами
 function TeacherAvatars({ teachers }: { teachers?: { id: string; name: string }[] }) {
   if (!teachers || teachers.length === 0) {
@@ -199,14 +148,6 @@ function TeacherAvatars({ teachers }: { teachers?: { id: string; name: string }[
       ))}
     </div>
   );
-}
-
-// Человекочитаемый размер файла материала
-function formatSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
 // Секция «Материалы (PDF/MD)» для существующего урока: загрузка, список,

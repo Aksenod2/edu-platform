@@ -13,6 +13,7 @@ import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
 import { userRoutes } from './routes/users.js';
 import { lessonRoutes } from './routes/lessons.js';
+import { programRoutes } from './routes/programs.js';
 import { assignmentRoutes } from './routes/assignments.js';
 import { walletRoutes } from './routes/wallet.js';
 import { profileRoutes } from './routes/profiles.js';
@@ -54,6 +55,7 @@ await app.register(
 await app.register(streamRoutes);
 await app.register(userRoutes);
 await app.register(lessonRoutes);
+await app.register(programRoutes);
 await app.register(assignmentRoutes);
 await app.register(walletRoutes);
 await app.register(profileRoutes);
