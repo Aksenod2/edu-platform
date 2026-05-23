@@ -462,7 +462,7 @@ export default function AssignmentDetailPage({
                     <label className="flex items-center justify-center gap-2 p-6 rounded-md border-2 border-dashed cursor-pointer text-sm text-muted-foreground hover:border-ring transition-colors">
                       <input
                         type="file"
-                        accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
+                        accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
                         className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0];

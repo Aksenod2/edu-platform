@@ -1964,9 +1964,11 @@ export function getNotificationLink(
     case 'deadline_reminder':
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'assignment_submitted':
-      if (role === 'admin' && m.studentId) return `/admin/students/${m.studentId}`;
+      // Админ должен попасть на страницу ЗАДАНИЯ (проверить сдачу), а не в профиль студента.
+      if (role === 'admin' && m.assignmentId) return `/admin/assignments/${m.assignmentId}`;
       return '/admin/assignments';
     case 'assignment_reviewed':
+      if (role === 'student' && m.assignmentId) return `/dashboard/assignments/${m.assignmentId}`;
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'thread_entry':
       if (role === 'student') return '/dashboard/messages?tab=personal';

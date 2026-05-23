@@ -8,6 +8,19 @@ const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link',
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
 const ADMIN_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 
+// Контекст «вопрос по заданию» приходит из веба как lessonId ИЛИ как синтетический
+// id задания (= sessionId, т.к. задание свёрнуто в Session). Возвращаем реальный
+// lessonId, либо null если ни Lesson, ни Session с таким id нет.
+async function resolveContextLessonId(rawId: string): Promise<string | null> {
+  const lesson = await prisma.lesson.findUnique({ where: { id: rawId }, select: { id: true } });
+  if (lesson) return lesson.id;
+  const session = await prisma.session.findUnique({
+    where: { id: rawId },
+    select: { lessonId: true },
+  });
+  return session?.lessonId ?? null;
+}
+
 // Web-facing compatibility (this wave): the model moved `assignment` onto the Lesson
 // block (entry.lessonId/lesson вместо assignmentId/assignment). Веб ещё читает
 // `entry.assignmentId` (для группировки) и `entry.assignment.title` (бейдж задания),
@@ -278,7 +291,7 @@ export async function threadRoutes(app: FastifyInstance) {
       lessonId?: string;
       metadata?: Record<string, unknown>;
     };
-    const lessonId = body.lessonId ?? body.assignmentId ?? null;
+    let lessonId = body.lessonId ?? body.assignmentId ?? null;
 
     if (!body.type || !body.content) {
       return reply.status(400).send({ error: 'Поля type и content обязательны' });
@@ -294,15 +307,13 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: `Тип записи "${body.type}" недоступен для вашей роли` });
     }
 
-    // Validate lessonId if provided (assignment свёрнут в Lesson)
+    // Резолвим контекст задания (lessonId ИЛИ синтетический sessionId) в реальный lessonId.
     if (lessonId) {
-      const lesson = await prisma.lesson.findUnique({
-        where: { id: lessonId },
-        select: { id: true },
-      });
-      if (!lesson) {
+      const resolved = await resolveContextLessonId(lessonId);
+      if (!resolved) {
         return reply.status(400).send({ error: 'Задание не найдено' });
       }
+      lessonId = resolved;
     }
 
     const created = await prisma.conversationEntry.create({
@@ -399,13 +410,11 @@ async function handleMultipartEntry(
   }
 
   if (lessonId) {
-    const lesson = await prisma.lesson.findUnique({
-      where: { id: lessonId },
-      select: { id: true },
-    });
-    if (!lesson) {
+    const resolved = await resolveContextLessonId(lessonId);
+    if (!resolved) {
       return reply.status(400).send({ error: 'Задание не найдено' });
     }
+    lessonId = resolved;
   }
 
   const uploaded = await uploadFile(fileBuffer, fileName, fileMimeType);
