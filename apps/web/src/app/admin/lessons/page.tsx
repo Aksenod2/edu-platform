@@ -19,9 +19,10 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getLessons, createLessonBlock } from '@/lib/api';
+import { getLessons, createLessonBlock, getStreams, type Stream } from '@/lib/api';
 import { type LessonBlock } from '@/components/lessons/lesson-block';
 import { initials } from '@/components/lessons/teacher-picker';
+import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
 
 export default function AdminLessonsPage() {
   const router = useRouter();
@@ -32,14 +33,20 @@ export default function AdminLessonsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [streams, setStreams] = useState<Stream[]>([]);
 
   const fetchLessons = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      // Без streamId → копилка блоков-уроков (без расписания).
-      const { lessons } = await getLessons(accessToken);
+      // Без streamId → копилка блоков-уроков (без расписания). Потоки нужны для
+      // диалога «Запланировать».
+      const [{ lessons }, { streams }] = await Promise.all([
+        getLessons(accessToken),
+        getStreams(accessToken),
+      ]);
       setLessons(lessons as LessonBlock[]);
+      setStreams(streams);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки уроков');
@@ -81,10 +88,19 @@ export default function AdminLessonsPage() {
             Копилка переиспользуемых блоков-уроков.
           </p>
         </div>
-        <Button onClick={handleCreate} disabled={creating}>
-          {creating ? <Loader2 className="animate-spin" /> : <Plus />}
-          Создать урок
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {accessToken && (
+            <PlanLessonDialog
+              accessToken={accessToken}
+              streams={streams}
+              onPlanned={fetchLessons}
+            />
+          )}
+          <Button onClick={handleCreate} disabled={creating}>
+            {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+            Создать урок
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">

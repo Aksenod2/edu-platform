@@ -59,30 +59,54 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev';
 
 const ADMIN_NAV: NavGroup[] = [
   {
-    label: 'Управление',
+    label: '',
+    items: [{ label: 'Обзор', href: '/admin', icon: LayoutGrid }],
+  },
+  {
+    label: 'Контент',
     items: [
-      { label: 'Обзор', href: '/admin', icon: LayoutGrid },
-      { label: 'Расписание', href: '/admin/schedule', icon: CalendarDays },
-      { label: 'Студенты', href: '/admin/students', icon: Users },
-      { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
-      { label: 'Потоки', href: '/admin/streams', icon: Layers },
       { label: 'Программы', href: '/admin/programs', icon: GraduationCap },
       { label: 'Уроки', href: '/admin/lessons', icon: BookOpen },
-      { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
     ],
+  },
+  {
+    label: 'Обучение',
+    items: [
+      { label: 'Потоки', href: '/admin/streams', icon: Layers },
+      { label: 'Расписание', href: '/admin/schedule', icon: CalendarDays },
+    ],
+  },
+  {
+    label: 'Люди',
+    items: [
+      { label: 'Студенты', href: '/admin/students', icon: Users },
+      { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
+    ],
+  },
+  {
+    label: 'Система',
+    items: [{ label: 'API-доступ', href: '/admin/api-access', icon: KeyRound }],
   },
 ];
 
 const STUDENT_NAV: NavGroup[] = [
   {
+    label: '',
+    items: [{ label: 'Обзор', href: '/dashboard', icon: LayoutGrid }],
+  },
+  {
     label: 'Обучение',
     items: [
-      { label: 'Обзор', href: '/dashboard', icon: LayoutGrid },
+      { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Уроки', href: '/dashboard/lessons', icon: BookOpen },
       { label: 'Задания', href: '/dashboard/assignments', icon: ClipboardList },
-      { label: 'Сообщения', href: '/dashboard/messages', icon: MessagesSquare },
-      { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Материалы', href: '/dashboard/materials', icon: FolderOpen },
+    ],
+  },
+  {
+    label: 'Личное',
+    items: [
+      { label: 'Сообщения', href: '/dashboard/messages', icon: MessagesSquare },
       { label: 'Баланс', href: '/dashboard/balance', icon: Wallet },
     ],
   },
@@ -131,9 +155,9 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        {nav.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+        {nav.map((group, i) => (
+          <SidebarGroup key={group.label || `group-${i}`}>
+            {group.label ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
             <SidebarMenu>
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.href}>
