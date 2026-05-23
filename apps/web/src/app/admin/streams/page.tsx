@@ -420,13 +420,13 @@ export default function StreamsPage() {
                         <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuLabel>Действия</DropdownMenuLabel>
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/streams/${stream.id}/lessons`}>
+                            <Link href={`/admin/streams/${stream.id}?tab=lessons`}>
                               <BookOpen />
                               Уроки
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/streams/${stream.id}/assignments`}>
+                            <Link href={`/admin/streams/${stream.id}?tab=assignments`}>
                               <ClipboardList />
                               Задания
                             </Link>
