@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   ArrowLeft,
@@ -15,6 +15,8 @@ import {
   Trash2,
   Search,
   UserPlus,
+  ExternalLink,
+  CalendarX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -68,8 +70,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { LessonsManager } from '@/components/lessons-manager';
-import { StreamAssignmentsManager } from '@/components/stream-assignments-manager';
 import {
   ScheduleCalendar,
   type CalendarLesson,
@@ -86,17 +86,39 @@ import {
   createLesson,
   updateLesson,
   unscheduleLesson,
+  getAssignments,
+  deleteAssignment,
   getTeachers,
   updateStream,
+  LESSON_STATUS_LABELS,
   type StreamWithCounts,
   type Student,
   type Teacher,
+  type Lesson,
+  type LessonStatus,
+  type Assignment,
 } from '@/lib/api';
+
+// Допустимые значения вкладок (для синхронизации с ?tab= в URL).
+const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
 
 export default function StreamDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const streamId = params.streamId as string;
   const { user, accessToken } = useAuth();
+
+  // Активная вкладка управляется через ?tab= — это позволяет вести на конкретную
+  // вкладку ссылками (например из списка потоков «Уроки»/«Задания»).
+  const tabParam = searchParams.get('tab');
+  const activeTab = tabParam && TAB_VALUES.includes(tabParam) ? tabParam : 'overview';
+
+  const handleTabChange = (value: string) => {
+    const query = new URLSearchParams(searchParams.toString());
+    query.set('tab', value);
+    router.replace(`/admin/streams/${streamId}?${query.toString()}`, { scroll: false });
+  };
 
   const [stream, setStream] = useState<StreamWithCounts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,7 +192,7 @@ export default function StreamDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
@@ -182,7 +204,11 @@ export default function StreamDetailPage() {
         </div>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab stream={stream} onOwnerChange={fetchStream} />
+          <OverviewTab
+            stream={stream}
+            onOwnerChange={fetchStream}
+            onGoToSchedule={() => handleTabChange('schedule')}
+          />
         </TabsContent>
 
         <TabsContent value="students" className="mt-4">
@@ -190,11 +216,11 @@ export default function StreamDetailPage() {
         </TabsContent>
 
         <TabsContent value="lessons" className="mt-4">
-          <LessonsManager streamId={streamId} />
+          <LessonsTab stream={stream} />
         </TabsContent>
 
         <TabsContent value="assignments" className="mt-4">
-          <StreamAssignmentsManager streamId={streamId} />
+          <AssignmentsTab streamId={streamId} />
         </TabsContent>
 
         <TabsContent value="schedule" className="mt-4">
@@ -310,6 +336,364 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
   );
 }
 
+// Вариант бейджа для статуса урока (совпадает с другими экранами уроков).
+const lessonStatusBadgeVariant: Record<
+  LessonStatus,
+  'secondary' | 'default' | 'outline' | 'destructive'
+> = {
+  draft: 'secondary',
+  planned: 'default',
+  done: 'outline',
+  cancelled: 'destructive',
+};
+
+/** Дата "YYYY-MM-DD" в формате "ДД.ММ.ГГГГ" (без UTC-сдвига). */
+function formatLessonDate(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1).toLocaleDateString('ru-RU');
+}
+
+// Вкладка «Уроки» потока: read-only список уроков. Контент урока правится на
+// странице урока /admin/lessons/[id]; здесь — только обзор и «снять с потока».
+function LessonsTab({ stream }: { stream: StreamWithCounts }) {
+  const { accessToken } = useAuth();
+
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  // Подтверждение снятия урока с потока + индикатор по конкретному уроку.
+  const [lessonToUnschedule, setLessonToUnschedule] = useState<Lesson | null>(null);
+  const [unschedulingId, setUnschedulingId] = useState<string | null>(null);
+
+  const fetchLessons = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      // getLessons(streamId) работает и для программных, и для менторских потоков.
+      const { lessons } = await getLessons(accessToken, stream.id);
+      setLessons([...lessons].sort((a, b) => a.sortOrder - b.sortOrder));
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки уроков');
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, stream.id]);
+
+  useEffect(() => {
+    fetchLessons();
+  }, [fetchLessons]);
+
+  const handleUnschedule = async (lesson: Lesson) => {
+    if (!accessToken) return;
+    setUnschedulingId(lesson.id);
+    setError('');
+    try {
+      // Снимаем урок с расписания потока (не удаляем урок-блок целиком).
+      await unscheduleLesson(accessToken, lesson.id, stream.id);
+      await fetchLessons();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка снятия урока с потока');
+    } finally {
+      setUnschedulingId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Уроки потока</h2>
+        <Button asChild>
+          <Link href="/admin/schedule">
+            <CalendarDays />
+            Запланировать занятие
+          </Link>
+        </Button>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[60px]">#</TableHead>
+              <TableHead>Название</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead>Дата</TableHead>
+              <TableHead className="w-[1%] text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : lessons.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  В потоке пока нет уроков. Запланируйте занятие в расписании.
+                </TableCell>
+              </TableRow>
+            ) : (
+              lessons.map((lesson) => (
+                <TableRow key={lesson.id}>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {lesson.sortOrder}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/lessons/${lesson.id}`}
+                      className="font-medium text-foreground underline-offset-4 hover:underline"
+                    >
+                      {lesson.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={lessonStatusBadgeVariant[lesson.status] ?? 'default'}>
+                      {LESSON_STATUS_LABELS[lesson.status]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {lesson.date
+                      ? `${formatLessonDate(lesson.date)}${lesson.startTime ? ` · ${lesson.startTime}` : ''}`
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8" asChild>
+                            <Link href={`/admin/lessons/${lesson.id}`}>
+                              <ExternalLink />
+                              <span className="sr-only">Открыть урок</span>
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Открыть урок (контент правится там)</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-destructive hover:text-destructive"
+                            disabled={unschedulingId === lesson.id}
+                            onClick={() => setLessonToUnschedule(lesson)}
+                          >
+                            {unschedulingId === lesson.id ? (
+                              <Loader2 className="animate-spin" />
+                            ) : (
+                              <CalendarX />
+                            )}
+                            <span className="sr-only">Снять с потока</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Снять с потока</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <AlertDialog
+        open={!!lessonToUnschedule}
+        onOpenChange={(open) => { if (!open) setLessonToUnschedule(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Снять урок с потока?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {lessonToUnschedule &&
+                `Урок «${lessonToUnschedule.title}» будет снят с расписания этого потока. Сам урок-блок останется — его можно запланировать снова.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (lessonToUnschedule) handleUnschedule(lessonToUnschedule); }}
+            >
+              Снять с потока
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// Вкладка «Задания» потока: плоский список заданий. Создание/выдача — со страницы
+// урока; здесь — обзор, переход в проверку и снятие задания.
+function AssignmentsTab({ streamId }: { streamId: string }) {
+  const { accessToken } = useAuth();
+
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  // Подтверждение снятия задания + индикатор по конкретному заданию.
+  const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchAssignments = useCallback(async () => {
+    if (!accessToken || !streamId) return;
+    setLoading(true);
+    try {
+      const { assignments } = await getAssignments(accessToken, streamId);
+      setAssignments(assignments);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки заданий');
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, streamId]);
+
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+
+  const handleDelete = async (assignment: Assignment) => {
+    if (!accessToken) return;
+    setDeletingId(assignment.id);
+    setError('');
+    try {
+      await deleteAssignment(accessToken, assignment.id);
+      await fetchAssignments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка снятия задания');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold tracking-tight">Задания потока</h2>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Название</TableHead>
+              <TableHead>Дедлайн</TableHead>
+              <TableHead className="w-[1%] text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={3} className="h-24 text-center">
+                  <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : assignments.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  В потоке пока нет заданий. Выдайте ДЗ со страницы урока.
+                </TableCell>
+              </TableRow>
+            ) : (
+              assignments.map((a) => (
+                <TableRow key={a.id}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/assignments/${a.id}`}
+                      className="font-medium text-foreground underline-offset-4 hover:underline"
+                    >
+                      {a.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {a.dueDate
+                      ? new Date(a.dueDate).toLocaleString('ru-RU', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/admin/assignments/${a.id}`}>Проверить</Link>
+                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-destructive hover:text-destructive"
+                            disabled={deletingId === a.id}
+                            onClick={() => setAssignmentToDelete(a)}
+                          >
+                            {deletingId === a.id ? (
+                              <Loader2 className="animate-spin" />
+                            ) : (
+                              <Trash2 />
+                            )}
+                            <span className="sr-only">Снять задание</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Снять задание</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <AlertDialog
+        open={!!assignmentToDelete}
+        onOpenChange={(open) => { if (!open) setAssignmentToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Снять задание?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {assignmentToDelete &&
+                `Задание «${assignmentToDelete.title}» и все его назначения будут удалены. Действие необратимо.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => { if (assignmentToDelete) handleDelete(assignmentToDelete); }}
+            >
+              Снять задание
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 // Инициалы из имени для аватара преподавателя
 function initials(name: string): string {
   return name
@@ -326,9 +710,11 @@ const NO_OWNER = 'none';
 function OverviewTab({
   stream,
   onOwnerChange,
+  onGoToSchedule,
 }: {
   stream: StreamWithCounts;
   onOwnerChange: () => void;
+  onGoToSchedule: () => void;
 }) {
   const { accessToken } = useAuth();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -457,22 +843,15 @@ function OverviewTab({
           <CardTitle className="text-base">Быстрые действия</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/admin/streams/${stream.id}/lessons`}>
-              <BookOpen />
-              Уроки
-            </Link>
+          {/* Расписание потока — это вкладка на этой же странице. */}
+          <Button variant="outline" onClick={onGoToSchedule}>
+            <CalendarDays />
+            Расписание
           </Button>
           <Button variant="outline" asChild>
-            <Link href={`/admin/streams/${stream.id}/assignments`}>
+            <Link href="/admin/assignments">
               <ClipboardList />
-              Задания
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/admin/lessons">
-              <CalendarDays />
-              Календарь
+              Проверка заданий
             </Link>
           </Button>
         </CardContent>
