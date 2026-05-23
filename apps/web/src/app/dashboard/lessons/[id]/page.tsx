@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Video,
 } from 'lucide-react';
+import { BackButton } from '@/components/back-button';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
@@ -149,12 +150,7 @@ export default function StudentLessonPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-        <Link href="/dashboard/lessons">
-          <ArrowLeft />
-          К урокам
-        </Link>
-      </Button>
+      <BackButton fallbackHref="/dashboard/lessons">К урокам</BackButton>
 
       {error && (
         <Alert variant="destructive">

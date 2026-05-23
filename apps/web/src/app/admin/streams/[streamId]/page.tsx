@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
-  ArrowLeft,
   Loader2,
   Users,
   BookOpen,
@@ -17,9 +16,11 @@ import {
   UserPlus,
   ExternalLink,
   CalendarX,
+  Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { BackButton } from '@/components/back-button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -87,6 +88,7 @@ import {
   updateLesson,
   unscheduleLesson,
   getAssignments,
+  createAssignment,
   deleteAssignment,
   getTeachers,
   updateStream,
@@ -156,17 +158,7 @@ export default function StreamDetailPage() {
   if (error || !stream) {
     return (
       <div className="flex flex-col gap-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          asChild
-        >
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <Alert variant="destructive">
           <AlertDescription>{error || 'Поток не найден'}</AlertDescription>
         </Alert>
@@ -177,12 +169,7 @@ export default function StreamDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{stream.name}</h1>
           {stream.status === 'active' ? (
@@ -566,6 +553,8 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
   // Подтверждение снятия задания + индикатор по конкретному заданию.
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Индикатор выдачи по конкретному заданию (до-материализация назначений).
+  const [issuingId, setIssuingId] = useState<string | null>(null);
 
   const fetchAssignments = useCallback(async () => {
     if (!accessToken || !streamId) return;
@@ -596,6 +585,32 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
       setError(err instanceof Error ? err.message : 'Ошибка снятия задания');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // Выдать задание студентам потока: эндпоинт идемпотентен (skipDuplicates) —
+  // материализует StudentAssignment всем зачисленным без дублей.
+  const handleIssue = async (assignment: Assignment) => {
+    if (!accessToken) return;
+    setIssuingId(assignment.id);
+    try {
+      await createAssignment(accessToken, {
+        streamId: assignment.streamId,
+        lessonId: assignment.lessonId ?? undefined,
+        title: assignment.title,
+        description: assignment.description ?? undefined,
+        criteria: assignment.criteria ?? undefined,
+        type: assignment.type,
+        tags: assignment.tags,
+        materials: assignment.materials,
+        dueDate: assignment.dueDate ?? undefined,
+      });
+      await fetchAssignments();
+      toast.success('Задание выдано студентам');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выдать задание');
+    } finally {
+      setIssuingId(null);
     }
   };
 
@@ -664,9 +679,26 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/admin/assignments/${a.id}`}>Проверить</Link>
-                      </Button>
+                      {/* Назначений нет — проверять нечего: предлагаем выдать. */}
+                      {a._count?.studentAssignments === 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={issuingId === a.id}
+                          onClick={() => handleIssue(a)}
+                        >
+                          {issuingId === a.id ? (
+                            <Loader2 className="animate-spin" />
+                          ) : (
+                            <Send />
+                          )}
+                          Выдать
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/admin/assignments/${a.id}`}>Проверить</Link>
+                        </Button>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
