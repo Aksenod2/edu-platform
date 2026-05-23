@@ -60,6 +60,8 @@ export async function programRoutes(app: FastifyInstance) {
                 hasAssignment: true,
                 videoUrl: true,
                 videoKey: true,
+                // Учитываем новые видео урока (LessonVideo) в значке «есть видео».
+                _count: { select: { videos: true } },
               },
             },
           },
@@ -87,8 +89,8 @@ export async function programRoutes(app: FastifyInstance) {
           id: pl.lesson.id,
           title: pl.lesson.title,
           hasAssignment: pl.lesson.hasAssignment,
-          // «есть видео» — загруженный файл (videoKey) или внешняя ссылка (videoUrl).
-          hasVideo: Boolean(pl.lesson.videoKey || pl.lesson.videoUrl),
+          // «есть видео» — загруженный файл/ссылка (legacy) ИЛИ новые видео (LessonVideo).
+          hasVideo: Boolean(pl.lesson.videoKey || pl.lesson.videoUrl || pl.lesson._count.videos),
           sortOrder: pl.sortOrder,
         })),
         streams: program.streams.map((s) => ({ id: s.id, name: s.name, status: s.status })),

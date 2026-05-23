@@ -477,6 +477,16 @@ export interface LessonMaterial {
   url?: string;
 }
 
+// Одно видео урока: kind различает загруженный файл и внешнюю ссылку,
+// url — подписанный временный URL файла или внешняя ссылка как есть.
+export interface LessonVideo {
+  id: string;
+  title: string | null;
+  kind: 'file' | 'link';
+  url: string;
+  sortOrder: number;
+}
+
 /** Добавляет download=1 к подписанному URL файла для форс-скачивания (вложением). */
 export function fileDownloadUrl(url: string): string {
   if (!url) return url;
@@ -523,6 +533,8 @@ export interface Lesson {
   videoKey?: string | null;
   // Подписанный временный URL загруженного видео (для встроенного плеера) или null.
   videoFileUrl?: string | null;
+  // Несколько видео урока (аддитивно к одиночным videoUrl/videoFileUrl).
+  videos?: LessonVideo[];
   summary: string | null;
   notes: string | null;
   status: LessonStatus;
@@ -722,6 +734,101 @@ export async function deleteLessonVideo(
   return request(`/lessons/${lessonId}/video`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// ─── Несколько видео на урок (LessonVideo) — АДДИТИВНО ──────────────────────
+// Все мутации возвращают свежий упорядоченный список видео урока { videos }.
+// Не путать с легаси uploadLessonVideo/deleteLessonVideo (одиночное видео блока).
+
+// Добавить видео-ФАЙЛ урока (multipart). title — опционально (уйдёт в query).
+export async function addLessonVideoFile(
+  accessToken: string,
+  lessonId: string,
+  file: File,
+  title?: string,
+): Promise<{ videos: LessonVideo[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const qs = title ? `?title=${encodeURIComponent(title)}` : '';
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/videos${qs}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { videos: LessonVideo[] };
+}
+
+// Добавить видео-ССЫЛКУ урока (внешний URL). title — опционально.
+export async function addLessonVideoLink(
+  accessToken: string,
+  lessonId: string,
+  url: string,
+  title?: string,
+): Promise<{ videos: LessonVideo[] }> {
+  return request(`/lessons/${lessonId}/videos`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ url, title }),
+  });
+}
+
+// Обновить видео урока: title и/или url (url — только у видео-ссылки).
+export async function updateLessonVideoItem(
+  accessToken: string,
+  lessonId: string,
+  videoId: string,
+  patch: { title?: string | null; url?: string },
+): Promise<{ videos: LessonVideo[] }> {
+  return request(`/lessons/${lessonId}/videos/${videoId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(patch),
+  });
+}
+
+// Удалить элемент видео урока. S3-объект при этом не удаляется.
+export async function deleteLessonVideoItem(
+  accessToken: string,
+  lessonId: string,
+  videoId: string,
+): Promise<{ videos: LessonVideo[] }> {
+  return request(`/lessons/${lessonId}/videos/${videoId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Переупорядочить видео урока: orderedIds — желаемый порядок.
+export async function reorderLessonVideos(
+  accessToken: string,
+  lessonId: string,
+  orderedIds: string[],
+): Promise<{ videos: LessonVideo[] }> {
+  return request(`/lessons/${lessonId}/videos/order`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ orderedIds }),
   });
 }
 

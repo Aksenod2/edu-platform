@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
@@ -39,6 +39,39 @@ async function videoFileUrlFor(videoKey: string | null | undefined): Promise<str
   } catch {
     return null;
   }
+}
+
+// Спроецированное видео урока для ответов фронту: kind различает файл/ссылку,
+// url — подписанный временный URL файла или внешняя ссылка как есть.
+type ProjectedVideo = { id: string; title: string | null; kind: 'file' | 'link'; url: string; sortOrder: number };
+
+// Проецирует список видео урока: для файлов подписываем временный URL по videoKey,
+// для ссылок берём videoUrl напрямую. Видео без url/key и файлы без валидной подписи
+// отбрасываем (как одиночное видео в videoFileUrlFor).
+async function projectVideos(videos: LessonBlock['videos']): Promise<ProjectedVideo[]> {
+  if (!videos?.length) return [];
+  const out = await Promise.all(
+    videos.map(async (v) => {
+      if (v.videoKey) {
+        const url = await videoFileUrlFor(v.videoKey);
+        return url ? { id: v.id, title: v.title, kind: 'file' as const, url, sortOrder: v.sortOrder } : null;
+      }
+      if (v.videoUrl) {
+        return { id: v.id, title: v.title, kind: 'link' as const, url: v.videoUrl, sortOrder: v.sortOrder };
+      }
+      return null;
+    }),
+  );
+  return out.filter((x): x is ProjectedVideo => x !== null);
+}
+
+// Свежий список видео урока в проекции (для ответов мутаций).
+async function lessonVideosResponse(lessonId: string): Promise<{ videos: ProjectedVideo[] }> {
+  const videos = await prisma.lessonVideo.findMany({
+    where: { lessonId },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+  });
+  return { videos: await projectVideos(videos) };
 }
 
 // Ре-подписывает временные url по s3Key для всех материалов урока.
@@ -117,9 +150,14 @@ function parseLessonDate(value: string | null | undefined): Date | null {
   return new Date(datePart);
 }
 
+// Без `as const`: вложенный orderBy видео — массив, а Prisma-тип LessonInclude
+// ждёт МУТАБЕЛЬНЫЙ массив orderBy (readonly-кортеж из `as const` он не принимает).
+// Результаты всё равно приводятся к LessonBlock, точная инференс-форма не нужна.
 const teacherInclude = {
   teachers: { include: { user: { select: { id: true, name: true } } } },
-} as const;
+  // Видео урока в порядке отображения (для аддитивного поля videos[]).
+  videos: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+} satisfies Prisma.LessonInclude;
 
 // Тип блока урока с подгруженными преподавателями (минимум, который проецируем).
 type LessonBlock = {
@@ -141,6 +179,8 @@ type LessonBlock = {
   createdAt: Date;
   updatedAt: Date;
   teachers?: { user: { id: string; name: string } }[];
+  // Несколько видео урока: каждое — ЛИБО файл (videoKey) ЛИБО внешняя ссылка (videoUrl).
+  videos?: { id: string; title: string | null; videoKey: string | null; videoUrl: string | null; sortOrder: number }[];
 };
 
 // Минимальные поля Session, которые проецируются в форму урока.
@@ -231,7 +271,9 @@ async function finalizeLesson(
   const materials = await regenerateLessonMaterialUrls(
     (block.materials as unknown as LessonMaterial[]) || [],
   );
-  return { ...projected, videoFileUrl, materials };
+  // Аддитивно: список из нескольких видео урока (одиночные videoUrl/videoFileUrl сохранены).
+  const videos = await projectVideos(block.videos);
+  return { ...projected, videoFileUrl, materials, videos };
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
@@ -945,6 +987,171 @@ export async function lessonRoutes(app: FastifyInstance) {
     const projected = projectLesson(updated, null, null);
     const full = await finalizeLesson(projected, updated);
     return { lesson: full };
+  });
+
+  // ─── Несколько видео на урок (LessonVideo) — АДДИТИВНО ────────────────────
+  // Каждое видео — ЛИБО загруженный файл (videoKey в S3) ЛИБО внешняя ссылка
+  // (videoUrl). Эндпоинты ниже работают с коллекцией lesson.videos и НЕ трогают
+  // унаследованные одиночные Lesson.videoKey/videoUrl (их читают легаси-экраны).
+
+  // POST /lessons/:id/videos — добавить видео урока (admin).
+  // multipart → загружаем файл в S3 (videoKey); JSON { url, title? } → внешняя ссылка.
+  // title для multipart — опционально из query (?title=...).
+  app.post('/lessons/:id/videos', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    // Следующий порядковый номер: max(sortOrder) текущих видео + 1 (нет видео → 0).
+    const last = await prisma.lessonVideo.findFirst({
+      where: { lessonId: id },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
+    const sortOrder = last ? last.sortOrder + 1 : 0;
+
+    // ── Видео-ФАЙЛ (multipart) ──────────────────────────────────────────────
+    if (request.isMultipart()) {
+      const data = await request.file();
+      if (!data) {
+        return reply.status(400).send({ error: 'Файл не найден в запросе' });
+      }
+
+      const originalName = data.filename || 'video';
+      const mimeType = data.mimetype || 'application/octet-stream';
+
+      if (!isVideoFile(originalName, mimeType)) {
+        // Слив потока, чтобы не подвиснуть на необработанном файле.
+        data.file.resume();
+        return reply.status(400).send({ error: 'Поддерживаются видеофайлы (MP4)' });
+      }
+
+      const chunks: Buffer[] = [];
+      await pipeline(
+        data.file,
+        new Writable({
+          write(chunk, _enc, cb) {
+            chunks.push(chunk);
+            cb();
+          },
+        }),
+      );
+      const buffer = Buffer.concat(chunks);
+
+      let uploaded: { key: string; url: string; size: number };
+      try {
+        uploaded = await uploadFile(buffer, originalName, mimeType, 'lesson-videos');
+      } catch (err) {
+        return reply
+          .status(400)
+          .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+      }
+
+      const rawTitle = (request.query as { title?: string }).title;
+      const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : null;
+
+      await prisma.lessonVideo.create({
+        data: { lessonId: id, videoKey: uploaded.key, title, sortOrder },
+      });
+
+      return reply.status(201).send(await lessonVideosResponse(id));
+    }
+
+    // ── Видео-ССЫЛКА (JSON) ─────────────────────────────────────────────────
+    const body = request.body as { url?: string; title?: string };
+    if (!body || typeof body.url !== 'string' || !body.url.trim()) {
+      return reply.status(400).send({ error: 'Ссылка на видео обязательна' });
+    }
+
+    await prisma.lessonVideo.create({
+      data: {
+        lessonId: id,
+        videoUrl: body.url.trim(),
+        title: body.title?.trim() || null,
+        sortOrder,
+      },
+    });
+
+    return reply.status(201).send(await lessonVideosResponse(id));
+  });
+
+  // PATCH /lessons/:id/videos/:videoId — обновить видео урока (admin).
+  // Меняем title и/или url (url — только у видео-ССЫЛКИ; у файла url игнорируем).
+  app.patch('/lessons/:id/videos/:videoId', { onRequest: adminOnly }, async (request, reply) => {
+    const { id, videoId } = request.params as { id: string; videoId: string };
+
+    const video = await prisma.lessonVideo.findFirst({ where: { id: videoId, lessonId: id } });
+    if (!video) {
+      return reply.status(404).send({ error: 'Видео не найдено' });
+    }
+
+    const body = request.body as { title?: string | null; url?: string };
+
+    const data: Record<string, unknown> = {};
+    if (body.title !== undefined) {
+      data.title = body.title?.trim() || null;
+    }
+    // url меняем только у видео-ссылки (videoKey === null); у видео-файла игнорируем.
+    if (body.url !== undefined && video.videoKey == null) {
+      const trimmed = typeof body.url === 'string' ? body.url.trim() : '';
+      if (!trimmed) {
+        return reply.status(400).send({ error: 'Ссылка не может быть пустой' });
+      }
+      data.videoUrl = trimmed;
+    }
+
+    await prisma.lessonVideo.update({ where: { id: videoId }, data });
+
+    return await lessonVideosResponse(id);
+  });
+
+  // DELETE /lessons/:id/videos/:videoId — удалить видео урока (admin).
+  // S3-объект НЕ удаляем (как и существующий DELETE /lessons/:id/video).
+  app.delete('/lessons/:id/videos/:videoId', { onRequest: adminOnly }, async (request, reply) => {
+    const { id, videoId } = request.params as { id: string; videoId: string };
+
+    const video = await prisma.lessonVideo.findFirst({ where: { id: videoId, lessonId: id } });
+    if (!video) {
+      return reply.status(404).send({ error: 'Видео не найдено' });
+    }
+
+    await prisma.lessonVideo.delete({ where: { id: videoId } });
+
+    return await lessonVideosResponse(id);
+  });
+
+  // PUT /lessons/:id/videos/order — переупорядочить видео урока (admin).
+  // orderedIds — желаемый порядок; sortOrder = индекс. Чужие id игнорируем.
+  app.put('/lessons/:id/videos/order', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { orderedIds } = request.body as { orderedIds?: string[] };
+
+    if (!Array.isArray(orderedIds)) {
+      return reply.status(400).send({ error: 'orderedIds должен быть массивом' });
+    }
+
+    // Только реально принадлежащие уроку видео (защита от чужих id).
+    const own = await prisma.lessonVideo.findMany({
+      where: { lessonId: id },
+      select: { id: true },
+    });
+    const ownSet = new Set(own.map((v) => v.id));
+
+    await prisma.$transaction(
+      orderedIds
+        .filter((videoId) => ownSet.has(videoId))
+        .map((videoId, index) =>
+          prisma.lessonVideo.update({
+            where: { id: videoId },
+            data: { sortOrder: index },
+          }),
+        ),
+    );
+
+    return await lessonVideosResponse(id);
   });
 
   // DELETE /lessons/:id — удаление урока (admin).
