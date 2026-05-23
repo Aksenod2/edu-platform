@@ -33,21 +33,8 @@ import {
   type Stream,
   type ThreadEntry,
 } from '@/lib/api';
+import { STATUS_LABELS, STATUS_VARIANT, STATUS_ORDER } from '@/lib/assignment-status';
 import Link from 'next/link';
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'Отправлено',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  needs_revision: 'destructive',
-};
 
 const TYPE_LABELS: Record<string, string> = {
   short: 'Короткое',
@@ -208,10 +195,11 @@ export default function StudentAssignmentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы</SelectItem>
-              <SelectItem value="assigned">Назначено</SelectItem>
-              <SelectItem value="submitted">Отправлено</SelectItem>
-              <SelectItem value="reviewed">Проверено</SelectItem>
-              <SelectItem value="needs_revision">На доработке</SelectItem>
+              {STATUS_ORDER.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 

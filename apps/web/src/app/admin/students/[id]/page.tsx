@@ -56,23 +56,9 @@ import {
   type ThreadEntryType,
   type WalletTransaction,
 } from '@/lib/api';
+import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
 
 type Tab = 'profile' | 'assignments' | 'thread';
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Выдано',
-  submitted: 'Сдано',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано».
-  needs_revision: 'outline',
-};
 
 export default function StudentProfilePage() {
   const { accessToken } = useAuth();
@@ -720,10 +706,10 @@ export default function StudentProfilePage() {
                     </div>
                   ) : assignmentsSummary ? (
                     <>
-                      <SummaryCard label="Выдано"      value={assignmentsSummary.total}          variant="info" />
-                      <SummaryCard label="Сдано"        value={assignmentsSummary.submitted}       variant="warning" />
-                      <SummaryCard label="Проверено"    value={assignmentsSummary.reviewed}        variant="success" />
-                      <SummaryCard label="На доработке" value={assignmentsSummary.needs_revision}  variant="accent" />
+                      <SummaryCard label={STATUS_LABELS.assigned}       value={assignmentsSummary.total}          variant="info" />
+                      <SummaryCard label={STATUS_LABELS.submitted}      value={assignmentsSummary.submitted}      variant="warning" />
+                      <SummaryCard label={STATUS_LABELS.reviewed}       value={assignmentsSummary.reviewed}       variant="success" />
+                      <SummaryCard label={STATUS_LABELS.needs_revision} value={assignmentsSummary.needs_revision} variant="accent" />
                       <SummaryCard label="Просрочено"   value={assignmentsSummary.overdue}         variant="error" />
                     </>
                   ) : null}
@@ -734,10 +720,10 @@ export default function StudentProfilePage() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {[
                   { key: 'all',            label: 'Все' },
-                  { key: 'assigned',       label: 'Выдано' },
-                  { key: 'submitted',      label: 'Сдано' },
-                  { key: 'reviewed',       label: 'Проверено' },
-                  { key: 'needs_revision', label: 'На доработке' },
+                  { key: 'assigned',       label: STATUS_LABELS.assigned },
+                  { key: 'submitted',      label: STATUS_LABELS.submitted },
+                  { key: 'reviewed',       label: STATUS_LABELS.reviewed },
+                  { key: 'needs_revision', label: STATUS_LABELS.needs_revision },
                   { key: 'overdue',        label: 'Просрочено' },
                 ].map(({ key, label }) => (
                   <Button
@@ -762,7 +748,7 @@ export default function StudentProfilePage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        {['Задание', 'Статус', 'Поток', 'Выдано', 'Срок сдачи', 'Действия'].map((h) => (
+                        {['Задание', 'Статус', 'Поток', 'Назначено', 'Срок сдачи', 'Действия'].map((h) => (
                           <TableHead key={h}>{h}</TableHead>
                         ))}
                       </TableRow>
@@ -832,7 +818,7 @@ export default function StudentProfilePage() {
                                 <span className="font-mono text-xs text-muted-foreground">↩ Ожидает пересдачи</span>
                               )}
                               {sa.status === 'reviewed' && (
-                                <span className="font-mono text-xs text-muted-foreground">✓ Проверено</span>
+                                <span className="font-mono text-xs text-muted-foreground">✓ Принято</span>
                               )}
                             </TableCell>
                           </TableRow>

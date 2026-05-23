@@ -19,21 +19,8 @@ import {
   type ThreadEntry,
 } from '@/lib/api';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
+import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
 import Link from 'next/link';
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'Отправлено',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  needs_revision: 'destructive',
-};
 
 const TYPE_LABELS: Record<string, string> = {
   short: 'Короткое',

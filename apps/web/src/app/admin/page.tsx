@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getAdminStats, type AdminStats } from '@/lib/api';
+import { STATUS_LABELS, STATUS_ORDER } from '@/lib/assignment-status';
 import {
   Card,
   CardContent,
@@ -42,13 +43,6 @@ function formatRelative(date: string): string {
     month: 'short',
   });
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'На проверке',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
 
 function KpiCard({
   title,
@@ -358,17 +352,13 @@ function StatusBars({
 }: {
   byStatus: AdminStats['assignments']['byStatus'];
 }) {
-  const order: Array<keyof AdminStats['assignments']['byStatus']> = [
-    'assigned',
-    'submitted',
-    'reviewed',
-    'needs_revision',
-  ];
+  const order = STATUS_ORDER;
+  // reviewed («Принято») — акцент; остальные статусы нейтральные оттенки foreground.
   const fills: Record<string, string> = {
-    assigned: 'bg-muted-foreground/40',
-    submitted: 'bg-primary',
-    reviewed: 'bg-secondary-foreground/60',
-    needs_revision: 'bg-destructive',
+    assigned: 'bg-foreground/30',
+    submitted: 'bg-foreground/30',
+    reviewed: 'bg-primary',
+    needs_revision: 'bg-foreground/15',
   };
   const total = order.reduce((sum, key) => sum + byStatus[key], 0);
 

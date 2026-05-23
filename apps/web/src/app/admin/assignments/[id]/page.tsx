@@ -26,22 +26,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-const statusLabels: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'На проверке',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const statusVariants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано»
-  // (единый вид с карточкой студента /admin/students/[id]).
-  needs_revision: 'outline',
-};
+import {
+  STATUS_LABELS as statusLabels,
+  STATUS_VARIANT as statusVariants,
+} from '@/lib/assignment-status';
 
 export default function AssignmentDetailPage() {
   const { user, accessToken } = useAuth();
