@@ -23,8 +23,11 @@ import {
   deleteStudent,
   inviteStudent,
   resetStudentPassword,
+  getStreams,
+  getStreamStudents,
   formatKopecks,
   type Student,
+  type StreamWithCounts,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +43,13 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -87,6 +97,13 @@ export default function StudentsPage() {
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
+  // Фильтр по потоку: '' — «Все потоки». Список студентов не содержит зачислений,
+  // поэтому членство потока тянем отдельно (getStreamStudents) и фильтруем клиентом.
+  const [streams, setStreams] = useState<StreamWithCounts[]>([]);
+  const [streamFilter, setStreamFilter] = useState('');
+  const [streamMemberIds, setStreamMemberIds] = useState<Set<string> | null>(null);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
   const [createOpen, setCreateOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -113,6 +130,48 @@ export default function StudentsPage() {
   useEffect(() => {
     if (accessToken) fetchStudents();
   }, [accessToken, fetchStudents]);
+
+  // Активные потоки для выпадающего фильтра.
+  useEffect(() => {
+    if (!accessToken) return;
+    getStreams(accessToken)
+      .then((data) => setStreams(data.streams.filter((s) => s.status === 'active')))
+      .catch(() => {
+        // Сбой загрузки потоков не должен ломать таблицу — фильтр просто останется пустым.
+      });
+  }, [accessToken]);
+
+  // Членство выбранного потока: пересчитываем при смене фильтра.
+  useEffect(() => {
+    if (!accessToken || !streamFilter) {
+      setStreamMemberIds(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingMembers(true);
+    getStreamStudents(accessToken, streamFilter)
+      .then((data) => {
+        if (!cancelled) setStreamMemberIds(new Set(data.students.map((s) => s.id)));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setStreamMemberIds(new Set()); // при ошибке поток считаем пустым, чтобы не показывать чужих
+          setError(err instanceof Error ? err.message : 'Ошибка загрузки участников потока');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMembers(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, streamFilter]);
+
+  // Итоговый список: серверный поиск + клиентский фильтр по членству потока.
+  const visibleStudents = streamFilter && streamMemberIds
+    ? students.filter((s) => streamMemberIds.has(s.id))
+    : students;
+  const tableLoading = loadingStudents || (!!streamFilter && loadingMembers);
 
   const showMessage = (msg: string) => {
     setActionMessage(msg);
@@ -243,14 +302,32 @@ export default function StudentsPage() {
         </Alert>
       )}
 
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Поиск по имени или email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-8"
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Поиск по имени или email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <Select
+          value={streamFilter || 'all'}
+          onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}
+        >
+          <SelectTrigger className="w-full sm:w-56">
+            <SelectValue placeholder="Все потоки" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все потоки</SelectItem>
+            {streams.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="rounded-lg border">
@@ -266,7 +343,7 @@ export default function StudentsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loadingStudents ? (
+            {tableLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell>
@@ -282,14 +359,16 @@ export default function StudentsPage() {
                   <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
                 </TableRow>
               ))
-            ) : students.length === 0 ? (
+            ) : visibleStudents.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  Ученики не найдены
+                  {streamFilter
+                    ? 'В этом потоке нет учеников'
+                    : 'Ученики не найдены'}
                 </TableCell>
               </TableRow>
             ) : (
-              students.map((s) => (
+              visibleStudents.map((s) => (
                 <TableRow
                   key={s.id}
                   className={

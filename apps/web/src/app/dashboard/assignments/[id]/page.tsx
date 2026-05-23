@@ -18,6 +18,7 @@ import {
   type StudentAssignment,
   type ThreadEntry,
 } from '@/lib/api';
+import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import Link from 'next/link';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -287,14 +288,19 @@ export default function AssignmentDetailPage({
                       )}
                     </div>
                     {sa.fileSignedUrl && (
-                      <a
-                        href={sa.fileSignedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary no-underline"
-                      >
-                        Открыть ↗
-                      </a>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {isMarkdownFile(sa.fileName) && (
+                          <MarkdownLightbox fileName={sa.fileName!} url={sa.fileSignedUrl} />
+                        )}
+                        <a
+                          href={sa.fileSignedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary no-underline"
+                        >
+                          Открыть ↗
+                        </a>
+                      </div>
                     )}
                   </div>
                 )}

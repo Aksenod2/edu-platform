@@ -7,10 +7,12 @@ import {
   getAssignment,
   getStudentAssignments,
   updateStudentAssignment,
+  fileDownloadUrl,
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
-import { ChevronLeft, Link2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Download, FileText, Link2, Loader2 } from 'lucide-react';
+import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -32,11 +34,13 @@ const statusLabels: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const statusVariants: Record<string, 'default' | 'secondary' | 'destructive'> = {
+const statusVariants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   assigned: 'secondary',
   submitted: 'secondary',
   reviewed: 'default',
-  needs_revision: 'destructive',
+  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано»
+  // (единый вид с карточкой студента /admin/students/[id]).
+  needs_revision: 'outline',
 };
 
 export default function AssignmentDetailPage() {
@@ -212,13 +216,14 @@ export default function AssignmentDetailPage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-lg border">
+              <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Студент</TableHead>
                       <TableHead>Статус</TableHead>
                       <TableHead>Отправлено</TableHead>
+                      <TableHead>Работа</TableHead>
                       <TableHead>Действия</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -246,6 +251,38 @@ export default function AssignmentDetailPage() {
                             : '—'}
                         </TableCell>
                         <TableCell>
+                          {sa.fileName ? (
+                            <div className="flex max-w-[240px] flex-col gap-1.5">
+                              <div className="flex items-center gap-2 text-sm">
+                                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                                <span className="truncate text-foreground" title={sa.fileName}>
+                                  {sa.fileName}
+                                </span>
+                              </div>
+                              {sa.fileSignedUrl && (
+                                <div className="flex items-center gap-1">
+                                  {isMarkdownFile(sa.fileName) && (
+                                    <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
+                                  )}
+                                  <Button
+                                    asChild
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-muted-foreground"
+                                  >
+                                    <a href={fileDownloadUrl(sa.fileSignedUrl)}>
+                                      <Download className="size-4" />
+                                      Скачать
+                                    </a>
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <div className="flex flex-col gap-2">
                             {sa.status === 'submitted' && (
                               <div className="flex flex-col gap-1.5">
@@ -260,7 +297,8 @@ export default function AssignmentDetailPage() {
                                   }
                                   placeholder="Что получилось, что доработать. Видит студент."
                                   rows={3}
-                                  className="min-w-[260px]"
+                                  // На узких экранах поле сжимается, на десктопе остаётся комфортным.
+                                  className="w-full sm:min-w-[260px]"
                                 />
                               </div>
                             )}
