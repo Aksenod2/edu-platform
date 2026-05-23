@@ -12,4 +12,8 @@ export NEXT_PUBLIC_APP_VERSION
 echo "Деплой версии ${NEXT_PUBLIC_APP_VERSION}"
 
 docker compose --env-file .env.vps -f docker-compose.vps.yml up -d --build
-docker image prune -f
+# Чистим неиспользуемые образы И build-кэш, чтобы за серию деплоев не забить диск
+# VPS. Раньше был только `docker image prune -f` (чистит лишь dangling-образы),
+# из-за чего за много деплоев место заканчивалось и сборка падала.
+docker image prune -af
+docker builder prune -f

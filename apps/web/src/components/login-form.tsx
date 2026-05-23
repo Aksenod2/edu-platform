@@ -78,10 +78,7 @@ export function LoginForm({
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               {error && (
-                <Alert
-                  variant="destructive"
-                  className="border-transparent bg-destructive/10"
-                >
+                <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
