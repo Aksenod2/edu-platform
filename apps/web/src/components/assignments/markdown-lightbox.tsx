@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toProxiedFileUrl } from '@/lib/api';
 
 /** true для вложений, которые умеем рендерить как markdown (по имени файла). */
 export function isMarkdownFile(fileName?: string | null): boolean {
@@ -107,7 +108,10 @@ export function MarkdownLightbox({
   className,
 }: {
   fileName: string;
-  /** Подписанный URL файла (same-origin /files/...). */
+  /**
+   * Подписанный URL файла (приходит с бэка абсолютным: `${API_BASE_URL}/files/...?exp&sig`).
+   * Для предпросмотра фетчим через same-origin прокси (см. toProxiedFileUrl) — иначе CORS.
+   */
   url: string;
   triggerVariant?: React.ComponentProps<typeof Button>['variant'];
   triggerSize?: React.ComponentProps<typeof Button>['size'];
@@ -125,7 +129,11 @@ export function MarkdownLightbox({
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(url);
+      // Бэк отдаёт URL файла абсолютным (кросс-доменным) — `fetch().text()` по нему
+      // упёрся бы в CORS. Идём через same-origin `/api-proxy` (тот же путь, которым
+      // ходят все API-вызовы), чтобы предпросмотр работал на проде. Скачивание
+      // (<a href>) остаётся на исходном абсолютном URL и трогать его не нужно.
+      const res = await fetch(toProxiedFileUrl(url), { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setContent(await res.text());
     } catch {
