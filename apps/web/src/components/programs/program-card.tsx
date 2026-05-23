@@ -1,6 +1,7 @@
 'use client';
 
-import { BookOpen, GraduationCap, MoreHorizontal, SquarePen, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { BookOpen, ExternalLink, GraduationCap, MoreHorizontal, SquarePen, Trash2 } from 'lucide-react';
 import { PROGRAM_TYPE_LABELS, type Program } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +30,11 @@ export function ProgramCard({ program, onEdit, onDelete }: ProgramCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="line-clamp-2">{program.name}</CardTitle>
+        <CardTitle className="line-clamp-2">
+          <Link href={`/admin/programs/${program.id}`} className="hover:underline">
+            {program.name}
+          </Link>
+        </CardTitle>
         <Badge variant="secondary" className="mt-1">
           {PROGRAM_TYPE_LABELS[program.type]}
         </Badge>
@@ -42,6 +47,12 @@ export function ProgramCard({ program, onEdit, onDelete }: ProgramCardProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem asChild>
+                <Link href={`/admin/programs/${program.id}`}>
+                  <ExternalLink />
+                  Открыть
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onEdit(program)}>
                 <SquarePen />
                 Редактировать
