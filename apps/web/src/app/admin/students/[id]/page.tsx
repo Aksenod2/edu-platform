@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { Loader2, Wallet } from 'lucide-react';
+import { Download, FileText, Loader2, Wallet } from 'lucide-react';
+import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 
 const THREAD_POLL_INTERVAL_MS = 5000;
 import { toast } from 'sonner';
@@ -48,6 +49,7 @@ import {
   topupWallet,
   debitWallet,
   formatKopecks,
+  fileDownloadUrl,
   type ProfileResponse,
   type TeacherNote,
   type StudentAssignment,
@@ -56,23 +58,9 @@ import {
   type ThreadEntryType,
   type WalletTransaction,
 } from '@/lib/api';
+import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
 
 type Tab = 'profile' | 'assignments' | 'thread';
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Выдано',
-  submitted: 'Сдано',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано».
-  needs_revision: 'outline',
-};
 
 export default function StudentProfilePage() {
   const { accessToken } = useAuth();
@@ -98,6 +86,8 @@ export default function StudentProfilePage() {
   const [pendingRevision, setPendingRevision] = useState<StudentAssignment | null>(null);
   // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
   const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
+  // Подсветка обязательной причины при «На доработку» (по id назначения).
+  const [reviewErrors, setReviewErrors] = useState<Record<string, boolean>>({});
 
   // Wallet state (баланс кошелька + история операций; суммы в копейках)
   const [balanceKopecks, setBalanceKopecks] = useState<number | null>(null);
@@ -340,14 +330,27 @@ export default function StudentProfilePage() {
 
   const handleUpdateAssignment = async (saId: string, status: 'submitted' | 'reviewed' | 'needs_revision') => {
     if (!accessToken) return;
+    const reviewText = reviewTexts[saId]?.trim();
+    // Для «На доработку» причина обязательна (бэкенд отвечает 400 на пустую) —
+    // валидируем до запроса и подсвечиваем поле.
+    if (status === 'needs_revision' && !reviewText) {
+      setReviewErrors((prev) => ({ ...prev, [saId]: true }));
+      toast.error('Укажите причину доработки — она видна студенту.');
+      return;
+    }
     setUpdatingId(saId);
     try {
       const { studentAssignment } = await updateStudentAssignment(accessToken, saId, {
         status,
-        reviewText: reviewTexts[saId]?.trim() || undefined,
+        reviewText: reviewText || undefined,
       });
       setAssignments((prev) => prev.map((a) => (a.id === saId ? studentAssignment : a)));
       setReviewTexts((prev) => {
+        const next = { ...prev };
+        delete next[saId];
+        return next;
+      });
+      setReviewErrors((prev) => {
         const next = { ...prev };
         delete next[saId];
         return next;
@@ -720,10 +723,10 @@ export default function StudentProfilePage() {
                     </div>
                   ) : assignmentsSummary ? (
                     <>
-                      <SummaryCard label="Выдано"      value={assignmentsSummary.total}          variant="info" />
-                      <SummaryCard label="Сдано"        value={assignmentsSummary.submitted}       variant="warning" />
-                      <SummaryCard label="Проверено"    value={assignmentsSummary.reviewed}        variant="success" />
-                      <SummaryCard label="На доработке" value={assignmentsSummary.needs_revision}  variant="accent" />
+                      <SummaryCard label={STATUS_LABELS.assigned}       value={assignmentsSummary.total}          variant="info" />
+                      <SummaryCard label={STATUS_LABELS.submitted}      value={assignmentsSummary.submitted}      variant="warning" />
+                      <SummaryCard label={STATUS_LABELS.reviewed}       value={assignmentsSummary.reviewed}       variant="success" />
+                      <SummaryCard label={STATUS_LABELS.needs_revision} value={assignmentsSummary.needs_revision} variant="accent" />
                       <SummaryCard label="Просрочено"   value={assignmentsSummary.overdue}         variant="error" />
                     </>
                   ) : null}
@@ -734,10 +737,10 @@ export default function StudentProfilePage() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {[
                   { key: 'all',            label: 'Все' },
-                  { key: 'assigned',       label: 'Выдано' },
-                  { key: 'submitted',      label: 'Сдано' },
-                  { key: 'reviewed',       label: 'Проверено' },
-                  { key: 'needs_revision', label: 'На доработке' },
+                  { key: 'assigned',       label: STATUS_LABELS.assigned },
+                  { key: 'submitted',      label: STATUS_LABELS.submitted },
+                  { key: 'reviewed',       label: STATUS_LABELS.reviewed },
+                  { key: 'needs_revision', label: STATUS_LABELS.needs_revision },
                   { key: 'overdue',        label: 'Просрочено' },
                 ].map(({ key, label }) => (
                   <Button
@@ -762,7 +765,7 @@ export default function StudentProfilePage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        {['Задание', 'Статус', 'Поток', 'Выдано', 'Срок сдачи', 'Действия'].map((h) => (
+                        {['Задание', 'Статус', 'Поток', 'Назначено', 'Срок сдачи', 'Действия'].map((h) => (
                           <TableHead key={h}>{h}</TableHead>
                         ))}
                       </TableRow>
@@ -796,16 +799,78 @@ export default function StudentProfilePage() {
                             </TableCell>
                             <TableCell>
                               {sa.status === 'submitted' && (
-                                <div className="flex flex-col gap-1.5">
-                                  <Textarea
-                                    value={reviewTexts[sa.id] ?? ''}
-                                    onChange={(e) =>
-                                      setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }))
-                                    }
-                                    placeholder="Разбор работы (вердикт + комментарий). Видит студент."
-                                    rows={3}
-                                    className="min-w-[240px]"
-                                  />
+                                <div className="flex max-w-[360px] flex-col gap-3">
+                                  {/* Работа студента: текст ответа + вложение — чтобы
+                                      проверять прямо здесь, не уходя на /admin/assignments. */}
+                                  {(sa.content || sa.fileName) && (
+                                    <div className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3">
+                                      <span className="text-xs text-muted-foreground">Работа студента</span>
+                                      {sa.content && (
+                                        <p className="whitespace-pre-wrap text-sm text-foreground">
+                                          {sa.content}
+                                        </p>
+                                      )}
+                                      {sa.fileName && (
+                                        <div className="flex flex-col gap-1.5">
+                                          <div className="flex items-center gap-2 text-sm">
+                                            <FileText className="size-4 shrink-0 text-muted-foreground" />
+                                            <span className="truncate text-foreground" title={sa.fileName}>
+                                              {sa.fileName}
+                                            </span>
+                                          </div>
+                                          {sa.fileSignedUrl && (
+                                            <div className="flex items-center gap-1">
+                                              {isMarkdownFile(sa.fileName) && (
+                                                <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
+                                              )}
+                                              <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                                                <a href={fileDownloadUrl(sa.fileSignedUrl)}>
+                                                  <Download className="size-4" />
+                                                  Скачать
+                                                </a>
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Критерии оценки — чтобы проверяющий сверялся. */}
+                                  {sa.assignment?.criteria && (
+                                    <div className="flex flex-col gap-1.5 rounded-md border p-3">
+                                      <span className="text-xs text-muted-foreground">Критерии оценки</span>
+                                      <p className="whitespace-pre-wrap text-sm text-foreground">
+                                        {sa.assignment.criteria}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-col gap-1.5">
+                                    <Textarea
+                                      value={reviewTexts[sa.id] ?? ''}
+                                      onChange={(e) => {
+                                        setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }));
+                                        if (reviewErrors[sa.id]) {
+                                          setReviewErrors((prev) => {
+                                            const next = { ...prev };
+                                            delete next[sa.id];
+                                            return next;
+                                          });
+                                        }
+                                      }}
+                                      placeholder="Разбор работы (вердикт + комментарий). Видит студент."
+                                      rows={3}
+                                      aria-invalid={reviewErrors[sa.id] ? true : undefined}
+                                      className="min-w-[240px]"
+                                    />
+                                    {reviewErrors[sa.id] && (
+                                      <span className="text-xs text-destructive">
+                                        Для «На доработку» причина обязательна.
+                                      </span>
+                                    )}
+                                  </div>
+
                                   <div className="flex gap-1.5">
                                     <Button
                                       size="sm"
@@ -817,7 +882,15 @@ export default function StudentProfilePage() {
                                     <Button
                                       variant="secondary"
                                       size="sm"
-                                      onClick={() => setPendingRevision(sa)}
+                                      onClick={() => {
+                                        // Причина обязательна — не открываем диалог с пустым разбором.
+                                        if (!reviewTexts[sa.id]?.trim()) {
+                                          setReviewErrors((prev) => ({ ...prev, [sa.id]: true }));
+                                          toast.error('Укажите причину доработки — она видна студенту.');
+                                          return;
+                                        }
+                                        setPendingRevision(sa);
+                                      }}
                                       disabled={updatingId === sa.id}
                                     >
                                       На доработку
@@ -832,7 +905,7 @@ export default function StudentProfilePage() {
                                 <span className="font-mono text-xs text-muted-foreground">↩ Ожидает пересдачи</span>
                               )}
                               {sa.status === 'reviewed' && (
-                                <span className="font-mono text-xs text-muted-foreground">✓ Проверено</span>
+                                <span className="font-mono text-xs text-muted-foreground">✓ Принято</span>
                               )}
                             </TableCell>
                           </TableRow>

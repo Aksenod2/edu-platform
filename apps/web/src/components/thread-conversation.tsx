@@ -32,6 +32,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { getStatusMeta } from '@/lib/assignment-status';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -50,15 +51,6 @@ function formatBytes(size: number) {
     ? `${Math.round(size / 1024)} КБ`
     : `${(size / (1024 * 1024)).toFixed(1)} МБ`;
 }
-
-const SUBMISSION_STATUS: Record<
-  string,
-  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
-> = {
-  submitted: { label: 'Сдана', variant: 'default' },
-  reviewed: { label: 'Принята', variant: 'secondary' },
-  needs_revision: { label: 'На доработке', variant: 'destructive' },
-};
 
 /**
  * Полный тред одного ученика с inline-композером для ответа.
@@ -603,7 +595,7 @@ function SubmissionCard({
   showActions: boolean;
 }) {
   const date = new Date(entry.createdAt);
-  const status = SUBMISSION_STATUS[sa.status] ?? { label: sa.status, variant: 'outline' as const };
+  const status = getStatusMeta(sa.status);
 
   return (
     <div className="mt-4 mr-auto max-w-[85%] pl-10">

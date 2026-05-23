@@ -1034,11 +1034,13 @@ export interface Assignment {
   _count?: { studentAssignments: number };
 }
 
+export type StudentAssignmentStatus = 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
+
 export interface StudentAssignment {
   id: string;
   assignmentId: string;
   studentId: string;
-  status: 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
+  status: StudentAssignmentStatus;
   content: string | null;
   fileUrl: string | null;
   fileName: string | null;
