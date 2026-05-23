@@ -948,6 +948,10 @@ export interface LessonSession {
   summarySource?: string | null;
   recordingStatus?: string | null;
   recordingError?: string | null;
+  // Запись Zoom-занятия (разведена с учебным видео урока): внешняя ссылка
+  // (recordingVideoUrl) или подписанный URL загруженного файла (recordingFileUrl).
+  recordingFileUrl?: string | null;
+  recordingVideoUrl?: string | null;
 }
 
 // Сохранить ручные итоги КОНКРЕТНОГО занятия потока (Session.summary). Бэк ставит

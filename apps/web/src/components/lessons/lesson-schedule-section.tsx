@@ -7,11 +7,13 @@ import {
   CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
+  ExternalLink,
   FileText,
   Loader2,
   Pencil,
   RefreshCw,
   Trash2,
+  Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +23,8 @@ import { Field, FieldLabel } from '@/components/ui/field';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
+import { parseVideoEmbed } from '@/lib/video-embed';
 import {
   Dialog,
   DialogContent,
@@ -394,6 +398,11 @@ export function LessonScheduleSection({
             const issued = issuedByStream[s.streamId];
             const issueOpen = issueStreamId === s.streamId;
             const summaryOpen = summaryStreamId === s.streamId;
+            // Запись занятия: даём админу проверить её до студентов.
+            const hasRecording = !!(s.recordingFileUrl || s.recordingVideoUrl);
+            const recordingEmbed = s.recordingVideoUrl
+              ? parseVideoEmbed(s.recordingVideoUrl)
+              : null;
             return (
               <div
                 key={s.streamId}
@@ -472,6 +481,33 @@ export function LessonScheduleSection({
                       )}
                       Повторить
                     </Button>
+                  </div>
+                )}
+
+                {/* Плеер записи занятия — для проверки админом до студентов.
+                    Файл → VideoFileFrame, распознанный embed → VideoEmbedFrame,
+                    иначе кнопка-ссылка. Компактно, под бейджами/статусом записи. */}
+                {hasRecording && (
+                  <div className="rounded-md bg-muted p-2">
+                    {s.recordingFileUrl ? (
+                      <VideoFileFrame
+                        src={s.recordingFileUrl}
+                        label={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : recordingEmbed ? (
+                      <VideoEmbedFrame
+                        src={recordingEmbed}
+                        title={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" className="w-fit" asChild>
+                        <a href={s.recordingVideoUrl!} target="_blank" rel="noopener noreferrer">
+                          <Video className="size-4" />
+                          Смотреть запись
+                          <ExternalLink className="size-4" />
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 )}
 

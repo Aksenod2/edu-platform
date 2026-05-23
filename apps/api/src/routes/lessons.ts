@@ -1370,21 +1370,28 @@ export async function lessonRoutes(app: FastifyInstance) {
     });
 
     return {
-      sessions: sessions.map((s) => ({
-        streamId: s.streamId,
-        streamName: s.stream.name,
-        streamStatus: s.stream.status,
-        status: s.status,
-        date: s.date ? s.date.toISOString().slice(0, 10) : null,
-        startTime: s.startTime,
-        meetingUrl: s.meetingUrl,
-        // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
-        // итогов в блоке «Расписание». Для старых данных поля = null.
-        summary: s.summary,
-        summarySource: s.summarySource,
-        recordingStatus: s.recordingStatus,
-        recordingError: s.recordingError,
-      })),
+      // Подпись URL файла записи асинхронна — маппим через Promise.all (как в проекции).
+      sessions: await Promise.all(
+        sessions.map(async (s) => ({
+          streamId: s.streamId,
+          streamName: s.stream.name,
+          streamStatus: s.stream.status,
+          status: s.status,
+          date: s.date ? s.date.toISOString().slice(0, 10) : null,
+          startTime: s.startTime,
+          meetingUrl: s.meetingUrl,
+          // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
+          // итогов в блоке «Расписание». Для старых данных поля = null.
+          summary: s.summary,
+          summarySource: s.summarySource,
+          recordingStatus: s.recordingStatus,
+          recordingError: s.recordingError,
+          // Медиа записи занятия (admin-only): внешняя ссылка как есть и подписанный
+          // временный URL загруженного файла. Сырой videoKey наружу не отдаём.
+          recordingVideoUrl: s.videoUrl ?? null,
+          recordingFileUrl: await videoFileUrlFor(s.videoKey),
+        })),
+      ),
     };
   });
 

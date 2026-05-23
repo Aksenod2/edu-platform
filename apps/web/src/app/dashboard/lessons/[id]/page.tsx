@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/card';
 import { MaterialRow } from '@/components/material-row';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
@@ -45,41 +46,6 @@ const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outlin
   done: 'outline',
   cancelled: 'destructive',
 };
-
-// Единый контейнер плеера для видеофайла. Стабильная высота (max-h-[70vh]),
-// центрирование и тёмный нейтральный фон-леттербокс через семантический токен
-// bg-muted — вертикальные сторис 9:16 кэпятся по высоте и не растягивают экран,
-// горизонтальные 16:9 не выходят за ширину карточки. object-contain не искажает кадр.
-function VideoFileFrame({ src, label }: { src: string; label?: string }) {
-  return (
-    <div className="flex max-h-[70vh] items-center justify-center overflow-hidden rounded-lg border bg-muted">
-      <video
-        controls
-        preload="metadata"
-        controlsList="nodownload"
-        onContextMenu={(e) => e.preventDefault()}
-        className="max-h-[70vh] w-auto max-w-full object-contain"
-        src={src}
-        aria-label={label}
-      />
-    </div>
-  );
-}
-
-// Единый контейнер для встраиваемого видео (iframe). Соотношение 16:9.
-function VideoEmbedFrame({ src, title }: { src: string; title: string }) {
-  return (
-    <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-      <iframe
-        src={src}
-        title={title}
-        className="size-full"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowFullScreen
-      />
-    </div>
-  );
-}
 
 export default function StudentLessonPage() {
   const { accessToken } = useAuth();
@@ -161,9 +127,11 @@ export default function StudentLessonPage() {
     ? parseVideoEmbed(lesson.recordingVideoUrl)
     : null;
   // Запись ещё обрабатывается (Zoom едет) — обещаем студенту, что появится.
+  // [М-2] статус 'ready', но медиа нет (URL не подписался) — тоже «готовится»,
+  // секцию не прячем: запись по факту есть, просто временный URL не пришёл.
   const recordingPending =
     !hasRecordingMedia &&
-    (lesson?.recordingStatus === 'pending' || lesson?.recordingStatus === 'processing');
+    ['pending', 'processing', 'ready'].includes(lesson?.recordingStatus ?? '');
   // Запись не получилась (Zoom вернул ошибку) — честно говорим «недоступна».
   // Статус 'none' у проведённого занятия НЕ считаем недоступностью: Zoom ещё может
   // прислать запись (бэк ставит 'pending' на meeting.ended), поэтому секцию не показываем.
@@ -174,7 +142,10 @@ export default function StudentLessonPage() {
     lesson?.recordingStatus === 'failed';
   // Показываем секцию записи, только если есть что показать (медиа/ожидание/недоступность).
   // Если занятие ещё не проведено и записи нет — секцию не показываем (не обещаем пустоту).
-  const showRecordingSection = hasRecordingMedia || recordingPending || recordingUnavailable;
+  // [М-3] у отменённого занятия записи быть не может — секцию не показываем вовсе.
+  const showRecordingSection =
+    lesson?.status !== 'cancelled' &&
+    (hasRecordingMedia || recordingPending || recordingUnavailable);
 
   return (
     <div className="flex flex-col gap-6">
