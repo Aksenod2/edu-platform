@@ -25,3 +25,6 @@ apps/web/e2e/.auth
 .env.vps
 .env.vps.bak.*
 /deploy-config-backup/
+
+# Эфемерные worktree субагентов (харнесс) — никогда не коммитим
+.claude/worktrees/
