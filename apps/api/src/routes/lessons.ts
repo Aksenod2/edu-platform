@@ -275,8 +275,10 @@ type SessionProjection = {
 //   - teachers → [{id,name}],
 //   - streamId — контекст потока (или null вне потока),
 //   - status/date/startTime/meetingUrl — из Session (если Session нет: draft / null),
-//   - видео: предпочитаем Session.videoKey/videoUrl блочным.
-// materials/videoFileUrl ре-подписываются вызывающим (они асинхронные).
+//   - видео: учебное (videoKey/videoUrl/videos[]) — СТРОГО из блока (грузится до урока);
+//     запись Zoom-занятия — в ОТДЕЛЬНЫЕ поля recordingVideoKey/recordingVideoUrl
+//     (из Session, подтягивается после). Это разные сущности, запись не перетирает учебное.
+// materials/videoFileUrl/recordingFileUrl ре-подписываются вызывающим (они асинхронные).
 // Экспортируется для unit-тестов проекции (в частности admin-only recordingError).
 export function projectLesson(
   block: LessonBlock,
@@ -309,15 +311,23 @@ export function projectLesson(
   createdAt: Date;
   updatedAt: Date;
   teachers: { id: string; name: string }[];
+  // Запись Zoom-занятия (Session). Отдельная сущность от учебного видео урока
+  // (block.videoKey/videoUrl/videos[]): учебное грузится ДО урока, запись —
+  // подтягивается ПОСЛЕ. Аддитивно: вне потока или без записи — null.
+  recordingVideoKey: string | null;
+  recordingVideoUrl: string | null;
   // Автосбор записи/итогов Zoom (Волна 2). Аддитивно: для уроков без Session
   // или со старыми данными — null, поведение не меняется.
   recordingStatus: string | null;
   recordingError: string | null;
   summarySource: string | null;
 } {
-  // Видео: Session перекрывает блок (запись конкретного занятия важнее блочной).
-  const videoKey = session?.videoKey ?? block.videoKey;
-  const videoUrl = session?.videoUrl ?? block.videoUrl;
+  // Учебное видео урока (block): грузится ДО урока, не перетирается записью занятия.
+  const videoKey = block.videoKey;
+  const videoUrl = block.videoUrl;
+  // Запись Zoom-занятия (Session): отдельные поля, подтягивается ПОСЛЕ урока.
+  const recordingVideoKey = session?.videoKey ?? null;
+  const recordingVideoUrl = session?.videoUrl ?? null;
   const date = session?.date ?? null;
 
   return {
@@ -345,6 +355,9 @@ export function projectLesson(
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
     teachers: (block.teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+    // Запись Zoom-занятия — отдельно от учебного видео урока.
+    recordingVideoKey,
+    recordingVideoUrl,
     // Статус автозагрузки записи Zoom и источник итогов (для UI). Вне потока
     // (Session нет) — null, как и для занятий без созвона Zoom.
     recordingStatus: session?.recordingStatus ?? null,
@@ -354,19 +367,23 @@ export function projectLesson(
   };
 }
 
-// Достраивает спроецированный урок асинхронными полями (videoFileUrl + ре-подписанные
-// materials). videoKey уже выбран с приоритетом Session в projectLesson.
+// Достраивает спроецированный урок асинхронными полями (videoFileUrl +
+// recordingFileUrl + ре-подписанные materials). Учебное videoKey и запись
+// recordingVideoKey разведены в projectLesson — подписываем их раздельно.
 async function finalizeLesson(
   projected: ReturnType<typeof projectLesson>,
   block: LessonBlock,
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, unknown> & { recordingFileUrl: string | null }> {
+  // Учебное видео урока (block.videoKey).
   const videoFileUrl = await videoFileUrlFor(projected.videoKey);
+  // Запись Zoom-занятия (Session.videoKey) — отдельная подпись.
+  const recordingFileUrl = await videoFileUrlFor(projected.recordingVideoKey);
   const materials = await regenerateLessonMaterialUrls(
     (block.materials as unknown as LessonMaterial[]) || [],
   );
   // Аддитивно: список из нескольких видео урока (одиночные videoUrl/videoFileUrl сохранены).
   const videos = await projectVideos(block.videos);
-  return { ...projected, videoFileUrl, materials, videos };
+  return { ...projected, videoFileUrl, recordingFileUrl, materials, videos };
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
