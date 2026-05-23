@@ -483,14 +483,15 @@ function DeleteButton({
       <AlertDialogTrigger asChild>
         <Button variant="destructive" size="sm" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Удалить
+          Снять с расписания
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
+          <AlertDialogTitle>Снять с расписания?</AlertDialogTitle>
           <AlertDialogDescription>
-            Урок будет удалён. Действие необратимо.
+            Снять занятие с расписания этого потока? Урок-шаблон и его материалы
+            сохранятся.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -499,7 +500,7 @@ function DeleteButton({
             variant="destructive"
             onClick={handleConfirm}
           >
-            Удалить
+            Снять с расписания
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

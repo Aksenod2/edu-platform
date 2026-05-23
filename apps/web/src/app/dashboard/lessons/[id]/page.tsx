@@ -120,12 +120,14 @@ export default function StudentLessonPage() {
   const recordingPending =
     !hasRecordingMedia &&
     (lesson?.recordingStatus === 'pending' || lesson?.recordingStatus === 'processing');
-  // Проведённое занятие без записи и без ожидания — нейтрально «недоступна».
+  // Запись не получилась (Zoom вернул ошибку) — честно говорим «недоступна».
+  // Статус 'none' у проведённого занятия НЕ считаем недоступностью: Zoom ещё может
+  // прислать запись (бэк ставит 'pending' на meeting.ended), поэтому секцию не показываем.
   const recordingUnavailable =
     !hasRecordingMedia &&
     !recordingPending &&
     lesson?.status === 'done' &&
-    (lesson?.recordingStatus === 'failed' || lesson?.recordingStatus === 'none');
+    lesson?.recordingStatus === 'failed';
   // Показываем секцию записи, только если есть что показать (медиа/ожидание/недоступность).
   // Если занятие ещё не проведено и записи нет — секцию не показываем (не обещаем пустоту).
   const showRecordingSection = hasRecordingMedia || recordingPending || recordingUnavailable;
