@@ -160,22 +160,28 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
           'utf8',
         );
 
+    // Единый нейтральный ответ для всех случаев «не можем принять по этому
+    // webhookId» (нет интеграции / не настроена / ключ шифрования отсутствует).
+    // Раньше различимые 404 «не найден» и 400 «не настроен» давали оракул для
+    // перебора webhookId — теперь снаружи случаи неразличимы.
+    const notAcceptable = () => reply.status(404).send({ error: 'Вебхук не найден' });
+
     // Интеграция по webhookId.
     const integration = await getZoomIntegrationByWebhookId(webhookId);
     if (!integration) {
-      return reply.status(404).send({ error: 'Вебхук не найден' });
+      return notAcceptable();
     }
 
     // Нечем проверить подпись — не обрабатываем (ключ шифрования / токен отсутствуют).
     if (!integration.secretTokenEnc || !isEncryptionKeySet()) {
-      return reply.status(400).send({ error: 'Вебхук Zoom не настроен' });
+      return notAcceptable();
     }
 
     let secretToken: string;
     try {
       secretToken = decryptSecret(integration.secretTokenEnc);
     } catch {
-      return reply.status(400).send({ error: 'Вебхук Zoom не настроен' });
+      return notAcceptable();
     }
 
     const body = parseJsonBody(raw);

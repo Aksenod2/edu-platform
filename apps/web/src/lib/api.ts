@@ -1214,6 +1214,195 @@ export async function debitWallet(
   });
 }
 
+// Payments & Top-up requests API (эпик «Оплата и баланс», Фаза 1)
+//
+// Студент пополняет баланс не сам: переводит деньги по реквизитам (PaymentSettings)
+// и присылает скриншот → создаётся заявка (TopUpRequest). Админ одобряет (зачисляет
+// реальную сумму на баланс через кошелёк) или отклоняет. Суммы — в КОПЕЙКАХ.
+// Скрин и QR-код — приватные: бэк отдаёт подписанные временные URL.
+
+export type TopUpRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export const TOPUP_STATUS_LABELS: Record<TopUpRequestStatus, string> = {
+  pending: 'На рассмотрении',
+  approved: 'Одобрена',
+  rejected: 'Отклонена',
+};
+
+export interface TopUpRequest {
+  id: string;
+  status: TopUpRequestStatus;
+  // Заявленная студентом сумма (копейки) — может отсутствовать.
+  claimedAmountKopecks: number | null;
+  // Фактически зачислено админом при одобрении (копейки) — null до одобрения.
+  creditedAmountKopecks?: number | null;
+  note?: string | null;
+  // Подписанный временный URL скрина оплаты (приватный файл) — есть в списках.
+  screenshotUrl?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  // Автор заявки — присутствует только в админском списке.
+  user?: { id: string; name: string; email: string };
+}
+
+export interface PaymentSettings {
+  transferUrl: string | null;
+  transferPhone: string | null;
+  instructions: string | null;
+  // Подписанный временный URL QR-кода (или null).
+  qrUrl: string | null;
+}
+
+// Создать заявку на пополнение (multipart: скрин оплаты + опционально сумма/коммент).
+// По образцу uploadMyAvatar: FormData с файлом, ручная обработка ответа.
+export async function createTopUpRequest(
+  accessToken: string,
+  data: { file: File; claimedAmountKopecks?: number; note?: string },
+): Promise<Pick<TopUpRequest, 'id' | 'status' | 'claimedAmountKopecks' | 'createdAt'>> {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  if (data.claimedAmountKopecks !== undefined) {
+    formData.append('claimedAmountKopecks', String(data.claimedAmountKopecks));
+  }
+  if (data.note) formData.append('note', data.note);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/topup-requests`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let result: Record<string, unknown>;
+  try {
+    result = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка отправки заявки (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof result.error === 'string' ? result.error : null;
+    throw new Error(serverMsg || HTTP_STATUS_MESSAGES[res.status] || 'Ошибка отправки заявки');
+  }
+  return result as Pick<TopUpRequest, 'id' | 'status' | 'claimedAmountKopecks' | 'createdAt'>;
+}
+
+// Свои заявки на пополнение (для студента).
+export async function getMyTopUpRequests(
+  accessToken: string,
+): Promise<{ requests: TopUpRequest[] }> {
+  return request('/topup-requests/me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Список заявок для модерации (admin). status: pending|approved|rejected|all (default pending).
+export async function getAdminTopUpRequests(
+  accessToken: string,
+  status?: TopUpRequestStatus | 'all',
+): Promise<{ requests: TopUpRequest[] }> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request(`/admin/topup-requests${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Одобрить заявку и зачислить сумму на баланс студента (admin). Идемпотентно на бэке.
+export async function approveTopUp(
+  accessToken: string,
+  id: string,
+  amountKopecks: number,
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction; request: TopUpRequest }> {
+  return request(`/admin/topup-requests/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ amountKopecks }),
+  });
+}
+
+// Отклонить заявку (admin), опционально с комментарием-резолюцией.
+export async function rejectTopUp(
+  accessToken: string,
+  id: string,
+  note?: string,
+): Promise<{ request: TopUpRequest }> {
+  return request(`/admin/topup-requests/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ note }),
+  });
+}
+
+// Реквизиты для перевода (любой аутентифицированный). Без секретов.
+export async function getPaymentSettings(
+  accessToken: string,
+): Promise<PaymentSettings> {
+  return request('/payment-settings', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Обновить реквизиты для перевода (admin).
+export async function updatePaymentSettings(
+  accessToken: string,
+  payload: { transferUrl?: string; transferPhone?: string; instructions?: string },
+): Promise<PaymentSettings> {
+  return request('/admin/payment-settings', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+// Загрузить QR-код реквизитов (admin, multipart image/*). Возвращает подписанный qrUrl.
+export async function uploadPaymentQr(
+  accessToken: string,
+  file: File,
+): Promise<{ qrUrl: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/admin/payment-settings/qr`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(translateNetworkError(err));
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(HTTP_STATUS_MESSAGES[res.status] || `Ошибка загрузки файла (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const serverMsg = typeof data.error === 'string' ? data.error : null;
+    throw new Error(serverMsg || 'Ошибка загрузки файла');
+  }
+  return data as { qrUrl: string };
+}
+
+// Убрать QR-код реквизитов (admin).
+export async function deletePaymentQr(
+  accessToken: string,
+): Promise<{ qrUrl: null }> {
+  return request('/admin/payment-settings/qr', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Profiles API
 
 export interface StudentProfile {

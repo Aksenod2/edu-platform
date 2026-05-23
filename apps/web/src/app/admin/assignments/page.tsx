@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { HintCallout } from '@/components/hint-callout';
 
 // Задание со счётчиками сдач: сколько всего и сколько ждёт проверки.
 type AssignmentWithCounts = Assignment & {
@@ -111,6 +112,16 @@ export default function AssignmentsHubPage() {
               : `Всего заданий: ${totalAssignments}${totalPending > 0 ? ` · на проверке: ${totalPending}` : ''}`}
           </p>
         </div>
+      </div>
+
+      <div className="my-4">
+        <HintCallout
+          storageKey="eduhint:assignments-hub"
+          title="Сюда стекаются работы на проверку"
+        >
+          Список ДЗ по всем потокам со счётчиком сдач. Бейдж «На проверке» —
+          сколько работ ждёт вас. Нажмите «Проверить», чтобы открыть сдачи.
+        </HintCallout>
       </div>
 
       {error && (

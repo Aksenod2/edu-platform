@@ -16,6 +16,7 @@ import { lessonRoutes } from './routes/lessons.js';
 import { programRoutes } from './routes/programs.js';
 import { assignmentRoutes } from './routes/assignments.js';
 import { walletRoutes } from './routes/wallet.js';
+import { paymentRoutes } from './routes/payments.js';
 import { profileRoutes } from './routes/profiles.js';
 import { threadRoutes } from './routes/threads.js';
 import { conversationRoutes } from './routes/conversations.js';
@@ -28,7 +29,19 @@ import { integrationRoutes } from './routes/integrations.js';
 import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
 import { startCronJobs } from './lib/cron.js';
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    // Не логировать чувствительные заголовки запроса/ответа: токены авторизации,
+    // подпись вебхука Zoom и cookie. Fastify по умолчанию пишет req.headers в логи
+    // (serializers req/res) — redact заменяет эти поля на [Redacted].
+    redact: [
+      'req.headers.authorization',
+      'req.headers["x-zm-signature"]',
+      'req.headers.cookie',
+      'res.headers["set-cookie"]',
+    ],
+  },
+});
 
 await app.register(cors, {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -60,6 +73,7 @@ await app.register(lessonRoutes);
 await app.register(programRoutes);
 await app.register(assignmentRoutes);
 await app.register(walletRoutes);
+await app.register(paymentRoutes);
 await app.register(profileRoutes);
 await app.register(threadRoutes);
 await app.register(conversationRoutes);
@@ -96,5 +110,5 @@ try {
 
 // File storage uses PostgreSQL - no bucket init needed
 
-// Start cron jobs: deadline reminders & notification cleanup
+// Start cron jobs: deadline reminders, notification cleanup & Zoom webhook cleanup
 startCronJobs();

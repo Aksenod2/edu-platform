@@ -13,6 +13,18 @@ import { uploadStream } from './s3.js';
 // сбор AI-резюме. Вызывается роутом вебхука fire-and-forget — функции сами
 // обновляют статусы Session и НЕ бросают наружу (ошибку фиксируем в recordingError).
 
+// Ошибка с УЖЕ обобщённым (безопасным для показа админу) текстом. Только такие
+// сообщения попадают в Session.recordingError. Любая прочая ошибка (системная
+// fetch/DNS/S3 — её message может содержать сырой URL/хост/тело ответа) при записи
+// в recordingError заменяется на нейтральный текст, чтобы не светить внутренности.
+class SafeRecordingError extends Error {}
+
+// Текст для recordingError: для «безопасных» ошибок — как есть, иначе обобщённо.
+function safeRecordingErrorMessage(err: unknown): string {
+  if (err instanceof SafeRecordingError) return err.message;
+  return 'Не удалось обработать запись Zoom';
+}
+
 // Выбирает основной видеофайл записи: предпочитаем «экран + спикер» (MP4),
 // затем любой MP4, затем любой файл с download_url. Возвращает null, если
 // подходящего файла нет.
@@ -66,7 +78,7 @@ async function fetchRecordingStream(
   accessToken: string,
 ): Promise<ReadableStream> {
   if (!isAllowedZoomDownloadUrl(downloadUrl)) {
-    throw new Error('Недопустимый хост ссылки на запись Zoom');
+    throw new SafeRecordingError('Недопустимый хост ссылки на запись Zoom');
   }
   // Bearer уходит только на проверенный хост Zoom (первый хоп). При кросс-доменном
   // редиректе на хранилище Zoom fetch по спецификации срезает Authorization —
@@ -75,7 +87,8 @@ async function fetchRecordingStream(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok || !res.body) {
-    throw new Error(`Не удалось скачать запись Zoom (HTTP ${res.status})`);
+    // Только статус, без URL/тела ответа Zoom.
+    throw new SafeRecordingError(`Не удалось скачать запись Zoom (HTTP ${res.status})`);
   }
   return res.body as unknown as ReadableStream;
 }
@@ -106,10 +119,23 @@ export async function processRecordingForSession(params: {
     return;
   }
 
-  await prisma.session.update({
-    where: { id: sessionId },
+  // Атомарное «застолбление» обработки (анти-дабл-даунлоад). Две параллельные
+  // доставки recording.completed могли обе пройти проверку videoKey===null и
+  // оба скачать запись + залить в S3. Через updateMany с условием в WHERE только
+  // ОДНА доставка переведёт Session в 'processing' (count===1), остальные получат
+  // count===0 (кто-то уже качает/скачал) и выйдут без повторного скачивания.
+  const claimed = await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      videoKey: null,
+      OR: [{ recordingStatus: null }, { recordingStatus: { notIn: ['processing', 'ready'] } }],
+    },
     data: { recordingStatus: 'processing', recordingError: null },
   });
+  if (claimed.count === 0) {
+    // Другая доставка уже взяла запись в работу (или успела скачать) — выходим.
+    return;
+  }
 
   try {
     let files = payloadFiles ?? [];
@@ -122,7 +148,7 @@ export async function processRecordingForSession(params: {
     }
 
     if (!main || !main.download_url) {
-      throw new Error('В записи Zoom нет подходящего видеофайла (MP4)');
+      throw new SafeRecordingError('В записи Zoom нет подходящего видеофайла (MP4)');
     }
 
     const accessToken = await getZoomAccessToken(teacherUserId);
@@ -136,10 +162,10 @@ export async function processRecordingForSession(params: {
       data: { videoKey: uploaded.key, recordingStatus: 'ready', recordingError: null },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+    // В recordingError пишем ТОЛЬКО обобщённый текст (без сырых URL/тел/хостов).
     await prisma.session.update({
       where: { id: sessionId },
-      data: { recordingStatus: 'failed', recordingError: message },
+      data: { recordingStatus: 'failed', recordingError: safeRecordingErrorMessage(err) },
     });
     throw err;
   }

@@ -1,16 +1,30 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Wallet } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Loader2, Wallet, ExternalLink, Phone, Upload, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
   getWallet,
+  getPaymentSettings,
+  getMyTopUpRequests,
+  createTopUpRequest,
   formatKopecks,
+  TOPUP_STATUS_LABELS,
   type WalletTransaction,
+  type PaymentSettings,
+  type TopUpRequest,
+  type TopUpRequestStatus,
 } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -20,6 +34,18 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+// Бейдж статуса заявки: одобрена — нейтральный, отклонена — destructive, ожидание — outline.
+const STATUS_VARIANT: Record<
+  TopUpRequestStatus,
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
+  pending: 'outline',
+  approved: 'default',
+  rejected: 'destructive',
+};
+
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
 export default function StudentBalancePage() {
   const { user, accessToken } = useAuth();
 
@@ -27,6 +53,21 @@ export default function StudentBalancePage() {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [settings, setSettings] = useState<PaymentSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+
+  const [requests, setRequests] = useState<TopUpRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState('');
+
+  // Форма «Я оплатил».
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [amountRubles, setAmountRubles] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchWallet = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -43,15 +84,118 @@ export default function StudentBalancePage() {
     }
   }, [accessToken, user]);
 
+  const fetchSettings = useCallback(async () => {
+    if (!accessToken) return;
+    setSettingsLoading(true);
+    try {
+      setSettings(await getPaymentSettings(accessToken));
+    } catch {
+      // Реквизиты — вспомогательный блок: ошибку не показываем «красным»,
+      // отрисуем мягкую подсказку «реквизиты пока не указаны».
+      setSettings(null);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [accessToken]);
+
+  const fetchRequests = useCallback(async () => {
+    if (!accessToken) return;
+    setRequestsLoading(true);
+    try {
+      const data = await getMyTopUpRequests(accessToken);
+      setRequests(data.requests);
+      setRequestsError('');
+    } catch (err) {
+      setRequestsError(err instanceof Error ? err.message : 'Ошибка загрузки заявок');
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, [accessToken]);
+
   useEffect(() => {
     fetchWallet();
-  }, [fetchWallet]);
+    fetchSettings();
+    fetchRequests();
+  }, [fetchWallet, fetchSettings, fetchRequests]);
+
+  // Локальное превью выбранного скрина; отзываем objectURL при смене файла.
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const hasPending = requests.some((r) => r.status === 'pending');
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    if (!ACCEPTED_IMAGE_TYPES.includes(selected.type)) {
+      toast.error('Поддерживаются только изображения PNG, JPEG или WebP');
+      e.target.value = '';
+      return;
+    }
+    setFile(selected);
+  }
+
+  function clearFile() {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!accessToken) return;
+    if (!file) {
+      toast.error('Прикрепите скриншот оплаты');
+      return;
+    }
+
+    // Сумма опциональна; если указана — переводим рубли в копейки целым числом.
+    let claimedAmountKopecks: number | undefined;
+    if (amountRubles.trim()) {
+      const rubles = Number(amountRubles.replace(',', '.'));
+      if (!Number.isFinite(rubles) || rubles <= 0) {
+        toast.error('Укажите корректную сумму перевода');
+        return;
+      }
+      claimedAmountKopecks = Math.round(rubles * 100);
+    }
+
+    setSubmitting(true);
+    try {
+      await createTopUpRequest(accessToken, {
+        file,
+        claimedAmountKopecks,
+        note: note.trim() || undefined,
+      });
+      toast.success('Заявка отправлена. Преподаватель проверит оплату и зачислит средства.');
+      clearFile();
+      setAmountRubles('');
+      setNote('');
+      fetchRequests();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Не удалось отправить заявку';
+      // Анти-спам: сервер отвечает 409, если уже есть заявка на рассмотрении.
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const hasSettings =
+    settings &&
+    (settings.qrUrl || settings.transferUrl || settings.transferPhone || settings.instructions);
 
   return (
     <>
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Баланс</h1>
-        <p className="text-sm text-muted-foreground">Ваш баланс и история операций</p>
+        <p className="text-sm text-muted-foreground">Ваш баланс, пополнение и история операций</p>
       </div>
 
       {error && (
@@ -81,12 +225,243 @@ export default function StudentBalancePage() {
             </CardContent>
           </Card>
 
+          {/* Как пополнить + форма «Я оплатил» */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Реквизиты */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Как пополнить</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {settingsLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : !hasSettings ? (
+                  <p className="text-sm text-muted-foreground">
+                    Реквизиты пока не указаны. Обратитесь к преподавателю.
+                  </p>
+                ) : (
+                  <>
+                    {settings?.instructions && (
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {settings.instructions}
+                      </p>
+                    )}
+                    {settings?.qrUrl && (
+                      // img, а не next/image: src — подписанный временный URL из S3
+                      <img
+                        src={settings.qrUrl}
+                        alt="QR-код для перевода"
+                        className="size-44 self-start rounded-lg border bg-background object-contain p-2"
+                      />
+                    )}
+                    <div className="flex flex-col gap-2">
+                      {settings?.transferUrl && (
+                        <Button asChild className="w-full sm:w-auto">
+                          <a href={settings.transferUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink />
+                            Перевести
+                          </a>
+                        </Button>
+                      )}
+                      {settings?.transferPhone && (
+                        <div className="flex items-center gap-2 text-sm text-foreground">
+                          <Phone className="size-4 text-muted-foreground" />
+                          <span className="tabular-nums">{settings.transferPhone}</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Форма «Я оплатил» */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Я оплатил</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {hasPending && (
+                  <Alert className="mb-4">
+                    <AlertDescription>
+                      У вас уже есть заявка на рассмотрении. Дождитесь её обработки, прежде чем
+                      отправлять новую.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="screenshot">
+                      Скриншот оплаты <span className="text-destructive">*</span>
+                    </Label>
+                    {previewUrl ? (
+                      <div className="relative w-fit">
+                        {/* img, а не next/image: src — локальный objectURL превью */}
+                        <img
+                          src={previewUrl}
+                          alt="Превью скриншота"
+                          className="max-h-48 rounded-lg border object-contain"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="absolute right-2 top-2 size-7"
+                          onClick={clearFile}
+                          aria-label="Убрать скриншот"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full justify-start"
+                      >
+                        <Upload />
+                        Выбрать изображение
+                      </Button>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      id="screenshot"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <p className="text-xs text-muted-foreground">PNG, JPEG или WebP</p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="amount">Сумма перевода, ₽</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={amountRubles}
+                      onChange={(e) => setAmountRubles(e.target.value)}
+                      placeholder="Например, 5000"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Необязательно. Помогает преподавателю быстрее сверить оплату.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="note">Комментарий</Label>
+                    <Textarea
+                      id="note"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Необязательно"
+                      rows={2}
+                    />
+                  </div>
+
+                  <Button type="submit" disabled={submitting || !file || hasPending}>
+                    {submitting && <Loader2 className="animate-spin" />}
+                    {submitting ? 'Отправка...' : 'Отправить заявку'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Мои заявки на пополнение */}
+          <section>
+            <h2 className="mb-3 text-xl font-bold tracking-tight text-foreground">Мои заявки</h2>
+            {requestsError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{requestsError}</AlertDescription>
+              </Alert>
+            ) : requestsLoading ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : requests.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Заявок пока нет.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {requests.map((req) => (
+                  <Card key={req.id}>
+                    <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={STATUS_VARIANT[req.status]}>
+                            {TOPUP_STATUS_LABELS[req.status]}
+                          </Badge>
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {new Date(req.createdAt).toLocaleString('ru-RU')}
+                          </span>
+                        </div>
+                        <div className="text-sm text-foreground">
+                          {req.claimedAmountKopecks != null && (
+                            <span>Заявлено: {formatKopecks(req.claimedAmountKopecks)}</span>
+                          )}
+                          {req.status === 'approved' && req.creditedAmountKopecks != null && (
+                            <span className="ml-2 font-medium">
+                              Зачислено: {formatKopecks(req.creditedAmountKopecks)}
+                            </span>
+                          )}
+                          {req.claimedAmountKopecks == null && req.status !== 'approved' && (
+                            <span className="text-muted-foreground">Сумма не указана</span>
+                          )}
+                        </div>
+                        {req.status === 'rejected' && req.note && (
+                          <p className="text-sm text-destructive">Причина: {req.note}</p>
+                        )}
+                      </div>
+                      {req.screenshotUrl && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <button
+                              type="button"
+                              className="shrink-0 self-start overflow-hidden rounded-md border transition-opacity hover:opacity-80"
+                              aria-label="Открыть скриншот"
+                            >
+                              {/* img, а не next/image: src — подписанный временный URL из S3 */}
+                              <img
+                                src={req.screenshotUrl}
+                                alt="Скриншот оплаты"
+                                className="size-16 object-cover"
+                              />
+                            </button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-3xl">
+                            <DialogTitle>Скриншот оплаты</DialogTitle>
+                            {/* img, а не next/image: src — подписанный временный URL из S3 */}
+                            <img
+                              src={req.screenshotUrl}
+                              alt="Скриншот оплаты"
+                              className="max-h-[75vh] w-full rounded-lg object-contain"
+                            />
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
           {/* История операций */}
           <section>
             <h2 className="mb-3 text-xl font-bold tracking-tight text-foreground">
               История операций
             </h2>
-            {transactions.length === 0 ? (
+            {error ? (
+              <p className="text-sm text-destructive">Не удалось загрузить историю операций.</p>
+            ) : transactions.length === 0 ? (
               <p className="text-sm text-muted-foreground">Операций пока нет.</p>
             ) : (
               <div className="rounded-lg border">
@@ -114,7 +489,8 @@ export default function StudentBalancePage() {
                               isTopup ? 'text-foreground' : 'text-destructive'
                             }`}
                           >
-                            {isTopup ? '+' : '−'}{formatKopecks(tx.amount)}
+                            {isTopup ? '+' : '−'}
+                            {formatKopecks(tx.amount)}
                           </TableCell>
                           <TableCell className="text-muted-foreground whitespace-pre-wrap">
                             {tx.note || '—'}
