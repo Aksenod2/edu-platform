@@ -673,9 +673,11 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Студент может только отправить задание (submitted)' });
     }
 
-    // Студент может отправить из assigned или needs_revision (пересдача)
-    if (!isAdmin && sa.status !== 'assigned' && sa.status !== 'needs_revision') {
-      return reply.status(400).send({ error: 'Задание уже отправлено' });
+    // Студент может отправить/переотправить, пока работа не взята в проверку:
+    // из assigned, needs_revision (пересдача) и submitted (правка/дослать).
+    // Из reviewed запрещено — после проверки сдача заморожена.
+    if (!isAdmin && sa.status !== 'assigned' && sa.status !== 'needs_revision' && sa.status !== 'submitted') {
+      return reply.status(400).send({ error: 'Задание уже проверено и не может быть изменено' });
     }
 
     // Админ: reviewed/needs_revision только из submitted
@@ -696,6 +698,10 @@ export async function assignmentRoutes(app: FastifyInstance) {
         data.fileName = fileName;
         data.fileSize = uploaded.size;
       }
+    }
+    // На доработку: причина обязательна (баллов нет — только Принято/На доработку).
+    if (status === 'needs_revision' && (!reviewText || !reviewText.trim())) {
+      return reply.status(400).send({ error: 'Укажите причину доработки' });
     }
     // Разбор работы: вердикт (reviewed/needs_revision) + текст разбора + автор.
     // Автор — имя проверяющего админа (в будущем может быть «Claude»).
