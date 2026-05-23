@@ -121,10 +121,10 @@ function NotificationItem({
         type="button"
         onClick={onSelect}
         className={cn(
-          'flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left transition-colors',
-          notification.isRead
-            ? 'hover:bg-accent'
-            : 'bg-muted hover:bg-muted-foreground/15',
+          // Карточка кликабельна → курсор-указатель и hover-подсветка в обеих темах.
+          'flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent',
+          // Непрочитанные дополнительно выделены приглушённым фоном.
+          !notification.isRead && 'bg-muted',
         )}
       >
         <span

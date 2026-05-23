@@ -71,7 +71,7 @@ export function ThreadConversation({
   studentId: string;
   onReplied?: () => void;
 }) {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
 
   const [studentName, setStudentName] = useState('');
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
@@ -306,6 +306,7 @@ export function ThreadConversation({
                   ) : (
                     <MessageBubble
                       entry={entry}
+                      currentUserId={user?.id}
                       showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
                     />
                   )}
@@ -432,8 +433,18 @@ export function ThreadConversation({
   );
 }
 
-function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: boolean }) {
-  const isAdmin = entry.author.role === 'admin';
+function MessageBubble({
+  entry,
+  currentUserId,
+  showAuthor,
+}: {
+  entry: ThreadEntry;
+  currentUserId?: string;
+  showAuthor: boolean;
+}) {
+  // Своё сообщение — справа. Сравниваем автора с текущим пользователем; пока user
+  // не загружен (currentUserId пустой), используем фолбэк по роли admin.
+  const isOwn = currentUserId ? entry.author.id === currentUserId : entry.author.role === 'admin';
   const isNote = entry.type === 'note';
   const date = new Date(entry.createdAt);
 
@@ -442,7 +453,7 @@ function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: 
       className={cn(
         'flex max-w-[85%] items-end gap-2',
         showAuthor ? 'mt-4' : 'mt-1',
-        isAdmin ? 'ml-auto flex-row-reverse' : 'mr-auto flex-row',
+        isOwn ? 'ml-auto flex-row-reverse' : 'mr-auto flex-row',
       )}
     >
       {showAuthor ? (
@@ -458,7 +469,7 @@ function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: 
           <div
             className={cn(
               'mb-1 flex items-center gap-2 text-xs text-muted-foreground',
-              isAdmin ? 'justify-end pr-1' : 'justify-start pl-1',
+              isOwn ? 'justify-end pr-1' : 'justify-start pl-1',
             )}
           >
             <span>{entry.author.name}</span>
@@ -470,10 +481,10 @@ function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: 
           className={cn(
             'rounded-lg border px-4 py-3 text-sm',
             isNote
-              ? 'border-dashed bg-muted/40'
-              : isAdmin
+              ? 'border-dashed bg-muted/40 text-foreground'
+              : isOwn
                 ? 'bg-primary text-primary-foreground'
-                : 'bg-muted',
+                : 'bg-muted text-foreground',
           )}
         >
           <div className="break-words">
@@ -520,11 +531,11 @@ function MessageBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: 
           <div
             className={cn(
               'mt-1 flex items-center gap-1 text-[10px] opacity-70',
-              isAdmin ? 'justify-start' : 'justify-end',
+              isOwn ? 'justify-end' : 'justify-start',
             )}
           >
             <span>{date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
-            {isAdmin &&
+            {isOwn &&
               (entry.readAt ? <CheckCheck className="size-3" /> : <Check className="size-3" />)}
           </div>
         </div>
