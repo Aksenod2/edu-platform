@@ -27,24 +27,24 @@ import {
   type CalendarLesson,
   type CalendarUpdateData,
 } from '@/components/schedule-calendar';
-import { TodayView } from '@/components/schedule/today-view';
 import { WeekView } from '@/components/schedule/week-view';
 import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
 import type { ScheduleLesson } from '@/components/schedule/utils';
 
 const ALL_STREAMS = '__all__';
-type ViewMode = 'today' | 'week' | 'month';
+type ViewMode = 'week' | 'month';
 
 /**
  * Единое расписание администратора: обзор занятий всех потоков с переключателем
- * Сегодня / Неделя / Месяц и планированием занятий.
+ * Неделя / Месяц и планированием занятий. (Вид «Сегодня» убран как неинформативный —
+ * неделя и так подсвечивает сегодняшний день и показывает ближайшие занятия.)
  */
 export default function AdminSchedulePage() {
   const { user, accessToken } = useAuth();
 
   const [streams, setStreams] = useState<Stream[]>([]);
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
-  const [view, setView] = useState<ViewMode>('today');
+  const [view, setView] = useState<ViewMode>('week');
   const [lessons, setLessons] = useState<ScheduleLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,7 +169,6 @@ export default function AdminSchedulePage() {
 
       <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
         <TabsList>
-          <TabsTrigger value="today">Сегодня</TabsTrigger>
           <TabsTrigger value="week">Неделя</TabsTrigger>
           <TabsTrigger value="month">Месяц</TabsTrigger>
         </TabsList>
@@ -189,8 +188,6 @@ export default function AdminSchedulePage() {
         <p className="text-sm text-muted-foreground">
           Активных потоков нет. Создайте поток, чтобы планировать занятия.
         </p>
-      ) : view === 'today' ? (
-        <TodayView lessons={visibleLessons} onMarkDone={handleMarkDone} />
       ) : view === 'week' ? (
         <WeekView lessons={visibleLessons} onMarkDone={handleMarkDone} />
       ) : (
