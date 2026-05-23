@@ -181,14 +181,14 @@ export default function StudentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Ученики</h1>
           <p className="text-sm text-muted-foreground">Управление учениками</p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full shrink-0 sm:w-auto">
               <Plus />
               Создать ученика
             </Button>
@@ -404,7 +404,7 @@ export default function StudentsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (studentToDelete) handleDelete(studentToDelete); }}
             >
               Удалить
@@ -427,7 +427,7 @@ export default function StudentsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (studentToReset) handleResetPassword(studentToReset); }}
             >
               Сбросить

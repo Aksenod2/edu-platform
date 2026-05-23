@@ -101,17 +101,21 @@ export default function ProgramDetailPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         {backButton}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{program.name}</h1>
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-2xl font-bold tracking-tight break-words">{program.name}</h1>
               <Badge variant="secondary">{PROGRAM_TYPE_LABELS[program.type]}</Badge>
             </div>
             {program.whatYouLearn && (
               <p className="text-sm text-muted-foreground">{program.whatYouLearn}</p>
             )}
           </div>
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
+          <Button
+            variant="outline"
+            className="w-full shrink-0 sm:w-auto"
+            onClick={() => setEditOpen(true)}
+          >
             <SquarePen />
             Редактировать
           </Button>

@@ -97,12 +97,12 @@ export default function ProgramsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Программы</h1>
           <p className="text-sm text-muted-foreground">Учебные планы и их типы</p>
         </div>
-        <Button onClick={openCreate}>
+        <Button className="w-full shrink-0 sm:w-auto" onClick={openCreate}>
           <Plus />
           Создать программу
         </Button>
@@ -158,7 +158,7 @@ export default function ProgramsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={handleDelete}
             >
               Удалить

@@ -524,7 +524,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (lessonToUnschedule) handleUnschedule(lessonToUnschedule); }}
             >
               Снять с потока
@@ -682,7 +682,7 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (assignmentToDelete) handleDelete(assignmentToDelete); }}
             >
               Снять задание
@@ -971,9 +971,9 @@ function StudentsTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Ученики потока</h2>
-        <Button onClick={openAddDialog}>
+        <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
           <UserPlus />
           Добавить учеников
         </Button>
@@ -1139,7 +1139,7 @@ function StudentsTab({
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (studentToRemove) handleRemove(studentToRemove); }}
             >
               Убрать
