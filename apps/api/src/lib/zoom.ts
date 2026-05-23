@@ -2,13 +2,13 @@ import { prisma } from '@platform/db';
 import { decryptSecret } from './crypto.js';
 
 // Интеграция с Zoom через Server-to-Server OAuth.
-// Конфиг хранится в синглтоне ZoomIntegration (id 'default').
+// Конфиг хранится пер-преподаватель: одна строка ZoomIntegration на userId.
 
 const ZOOM_OAUTH_URL = 'https://zoom.us/oauth/token';
 
-// Возвращает синглтон настроек Zoom (или null, если ещё не создан).
-export function getZoomIntegration() {
-  return prisma.zoomIntegration.findUnique({ where: { id: 'default' } });
+// Возвращает настройки Zoom конкретного пользователя (или null, если ещё не созданы).
+export function getZoomIntegration(userId: string) {
+  return prisma.zoomIntegration.findUnique({ where: { userId } });
 }
 
 interface ZoomTokenResponse {
@@ -23,8 +23,8 @@ interface ZoomTokenResponse {
 // с заголовком Authorization: Basic base64(clientId:clientSecret).
 // Секрет хранится зашифрованным — расшифровываем перед использованием.
 // Бросает Error при отсутствии/неполноте конфига или ошибке Zoom.
-export async function getZoomAccessToken(): Promise<string> {
-  const integration = await getZoomIntegration();
+export async function getZoomAccessToken(userId: string): Promise<string> {
+  const integration = await getZoomIntegration(userId);
   if (!integration) {
     throw new Error('Интеграция Zoom не настроена');
   }

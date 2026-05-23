@@ -53,13 +53,13 @@ export async function integrationRoutes(app: FastifyInstance) {
   // Все эндпоинты раздела — только для администраторов.
   app.addHook('preHandler', requireRole('admin'));
 
-  // GET /admin/integrations/zoom — текущие настройки (без секрета).
-  app.get('/admin/integrations/zoom', async () => {
-    const integration = await getZoomIntegration();
+  // GET /admin/integrations/zoom — настройки текущего пользователя (без секрета).
+  app.get('/admin/integrations/zoom', async (request) => {
+    const integration = await getZoomIntegration(request.user!.userId);
     return toPublic(integration);
   });
 
-  // PUT /admin/integrations/zoom — сохранить настройки (upsert синглтона).
+  // PUT /admin/integrations/zoom — сохранить настройки текущего пользователя (upsert по userId).
   app.put('/admin/integrations/zoom', async (request, reply) => {
     const body = (request.body ?? {}) as {
       enabled?: boolean;
@@ -99,11 +99,12 @@ export async function integrationRoutes(app: FastifyInstance) {
       }
     }
 
+    const userId = request.user!.userId;
     const integration = await prisma.zoomIntegration.upsert({
-      where: { id: 'default' },
+      where: { userId },
       update: data,
       create: {
-        id: 'default',
+        userId,
         enabled: data.enabled ?? false,
         autoCreateMeeting: data.autoCreateMeeting ?? false,
         accountId: data.accountId ?? null,
@@ -117,7 +118,8 @@ export async function integrationRoutes(app: FastifyInstance) {
 
   // POST /admin/integrations/zoom/test — проверка соединения с Zoom.
   // Любые ошибки конфигурации/ключа/Zoom -> ok:false + понятное message (НЕ 500).
-  app.post('/admin/integrations/zoom/test', async () => {
+  app.post('/admin/integrations/zoom/test', async (request) => {
+    const userId = request.user!.userId;
     let ok = false;
     let message = '';
 
@@ -125,7 +127,7 @@ export async function integrationRoutes(app: FastifyInstance) {
       if (!isEncryptionKeySet()) {
         message = 'Не настроен ключ шифрования APP_ENCRYPTION_KEY на сервере';
       } else {
-        const token = await getZoomAccessToken();
+        const token = await getZoomAccessToken(userId);
         const res = await fetch('https://api.zoom.us/v2/users/me', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -147,10 +149,10 @@ export async function integrationRoutes(app: FastifyInstance) {
       message = err instanceof Error ? err.message : 'Не удалось проверить соединение с Zoom';
     }
 
-    // Фиксируем результат проверки в синглтоне (если он существует).
+    // Фиксируем результат проверки в конфиге пользователя (если он существует).
     try {
       await prisma.zoomIntegration.update({
-        where: { id: 'default' },
+        where: { userId },
         data: { lastTestedAt: new Date(), lastTestOk: ok },
       });
     } catch {

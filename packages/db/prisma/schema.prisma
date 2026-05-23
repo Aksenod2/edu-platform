@@ -108,6 +108,7 @@ model User {
   ownedStreams            Stream[]                 @relation("StreamOwner")
   ownedPrograms           Program[]                @relation("ProgramOwner")
   walletTransactions      WalletTransaction[]      @relation("WalletTxUser")
+  zoomIntegration         ZoomIntegration?
 }
 
 model ApiKey {
@@ -457,11 +458,12 @@ model WalletTransaction {
   @@index([userId])
 }
 
-// Настройки интеграции с Zoom (Server-to-Server OAuth). Синглтон: единственная
-// строка с фиксированным id 'default' (приложение задаёт id явно). Секрет
+// Настройки интеграции с Zoom (Server-to-Server OAuth) — пер-преподаватель:
+// у каждого админа/преподавателя свой конфиг (одна строка на userId). Секрет
 // клиента хранится зашифрованным (AES-256-GCM) в clientSecretEnc.
 model ZoomIntegration {
-  id                String    @id @default("default")
+  id                String    @id @default(uuid())
+  userId            String    @unique
   enabled           Boolean   @default(false)
   accountId         String?
   clientId          String?
@@ -471,4 +473,6 @@ model ZoomIntegration {
   lastTestOk        Boolean?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
