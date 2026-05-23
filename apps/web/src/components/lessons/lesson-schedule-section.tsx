@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Field, FieldLabel } from '@/components/ui/field';
+import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import {
   Dialog,
   DialogContent,
@@ -99,6 +100,12 @@ export function LessonScheduleSection({
   const [meetingUrl, setMeetingUrl] = useState('');
   const [status, setStatus] = useState<LessonStatus>('planned');
   const [saving, setSaving] = useState(false);
+  // Автогенерация Zoom-ссылки: переключатель + результат после сохранения.
+  const [generateMeeting, setGenerateMeeting] = useState(false);
+  const [savedMeetingUrl, setSavedMeetingUrl] = useState<string | null>(null);
+  const [generationFailed, setGenerationFailed] = useState(false);
+  // После сохранения с генерацией остаёмся в диалоге показать ссылку.
+  const [saved, setSaved] = useState(false);
 
   // Выдача ДЗ: какой поток сейчас выдаём/правим, значение дедлайна и флаг отправки.
   const [issueStreamId, setIssueStreamId] = useState('');
@@ -158,6 +165,14 @@ export function LessonScheduleSection({
   const scheduledIds = new Set(sessions.map((s) => s.streamId));
   const availableStreams = activeStreams.filter((s) => !scheduledIds.has(s.id));
 
+  // Сброс полей результата генерации (общий для открытия add/edit).
+  function resetGeneration() {
+    setGenerateMeeting(false);
+    setSavedMeetingUrl(null);
+    setGenerationFailed(false);
+    setSaved(false);
+  }
+
   function openAdd() {
     setEditStreamId(null);
     setStreamId(availableStreams.length === 1 ? availableStreams[0].id : '');
@@ -165,6 +180,7 @@ export function LessonScheduleSection({
     setStartTime('');
     setMeetingUrl('');
     setStatus('planned');
+    resetGeneration();
     setDialogOpen(true);
   }
 
@@ -175,27 +191,41 @@ export function LessonScheduleSection({
     setStartTime(s.startTime ?? '');
     setMeetingUrl(s.meetingUrl ?? '');
     setStatus(s.status);
+    resetGeneration();
     setDialogOpen(true);
   }
 
   const plannedWithoutDate = status === 'planned' && !date;
   const valid = !!streamId && !plannedWithoutDate;
 
+  // Генерацию запрашиваем только если ручную ссылку не вводили (бэк её не перезатирает).
+  const wantGenerate = generateMeeting && !meetingUrl.trim();
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || saving) return;
     setSaving(true);
+    setGenerationFailed(false);
     try {
-      await updateLesson(accessToken, lessonId, {
+      const { lesson: updated } = await updateLesson(accessToken, lessonId, {
         streamId,
         date: date || null,
         startTime: startTime || null,
         status,
         meetingUrl: meetingUrl.trim() || null,
+        generateMeeting: wantGenerate,
       });
-      setDialogOpen(false);
       await load();
       toast.success(editStreamId ? 'Расписание обновлено' : 'Урок запланирован');
+      // Если запрашивали генерацию — остаёмся показать результат (ссылку или ошибку),
+      // иначе закрываем диалог как раньше.
+      if (wantGenerate) {
+        setSaved(true);
+        setSavedMeetingUrl(updated.meetingUrl);
+        setGenerationFailed(!updated.meetingUrl);
+      } else {
+        setDialogOpen(false);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось сохранить');
     } finally {
@@ -471,25 +501,34 @@ export function LessonScheduleSection({
               )}
             </Field>
 
-            <Field>
-              <FieldLabel htmlFor="sched-url">Ссылка на созвон</FieldLabel>
-              <Input
-                id="sched-url"
-                type="url"
-                value={meetingUrl}
-                onChange={(e) => setMeetingUrl(e.target.value)}
-                placeholder="https://zoom.us/j/..."
-              />
-            </Field>
+            <MeetingLinkField
+              accessToken={accessToken}
+              inputId="sched-url"
+              value={meetingUrl}
+              onValueChange={setMeetingUrl}
+              generateMeeting={generateMeeting}
+              onGenerateMeetingChange={setGenerateMeeting}
+              onConfigLoaded={setGenerateMeeting}
+              savedMeetingUrl={savedMeetingUrl}
+              generationFailed={generationFailed}
+            />
 
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
-                Отмена
-              </Button>
-              <Button type="submit" disabled={!valid || saving}>
-                {saving && <Loader2 className="animate-spin" />}
-                Сохранить
-              </Button>
+              {saved ? (
+                <Button type="button" onClick={() => setDialogOpen(false)}>
+                  Готово
+                </Button>
+              ) : (
+                <>
+                  <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
+                    Отмена
+                  </Button>
+                  <Button type="submit" disabled={!valid || saving}>
+                    {saving && <Loader2 className="animate-spin" />}
+                    Сохранить
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>

@@ -596,6 +596,9 @@ export async function createLesson(
     date?: string | null;
     startTime?: string | null;
     meetingUrl?: string | null;
+    // Если true — бэк создаёт встречу Zoom и вернёт meetingUrl в проекции занятия
+    // (или null, если интеграция не настроена/ошибка — без падения запроса).
+    generateMeeting?: boolean;
     sortOrder?: number;
     teacherIds?: string[];
     materials?: LessonMaterial[];
@@ -623,6 +626,9 @@ export async function updateLesson(
     date?: string | null;
     startTime?: string | null;
     meetingUrl?: string | null;
+    // Если true — бэк создаёт встречу Zoom и вернёт meetingUrl в проекции занятия
+    // (или null, если интеграция не настроена/ошибка — без падения запроса).
+    generateMeeting?: boolean;
     sortOrder?: number;
     teacherIds?: string[];
     materials?: LessonMaterial[];
