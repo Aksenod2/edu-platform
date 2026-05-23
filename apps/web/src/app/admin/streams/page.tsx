@@ -9,6 +9,7 @@ import {
   createStream,
   updateStream,
   archiveStream,
+  deleteStream,
   getTeachers,
   type Stream,
   type Teacher,
@@ -22,6 +23,7 @@ import {
   ClipboardList,
   SquarePen,
   Archive,
+  Trash2,
   UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -101,6 +103,8 @@ export default function StreamsPage() {
 
   // Подтверждение архивирования потока
   const [streamToArchive, setStreamToArchive] = useState<Stream | null>(null);
+  // Подтверждение полного удаления потока (необратимо)
+  const [streamToDelete, setStreamToDelete] = useState<Stream | null>(null);
 
   const fetchStreams = useCallback(async () => {
     if (!accessToken) return;
@@ -183,6 +187,18 @@ export default function StreamsPage() {
       await fetchStreams();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка архивирования потока');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!accessToken) return;
+    setError('');
+    try {
+      await deleteStream(accessToken, id);
+      setStreamToDelete(null);
+      await fetchStreams();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка удаления потока');
     }
   };
 
@@ -466,17 +482,23 @@ export default function StreamsPage() {
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
                           {stream.status === 'active' && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onSelect={() => setStreamToArchive(stream)}
-                              >
-                                <Archive />
-                                Архивировать
-                              </DropdownMenuItem>
-                            </>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => setStreamToArchive(stream)}
+                            >
+                              <Archive />
+                              Архивировать
+                            </DropdownMenuItem>
                           )}
+                          <DropdownMenuSeparator />
+                          {/* Удаление доступно для любого потока (активного и архивного). */}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => setStreamToDelete(stream)}
+                          >
+                            <Trash2 />
+                            Удалить поток
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -506,6 +528,40 @@ export default function StreamsPage() {
               onClick={() => { if (streamToArchive) handleArchive(streamToArchive.id); }}
             >
               Архивировать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!streamToDelete}
+        onOpenChange={(open) => { if (!open) setStreamToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить поток?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {streamToDelete && (
+                <>
+                  Поток «{streamToDelete.name}» будет удалён безвозвратно. Действие
+                  необратимо: будут удалены зачисления студентов, расписание занятий
+                  и чаты потока. Контент уроков сохранится.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={(e) => {
+                // Удаление асинхронно: не закрываем диалог автоматически, чтобы при
+                // ошибке он не схлопнулся раньше времени — закрытие делает handleDelete.
+                e.preventDefault();
+                if (streamToDelete) handleDelete(streamToDelete.id);
+              }}
+            >
+              Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -322,6 +322,18 @@ export async function archiveStream(
   });
 }
 
+// Полное удаление потока (необратимо): зачисления, расписание занятий и чаты
+// потока удаляются каскадом на стороне БД. Уроки-блоки (Lesson) сохраняются.
+export async function deleteStream(
+  accessToken: string,
+  id: string,
+): Promise<{ message: string }> {
+  return request(`/streams/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export interface StreamWithCounts extends Stream {
   studentsCount: number;
   lessonsCount: number;
