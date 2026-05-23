@@ -12,6 +12,7 @@ import {
   type StudentAssignment,
 } from '@/lib/api';
 import { ChevronLeft, Download, FileText, Link2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,8 @@ export default function AssignmentDetailPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
   const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
+  // Подсветка обязательной причины при «На доработку» (по id назначения).
+  const [reviewErrors, setReviewErrors] = useState<Record<string, boolean>>({});
 
   const fetchData = useCallback(async () => {
     if (!accessToken || !assignmentId) return;
@@ -69,11 +72,24 @@ export default function AssignmentDetailPage() {
 
   const handleStatusChange = async (saId: string, status: 'reviewed' | 'needs_revision') => {
     if (!accessToken) return;
+    const reviewText = reviewTexts[saId]?.trim();
+    // Для «На доработку» причина обязательна (бэкенд отвечает 400 на пустую) —
+    // валидируем до запроса и подсвечиваем поле.
+    if (status === 'needs_revision' && !reviewText) {
+      setReviewErrors((prev) => ({ ...prev, [saId]: true }));
+      toast.error('Укажите причину доработки — она видна студенту.');
+      return;
+    }
     setUpdatingId(saId);
     try {
       await updateStudentAssignment(accessToken, saId, {
         status,
-        reviewText: reviewTexts[saId]?.trim() || undefined,
+        reviewText: reviewText || undefined,
+      });
+      setReviewErrors((prev) => {
+        const next = { ...prev };
+        delete next[saId];
+        return next;
       });
       setReviewTexts((prev) => {
         const next = { ...prev };
@@ -158,6 +174,15 @@ export default function AssignmentDetailPage() {
                 <span className="mb-2 block text-xs text-muted-foreground">Описание</span>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {assignment.description}
+                </p>
+              </div>
+            )}
+
+            {assignment.criteria && (
+              <div className="mt-4 border-t pt-4">
+                <span className="mb-2 block text-xs text-muted-foreground">Критерии оценки</span>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {assignment.criteria}
                 </p>
               </div>
             )}
@@ -280,14 +305,27 @@ export default function AssignmentDetailPage() {
                                 <Textarea
                                   id={`review-${sa.id}`}
                                   value={reviewTexts[sa.id] ?? ''}
-                                  onChange={(e) =>
-                                    setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }))
-                                  }
+                                  onChange={(e) => {
+                                    setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }));
+                                    if (reviewErrors[sa.id]) {
+                                      setReviewErrors((prev) => {
+                                        const next = { ...prev };
+                                        delete next[sa.id];
+                                        return next;
+                                      });
+                                    }
+                                  }}
                                   placeholder="Что получилось, что доработать. Видит студент."
                                   rows={3}
+                                  aria-invalid={reviewErrors[sa.id] ? true : undefined}
                                   // На узких экранах поле сжимается, на десктопе остаётся комфортным.
                                   className="w-full sm:min-w-[260px]"
                                 />
+                                {reviewErrors[sa.id] && (
+                                  <span className="text-xs text-destructive">
+                                    Для «На доработку» причина обязательна.
+                                  </span>
+                                )}
                               </div>
                             )}
                             <div className="flex items-center gap-2">

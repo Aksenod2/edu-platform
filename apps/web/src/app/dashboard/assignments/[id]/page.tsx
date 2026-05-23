@@ -86,8 +86,17 @@ export default function AssignmentDetailPage({
     if (sa?.status === 'reviewed') loadFeedback();
   }, [sa, loadFeedback]);
 
+  // При редактировании уже отправленной (submitted) сдачи предзаполняем форму
+  // прошлым текстом, чтобы студент правил, а не писал с нуля.
+  const openForm = () => {
+    setSubmissionText(sa?.status === 'submitted' ? sa.content ?? '' : '');
+    setSubmissionFile(null);
+    setShowForm(true);
+  };
+
   const handleSubmit = async () => {
     if (!accessToken || !sa) return;
+    const isResubmit = sa.status === 'submitted';
     setSubmitting(true);
     try {
       const updated = await submitStudentAssignment(accessToken, sa.id, {
@@ -95,7 +104,7 @@ export default function AssignmentDetailPage({
         file: submissionFile || undefined,
       });
       setSa(updated.studentAssignment);
-      toast.success('Задание отправлено на проверку');
+      toast.success(isResubmit ? 'Ответ обновлён' : 'Задание отправлено на проверку');
       setShowForm(false);
       setSubmissionText('');
       setSubmissionFile(null);
@@ -232,6 +241,20 @@ export default function AssignmentDetailPage({
               </section>
             )}
 
+            {/* Критерии оценки — что требуется для зачёта. Видны до сдачи. */}
+            {a?.criteria && (
+              <section className="mb-6">
+                <h2 className="text-xs uppercase text-muted-foreground mb-3">
+                  Критерии оценки
+                </h2>
+                <div className="px-4 py-3 rounded-md bg-muted border">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground m-0">
+                    {a.criteria}
+                  </p>
+                </div>
+              </section>
+            )}
+
             {/* Tags */}
             {a?.tags && a.tags.length > 0 && (
               <div className="flex gap-1 flex-wrap mb-6">
@@ -246,11 +269,12 @@ export default function AssignmentDetailPage({
             {/* Divider */}
             <Separator className="my-6" />
 
-            {/* Submitted answer */}
-            {(sa.status === 'submitted' || sa.status === 'reviewed') && (
+            {/* Submitted answer. При needs_revision показываем ПРОШЛУЮ сдачу,
+                чтобы студент видел, что отправлял, при доработке. */}
+            {(sa.status === 'submitted' || sa.status === 'reviewed' || sa.status === 'needs_revision') && (
               <section className="mb-6">
                 <h2 className="text-xs uppercase text-muted-foreground mb-3">
-                  Ваш ответ
+                  {sa.status === 'needs_revision' ? 'Ваш прошлый ответ' : 'Ваш ответ'}
                 </h2>
                 {sa.content && (
                   <div className="px-4 py-3 rounded-md bg-muted border-l-[3px] border-primary mb-3">
@@ -350,11 +374,18 @@ export default function AssignmentDetailPage({
               </section>
             )}
 
-            {/* Submission form */}
-            {(sa.status === 'assigned' || sa.status === 'needs_revision') && !showForm && (
+            {/* Submission form: кнопки запуска.
+                - assigned → «Сдать задание»
+                - needs_revision → «Пересдать задание» (отдельный путь доработки)
+                - submitted → «Изменить ответ» (пока не проверено — можно править/дослать) */}
+            {(sa.status === 'assigned' || sa.status === 'needs_revision' || sa.status === 'submitted') && !showForm && (
               <div className="flex gap-3">
-                <Button onClick={() => setShowForm(true)}>
-                  {sa.status === 'needs_revision' ? 'Пересдать задание' : 'Сдать задание'}
+                <Button onClick={openForm}>
+                  {sa.status === 'needs_revision'
+                    ? 'Пересдать задание'
+                    : sa.status === 'submitted'
+                      ? 'Изменить ответ'
+                      : 'Сдать задание'}
                 </Button>
                 <Button
                   variant="ghost"
@@ -368,7 +399,11 @@ export default function AssignmentDetailPage({
             {showForm && (
               <section>
                 <h2 className="text-xs uppercase text-muted-foreground mb-4">
-                  {sa.status === 'needs_revision' ? 'Пересдача задания' : 'Сдача задания'}
+                  {sa.status === 'needs_revision'
+                    ? 'Пересдача задания'
+                    : sa.status === 'submitted'
+                      ? 'Изменение ответа'
+                      : 'Сдача задания'}
                 </h2>
 
                 {/* Answer */}
@@ -392,6 +427,13 @@ export default function AssignmentDetailPage({
                 {/* File */}
                 <div className="flex flex-col gap-2 mb-6">
                   <Label>Файл</Label>
+                  {/* При правке submitted показываем уже прикреплённый файл —
+                      его можно оставить как есть или заменить, дослав новый. */}
+                  {sa.status === 'submitted' && !submissionFile && sa.fileName && (
+                    <p className="text-xs text-muted-foreground m-0">
+                      Сейчас прикреплён: {sa.fileName}. Чтобы заменить — выберите новый файл ниже.
+                    </p>
+                  )}
                   {submissionFile ? (
                     <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted border">
                       <Badge variant="outline">
@@ -434,13 +476,17 @@ export default function AssignmentDetailPage({
                         }}
                       />
                       <Upload className="size-4" />
-                      Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                      {sa.status === 'submitted' && sa.fileName
+                        ? 'Заменить файл (PDF, DOCX, PNG — до 20 МБ)'
+                        : 'Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)'}
                     </label>
                   )}
                 </div>
 
                 <p className="text-xs text-muted-foreground italic mb-4">
-                  После отправки ответ нельзя изменить.
+                  {sa.status === 'submitted'
+                    ? 'Изменить ответ можно, пока работу не проверили.'
+                    : 'После отправки ответ нельзя изменить.'}
                 </p>
 
                 <div className="flex gap-3">
@@ -448,7 +494,11 @@ export default function AssignmentDetailPage({
                     onClick={handleSubmit}
                     disabled={submitting || (isShort && !submissionText.trim())}
                   >
-                    {submitting ? 'Отправка…' : 'Сдать задание →'}
+                    {submitting
+                      ? 'Отправка…'
+                      : sa.status === 'submitted'
+                        ? 'Сохранить изменения →'
+                        : 'Сдать задание →'}
                   </Button>
                   <Button
                     variant="secondary"

@@ -110,8 +110,10 @@ export default function StudentAssignmentsPage() {
   };
 
   const openSubmissionForm = (saId: string) => {
+    const target = assignments.find((s) => s.id === saId);
     setSubmissionModalSaId(saId);
-    setSubmissionText('');
+    // При правке уже отправленной (submitted) работы предзаполняем прошлый ответ.
+    setSubmissionText(target?.status === 'submitted' ? target.content ?? '' : '');
     setSubmissionFile(null);
   };
 
@@ -123,13 +125,15 @@ export default function StudentAssignmentsPage() {
 
   const handleSubmit = async () => {
     if (!accessToken || !submissionModalSaId) return;
+    const isResubmit =
+      assignments.find((s) => s.id === submissionModalSaId)?.status === 'submitted';
     setSubmitting(true);
     try {
       await submitStudentAssignment(accessToken, submissionModalSaId, {
         answerText: submissionText || undefined,
         file: submissionFile || undefined,
       });
-      toast.success('Задание отправлено на проверку');
+      toast.success(isResubmit ? 'Ответ обновлён' : 'Задание отправлено на проверку');
       closeSubmissionForm();
       await fetchData();
     } catch (err) {
@@ -492,12 +496,19 @@ export default function StudentAssignmentsPage() {
                             <MessageCircle className="size-3.5" />
                             Задать вопрос
                           </Button>
-                          {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
+                          {(sa.status === 'assigned' ||
+                            sa.status === 'needs_revision' ||
+                            sa.status === 'submitted') && (
                             <Button
                               size="sm"
+                              variant={sa.status === 'submitted' ? 'outline' : 'default'}
                               onClick={() => openSubmissionForm(sa.id)}
                             >
-                              {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить'}
+                              {sa.status === 'needs_revision'
+                                ? 'Пересдать'
+                                : sa.status === 'submitted'
+                                  ? 'Изменить'
+                                  : 'Отправить'}
                             </Button>
                           )}
                         </div>
@@ -523,11 +534,12 @@ export default function StudentAssignmentsPage() {
             const modalSa = assignments.find((s) => s.id === submissionModalSaId);
             const modalAssignment = modalSa?.assignment;
             const isShort = modalAssignment?.type === 'short';
+            const isResubmit = modalSa?.status === 'submitted';
 
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle>Сдача задания</DialogTitle>
+                  <DialogTitle>{isResubmit ? 'Изменение ответа' : 'Сдача задания'}</DialogTitle>
                 </DialogHeader>
 
                 <div className="rounded-md bg-muted border p-3 px-4">
@@ -571,6 +583,12 @@ export default function StudentAssignmentsPage() {
 
                 <div className="flex flex-col gap-2">
                   <Label>Файл</Label>
+                  {/* При правке submitted показываем уже прикреплённый файл. */}
+                  {isResubmit && !submissionFile && modalSa?.fileName && (
+                    <p className="text-xs text-muted-foreground m-0">
+                      Сейчас прикреплён: {modalSa.fileName}. Чтобы заменить — выберите новый файл ниже.
+                    </p>
+                  )}
                   {submissionFile ? (
                     <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted border">
                       <Badge variant="outline">
@@ -612,13 +630,17 @@ export default function StudentAssignmentsPage() {
                           }
                         }}
                       />
-                      + Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                      {isResubmit && modalSa?.fileName
+                        ? '+ Заменить файл (PDF, DOCX, PNG — до 20 МБ)'
+                        : '+ Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)'}
                     </label>
                   )}
                 </div>
 
                 <p className="text-xs text-muted-foreground italic">
-                  После отправки потребуется подтверждение. Ответ нельзя изменить.
+                  {isResubmit
+                    ? 'Изменить ответ можно, пока работу не проверили.'
+                    : 'После отправки потребуется подтверждение. Ответ нельзя изменить.'}
                 </p>
 
                 <DialogFooter>
@@ -630,7 +652,11 @@ export default function StudentAssignmentsPage() {
                     onClick={handleSubmit}
                     disabled={submitting || (isShort && !submissionText.trim())}
                   >
-                    {submitting ? 'Отправка…' : 'Сдать задание →'}
+                    {submitting
+                      ? 'Отправка…'
+                      : isResubmit
+                        ? 'Сохранить изменения →'
+                        : 'Сдать задание →'}
                   </Button>
                 </DialogFooter>
               </>
