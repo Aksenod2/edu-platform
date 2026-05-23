@@ -764,11 +764,15 @@ export async function lessonRoutes(app: FastifyInstance) {
   });
 
   // PATCH /lessons/:id — обновление урока (admin).
-  // Поля блока (title/summary/notes/sortOrder/videoUrl/teacherIds/materials +
+  // Поля блока (title/notes/sortOrder/videoUrl/teacherIds/materials +
   //   assignment*) → обновляют Lesson.
   // Поля расписания (status/date/startTime/meetingUrl) → если задан streamId,
   //   upsert/update Session(streamId, lessonId); без streamId — игнорируются
   //   (правка только блока). Возвращает спроецированный урок.
+  // summary — особый случай: С streamId это итоги КОНКРЕТНОГО занятия → пишем в
+  //   Session.summary + summarySource='manual' (ручной ввод приоритетнее Zoom AI,
+  //   автосбор его не перетирает). БЕЗ streamId — это блочное описание урока →
+  //   пишем в Lesson.summary, как раньше (редактор урока-блока).
   app.patch('/lessons/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as {
@@ -822,11 +826,13 @@ export async function lessonRoutes(app: FastifyInstance) {
     // Запрос на генерацию встречи (generateMeeting === true) тоже трогает Session:
     // нужно зайти в ветку upsert даже если расписание не меняли (например, дата уже
     // сохранена, а ссылку просят создать сейчас). Явный отказ (false) Session не трогает.
+    // summary с streamId — правка итогов занятия: тоже трогает Session.
     const scheduleTouched =
       body.status !== undefined ||
       body.date !== undefined ||
       body.startTime !== undefined ||
       body.meetingUrl !== undefined ||
+      body.summary !== undefined ||
       body.generateMeeting === true;
 
     // Текущая Session (если есть streamId) — нужна для проекции и правила planned→date.
@@ -854,7 +860,8 @@ export async function lessonRoutes(app: FastifyInstance) {
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) data.title = body.title.trim();
     if (body.videoUrl !== undefined) data.videoUrl = body.videoUrl.trim() || null;
-    if (body.summary !== undefined) data.summary = body.summary || null;
+    // summary с streamId уходит в Session (итоги занятия), а не в блок — см. ниже.
+    if (body.summary !== undefined && !streamId) data.summary = body.summary || null;
     if (body.notes !== undefined) data.notes = body.notes || null;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
     if (body.materials !== undefined) {
@@ -926,6 +933,12 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (body.status !== undefined) sessionUpdate.status = body.status;
       if (body.date !== undefined) sessionUpdate.date = parseLessonDate(body.date);
       if (body.startTime !== undefined) sessionUpdate.startTime = body.startTime?.trim() || null;
+      // Ручные итоги занятия: пишем в Session.summary и помечаем источник 'manual',
+      // чтобы автосбор Zoom AI их не перезатёр (см. processSummaryForSession).
+      if (body.summary !== undefined) {
+        sessionUpdate.summary = body.summary?.trim() || null;
+        sessionUpdate.summarySource = 'manual';
+      }
       if (body.meetingUrl !== undefined) {
         sessionUpdate.meetingUrl = body.meetingUrl?.trim() || null;
       } else if (autoMeeting) {
@@ -947,6 +960,9 @@ export async function lessonRoutes(app: FastifyInstance) {
           startTime: body.startTime?.trim() || null,
           meetingUrl: body.meetingUrl?.trim() || autoMeeting?.joinUrl || null,
           ...(autoMeeting ? { zoomMeetingId: autoMeeting.meetingId } : {}),
+          ...(body.summary !== undefined
+            ? { summary: body.summary?.trim() || null, summarySource: 'manual' }
+            : {}),
         },
         update: sessionUpdate,
         select: sessionSelect,
@@ -1338,6 +1354,12 @@ export async function lessonRoutes(app: FastifyInstance) {
         date: s.date ? s.date.toISOString().slice(0, 10) : null,
         startTime: s.startTime,
         meetingUrl: s.meetingUrl,
+        // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
+        // итогов в блоке «Расписание». Для старых данных поля = null.
+        summary: s.summary,
+        summarySource: s.summarySource,
+        recordingStatus: s.recordingStatus,
+        recordingError: s.recordingError,
       })),
     };
   });

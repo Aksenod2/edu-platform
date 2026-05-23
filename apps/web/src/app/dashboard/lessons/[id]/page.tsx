@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList, Clock } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
@@ -25,6 +25,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { MaterialRow } from '@/components/material-row';
+import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
@@ -102,6 +103,18 @@ export default function StudentLessonPage() {
   const embedUrl = lesson?.videoUrl ? parseVideoEmbed(lesson.videoUrl) : null;
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
   const assignments = (lesson?.assignments ?? []).filter((a) => saByAssignment[a.id]);
+
+  const hasVideo = !!(
+    (lesson?.videos && lesson.videos.length > 0) ||
+    lesson?.videoFileUrl ||
+    lesson?.videoUrl
+  );
+  // Прошедшее занятие, запись Zoom ещё едет (pending/processing) и видео пока нет —
+  // показываем «запись скоро появится» вместо пустоты. На failed/none ничего не обещаем.
+  const recordingPending =
+    lesson?.status === 'done' &&
+    !hasVideo &&
+    (lesson?.recordingStatus === 'pending' || lesson?.recordingStatus === 'processing');
 
   return (
     <div className="flex flex-col gap-6">
@@ -216,10 +229,36 @@ export default function StudentLessonPage() {
             )
           )}
 
-          {/* Краткое описание */}
-          {lesson.summary && (
-            <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
+          {/* Запись прошедшего занятия ещё обрабатывается — обещаем студенту, что
+              она появится, чтобы не было пустого экрана. */}
+          {recordingPending && (
+            <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
+              <Clock className="size-5 shrink-0" />
+              <span>Запись занятия скоро появится здесь.</span>
+            </div>
           )}
+
+          {/* Итоги занятия: если у summary есть источник (zoom_ai/manual) — это итоги
+              конкретного занятия, показываем отдельным блоком с бейджем источника.
+              Иначе (легаси/блочное описание без источника) — прежний абзац. */}
+          {lesson.summary &&
+            (lesson.summarySource ? (
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle>Итоги занятия</CardTitle>
+                    <SummarySourceBadge source={lesson.summarySource} />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                    {lesson.summary}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
+            ))}
 
           {/* Материалы урока (PDF/MD) */}
           {lesson.materials && lesson.materials.length > 0 && (
@@ -266,9 +305,8 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!(lesson.videos && lesson.videos.length > 0) &&
-            !lesson.videoFileUrl &&
-            !lesson.videoUrl &&
+          {!hasVideo &&
+            !recordingPending &&
             !lesson.summary &&
             (!lesson.materials || lesson.materials.length === 0) &&
             assignments.length === 0 && (

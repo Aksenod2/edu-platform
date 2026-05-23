@@ -877,6 +877,29 @@ export interface LessonSession {
   date: string | null;
   startTime: string | null;
   meetingUrl: string | null;
+  // Итоги занятия + автосбор записи Zoom (Волна 2). Поля nullable: для старых
+  // занятий и занятий без созвона Zoom — null.
+  // recordingStatus: none | pending | processing | ready | failed.
+  summary?: string | null;
+  summarySource?: string | null;
+  recordingStatus?: string | null;
+  recordingError?: string | null;
+}
+
+// Сохранить ручные итоги КОНКРЕТНОГО занятия потока (Session.summary). Бэк ставит
+// summarySource='manual' — автосбор Zoom AI такие итоги не перетирает. Пустая
+// строка очищает итоги (на бэке превращается в null). Только admin.
+export async function updateLessonSummary(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+  summary: string,
+): Promise<{ lesson: Lesson }> {
+  return request(`/lessons/${lessonId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ streamId, summary }),
+  });
 }
 
 // Список занятий урока по всем потокам (где и когда он запланирован).

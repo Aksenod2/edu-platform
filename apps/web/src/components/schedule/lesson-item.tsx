@@ -6,6 +6,7 @@ import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import {
   LESSON_STATUS_LABELS,
   STATUS_BADGE_VARIANT,
@@ -82,6 +83,16 @@ export function LessonItem({
           <Badge variant="secondary" className="w-fit max-w-full truncate">
             {lesson.streamName}
           </Badge>
+        )}
+        {/* Статус записи Zoom — только для прошедших занятий. У «готово» бейдж
+            скрываем (showReady=false): видео и так открывается в плеере урока. */}
+        {lesson.status === 'done' && (
+          <RecordingStatusBadge
+            status={lesson.recordingStatus}
+            error={lesson.recordingError}
+            showReady={false}
+            className="w-fit"
+          />
         )}
       </div>
 
