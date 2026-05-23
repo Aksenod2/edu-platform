@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
@@ -446,17 +447,21 @@ export function LessonScheduleSection({
                 </div>
 
                 {/* Запись Zoom не получена: видимая причина (а не только в title бейджа)
-                    + ручной повтор автозагрузки для админа. */}
+                    + ручной повтор автозагрузки для админа. На мобиле причина и кнопка
+                    идут колонкой (кнопка под текстом), на десктопе — в строку. */}
                 {s.status === 'done' && s.recordingStatus === 'failed' && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-2">
-                    <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-                      {s.recordingError?.trim() || 'Не удалось получить запись'}
+                  <div className="flex flex-col gap-2 rounded-md bg-muted p-2 sm:flex-row sm:items-center">
+                    <p className="flex min-w-0 flex-1 items-start gap-1.5 text-sm text-muted-foreground">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      <span className="min-w-0 break-words">
+                        {s.recordingError?.trim() || 'Не удалось получить запись'}
+                      </span>
                     </p>
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="w-fit"
+                      className="w-full shrink-0 sm:w-fit"
                       onClick={() => handleRetryRecording(s.streamId)}
                       disabled={retryingStreamId === s.streamId}
                     >

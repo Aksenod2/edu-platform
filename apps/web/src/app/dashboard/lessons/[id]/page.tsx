@@ -3,7 +3,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList, Clock } from 'lucide-react';
+import {
+  Loader2,
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  ClipboardList,
+  Clock,
+  GraduationCap,
+  Video,
+} from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
@@ -36,6 +45,41 @@ const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outlin
   done: 'outline',
   cancelled: 'destructive',
 };
+
+// Единый контейнер плеера для видеофайла. Стабильная высота (max-h-[70vh]),
+// центрирование и тёмный нейтральный фон-леттербокс через семантический токен
+// bg-muted — вертикальные сторис 9:16 кэпятся по высоте и не растягивают экран,
+// горизонтальные 16:9 не выходят за ширину карточки. object-contain не искажает кадр.
+function VideoFileFrame({ src, label }: { src: string; label?: string }) {
+  return (
+    <div className="flex max-h-[70vh] items-center justify-center overflow-hidden rounded-lg border bg-muted">
+      <video
+        controls
+        preload="metadata"
+        controlsList="nodownload"
+        onContextMenu={(e) => e.preventDefault()}
+        className="max-h-[70vh] w-auto max-w-full object-contain"
+        src={src}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+// Единый контейнер для встраиваемого видео (iframe). Соотношение 16:9.
+function VideoEmbedFrame({ src, title }: { src: string; title: string }) {
+  return (
+    <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
+      <iframe
+        src={src}
+        title={title}
+        className="size-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    </div>
+  );
+}
 
 export default function StudentLessonPage() {
   const { accessToken } = useAuth();
@@ -172,7 +216,11 @@ export default function StudentLessonPage() {
           {hasLessonVideo && (
             <Card>
               <CardHeader>
-                <CardTitle>Учебное видео урока</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <GraduationCap className="size-5 shrink-0 text-muted-foreground" />
+                  Учебное видео урока
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Посмотрите до занятия</p>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 {lesson.videos && lesson.videos.length > 0 ? (
@@ -185,26 +233,9 @@ export default function StudentLessonPage() {
                           <div className="text-sm font-medium">{video.title}</div>
                         )}
                         {video.kind === 'file' ? (
-                          <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-                            <video
-                              controls
-                              preload="metadata"
-                              controlsList="nodownload"
-                              onContextMenu={(e) => e.preventDefault()}
-                              className="max-h-[70vh] w-auto max-w-full"
-                              src={video.url}
-                            />
-                          </div>
+                          <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
                         ) : videoEmbed ? (
-                          <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                            <iframe
-                              src={videoEmbed}
-                              title={video.title ?? lesson.title}
-                              className="size-full"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
+                          <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
                         ) : (
                           <Button asChild className="w-fit">
                             <a href={video.url} target="_blank" rel="noopener noreferrer">
@@ -217,26 +248,9 @@ export default function StudentLessonPage() {
                     );
                   })
                 ) : lesson.videoFileUrl ? (
-                  <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-                    <video
-                      controls
-                      preload="metadata"
-                      controlsList="nodownload"
-                      onContextMenu={(e) => e.preventDefault()}
-                      className="max-h-[70vh] w-auto max-w-full"
-                      src={lesson.videoFileUrl}
-                    />
-                  </div>
+                  <VideoFileFrame src={lesson.videoFileUrl} label={lesson.title} />
                 ) : embedUrl ? (
-                  <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                    <iframe
-                      src={embedUrl}
-                      title={lesson.title}
-                      className="size-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
+                  <VideoEmbedFrame src={embedUrl} title={lesson.title} />
                 ) : (
                   lesson.videoUrl && (
                     <Button asChild className="w-fit">
@@ -257,31 +271,24 @@ export default function StudentLessonPage() {
           {showRecordingSection && (
             <Card>
               <CardHeader>
-                <CardTitle>Запись занятия</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Video className="size-5 shrink-0 text-muted-foreground" />
+                  Запись занятия
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Запись прошедшего созвона</p>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 {hasRecordingMedia ? (
                   lesson.recordingFileUrl ? (
-                    <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-                      <video
-                        controls
-                        preload="metadata"
-                        controlsList="nodownload"
-                        onContextMenu={(e) => e.preventDefault()}
-                        className="max-h-[70vh] w-auto max-w-full"
-                        src={lesson.recordingFileUrl}
-                      />
-                    </div>
+                    <VideoFileFrame
+                      src={lesson.recordingFileUrl}
+                      label={`Запись занятия — ${lesson.title}`}
+                    />
                   ) : recordingEmbedUrl ? (
-                    <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                      <iframe
-                        src={recordingEmbedUrl}
-                        title={`Запись занятия — ${lesson.title}`}
-                        className="size-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
+                    <VideoEmbedFrame
+                      src={recordingEmbedUrl}
+                      title={`Запись занятия — ${lesson.title}`}
+                    />
                   ) : (
                     <Button asChild className="w-fit">
                       <a
@@ -295,14 +302,15 @@ export default function StudentLessonPage() {
                     </Button>
                   )
                 ) : recordingPending ? (
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
                     <Clock className="size-5 shrink-0" />
                     <span>Запись занятия готовится, появится здесь.</span>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Запись занятия недоступна.
-                  </p>
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                    <Video className="size-5 shrink-0" />
+                    <span>Запись занятия недоступна.</span>
+                  </div>
                 )}
               </CardContent>
             </Card>
