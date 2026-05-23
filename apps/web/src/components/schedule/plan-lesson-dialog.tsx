@@ -94,15 +94,8 @@ export function PlanLessonDialog({
     getLessons(accessToken)
       .then((res) => {
         if (cancelled) return;
-        // Уникальные блоки по title (копилка отдаёт уроки-шаблоны без потока).
-        const seen = new Set<string>();
-        const unique = res.lessons.filter((l) => {
-          const key = l.title.trim().toLowerCase();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setBlocks(unique);
+        // Копилка отдаёт блоки-уроки с уникальными id — дедуп не нужен.
+        setBlocks(res.lessons);
       })
       .catch(() => {
         if (!cancelled) setBlocks([]);

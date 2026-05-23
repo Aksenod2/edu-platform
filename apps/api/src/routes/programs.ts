@@ -109,14 +109,18 @@ export async function programRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Название программы обязательно' });
     }
 
-    if (body.type !== undefined && !isProgramType(body.type)) {
-      return reply.status(400).send({ error: 'Недопустимый тип программы' });
+    let type: ProgramTypeValue = 'course';
+    if (body.type !== undefined) {
+      if (!isProgramType(body.type)) {
+        return reply.status(400).send({ error: 'Недопустимый тип программы' });
+      }
+      type = body.type;
     }
 
     const program = await prisma.program.create({
       data: {
         name: body.name.trim(),
-        type: isProgramType(body.type) ? body.type : 'course',
+        type,
         ownerId: request.user!.userId,
         whatYouLearn: body.whatYouLearn?.trim() || null,
       },
@@ -247,7 +251,8 @@ export async function programRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Программа не найдена' });
     }
 
-    // Обновляем только реально привязанные к программе уроки (защита от чужих id).
+    // Ожидается ПОЛНЫЙ упорядоченный список уроков программы; не переданные уроки
+    // сохранят прежний sortOrder. Обновляем только реально привязанные уроки (защита от чужих id).
     const existing = await prisma.programLesson.findMany({
       where: { programId: id },
       select: { lessonId: true },

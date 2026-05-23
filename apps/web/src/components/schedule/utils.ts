@@ -4,7 +4,7 @@ import {
 } from '@/lib/api';
 import type { CalendarLesson } from '@/components/schedule-calendar';
 
-/** Урок-занятие для единого расписания (имя потока подмешивается при сборке). */
+/** Урок-занятие для единого расписания (псевдоним CalendarLesson; `streamName` уже в нём). */
 export type ScheduleLesson = CalendarLesson;
 
 /** Вариант бейджа статуса занятия. */

@@ -6,7 +6,6 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // Мокаем prisma: только методы, которые трогают тестируемые ветки (DB-free).
 vi.mock('@platform/db', () => ({
   prisma: {
-    apiKey: { findUnique: vi.fn(), update: vi.fn(() => Promise.resolve({})) },
     program: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -112,6 +111,56 @@ describe('GET /programs — список со счётчиками', () => {
     expect(body.programs).toHaveLength(1);
     expect(body.programs[0].lessonsCount).toBe(3);
     expect(body.programs[0].streamsCount).toBe(2);
+  });
+});
+
+describe('GET /programs/:id — деталь', () => {
+  it('возвращает программу с упорядоченными уроками (hasVideo) и потоками', async () => {
+    db.program.findUnique.mockResolvedValueOnce({
+      id: 'p-1',
+      name: 'Курс А',
+      type: 'course',
+      whatYouLearn: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      programLessons: [
+        { sortOrder: 0, lesson: { id: 'l-1', title: 'Урок 1', hasAssignment: true, videoUrl: null, videoKey: 'k' } },
+        { sortOrder: 1, lesson: { id: 'l-2', title: 'Урок 2', hasAssignment: false, videoUrl: null, videoKey: null } },
+      ],
+      streams: [{ id: 's-1', name: 'Поток 1', status: 'active' }],
+    });
+
+    const app = buildApp((a) => a.register(programRoutes));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/programs/p-1',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      program: {
+        id: string;
+        lessons: { id: string; hasVideo: boolean; sortOrder: number }[];
+        streams: { id: string; name: string; status: string }[];
+      };
+    };
+    expect(body.program.id).toBe('p-1');
+    expect(body.program.lessons).toHaveLength(2);
+    expect(body.program.lessons[0]).toMatchObject({ id: 'l-1', hasVideo: true, sortOrder: 0 });
+    expect(body.program.lessons[1].hasVideo).toBe(false);
+    expect(body.program.streams).toEqual([{ id: 's-1', name: 'Поток 1', status: 'active' }]);
+  });
+
+  it('несуществующая программа → 404', async () => {
+    db.program.findUnique.mockResolvedValueOnce(null);
+    const app = buildApp((a) => a.register(programRoutes));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/programs/missing',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(404);
   });
 });
 

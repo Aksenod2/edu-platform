@@ -35,6 +35,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus, type Stream } from '@/lib/api';
+import {
+  parseLocalDate,
+  dateKey,
+  isSameDay,
+  lessonKey,
+  STATUS_BADGE_VARIANT,
+  STATUS_ORDER,
+  WEEKDAYS_SHORT,
+} from '@/components/schedule/utils';
 
 /** Урок для отображения в календаре (с опциональным именем потока). */
 export type CalendarLesson = Lesson & { streamName?: string };
@@ -71,50 +80,10 @@ export interface ScheduleCalendarProps {
   onDelete?: (id: string) => Promise<void> | void;
 }
 
-const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ];
-
-const STATUS_BADGE_VARIANT: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
-
-/** Все 4 статуса в порядке для Select. */
-const STATUS_ORDER: LessonStatus[] = ['draft', 'planned', 'done', 'cancelled'];
-
-/** Парсит дату из ISO-строки как локальную (без UTC-сдвига). */
-function parseLocalDate(dateStr: string): Date {
-  const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
-  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
-}
-
-/** Ключ "YYYY-MM-DD" из локальной даты. */
-function dateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-// Уникальный ключ занятия. Один блок-урок может быть запланирован в нескольких
-// потоках (когорты одной программы), поэтому ключ — пара поток×урок, иначе при
-// «Все потоки» возможны дубли React-ключей.
-function lessonKey(l: CalendarLesson): string {
-  return `${l.streamId ?? 'none'}:${l.id}`;
-}
 
 export function ScheduleCalendar({
   lessons,
@@ -208,7 +177,7 @@ export function ScheduleCalendar({
       <div className="overflow-hidden rounded-lg border bg-card">
         {/* Заголовки дней недели */}
         <div className="grid grid-cols-7 border-b bg-muted/40">
-          {WEEKDAYS.map((w) => (
+          {WEEKDAYS_SHORT.map((w) => (
             <div
               key={w}
               className="px-2 py-2 text-center text-xs font-medium text-muted-foreground"
