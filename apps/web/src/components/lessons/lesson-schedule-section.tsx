@@ -239,6 +239,7 @@ export function LessonScheduleSection({
         criteria: lesson.assignmentCriteria ?? undefined,
         type: lesson.assignmentType ?? 'short',
         tags: lesson.assignmentTags ?? [],
+        materials: lesson.assignmentMaterials ?? [],
         dueDate: issueDueDate || undefined,
       });
       cancelIssue();

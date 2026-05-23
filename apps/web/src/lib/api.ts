@@ -558,7 +558,7 @@ export interface Lesson {
   assignmentCriteria?: string | null;
   assignmentType?: AssignmentType | null;
   assignmentTags?: string[];
-  assignmentMaterials?: LessonMaterial[];
+  assignmentMaterials?: AssignmentMaterial[];
 }
 
 export async function getLessons(
@@ -633,7 +633,7 @@ export async function updateLesson(
     assignmentCriteria?: string | null;
     assignmentType?: AssignmentType | null;
     assignmentTags?: string[];
-    assignmentMaterials?: LessonMaterial[];
+    assignmentMaterials?: AssignmentMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request(`/lessons/${id}`, {
