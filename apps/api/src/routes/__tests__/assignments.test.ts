@@ -4,17 +4,18 @@ import Fastify, { type FastifyInstance } from 'fastify';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
 
 // Мокаем prisma: только методы, которые трогают тестируемые ветки (DB-free).
+// Новая модель: задание свёрнуто в Lesson (блок), дедлайн на Session,
+// StudentAssignment ссылается на Session (sessionId).
 vi.mock('@platform/db', () => ({
   prisma: {
     stream: { findUnique: vi.fn() },
-    lesson: { findUnique: vi.fn() },
-    assignment: { create: vi.fn() },
+    lesson: { findUnique: vi.fn(), update: vi.fn() },
+    session: { upsert: vi.fn(), findUnique: vi.fn() },
     streamEnrollment: { findMany: vi.fn() },
     studentAssignment: { createMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: vi.fn() },
     conversation: { findUnique: vi.fn(), create: vi.fn() },
     conversationEntry: { create: vi.fn() },
-    lessonTeacher: { findMany: vi.fn() },
   },
 }));
 
@@ -51,14 +52,48 @@ function authHeaders(token: string) {
   return { authorization: `Bearer ${token}` };
 }
 
+// Блок урока с folded assignment*-полями (минимум для проекции).
+function lessonBlock(over: Record<string, unknown> = {}) {
+  return {
+    id: 'lesson-1',
+    title: 'Урок 1',
+    hasAssignment: true,
+    assignmentTitle: 'Задание 1',
+    assignmentDescription: null,
+    assignmentCriteria: null,
+    assignmentType: 'short',
+    assignmentTags: [],
+    assignmentMaterials: [],
+    ...over,
+  };
+}
+
+// Session с подгруженным блоком урока (форма select из роута).
+function sessionWithLesson(over: Record<string, unknown> = {}) {
+  return {
+    id: 'session-1',
+    streamId: 'stream-1',
+    lessonId: 'lesson-1',
+    dueDate: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    lesson: lessonBlock(),
+    stream: { id: 'stream-1', name: 'Поток 1' },
+    ...over,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('POST /assignments — автовыдача зачисленным студентам', () => {
-  it('создаёт назначения для всех студентов потока (status assigned)', async () => {
+  it('пишет блок урока + Session.dueDate и создаёт назначения по sessionId всем студентам потока', async () => {
     db.stream.findUnique.mockResolvedValueOnce({ id: 'stream-1', status: 'active' });
-    db.assignment.create.mockResolvedValueOnce({ id: 'asg-1', title: 'Задание 1' });
+    db.lesson.findUnique.mockResolvedValueOnce({ id: 'lesson-1', title: 'Урок 1' });
+    db.lesson.update.mockResolvedValueOnce(lessonBlock());
+    // Session upsert возвращает Session с блоком урока и потоком.
+    db.session.upsert.mockResolvedValueOnce(sessionWithLesson());
     db.streamEnrollment.findMany.mockResolvedValueOnce([
       { userId: 'u-1' },
       { userId: 'u-2' },
@@ -71,22 +106,44 @@ describe('POST /assignments — автовыдача зачисленным ст
       method: 'POST',
       url: '/assignments',
       headers: authHeaders(adminToken),
-      payload: { streamId: 'stream-1', title: 'Задание 1' },
+      payload: { streamId: 'stream-1', lessonId: 'lesson-1', title: 'Задание 1', type: 'short' },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(db.studentAssignment.createMany).toHaveBeenCalledTimes(1);
 
+    // Folded assignment*-поля записаны в БЛОК выбранного урока.
+    expect(db.lesson.update).toHaveBeenCalledTimes(1);
+    const lessonUpdateArg = db.lesson.update.mock.calls[0][0];
+    expect(lessonUpdateArg.where).toEqual({ id: 'lesson-1' });
+    expect(lessonUpdateArg.data.hasAssignment).toBe(true);
+    expect(lessonUpdateArg.data.assignmentTitle).toBe('Задание 1');
+
+    // Session(streamId, lessonId) заведена/обновлена (несёт дедлайн).
+    expect(db.session.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = db.session.upsert.mock.calls[0][0];
+    expect(upsertArg.where).toEqual({
+      streamId_lessonId: { streamId: 'stream-1', lessonId: 'lesson-1' },
+    });
+
+    // Автовыдача: StudentAssignment по sessionId для каждого зачисленного.
+    expect(db.studentAssignment.createMany).toHaveBeenCalledTimes(1);
     const arg = db.studentAssignment.createMany.mock.calls[0][0];
+    expect(arg.skipDuplicates).toBe(true);
     expect(arg.data).toHaveLength(3);
     expect(arg.data).toEqual(
       expect.arrayContaining([
-        { assignmentId: 'asg-1', studentId: 'u-1', status: 'assigned' },
-        { assignmentId: 'asg-1', studentId: 'u-2', status: 'assigned' },
-        { assignmentId: 'asg-1', studentId: 'u-3', status: 'assigned' },
+        { sessionId: 'session-1', studentId: 'u-1', status: 'assigned' },
+        { sessionId: 'session-1', studentId: 'u-2', status: 'assigned' },
+        { sessionId: 'session-1', studentId: 'u-3', status: 'assigned' },
       ]),
     );
     expect(arg.data.every((d: { status: string }) => d.status === 'assigned')).toBe(true);
+    // Ключ — sessionId, а не assignmentId (старой сущности больше нет).
+    expect(arg.data.every((d: { sessionId: string }) => d.sessionId === 'session-1')).toBe(true);
+
+    // Синтетический id задания = sessionId.
+    const body = res.json() as { assignment: { id: string; _count?: { studentAssignments: number } } };
+    expect(body.assignment.id).toBe('session-1');
 
     // Уведомлены те же 3 студента.
     expect(notifyMany).toHaveBeenCalledTimes(1);
@@ -100,22 +157,32 @@ describe('POST /assignments — автовыдача зачисленным ст
 
 describe('PATCH /student-assignments/:id — проверка работы (review)', () => {
   it('admin ставит status reviewed с reviewText → update содержит reviewText, reviewedBy и status', async () => {
+    // Сдача с её Session и блоком урока (с преподавателями для уведомлений).
     db.studentAssignment.findUnique.mockResolvedValueOnce({
       id: 'sa-1',
       status: 'submitted',
       studentId: 'stu-1',
-      assignmentId: 'asg-1',
-      assignment: { id: 'asg-1', title: 'Задание 1', lessonId: null },
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
     });
     // имя проверяющего админа
     db.user.findUnique.mockResolvedValueOnce({ name: 'Преподаватель Иван' });
+    // update возвращает строку с подгруженными session (+lesson) и student.
     db.studentAssignment.update.mockResolvedValueOnce({
       id: 'sa-1',
       status: 'reviewed',
       studentId: 'stu-1',
-      assignmentId: 'asg-1',
+      sessionId: 'session-1',
       fileUrl: null,
-      assignment: { id: 'asg-1', title: 'Задание 1', lessonId: null },
+      reviewText: 'Отлично, зачёт',
+      reviewedBy: 'Преподаватель Иван',
+      session: sessionWithLesson(),
       student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
     });
 
@@ -135,6 +202,11 @@ describe('PATCH /student-assignments/:id — проверка работы (revi
     expect(updateArg.data.status).toBe('reviewed');
     expect(updateArg.data.reviewText).toBe('Отлично, зачёт');
     expect(updateArg.data.reviewedBy).toBe('Преподаватель Иван');
+
+    // Ответ всё ещё проецирует легаси-объект assignment (id = sessionId).
+    const body = res.json() as { studentAssignment: { assignmentId: string; assignment: { id: string } } };
+    expect(body.studentAssignment.assignmentId).toBe('session-1');
+    expect(body.studentAssignment.assignment.id).toBe('session-1');
   });
 
   it('студент НЕ может ставить status reviewed → 403', async () => {
@@ -142,8 +214,14 @@ describe('PATCH /student-assignments/:id — проверка работы (revi
       id: 'sa-1',
       status: 'submitted',
       studentId: 'stu-1',
-      assignmentId: 'asg-1',
-      assignment: { id: 'asg-1', title: 'Задание 1', lessonId: null },
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
     });
 
     const app = buildApp();

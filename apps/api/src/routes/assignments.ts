@@ -6,6 +6,19 @@ import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
+// ─── Projection shim ────────────────────────────────────────────────────────
+//
+// Модель данных переехала: отдельной сущности Assignment больше НЕТ. Задание
+// «свёрнуто» в БЛОК урока (Lesson): hasAssignment / assignmentTitle /
+// assignmentDescription / assignmentCriteria / assignmentType / assignmentTags /
+// assignmentMaterials. Пер-поточный дедлайн живёт на Session.dueDate
+// (Session = streamId × lessonId). StudentAssignment теперь ссылается на Session.
+//
+// Чтобы фронт продолжал работать без изменений, мы синтезируем «задание» из пары
+// (Session, его Lesson): СИНТЕТИЧЕСКИЙ id задания = sessionId. Так дедлайн и
+// сдачи разрешаются пер-поток. Форма ответа полностью совпадает со старой
+// сущностью Assignment, которую читает веб.
+
 export interface AssignmentMaterial {
   type: 'file' | 'url';
   name: string;
@@ -30,64 +43,189 @@ async function regenerateMaterialUrls(materials: AssignmentMaterial[]): Promise<
   );
 }
 
+// Минимальный блок урока (folded assignment*-поля), нужный для проекции задания.
+type LessonAssignmentBlock = {
+  id: string;
+  title: string;
+  hasAssignment: boolean;
+  assignmentTitle: string | null;
+  assignmentDescription: string | null;
+  assignmentCriteria: string | null;
+  assignmentType: 'short' | 'long' | null;
+  assignmentTags: string[];
+  assignmentMaterials: unknown;
+};
+
+// Session с подгруженным блоком урока (+ опционально поток и счётчик сдач).
+type SessionWithLesson = {
+  id: string;
+  streamId: string;
+  lessonId: string;
+  dueDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lesson: LessonAssignmentBlock;
+  stream?: { id: string; name: string };
+  _count?: { studentAssignments: number };
+};
+
+// Поля Session, нужные для проекции синтетического задания.
+const sessionAssignmentSelect = {
+  id: true,
+  streamId: true,
+  lessonId: true,
+  dueDate: true,
+  createdAt: true,
+  updatedAt: true,
+  lesson: {
+    select: {
+      id: true,
+      title: true,
+      hasAssignment: true,
+      assignmentTitle: true,
+      assignmentDescription: true,
+      assignmentCriteria: true,
+      assignmentType: true,
+      assignmentTags: true,
+      assignmentMaterials: true,
+    },
+  },
+} as const;
+
+// Поля блока урока, относящиеся к заданию (для апдейтов через assignment*).
+const lessonAssignmentSelect = {
+  id: true,
+  title: true,
+  hasAssignment: true,
+  assignmentTitle: true,
+  assignmentDescription: true,
+  assignmentCriteria: true,
+  assignmentType: true,
+  assignmentTags: true,
+  assignmentMaterials: true,
+} as const;
+
+// Проецирует пару (Session, его блок урока) в СТАРУЮ форму Assignment, которую
+// читает веб. Синтетический id задания = sessionId. materials НЕ ре-подписаны
+// (это делает вызывающий, т.к. операция асинхронная).
+function projectAssignment(session: SessionWithLesson): {
+  id: string;
+  streamId: string;
+  lessonId: string;
+  title: string;
+  description: string | null;
+  criteria: string | null;
+  type: 'short' | 'long';
+  tags: string[];
+  dueDate: Date | null;
+  groupId: null;
+  materials: unknown;
+  lesson: { id: string; title: string };
+  stream?: { id: string; name: string };
+  _count?: { studentAssignments: number };
+  createdAt: Date;
+  updatedAt: Date;
+} {
+  const l = session.lesson;
+  return {
+    id: session.id,
+    streamId: session.streamId,
+    lessonId: session.lessonId,
+    title: l.assignmentTitle ?? l.title,
+    description: l.assignmentDescription,
+    criteria: l.assignmentCriteria,
+    type: l.assignmentType ?? 'short',
+    tags: l.assignmentTags ?? [],
+    dueDate: session.dueDate,
+    // В новой модели групп заданий нет; веб читает `!a.groupId` для бейджа
+    // «Индивидуальное» — отдаём null, чтобы поведение сохранилось.
+    groupId: null,
+    materials: l.assignmentMaterials ?? [],
+    lesson: { id: l.id, title: l.title },
+    ...(session.stream ? { stream: session.stream } : {}),
+    ...(session._count ? { _count: session._count } : {}),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
+// Достраивает спроецированное задание ре-подписанными materials.
+async function finalizeAssignment(
+  projected: ReturnType<typeof projectAssignment>,
+): Promise<Record<string, unknown>> {
+  const materials = await regenerateMaterialUrls(
+    (projected.materials as unknown as AssignmentMaterial[]) || [],
+  );
+  return { ...projected, materials };
+}
+
 export async function assignmentRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
 
-  // GET /assignments?streamId=xxx — список заданий (опциональная фильтрация по streamId)
-  // Admin: все; Student: все (фильтрация через student-assignments)
+  // GET /assignments?streamId=xxx — список заданий потока.
+  // Синтезируем по одному заданию на каждую Session потока, чей блок урока имеет
+  // hasAssignment=true. id задания = sessionId.
   app.get('/assignments', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId } = request.query as { streamId?: string };
 
+    let stream: { id: string; name: string } | null = null;
     if (streamId) {
-      const stream = await prisma.stream.findUnique({ where: { id: streamId } });
+      stream = await prisma.stream.findUnique({
+        where: { id: streamId },
+        select: { id: true, name: true },
+      });
       if (!stream) {
         return reply.status(404).send({ error: 'Поток не найден' });
       }
     }
 
-    const assignments = await prisma.assignment.findMany({
-      where: streamId ? { streamId } : {},
-      include: {
-        lesson: { select: { id: true, title: true } },
-        _count: { select: { studentAssignments: true } },
+    const sessions = (await prisma.session.findMany({
+      where: {
+        ...(streamId ? { streamId } : {}),
+        lesson: { hasAssignment: true },
       },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const assignmentsWithUrls = await Promise.all(
-      assignments.map(async (a) => ({
-        ...a,
-        materials: await regenerateMaterialUrls((a.materials as unknown as AssignmentMaterial[]) || []),
-      })),
-    );
-
-    return { assignments: assignmentsWithUrls };
-  });
-
-  // GET /assignments/:id — получить задание
-  app.get('/assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-
-    const assignment = await prisma.assignment.findUnique({
-      where: { id },
-      include: {
-        lesson: { select: { id: true, title: true } },
+      select: {
+        ...sessionAssignmentSelect,
         stream: { select: { id: true, name: true } },
         _count: { select: { studentAssignments: true } },
       },
-    });
+      orderBy: { createdAt: 'desc' },
+    })) as unknown as SessionWithLesson[];
 
-    if (!assignment) {
+    const assignments = await Promise.all(
+      sessions.map((s) => finalizeAssignment(projectAssignment(s))),
+    );
+
+    return { assignments };
+  });
+
+  // GET /assignments/:id — получить задание (id = sessionId).
+  app.get('/assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const session = (await prisma.session.findUnique({
+      where: { id },
+      select: {
+        ...sessionAssignmentSelect,
+        stream: { select: { id: true, name: true } },
+        _count: { select: { studentAssignments: true } },
+      },
+    })) as unknown as SessionWithLesson | null;
+
+    if (!session || !session.lesson.hasAssignment) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
-    const materials = await regenerateMaterialUrls((assignment.materials as unknown as AssignmentMaterial[]) || []);
+    const assignment = await finalizeAssignment(projectAssignment(session));
 
-    return { assignment: { ...assignment, materials } };
+    return { assignment };
   });
 
-  // POST /assignments — создание задания (admin)
+  // POST /assignments — создание задания (admin).
+  // Пишет assignment*-поля в БЛОК выбранного урока (hasAssignment=true),
+  // upsert-ит Session(streamId, lessonId) с dueDate, затем автоматически выдаёт
+  // StudentAssignment(sessionId, studentId, 'assigned') всем зачисленным студентам.
   app.post('/assignments', { onRequest: adminOnly }, async (request, reply) => {
     const body = request.body as {
       streamId: string;
@@ -109,6 +247,14 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Название задания обязательно' });
     }
 
+    if (!body.lessonId) {
+      return reply.status(400).send({ error: 'Урок обязателен для задания' });
+    }
+
+    if (body.type && !['short', 'long'].includes(body.type)) {
+      return reply.status(400).send({ error: 'Тип задания: short или long' });
+    }
+
     const stream = await prisma.stream.findUnique({ where: { id: body.streamId } });
     if (!stream) {
       return reply.status(404).send({ error: 'Поток не найден' });
@@ -118,49 +264,55 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Нельзя добавлять задания в архивный поток' });
     }
 
-    if (body.type && !['short', 'long'].includes(body.type)) {
-      return reply.status(400).send({ error: 'Тип задания: short или long' });
+    const lesson = await prisma.lesson.findUnique({ where: { id: body.lessonId } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
     }
 
-    if (body.lessonId) {
-      const lesson = await prisma.lesson.findUnique({ where: { id: body.lessonId } });
-      if (!lesson) {
-        return reply.status(404).send({ error: 'Урок не найден' });
-      }
-      if (lesson.streamId !== body.streamId) {
-        return reply.status(400).send({ error: 'Урок не принадлежит указанному потоку' });
-      }
-    }
+    const dueDate = body.dueDate ? new Date(body.dueDate) : null;
+    const materials = JSON.parse(JSON.stringify(Array.isArray(body.materials) ? body.materials : []));
 
-    const assignment = await prisma.assignment.create({
+    // 1) Пишем folded assignment*-поля в БЛОК урока.
+    await prisma.lesson.update({
+      where: { id: body.lessonId },
       data: {
-        streamId: body.streamId,
-        title: body.title.trim(),
-        description: body.description || null,
-        criteria: body.criteria || null,
-        type: body.type || 'short',
-        tags: body.tags || [],
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        lessonId: body.lessonId || null,
-        materials: JSON.parse(JSON.stringify(Array.isArray(body.materials) ? body.materials : [])),
-      },
-      include: {
-        lesson: { select: { id: true, title: true } },
+        hasAssignment: true,
+        assignmentTitle: body.title.trim(),
+        assignmentDescription: body.description || null,
+        assignmentCriteria: body.criteria || null,
+        assignmentType: body.type || 'short',
+        assignmentTags: body.tags || [],
+        assignmentMaterials: materials,
       },
     });
 
-    // Студенты, зачисленные на поток задания
+    // 2) Дедлайн — на Session потока (создаём её при необходимости).
+    const session = (await prisma.session.upsert({
+      where: { streamId_lessonId: { streamId: body.streamId, lessonId: body.lessonId } },
+      create: {
+        streamId: body.streamId,
+        lessonId: body.lessonId,
+        dueDate,
+      },
+      update: { dueDate },
+      select: {
+        ...sessionAssignmentSelect,
+        stream: { select: { id: true, name: true } },
+      },
+    })) as unknown as SessionWithLesson;
+
+    // 3) Студенты, зачисленные на поток.
     const enrollments = await prisma.streamEnrollment.findMany({
       where: { streamId: body.streamId },
       select: { userId: true },
     });
     const studentIds = enrollments.map((e) => e.userId);
 
-    // Автоматически выдаём задание всем зачисленным студентам потока
+    // 4) Автоматически выдаём задание всем зачисленным студентам (по sessionId).
     if (studentIds.length > 0) {
       await prisma.studentAssignment.createMany({
         data: studentIds.map((studentId) => ({
-          assignmentId: assignment.id,
+          sessionId: session.id,
           studentId,
           status: 'assigned' as const,
         })),
@@ -168,19 +320,24 @@ export async function assignmentRoutes(app: FastifyInstance) {
       });
     }
 
-    // Уведомляем только зачисленных студентов
+    const assignment = await finalizeAssignment(
+      projectAssignment({ ...session, _count: { studentAssignments: studentIds.length } }),
+    );
+
+    // Уведомляем только зачисленных студентов.
     notifyMany(
       studentIds,
       'assignment_created',
       'Новое задание',
       `Добавлено задание «${assignment.title}»`,
-      { assignmentId: assignment.id, streamId: body.streamId },
+      { assignmentId: session.id, streamId: body.streamId },
     ).catch(() => {});
 
     return reply.status(201).send({ assignment });
   });
 
-  // PATCH /assignments/:id — обновление задания (admin)
+  // PATCH /assignments/:id — обновление задания (admin). id = sessionId.
+  // assignment*-поля → блок урока этой Session; dueDate → Session.
   app.patch('/assignments/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as {
@@ -194,8 +351,12 @@ export async function assignmentRoutes(app: FastifyInstance) {
       materials?: AssignmentMaterial[];
     };
 
-    const existing = await prisma.assignment.findUnique({ where: { id } });
-    if (!existing) {
+    const existing = (await prisma.session.findUnique({
+      where: { id },
+      select: sessionAssignmentSelect,
+    })) as unknown as SessionWithLesson | null;
+
+    if (!existing || !existing.lesson.hasAssignment) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
@@ -207,47 +368,82 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Тип задания: short или long' });
     }
 
-    if (body.lessonId) {
-      const lesson = await prisma.lesson.findUnique({ where: { id: body.lessonId } });
-      if (!lesson) {
-        return reply.status(404).send({ error: 'Урок не найден' });
-      }
-      if (lesson.streamId !== existing.streamId) {
-        return reply.status(400).send({ error: 'Урок не принадлежит потоку задания' });
-      }
+    // Обновление folded assignment*-полей блока урока.
+    const lessonData: Record<string, unknown> = {};
+    if (body.title !== undefined) lessonData.assignmentTitle = body.title.trim();
+    if (body.description !== undefined) lessonData.assignmentDescription = body.description || null;
+    if (body.criteria !== undefined) lessonData.assignmentCriteria = body.criteria || null;
+    if (body.type !== undefined) lessonData.assignmentType = body.type;
+    if (body.tags !== undefined) lessonData.assignmentTags = body.tags;
+    if (body.materials !== undefined) {
+      lessonData.assignmentMaterials = JSON.parse(
+        JSON.stringify(Array.isArray(body.materials) ? body.materials : []),
+      );
     }
 
-    const data: Record<string, unknown> = {};
-    if (body.title !== undefined) data.title = body.title.trim();
-    if (body.description !== undefined) data.description = body.description || null;
-    if (body.criteria !== undefined) data.criteria = body.criteria || null;
-    if (body.type !== undefined) data.type = body.type;
-    if (body.tags !== undefined) data.tags = body.tags;
-    if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
-    if (body.lessonId !== undefined) data.lessonId = body.lessonId || null;
-    if (body.materials !== undefined) data.materials = JSON.parse(JSON.stringify(Array.isArray(body.materials) ? body.materials : []));
+    if (Object.keys(lessonData).length > 0) {
+      await prisma.lesson.update({
+        where: { id: existing.lessonId },
+        data: lessonData,
+      });
+    }
 
-    const assignment = await prisma.assignment.update({
+    // Дедлайн — поле Session.
+    const sessionData: Record<string, unknown> = {};
+    if (body.dueDate !== undefined) sessionData.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+
+    if (Object.keys(sessionData).length > 0) {
+      await prisma.session.update({
+        where: { id },
+        data: sessionData,
+      });
+    }
+
+    const session = (await prisma.session.findUnique({
       where: { id },
-      data,
-      include: {
-        lesson: { select: { id: true, title: true } },
+      select: {
+        ...sessionAssignmentSelect,
+        stream: { select: { id: true, name: true } },
+        _count: { select: { studentAssignments: true } },
       },
-    });
+    })) as unknown as SessionWithLesson;
+
+    const assignment = await finalizeAssignment(projectAssignment(session));
 
     return { assignment };
   });
 
-  // DELETE /assignments/:id — удаление задания (admin)
+  // DELETE /assignments/:id — удаление задания (admin). id = sessionId.
+  // Снимаем задание с БЛОКА урока (hasAssignment=false + очищаем assignment*-поля)
+  // и удаляем StudentAssignment этой Session.
   app.delete('/assignments/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const existing = await prisma.assignment.findUnique({ where: { id } });
-    if (!existing) {
+    const existing = (await prisma.session.findUnique({
+      where: { id },
+      select: { id: true, lessonId: true, lesson: { select: { hasAssignment: true } } },
+    })) as { id: string; lessonId: string; lesson: { hasAssignment: boolean } } | null;
+
+    if (!existing || !existing.lesson.hasAssignment) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
-    await prisma.assignment.delete({ where: { id } });
+    // Очищаем задание на блоке урока.
+    await prisma.lesson.update({
+      where: { id: existing.lessonId },
+      data: {
+        hasAssignment: false,
+        assignmentTitle: null,
+        assignmentDescription: null,
+        assignmentCriteria: null,
+        assignmentType: null,
+        assignmentTags: [],
+        assignmentMaterials: [],
+      },
+    });
+
+    // Удаляем сдачи этого задания (по sessionId).
+    await prisma.studentAssignment.deleteMany({ where: { sessionId: id } });
 
     return { message: 'Задание удалено' };
   });
@@ -291,7 +487,8 @@ export async function assignmentRoutes(app: FastifyInstance) {
     return reply.status(201).send({ material });
   });
 
-  // GET /students/:id/assignments-summary — сводная статистика по статусам для ученика (admin)
+  // GET /students/:id/assignments-summary — сводная статистика по статусам (admin).
+  // overdue считаем по Session.dueDate (StudentAssignment → session → dueDate).
   app.get('/students/:id/assignments-summary', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
@@ -312,7 +509,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
       where: {
         studentId: id,
         status: { not: 'reviewed' },
-        assignment: { dueDate: { lt: now, not: null } },
+        session: { dueDate: { lt: now, not: null } },
       },
     });
 
@@ -333,7 +530,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
     return { summary };
   });
 
-  // GET /student-assignments — список назначений ученика со статусами
+  // GET /student-assignments — список назначений ученика со статусами.
+  // Фильтрация потока — через session.streamId. Каждый ряд проецируется так, чтобы
+  // веб по-прежнему видел легаси-объект `sa.assignment` (id = sessionId).
   app.get('/student-assignments', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId, status, studentId } = request.query as { streamId?: string; status?: string; studentId?: string };
     const isAdmin = request.user?.role === 'admin';
@@ -348,7 +547,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
     }
 
     if (streamId) {
-      where.assignment = { ...(where.assignment as object || {}), streamId };
+      where.session = { ...((where.session as object) || {}), streamId };
     }
 
     if (status) {
@@ -361,9 +560,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
     const studentAssignments = await prisma.studentAssignment.findMany({
       where,
       include: {
-        assignment: {
-          include: {
-            lesson: { select: { id: true, title: true } },
+        session: {
+          select: {
+            ...sessionAssignmentSelect,
             stream: { select: { id: true, name: true } },
           },
         },
@@ -372,26 +571,33 @@ export async function assignmentRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Generate signed URLs for files (submission files + assignment materials)
+    // Reshape: проецируем session+lesson в легаси `assignment`; ре-подписываем
+    // ссылки на файлы (сдача + материалы задания). Своиполя StudentAssignment
+    // сохраняем как есть.
     const results = await Promise.all(
       studentAssignments.map(async (sa) => {
-        let updated: typeof sa & { fileSignedUrl?: string } = sa;
+        const { session, ...rest } = sa as typeof sa & { session: SessionWithLesson };
+        const assignment = await finalizeAssignment(projectAssignment(session));
+
+        const projected: Record<string, unknown> = {
+          ...rest,
+          assignmentId: session.id,
+          assignment,
+        };
+
         if (sa.fileUrl) {
-          updated = { ...updated, fileSignedUrl: await getFileUrl(sa.fileUrl) };
+          projected.fileSignedUrl = await getFileUrl(sa.fileUrl);
         }
-        if (updated.assignment) {
-          const materials = await regenerateMaterialUrls((updated.assignment.materials as unknown as AssignmentMaterial[]) || []);
-          updated = { ...updated, assignment: { ...updated.assignment, materials: materials as unknown as typeof updated.assignment.materials } };
-        }
-        return updated;
+
+        return projected;
       }),
     );
 
     return { studentAssignments: results };
   });
 
-  // PATCH /student-assignments/:id — смена статуса + ответ (текст/файл)
-  // Принимает JSON или multipart/form-data (когда есть файл)
+  // PATCH /student-assignments/:id — смена статуса + ответ (текст/файл).
+  // Принимает JSON или multipart/form-data (когда есть файл).
   app.patch('/student-assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const isAdmin = request.user?.role === 'admin';
@@ -434,9 +640,20 @@ export async function assignmentRoutes(app: FastifyInstance) {
       reviewText = body.reviewText;
     }
 
+    // Подгружаем сдачу с её Session и блоком урока (с преподавателями для уведомлений).
     const sa = await prisma.studentAssignment.findUnique({
       where: { id },
-      include: { assignment: true },
+      include: {
+        session: {
+          include: {
+            lesson: {
+              include: {
+                teachers: { include: { user: { select: { id: true, isActive: true, deletedAt: true } } } },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!sa) {
@@ -494,13 +711,13 @@ export async function assignmentRoutes(app: FastifyInstance) {
       data.reviewedAt = new Date();
     }
 
-    const updated = await prisma.studentAssignment.update({
+    const updatedRow = await prisma.studentAssignment.update({
       where: { id },
       data,
       include: {
-        assignment: {
-          include: {
-            lesson: { select: { id: true, title: true } },
+        session: {
+          select: {
+            ...sessionAssignmentSelect,
             stream: { select: { id: true, name: true } },
           },
         },
@@ -508,9 +725,17 @@ export async function assignmentRoutes(app: FastifyInstance) {
       },
     });
 
-    // Create ThreadEntry for submission so teacher sees it in thread
+    const updatedSession = updatedRow.session as unknown as SessionWithLesson;
+    const assignment = await finalizeAssignment(projectAssignment(updatedSession));
+    const updated: Record<string, unknown> = {
+      ...updatedRow,
+      assignmentId: updatedSession.id,
+      assignment,
+    };
+
+    // Создаём ConversationEntry о сдаче, чтобы преподаватель видел её в треде.
     if (status === 'submitted') {
-      // Auto-create conversation if not yet exists (student may not have visited thread page)
+      // Авто-создание персонального канала, если ученик ещё не открывал тред.
       let thread = await prisma.conversation.findUnique({
         where: { studentId: sa.studentId },
       });
@@ -519,52 +744,46 @@ export async function assignmentRoutes(app: FastifyInstance) {
       }
 
       if (thread) {
-        const entryContent = answerText || `Сдано задание «${updated.assignment.title}»`;
+        const entryContent = answerText || `Сдано задание «${assignment.title}»`;
         const entryMetadata: Record<string, unknown> = {
           submissionType: 'assignment',
-          studentAssignmentId: updated.id,
+          studentAssignmentId: updatedRow.id,
         };
 
-        if (updated.fileUrl) {
-          entryMetadata.s3Key = updated.fileUrl;
-          entryMetadata.fileName = updated.fileName;
+        if (updatedRow.fileUrl) {
+          entryMetadata.s3Key = updatedRow.fileUrl;
+          entryMetadata.fileName = updatedRow.fileName;
           entryMetadata.mimeType = fileMimeType || null;
-          entryMetadata.size = updated.fileSize;
+          entryMetadata.size = updatedRow.fileSize;
         }
 
         await prisma.conversationEntry.create({
           data: {
             conversationId: thread.id,
             authorId: sa.studentId,
-            type: updated.fileUrl ? 'file' : 'text',
+            type: updatedRow.fileUrl ? 'file' : 'text',
             content: entryContent,
             metadata: (entryMetadata as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata']),
-            assignmentId: sa.assignmentId,
+            // ConversationEntry привязан к уроку (lessonId), а не к заданию.
+            lessonId: sa.session.lessonId,
           },
         });
       }
     }
 
     // Generate signed URL for file if present
-    if (updated.fileUrl) {
-      (updated as Record<string, unknown>).fileSignedUrl = await getFileUrl(updated.fileUrl);
+    if (updatedRow.fileUrl) {
+      updated.fileSignedUrl = await getFileUrl(updatedRow.fileUrl);
     }
 
     // Notify relevant parties about status change
     if (status === 'submitted') {
-      // Адресно: уведомляем преподавателей урока, к которому привязано задание.
-      // Если урока/преподавателей нет — фолбэк на всех админов.
-      let recipientIds: string[] = [];
-      if (updated.assignment.lessonId) {
-        const lessonTeachers = await prisma.lessonTeacher.findMany({
-          where: {
-            lessonId: updated.assignment.lessonId,
-            user: { isActive: true, deletedAt: null },
-          },
-          select: { userId: true },
-        });
-        recipientIds = lessonTeachers.map((t) => t.userId);
-      }
+      // Адресно: уведомляем преподавателей урока задания (LessonTeacher).
+      // Если преподавателей нет — фолбэк на всех админов.
+      let recipientIds: string[] = sa.session.lesson.teachers
+        .filter((t) => t.user.isActive && t.user.deletedAt === null)
+        .map((t) => t.user.id);
+
       if (recipientIds.length === 0) {
         const admins = await prisma.user.findMany({
           where: { role: 'admin', isActive: true, deletedAt: null },
@@ -576,24 +795,24 @@ export async function assignmentRoutes(app: FastifyInstance) {
         recipientIds,
         'assignment_submitted',
         'Студент сдал задание',
-        `${updated.student.name} сдал задание «${updated.assignment.title}»`,
-        { studentAssignmentId: updated.id, assignmentId: updated.assignmentId, studentId: updated.studentId },
+        `${updatedRow.student!.name} сдал задание «${assignment.title}»`,
+        { studentAssignmentId: updatedRow.id, assignmentId: updatedSession.id, studentId: updatedRow.studentId },
       ).catch(() => {});
     } else if (status === 'reviewed') {
       createNotification({
-        userId: updated.studentId,
+        userId: updatedRow.studentId,
         type: 'assignment_reviewed',
         title: 'Задание проверено',
-        body: `Ваше задание «${updated.assignment.title}» проверено преподавателем`,
-        metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
+        body: `Ваше задание «${assignment.title}» проверено преподавателем`,
+        metadata: { studentAssignmentId: updatedRow.id, assignmentId: updatedSession.id },
       }).catch(() => {});
     } else if (status === 'needs_revision') {
       createNotification({
-        userId: updated.studentId,
+        userId: updatedRow.studentId,
         type: 'assignment_reviewed',
         title: 'Задание на доработке',
-        body: `Ваше задание «${updated.assignment.title}» возвращено на доработку`,
-        metadata: { studentAssignmentId: updated.id, assignmentId: updated.assignmentId },
+        body: `Ваше задание «${assignment.title}» возвращено на доработку`,
+        metadata: { studentAssignmentId: updatedRow.id, assignmentId: updatedSession.id },
       }).catch(() => {});
     }
 
