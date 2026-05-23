@@ -1,6 +1,6 @@
 'use client';
 
-import { type ComponentProps } from 'react';
+import { type ComponentProps, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   FolderOpen,
   Wallet,
+  Banknote,
   User,
   Settings,
   Video,
@@ -25,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { getAdminTopUpRequests } from '@/lib/api';
 import {
   Avatar,
   AvatarFallback,
@@ -46,6 +48,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -84,6 +87,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: 'Студенты', href: '/admin/students', icon: Users },
       { label: 'Задания', href: '/admin/assignments', icon: ClipboardCheck },
       { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
+      { label: 'Пополнения', href: '/admin/topups', icon: Banknote },
     ],
   },
   {
@@ -131,6 +135,7 @@ export function AppSidebar({
   const { isMobile, setOpenMobile } = useSidebar();
   const nav = role === 'admin' ? ADMIN_NAV : STUDENT_NAV;
   const rootHref = role === 'admin' ? '/admin' : '/dashboard';
+  const pendingTopups = usePendingTopupsCount(role === 'admin');
 
   function closeOnMobile() {
     if (isMobile) setOpenMobile(false);
@@ -177,6 +182,9 @@ export function AppSidebar({
                       <span>{item.label}</span>
                     </Link>
                   </SidebarMenuButton>
+                  {item.href === '/admin/topups' && pendingTopups > 0 && (
+                    <SidebarMenuBadge>{pendingTopups}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -193,6 +201,30 @@ export function AppSidebar({
       <SidebarRail />
     </Sidebar>
   );
+}
+
+// Число заявок на пополнение «на рассмотрении» — для бейджа в сайдбаре.
+// Дозапрашиваем точечно (status=pending); тихо игнорируем ошибки — бейдж необязателен.
+function usePendingTopupsCount(enabled: boolean): number {
+  const { accessToken } = useAuth();
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!enabled || !accessToken) return;
+    let active = true;
+    getAdminTopUpRequests(accessToken, 'pending')
+      .then((data) => {
+        if (active) setCount(data.requests.length);
+      })
+      .catch(() => {
+        /* бейдж необязателен — молча игнорируем */
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, accessToken]);
+
+  return count;
 }
 
 function initials(name: string) {
