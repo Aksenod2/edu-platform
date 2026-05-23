@@ -25,6 +25,7 @@ import { apiKeyRoutes } from './routes/api-keys.js';
 import { fileRoutes } from './routes/files.js';
 import { statsRoutes } from './routes/stats.js';
 import { integrationRoutes } from './routes/integrations.js';
+import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
 import { startCronJobs } from './lib/cron.js';
 
 const app = Fastify({ logger: true });
@@ -68,6 +69,10 @@ await app.register(apiKeyRoutes);
 await app.register(fileRoutes);
 await app.register(statsRoutes);
 await app.register(integrationRoutes);
+// Публичный приём вебхуков Zoom (аутентификация по HMAC-подписи, без JWT).
+// Регистрируется отдельным плагин-скоупом: внутри он подменяет content-type-parser
+// на сырой Buffer (для HMAC), и эта инкапсуляция НЕ затрагивает остальные роуты.
+await app.register(zoomWebhookRoutes);
 
 app.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };

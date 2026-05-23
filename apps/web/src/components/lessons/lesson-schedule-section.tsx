@@ -6,15 +6,19 @@ import {
   CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
+  FileText,
   Loader2,
   Pencil,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
+import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +53,7 @@ import {
   unscheduleLesson,
   updateAssignment,
   updateLesson,
+  updateLessonSummary,
   type Assignment,
   type Lesson,
   type LessonSession,
@@ -111,6 +116,11 @@ export function LessonScheduleSection({
   const [issueStreamId, setIssueStreamId] = useState('');
   const [issueDueDate, setIssueDueDate] = useState('');
   const [issuing, setIssuing] = useState(false);
+
+  // Правка итогов занятия (per-session): какой поток редактируем, черновик и флаг сохранения.
+  const [summaryStreamId, setSummaryStreamId] = useState('');
+  const [summaryDraft, setSummaryDraft] = useState('');
+  const [savingSummary, setSavingSummary] = useState(false);
 
   // Подтягиваем выданные задания для всех потоков, где урок запланирован.
   // «Выдано» = есть синтетическое задание (Session) по этому lessonId в потоке.
@@ -301,6 +311,34 @@ export function LessonScheduleSection({
     }
   }
 
+  // Открыть редактор итогов занятия конкретного потока (подставив текущий текст).
+  function openSummary(s: LessonSession) {
+    setSummaryStreamId(s.streamId);
+    setSummaryDraft(s.summary ?? '');
+  }
+
+  function cancelSummary() {
+    setSummaryStreamId('');
+    setSummaryDraft('');
+  }
+
+  // Сохранить итоги занятия в Session (бэк ставит summarySource='manual', не трогая
+  // блочный Lesson.summary). Пустой текст очищает итоги.
+  async function handleSaveSummary(sid: string) {
+    if (savingSummary) return;
+    setSavingSummary(true);
+    try {
+      await updateLessonSummary(accessToken, lessonId, sid, summaryDraft.trim());
+      cancelSummary();
+      await load();
+      toast.success('Итоги занятия сохранены');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось сохранить итоги');
+    } finally {
+      setSavingSummary(false);
+    }
+  }
+
   // Потоки в селекте: при редактировании — все активные (поток зафиксирован и
   // выключен), при добавлении — только ещё не запланированные.
   const selectStreams = editStreamId ? activeStreams : availableStreams;
@@ -334,6 +372,7 @@ export function LessonScheduleSection({
           {sessions.map((s) => {
             const issued = issuedByStream[s.streamId];
             const issueOpen = issueStreamId === s.streamId;
+            const summaryOpen = summaryStreamId === s.streamId;
             return (
               <div
                 key={s.streamId}
@@ -348,6 +387,13 @@ export function LessonScheduleSection({
                     {s.date ? formatDate(s.date) : 'без даты'}
                     {s.startTime ? `, ${s.startTime}` : ''}
                   </span>
+                  {/* Статус автозагрузки записи Zoom — только у прошедшего занятия. */}
+                  {s.status === 'done' && (
+                    <RecordingStatusBadge
+                      status={s.recordingStatus}
+                      error={s.recordingError}
+                    />
+                  )}
                   {hasAssignment && issued && (
                     <Badge variant="outline" className="gap-1 font-normal">
                       <CheckCircle2 className="size-3" />
@@ -422,6 +468,70 @@ export function LessonScheduleSection({
                       {issued ? 'Изменить дедлайн' : 'Выдать ДЗ'}
                     </Button>
                   ))}
+
+                {/* Итоги занятия (per-session): просмотр с бейджем источника +
+                    редактирование. Сохраняется в Session.summary (summarySource='manual'). */}
+                {summaryOpen ? (
+                  <div className="flex flex-col gap-2 rounded-md bg-muted p-2">
+                    <FieldLabel htmlFor={`summary-${s.streamId}`} className="text-xs">
+                      Итоги занятия
+                    </FieldLabel>
+                    <Textarea
+                      id={`summary-${s.streamId}`}
+                      value={summaryDraft}
+                      onChange={(e) => setSummaryDraft(e.target.value)}
+                      placeholder="Краткие итоги/конспект занятия для студентов"
+                      rows={4}
+                      className="bg-card"
+                    />
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleSaveSummary(s.streamId)}
+                        disabled={savingSummary}
+                      >
+                        {savingSummary && <Loader2 className="animate-spin" />}
+                        Сохранить
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={cancelSummary}>
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                ) : s.summary ? (
+                  <div className="flex flex-col gap-1.5 rounded-md bg-muted p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="size-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium">Итоги занятия</span>
+                        <SummarySourceBadge source={s.summarySource} className="font-normal" />
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        onClick={() => openSummary(s)}
+                      >
+                        <Pencil className="size-3.5" />
+                        Изменить
+                      </Button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-muted-foreground">{s.summary}</p>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="w-fit"
+                    onClick={() => openSummary(s)}
+                  >
+                    <FileText className="size-4" />
+                    Добавить итоги
+                  </Button>
+                )}
               </div>
             );
           })}
