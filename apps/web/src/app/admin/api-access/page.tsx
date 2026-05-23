@@ -9,7 +9,7 @@ import {
   type ApiKey,
 } from '@/lib/api';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,6 +46,7 @@ export default function ApiAccessPage() {
   const [newKeyName, setNewKeyName] = useState('');
   const [creating, setCreating] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
+  const [showNewKey, setShowNewKey] = useState(false);
 
   // Отзыв ключа
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export default function ApiAccessPage() {
     try {
       const data = await createApiKey(accessToken, newKeyName.trim());
       setNewKeyValue(data.apiKey.key);
+      setShowNewKey(false); // по умолчанию ключ скрыт
       setNewKeyName('');
       await fetchKeys();
     } catch (err) {
@@ -111,12 +113,13 @@ export default function ApiAccessPage() {
       await navigator.clipboard.writeText(text);
       toast.success('Ключ скопирован');
     } catch {
-      // fallback — select the text
+      toast.error('Не удалось скопировать — выделите ключ вручную');
     }
   };
 
   const closeNewKey = () => {
     setNewKeyValue(null);
+    setShowNewKey(false);
     setShowCreateModal(false);
   };
 
@@ -131,7 +134,7 @@ export default function ApiAccessPage() {
         </div>
         <Button
           size="sm"
-          onClick={() => { setShowCreateModal(true); setNewKeyValue(null); }}
+          onClick={() => { setShowCreateModal(true); setNewKeyValue(null); setShowNewKey(false); }}
         >
           Создать API-ключ
         </Button>
@@ -149,21 +152,38 @@ export default function ApiAccessPage() {
                 <CardContent>
                   <Alert className="mb-4">
                     <AlertDescription>
-                      Скопируйте ключ сейчас. После закрытия окна он больше не будет показан.
+                      Ключ показывается только сейчас — сохраните его, позже восстановить нельзя.
                     </AlertDescription>
                   </Alert>
 
-                  <div className="flex items-center gap-2 mb-4 px-3 py-3 bg-muted border rounded-md">
-                    <span className="flex-1 font-mono text-xs break-all">
-                      {newKeyValue}
-                    </span>
+                  <div className="flex items-center gap-2 mb-4">
+                    {/* read-only поле с маской: ключ скрыт по умолчанию */}
+                    <Input
+                      readOnly
+                      type={showNewKey ? 'text' : 'password'}
+                      value={newKeyValue}
+                      aria-label="API-ключ"
+                      className="flex-1 font-mono text-xs"
+                    />
                     <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(newKeyValue)}
+                      type="button"
+                      variant="outline"
+                      size="icon-lg"
+                      onClick={() => setShowNewKey((v) => !v)}
+                      aria-label={showNewKey ? 'Скрыть ключ' : 'Показать ключ'}
                       className="shrink-0"
                     >
-                      Копировать
+                      {showNewKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-lg"
+                      onClick={() => handleCopy(newKeyValue)}
+                      aria-label="Скопировать ключ"
+                      className="shrink-0"
+                    >
+                      <Copy className="size-4" />
                     </Button>
                   </div>
 
