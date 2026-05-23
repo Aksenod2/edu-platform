@@ -8,6 +8,34 @@ const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link',
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
 const ADMIN_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 
+// Web-facing compatibility (this wave): the model moved `assignment` onto the Lesson
+// block (entry.lessonId/lesson вместо assignmentId/assignment). Веб ещё читает
+// `entry.assignmentId` (для группировки) и `entry.assignment.title` (бейдж задания),
+// поэтому проецируем включённый `lesson` обратно в легаси-форму.
+type EntryWithLesson = {
+  lessonId: string | null;
+  lesson: { id: string; title: string; assignmentTitle: string | null } | null;
+};
+
+function withLegacyAssignmentShape<T extends EntryWithLesson>(entry: T) {
+  const { lesson, ...rest } = entry;
+  return {
+    ...rest,
+    lesson,
+    // Легаси-алиасы для веба: assignmentId == lessonId, assignment.title из задания урока.
+    assignmentId: entry.lessonId,
+    assignment: lesson
+      ? { id: lesson.id, title: lesson.assignmentTitle ?? lesson.title }
+      : null,
+  };
+}
+
+// Include использовать для всех чтений/записей entry в этом файле.
+const ENTRY_INCLUDE = {
+  author: { select: { id: true, name: true, role: true } },
+  lesson: { select: { id: true, title: true, assignmentTitle: true } },
+} as const;
+
 // Short human-readable preview of the latest entry for the inbox list.
 function previewForEntry(type: ThreadEntryType, content: string): string {
   switch (type) {
@@ -86,10 +114,13 @@ export async function threadRoutes(app: FastifyInstance) {
   });
 
   // GET /threads/:studentId — chronological feed of entries
-  // Query params: ?assignmentId=X to filter by assignment context
+  // Query params: ?lessonId=X (новый) или ?assignmentId=X (легаси-алиас) — фильтр по
+  //   уроку. Веб ещё ходит с ?assignmentId, поэтому принимаем оба и сводим к lessonId.
   app.get('/threads/:studentId', async (request, reply) => {
     const { studentId } = request.params as { studentId: string };
-    const { assignmentId } = request.query as { assignmentId?: string };
+    const query = request.query as { assignmentId?: string; lessonId?: string };
+    // assignmentId — легаси-алиас lessonId (assignment свёрнут в блок Lesson).
+    const lessonId = query.lessonId ?? query.assignmentId;
     const user = request.user!;
 
     // Students can only see their own thread
@@ -122,13 +153,10 @@ export async function threadRoutes(app: FastifyInstance) {
         conversationId: thread.id,
         // Students cannot see "note" entries (admin-only notes)
         ...(user.role === 'student' ? { type: { not: 'note' as ThreadEntryType } } : {}),
-        // Optional: filter by assignment context
-        ...(assignmentId ? { assignmentId } : {}),
+        // Optional: filter by lesson context (assignment свёрнут в Lesson)
+        ...(lessonId ? { lessonId } : {}),
       },
-      include: {
-        author: { select: { id: true, name: true, role: true } },
-        assignment: { select: { id: true, title: true } },
-      },
+      include: ENTRY_INCLUDE,
       orderBy: { createdAt: 'asc' },
     });
 
@@ -151,7 +179,8 @@ export async function threadRoutes(app: FastifyInstance) {
       }
     }
 
-    // Generate signed URLs for file/audio entries
+    // Generate signed URLs for file/audio entries.
+    // withLegacyAssignmentShape добавляет легаси-поля assignmentId/assignment для веба.
     const entriesWithUrls = await Promise.all(
       entries.map(async (entry) => {
         if ((entry.type === 'file' || entry.type === 'audio') && entry.metadata) {
@@ -159,13 +188,13 @@ export async function threadRoutes(app: FastifyInstance) {
           if (meta.s3Key) {
             try {
               const signedUrl = await getFileUrl(meta.s3Key as string);
-              return { ...entry, metadata: { ...meta, url: signedUrl } };
+              return withLegacyAssignmentShape({ ...entry, metadata: { ...meta, url: signedUrl } });
             } catch {
-              return entry;
+              return withLegacyAssignmentShape(entry);
             }
           }
         }
-        return entry;
+        return withLegacyAssignmentShape(entry);
       }),
     );
 
@@ -244,9 +273,12 @@ export async function threadRoutes(app: FastifyInstance) {
     const body = request.body as {
       type: ThreadEntryType;
       content: string;
+      // lessonId — новый FK; assignmentId — легаси-алиас (assignment свёрнут в Lesson).
       assignmentId?: string;
+      lessonId?: string;
       metadata?: Record<string, unknown>;
     };
+    const lessonId = body.lessonId ?? body.assignmentId ?? null;
 
     if (!body.type || !body.content) {
       return reply.status(400).send({ error: 'Поля type и content обязательны' });
@@ -262,31 +294,29 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: `Тип записи "${body.type}" недоступен для вашей роли` });
     }
 
-    // Validate assignmentId if provided
-    if (body.assignmentId) {
-      const assignment = await prisma.assignment.findUnique({
-        where: { id: body.assignmentId },
+    // Validate lessonId if provided (assignment свёрнут в Lesson)
+    if (lessonId) {
+      const lesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
         select: { id: true },
       });
-      if (!assignment) {
+      if (!lesson) {
         return reply.status(400).send({ error: 'Задание не найдено' });
       }
     }
 
-    const entry = await prisma.conversationEntry.create({
+    const created = await prisma.conversationEntry.create({
       data: {
         conversationId: thread.id,
         authorId: user.userId,
         type: body.type,
         content: body.content,
-        assignmentId: body.assignmentId || null,
+        lessonId,
         metadata: (body.metadata ?? undefined) as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata'],
       },
-      include: {
-        author: { select: { id: true, name: true, role: true } },
-        assignment: { select: { id: true, title: true } },
-      },
+      include: ENTRY_INCLUDE,
     });
+    const entry = withLegacyAssignmentShape(created);
 
     // Notify the other party: student gets notified when admin posts, admin gets notified when student posts
     if (user.role === 'admin') {
@@ -334,7 +364,8 @@ async function handleMultipartEntry(
   let fileName = '';
   let fileMimeType = '';
   let entryType: ThreadEntryType = 'file';
-  let assignmentId: string | null = null;
+  // lessonId — новый FK; поле assignmentId (легаси веба) принимаем как его алиас.
+  let lessonId: string | null = null;
 
   for await (const part of parts) {
     if (part.type === 'file') {
@@ -349,8 +380,8 @@ async function handleMultipartEntry(
       const value = part.value as string;
       if (part.fieldname === 'type') {
         entryType = value as ThreadEntryType;
-      } else if (part.fieldname === 'assignmentId') {
-        assignmentId = value || null;
+      } else if (part.fieldname === 'lessonId' || part.fieldname === 'assignmentId') {
+        lessonId = value || null;
       }
     }
   }
@@ -367,19 +398,19 @@ async function handleMultipartEntry(
     return reply.status(403).send({ error: `Тип записи "${entryType}" недоступен для вашей роли` });
   }
 
-  if (assignmentId) {
-    const assignment = await prisma.assignment.findUnique({
-      where: { id: assignmentId },
+  if (lessonId) {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
       select: { id: true },
     });
-    if (!assignment) {
+    if (!lesson) {
       return reply.status(400).send({ error: 'Задание не найдено' });
     }
   }
 
   const uploaded = await uploadFile(fileBuffer, fileName, fileMimeType);
 
-  const entry = await prisma.conversationEntry.create({
+  const created = await prisma.conversationEntry.create({
     data: {
       conversationId,
       authorId: user.userId,
@@ -391,13 +422,11 @@ async function handleMultipartEntry(
         mimeType: fileMimeType,
         size: uploaded.size,
       },
-      assignmentId,
+      lessonId,
     },
-    include: {
-      author: { select: { id: true, name: true, role: true } },
-      assignment: { select: { id: true, title: true } },
-    },
+    include: ENTRY_INCLUDE,
   });
+  const entry = withLegacyAssignmentShape(created);
 
   // Notify the other party for file uploads too
   if (user.role === 'admin') {
