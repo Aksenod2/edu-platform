@@ -28,12 +28,11 @@ import {
   getLesson,
   updateLesson,
   getTeachers,
-  type Lesson,
   type LessonMaterial,
   type Teacher,
 } from '@/lib/api';
 import { TeacherPicker } from '@/components/lessons/teacher-picker';
-import { LessonVideoSection } from '@/components/lessons/lesson-video-section';
+import { LessonVideosManager } from '@/components/lessons/lesson-videos-manager';
 import { LessonMaterialsSection } from '@/components/lessons/lesson-materials-section';
 import {
   type AssignmentType,
@@ -47,7 +46,6 @@ const ASSIGNMENT_TYPE_LABELS: Record<AssignmentType, string> = {
 
 type FormState = {
   title: string;
-  videoUrl: string;
   summary: string;
   notes: string;
   teacherIds: string[];
@@ -62,7 +60,6 @@ type FormState = {
 function lessonToForm(lesson: LessonBlock): FormState {
   return {
     title: lesson.title,
-    videoUrl: lesson.videoUrl || '',
     summary: lesson.summary || '',
     notes: lesson.notes || '',
     teacherIds: (lesson.teachers ?? []).map((t) => t.id),
@@ -114,10 +111,6 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
 
   // Видео/материалы пишутся отдельными запросами и возвращают свежий урок —
   // обновляем локальное состояние без полного рефетча.
-  const handleVideoChange = (updated: Lesson) => {
-    setLesson((prev) => (prev ? { ...prev, ...updated } : updated));
-  };
-
   const handleMaterialsChange = (materials: LessonMaterial[]) => {
     setLesson((prev) => (prev ? { ...prev, materials } : prev));
   };
@@ -157,7 +150,6 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
       // пустая строка на бэке превращается в null.
       const { lesson: updated } = await updateLesson(accessToken, lessonId, {
         title: form.title.trim(),
-        videoUrl: form.videoUrl.trim(),
         summary: form.summary,
         notes: form.notes,
         teacherIds: form.teacherIds,
@@ -208,27 +200,14 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
         </Field>
 
         <Field>
-          <LessonVideoSection
+          <LessonVideosManager
             accessToken={accessToken!}
             lessonId={lessonId}
-            videoFileUrl={lesson.videoFileUrl ?? null}
-            onChange={handleVideoChange}
+            videos={lesson.videos ?? []}
+            onChange={(videos) =>
+              setLesson((prev) => (prev ? { ...prev, videos } : prev))
+            }
           />
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="lesson-video-url">Видео URL (внешняя ссылка)</FieldLabel>
-          <Input
-            id="lesson-video-url"
-            type="url"
-            value={form.videoUrl}
-            onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
-            placeholder="https://..."
-          />
-          <FieldDescription>
-            Альтернатива загрузке: ссылка на YouTube/Vimeo. Если загружен файл, для
-            студента используется он.
-          </FieldDescription>
         </Field>
 
         <Field>

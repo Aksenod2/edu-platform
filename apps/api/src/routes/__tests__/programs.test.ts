@@ -124,8 +124,8 @@ describe('GET /programs/:id — деталь', () => {
       createdAt: new Date('2026-01-01T00:00:00Z'),
       updatedAt: new Date('2026-01-01T00:00:00Z'),
       programLessons: [
-        { sortOrder: 0, lesson: { id: 'l-1', title: 'Урок 1', hasAssignment: true, videoUrl: null, videoKey: 'k' } },
-        { sortOrder: 1, lesson: { id: 'l-2', title: 'Урок 2', hasAssignment: false, videoUrl: null, videoKey: null } },
+        { sortOrder: 0, lesson: { id: 'l-1', title: 'Урок 1', hasAssignment: true, videoUrl: null, videoKey: 'k', _count: { videos: 0 } } },
+        { sortOrder: 1, lesson: { id: 'l-2', title: 'Урок 2', hasAssignment: false, videoUrl: null, videoKey: null, _count: { videos: 0 } } },
       ],
       streams: [{ id: 's-1', name: 'Поток 1', status: 'active' }],
     });

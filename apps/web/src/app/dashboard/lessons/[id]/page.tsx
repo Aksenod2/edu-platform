@@ -25,46 +25,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { MaterialRow } from '@/components/material-row';
+import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
-
-/**
- * Преобразует ссылку YouTube/Vimeo в embed-URL.
- * Возвращает null, если ссылка не распознана.
- */
-function parseVideoEmbed(url: string): string | null {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, '');
-
-    // YouTube: youtu.be/<id>, youtube.com/watch?v=<id>, /embed/<id>, /shorts/<id>
-    if (host === 'youtu.be') {
-      const id = u.pathname.slice(1).split('/')[0];
-      return id ? `https://www.youtube.com/embed/${id}` : null;
-    }
-    if (host === 'youtube.com' || host === 'm.youtube.com') {
-      if (u.pathname === '/watch') {
-        const id = u.searchParams.get('v');
-        return id ? `https://www.youtube.com/embed/${id}` : null;
-      }
-      const m = u.pathname.match(/^\/(embed|shorts)\/([^/?]+)/);
-      if (m) return `https://www.youtube.com/embed/${m[2]}`;
-    }
-
-    // Vimeo: vimeo.com/<id>, player.vimeo.com/video/<id>
-    if (host === 'vimeo.com') {
-      const id = u.pathname.split('/').filter(Boolean)[0];
-      return id && /^\d+$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
-    }
-    if (host === 'player.vimeo.com') {
-      const m = u.pathname.match(/^\/video\/(\d+)/);
-      if (m) return `https://player.vimeo.com/video/${m[1]}`;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
   draft: 'secondary',
@@ -174,9 +137,52 @@ export default function StudentLessonPage() {
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
           </div>
 
-          {/* Видео: приоритет — загруженный файл (встроенный плеер),
-              иначе внешняя ссылка (embed YouTube/Vimeo или кнопка). */}
-          {lesson.videoFileUrl ? (
+          {/* Видео урока: если есть список (несколько видео) — показываем его;
+              иначе fallback на одиночное видео (файл или внешняя ссылка). */}
+          {lesson.videos && lesson.videos.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              {lesson.videos.map((video) => {
+                const videoEmbed =
+                  video.kind === 'link' ? parseVideoEmbed(video.url) : null;
+                return (
+                  <div key={video.id} className="flex flex-col gap-2">
+                    {video.title && (
+                      <div className="text-sm font-medium">{video.title}</div>
+                    )}
+                    {video.kind === 'file' ? (
+                      <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
+                        <video
+                          controls
+                          preload="metadata"
+                          controlsList="nodownload"
+                          onContextMenu={(e) => e.preventDefault()}
+                          className="max-h-[70vh] w-auto max-w-full"
+                          src={video.url}
+                        />
+                      </div>
+                    ) : videoEmbed ? (
+                      <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
+                        <iframe
+                          src={videoEmbed}
+                          title={video.title ?? lesson.title}
+                          className="size-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <Button asChild className="w-fit">
+                        <a href={video.url} target="_blank" rel="noopener noreferrer">
+                          Смотреть видео
+                          <ExternalLink />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : lesson.videoFileUrl ? (
             <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
               <video
                 controls
@@ -260,7 +266,8 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!lesson.videoFileUrl &&
+          {!(lesson.videos && lesson.videos.length > 0) &&
+            !lesson.videoFileUrl &&
             !lesson.videoUrl &&
             !lesson.summary &&
             (!lesson.materials || lesson.materials.length === 0) &&

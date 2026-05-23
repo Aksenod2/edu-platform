@@ -55,10 +55,13 @@ export async function fileRoutes(app: FastifyInstance) {
   // файловые/аудио-сообщения. Нужно для сброса тестовых данных при переходе на
   // S3 (новые файлы поедут в S3). Необратимо.
   app.delete('/admin/files', { onRequest: requireRole('admin') }, async () => {
-    const [files, lessonsVideo, lessonsMat, sessionsVideo, subs, fileMsgs] =
+    const [files, lessonsVideo, lessonVideosDeleted, lessonsMat, sessionsVideo, subs, fileMsgs] =
       await prisma.$transaction([
         prisma.fileStorage.deleteMany({}),
         prisma.lesson.updateMany({ where: { NOT: { videoKey: null } }, data: { videoKey: null } }),
+        // Новые видео урока (LessonVideo): удаляем только видео-ФАЙЛЫ (videoKey задан);
+        // внешние ссылки (videoUrl) оставляем — они не хранятся в файловом хранилище.
+        prisma.lessonVideo.deleteMany({ where: { NOT: { videoKey: null } } }),
         // Очищаем материалы блока урока И вложенные материалы задания (свёрнуты в Lesson).
         prisma.lesson.updateMany({ data: { assignmentMaterials: [], materials: [] } }),
         // Записи проводятся на уровне сессии (per-run recordings) — обнуляем видео сессий.
@@ -75,7 +78,9 @@ export async function fileRoutes(app: FastifyInstance) {
 
     return {
       deletedFiles: files.count,
-      clearedLessonVideos: lessonsVideo.count,
+      // Унаследованные одиночные видео урока (обнулённый Lesson.videoKey) +
+      // удалённые видео-файлы из новой коллекции LessonVideo.
+      clearedLessonVideos: lessonsVideo.count + lessonVideosDeleted.count,
       clearedLessonMaterials: lessonsMat.count,
       clearedSessionVideos: sessionsVideo.count,
       clearedSubmissionFiles: subs.count,
