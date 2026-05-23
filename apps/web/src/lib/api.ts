@@ -380,6 +380,63 @@ export async function unenrollStudent(
   });
 }
 
+// --- Инвайт-ссылка в поток ---------------------------------------------------
+
+export interface StreamJoinLink {
+  token: string;
+  joinUrl: string;
+}
+
+// Получить инвайт-ссылку потока. Идемпотентно: если ссылка уже есть — вернёт её,
+// иначе сгенерирует и вернёт (POST).
+export async function getStreamJoinLink(
+  accessToken: string,
+  streamId: string,
+): Promise<StreamJoinLink> {
+  return request(`/streams/${streamId}/join-link`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Перевыпустить инвайт-ссылку: старая ссылка инвалидируется, возвращается новая (DELETE).
+export async function regenerateStreamJoinLink(
+  accessToken: string,
+  streamId: string,
+): Promise<StreamJoinLink> {
+  return request(`/streams/${streamId}/join-link`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// --- Публичное вступление по ссылке (без авторизации) ------------------------
+
+export interface PublicJoinStream {
+  // Имя потока и флаг закрытого набора (true для архивного потока).
+  name: string;
+  closed: boolean;
+}
+
+// Превью потока по инвайт-токену (публично, без авторизации).
+export async function getPublicJoinStream(
+  token: string,
+): Promise<{ stream: PublicJoinStream }> {
+  return request(`/public/streams/join/${token}`);
+}
+
+// Регистрация студента по инвайт-ссылке (публично, без авторизации).
+// Создаёт аккаунт, зачисляет на поток и сразу выдаёт сессию (accessToken + cookie).
+export async function joinStreamByToken(
+  token: string,
+  data: { email: string; name: string; password: string },
+): Promise<AuthResponse> {
+  return request<AuthResponse>(`/public/streams/join/${token}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // Users (Students) API
 
 export interface Student {

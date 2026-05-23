@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
@@ -5,6 +6,18 @@ import {
   deriveStreamTeachers,
   streamTeacherSourcesInclude,
 } from '../lib/stream-teachers.js';
+import { enrollStudentInStream } from '../lib/stream-enroll.js';
+
+// Публичный токен инвайт-ссылки: 32 случайных байта в base64url (URL-safe).
+function generateJoinToken(): string {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+// Адрес фронтенда для сборки публичной ссылки вступления (как в lib/email.ts).
+function joinUrlFor(token: string): string {
+  const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:3000';
+  return `${frontendUrl}/join/${token}`;
+}
 
 // Источник преподавателей потока перенесён в lib/stream-teachers.ts:
 // поток больше не владеет уроками, они достижимы через программу
@@ -31,18 +44,24 @@ export async function streamRoutes(app: FastifyInstance) {
         : mine
           ? { ownerId: request.user!.userId }
           : {},
-      include: streamTeachersInclude,
+      include: { ...streamTeachersInclude, _count: { select: { enrollments: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return {
-      streams: streams.map(({ program, sessions, owner, ...stream }) => ({
-        ...stream,
-        owner,
-        program: program
-          ? { id: program.id, name: program.name, type: program.type }
-          : null,
-        ...deriveStreamTeachers({ program, sessions }),
-      })),
+      // joinToken/joinTokenAt НЕ светим в общих ответах — только через
+      // POST/DELETE /streams/:id/join-link.
+      streams: streams.map(
+        ({ program, sessions, owner, _count, joinToken: _jt, joinTokenAt: _jta, ...stream }) => ({
+          ...stream,
+          owner,
+          // Число зачисленных учеников — для колонки «Учеников» в списке потоков.
+          studentsCount: _count.enrollments,
+          program: program
+            ? { id: program.id, name: program.name, type: program.type }
+            : null,
+          ...deriveStreamTeachers({ program, sessions }),
+        }),
+      ),
     };
   });
 
@@ -159,7 +178,8 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Поток не найден' });
     }
 
-    const { _count, program, sessions, owner, ...streamFields } = stream;
+    // joinToken/joinTokenAt НЕ светим в общих ответах — только через эндпоинты join-link.
+    const { _count, program, sessions, owner, joinToken: _jt, joinTokenAt: _jta, ...streamFields } = stream;
     // Число уроков: для программного потока — уроки программы; иначе — сессии.
     const lessonsCount = stream.programId
       ? program?._count.programLessons ?? 0
@@ -225,32 +245,10 @@ export async function streamRoutes(app: FastifyInstance) {
       select: { id: true },
     });
 
-    if (validStudents.length > 0) {
-      await prisma.streamEnrollment.createMany({
-        data: validStudents.map((s) => ({ streamId: id, userId: s.id })),
-        skipDuplicates: true,
-      });
-
-      // Бэкфилл: выдаём только что зачисленным студентам задания по всем
-      // сессиям потока, у уроков которых есть задание (lesson.hasAssignment).
-      // Ключуем по sessionId (StudentAssignment(sessionId, studentId)).
-      // skipDuplicates делает повторное зачисление безопасным.
-      const sessions = await prisma.session.findMany({
-        where: { streamId: id, lesson: { hasAssignment: true } },
-        select: { id: true },
-      });
-      if (sessions.length > 0) {
-        await prisma.studentAssignment.createMany({
-          data: validStudents.flatMap((s) =>
-            sessions.map((session) => ({
-              sessionId: session.id,
-              studentId: s.id,
-              status: 'assigned' as const,
-            })),
-          ),
-          skipDuplicates: true,
-        });
-      }
+    // Зачисление + бэкфилл заданий — в общем хелпере (паритет с регистрацией по
+    // инвайт-ссылке). Идемпотентно для каждого студента.
+    for (const s of validStudents) {
+      await enrollStudentInStream(id, s.id);
     }
 
     const enrollments = await prisma.streamEnrollment.findMany({
@@ -284,6 +282,55 @@ export async function streamRoutes(app: FastifyInstance) {
       return { success: true };
     },
   );
+
+  // POST /streams/:id/join-link — получить инвайт-ссылку вступления (admin).
+  // Идемпотентно: если токен уже есть — возвращаем существующий; иначе генерируем,
+  // сохраняем (joinTokenAt=now) и возвращаем. Одна постоянная ссылка на поток.
+  app.post('/streams/:id/join-link', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const stream = await prisma.stream.findUnique({
+      where: { id },
+      select: { id: true, joinToken: true },
+    });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    if (stream.joinToken) {
+      return { token: stream.joinToken, joinUrl: joinUrlFor(stream.joinToken) };
+    }
+
+    const token = generateJoinToken();
+    await prisma.stream.update({
+      where: { id },
+      data: { joinToken: token, joinTokenAt: new Date() },
+    });
+
+    return { token, joinUrl: joinUrlFor(token) };
+  });
+
+  // DELETE /streams/:id/join-link — перевыпуск инвайт-ссылки (admin).
+  // Старая ссылка инвалидируется: генерируем новый токен и сохраняем (joinTokenAt=now).
+  app.delete('/streams/:id/join-link', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const stream = await prisma.stream.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Поток не найден' });
+    }
+
+    const token = generateJoinToken();
+    await prisma.stream.update({
+      where: { id },
+      data: { joinToken: token, joinTokenAt: new Date() },
+    });
+
+    return { token, joinUrl: joinUrlFor(token) };
+  });
 
   // POST /streams/:id/archive — архивирование потока
   app.post('/streams/:id/archive', { onRequest: adminOnly }, async (request, reply) => {

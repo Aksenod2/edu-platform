@@ -8,6 +8,7 @@ import { signAccessToken } from '../lib/jwt.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { issueSession } from '../lib/auth-session.js';
 
 // Подписанный временный URL аватара пользователя по avatarKey (или null).
 async function avatarUrlFor(avatarKey: string | null | undefined): Promise<string | null> {
@@ -62,39 +63,9 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: 'Неверный email или пароль' });
     }
 
-    const accessToken = signAccessToken({ userId: user.id, role: user.role });
-
-    const refreshTokenValue = crypto.randomBytes(48).toString('hex');
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshTokenValue,
-        userId: user.id,
-        expiresAt: refreshTokenExpiresAt(),
-      },
-    });
-
-    reply.setCookie('refreshToken', refreshTokenValue, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-      maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60,
-    });
-
-    return {
-      accessToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        mustChangePassword: user.mustChangePassword,
-        avatarUrl: await avatarUrlFor(user.avatarKey),
-        questionnaireCompleted: user.role === 'student'
-          ? !!user.studentProfile?.questionnaireCompletedAt
-          : undefined,
-      },
-    };
+    // Выдача access/refresh-токенов, cookie и сборка user-объекта — в общем хелпере
+    // (переиспользуется публичной регистрацией по инвайт-ссылке).
+    return issueSession(reply, user);
   });
 
   // POST /auth/refresh
