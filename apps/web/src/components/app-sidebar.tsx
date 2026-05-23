@@ -69,7 +69,6 @@ const ADMIN_NAV: NavGroup[] = [
       { label: 'Программы', href: '/admin/programs', icon: GraduationCap },
       { label: 'Уроки', href: '/admin/lessons', icon: BookOpen },
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
-      { label: 'Профиль', href: '/admin/profile', icon: User },
     ],
   },
 ];
@@ -85,8 +84,6 @@ const STUDENT_NAV: NavGroup[] = [
       { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Материалы', href: '/dashboard/materials', icon: FolderOpen },
       { label: 'Баланс', href: '/dashboard/balance', icon: Wallet },
-      { label: 'Профиль', href: '/dashboard/profile', icon: User },
-      { label: 'Настройки', href: '/dashboard/settings', icon: Settings },
     ],
   },
 ];
@@ -180,7 +177,7 @@ function initials(name: string) {
 
 function NavUser() {
   const { user, logout } = useAuth();
-  const { isMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   const router = useRouter();
 
   if (!user) return null;
@@ -189,6 +186,20 @@ function NavUser() {
     await logout();
     router.push('/login');
   }
+
+  function closeOnMobile() {
+    if (isMobile) setOpenMobile(false);
+  }
+
+  // Аккаунт-ссылки (профиль, настройки) живут в меню пользователя, а не в
+  // основной навигации.
+  const accountItems: NavItem[] =
+    user.role === 'admin'
+      ? [{ label: 'Профиль', href: '/admin/profile', icon: User }]
+      : [
+          { label: 'Профиль', href: '/dashboard/profile', icon: User },
+          { label: 'Настройки', href: '/dashboard/settings', icon: Settings },
+        ];
 
   return (
     <SidebarMenu>
@@ -234,6 +245,15 @@ function NavUser() {
                 </div>
               </div>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {accountItems.map((item) => (
+              <DropdownMenuItem key={item.href} asChild>
+                <Link href={item.href} onClick={closeOnMobile}>
+                  <item.icon />
+                  {item.label}
+                </Link>
+              </DropdownMenuItem>
+            ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleLogout}>
               <LogOut />
