@@ -11,6 +11,7 @@ import { MAX_FILE_SIZE } from './lib/s3.js';
 import { prisma } from '@platform/db';
 import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
+import { streamsPublicRoutes } from './routes/streams-public.js';
 import { userRoutes } from './routes/users.js';
 import { lessonRoutes } from './routes/lessons.js';
 import { programRoutes } from './routes/programs.js';
@@ -68,6 +69,10 @@ await app.register(
 );
 
 await app.register(streamRoutes);
+// Публичные эндпоинты вступления в поток по инвайт-ссылке (без JWT). Отдельный
+// плагин-скоуп с локальным rate-limit (мягче на GET, жёстче на POST) — инкапсуляция
+// rate-limit НЕ затрагивает остальные роуты.
+await app.register(streamsPublicRoutes);
 await app.register(userRoutes);
 await app.register(lessonRoutes);
 await app.register(programRoutes);

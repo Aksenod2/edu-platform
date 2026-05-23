@@ -151,13 +151,18 @@ model RefreshToken {
 }
 
 model Stream {
-  id        String       @id @default(uuid())
-  name      String
-  status    StreamStatus @default(active)
-  ownerId   String?
-  programId String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id          String       @id @default(uuid())
+  name        String
+  status      StreamStatus @default(active)
+  ownerId     String?
+  programId   String?
+  // Публичный токен постоянной инвайт-ссылки вступления в поток (одна ссылка на поток).
+  // null = ссылка ещё не сгенерирована. НЕ путать с User.inviteToken — это другой механизм.
+  joinToken   String?      @unique
+  // Когда токен сгенерирован/перевыпущен (для UI и аудита).
+  joinTokenAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   owner         User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   program       Program?           @relation(fields: [programId], references: [id], onDelete: SetNull)
