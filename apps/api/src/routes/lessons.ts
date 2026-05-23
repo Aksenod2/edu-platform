@@ -458,12 +458,15 @@ export async function lessonRoutes(app: FastifyInstance) {
   });
 
   // POST /lessons — создание урока (admin).
-  // Создаёт блок урока; при наличии streamId — привязывает его к программе потока
-  // (ProgramLesson, если у потока есть Program) и заводит/обновляет Session
-  // (status/date/startTime/meetingUrl). Возвращает спроецированный урок.
+  // streamId ОПЦИОНАЛЕН:
+  //   - без streamId — создаём только БЛОК урока (копилка): без ProgramLesson и без
+  //     Session; возвращаем спроецированный урок (streamId=null, status='draft').
+  //   - с streamId — привязываем блок к программе потока (ProgramLesson, если у потока
+  //     есть Program) и заводим/обновляем Session (status/date/startTime/meetingUrl).
+  // Возвращает спроецированный урок.
   app.post('/lessons', { onRequest: adminOnly }, async (request, reply) => {
     const body = request.body as {
-      streamId: string;
+      streamId?: string;
       title: string;
       videoUrl?: string;
       summary?: string;
@@ -477,10 +480,6 @@ export async function lessonRoutes(app: FastifyInstance) {
       materials?: LessonMaterial[];
     };
 
-    if (!body.streamId) {
-      return reply.status(400).send({ error: 'streamId обязателен' });
-    }
-
     if (!body.title || !body.title.trim()) {
       return reply.status(400).send({ error: 'Название урока обязательно' });
     }
@@ -491,6 +490,34 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     const status: LessonStatusValue = isLessonStatus(body.status) ? body.status : 'draft';
     const date = parseLessonDate(body.date);
+
+    const teacherIds = Array.isArray(body.teacherIds)
+      ? await filterAdminIds(body.teacherIds)
+      : [];
+
+    // ── Без streamId: создаём только блок-урок (копилка) ──────────────────────
+    if (!body.streamId) {
+      const block = (await prisma.lesson.create({
+        data: {
+          title: body.title.trim(),
+          videoUrl: body.videoUrl?.trim() || null,
+          summary: body.summary || null,
+          notes: body.notes || null,
+          sortOrder: body.sortOrder ?? 0,
+          materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
+          ...(teacherIds.length > 0 && {
+            teachers: { create: teacherIds.map((userId) => ({ userId })) },
+          }),
+        },
+        include: teacherInclude,
+      })) as unknown as LessonBlock;
+
+      // Блок без потока: streamId=null, status='draft' (нет Session).
+      const projected = projectLesson(block, null, null);
+      return reply.status(201).send({ lesson: projected });
+    }
+
+    // ── С streamId: блок + (ProgramLesson) + Session ──────────────────────────
 
     // «Запланирован» требует даты
     if (status === 'planned' && !date) {
@@ -508,10 +535,6 @@ export async function lessonRoutes(app: FastifyInstance) {
     if (stream.status === 'archived') {
       return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивный поток' });
     }
-
-    const teacherIds = Array.isArray(body.teacherIds)
-      ? await filterAdminIds(body.teacherIds)
-      : [];
 
     // 1) Создаём блок урока.
     const block = (await prisma.lesson.create({

@@ -1677,3 +1677,157 @@ export async function uploadThreadFile(
   }
   return data as { entry: ThreadEntry };
 }
+
+// Programs API
+//
+// Program — переиспользуемый учебный план: упорядоченный набор блоков-уроков
+// (ProgramLesson). Поток (Stream) ссылается на программу через programId.
+// Управление программами — только admin.
+
+export type ProgramType = 'course' | 'intensive' | 'mentorship';
+
+export const PROGRAM_TYPE_LABELS: Record<ProgramType, string> = {
+  course: 'Курс',
+  intensive: 'Интенсив',
+  mentorship: 'Менторство',
+};
+
+// Элемент списка программ (со счётчиками).
+export interface Program {
+  id: string;
+  name: string;
+  type: ProgramType;
+  whatYouLearn: string | null;
+  lessonsCount: number;
+  streamsCount: number;
+}
+
+// Урок в составе программы (минимум полей для UI).
+export interface ProgramLesson {
+  id: string;
+  title: string;
+  hasAssignment: boolean;
+  hasVideo: boolean;
+  sortOrder: number;
+}
+
+// Деталь программы: сама программа + упорядоченные уроки + привязанные потоки.
+export interface ProgramDetail {
+  id: string;
+  name: string;
+  type: ProgramType;
+  whatYouLearn: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lessons: ProgramLesson[];
+  streams: { id: string; name: string; status: 'active' | 'archived' }[];
+}
+
+export async function getPrograms(
+  accessToken: string,
+): Promise<{ programs: Program[] }> {
+  return request('/programs', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getProgram(
+  accessToken: string,
+  id: string,
+): Promise<{ program: ProgramDetail }> {
+  return request(`/programs/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function createProgram(
+  accessToken: string,
+  data: { name: string; type?: ProgramType; whatYouLearn?: string | null },
+): Promise<{ program: Program }> {
+  return request('/programs', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateProgram(
+  accessToken: string,
+  id: string,
+  data: { name?: string; type?: ProgramType; whatYouLearn?: string | null },
+): Promise<{ program: Program }> {
+  return request(`/programs/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProgram(
+  accessToken: string,
+  id: string,
+): Promise<{ message: string }> {
+  return request(`/programs/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Привязать существующий блок-урок к программе (в конец). Идемпотентно.
+export async function addProgramLesson(
+  accessToken: string,
+  programId: string,
+  lessonId: string,
+): Promise<{ programLesson: { id: string; programId: string; lessonId: string; sortOrder: number } }> {
+  return request(`/programs/${programId}/lessons`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ lessonId }),
+  });
+}
+
+// Отвязать урок от программы (идемпотентно).
+export async function removeProgramLesson(
+  accessToken: string,
+  programId: string,
+  lessonId: string,
+): Promise<{ success: boolean }> {
+  return request(`/programs/${programId}/lessons/${lessonId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Переустановить порядок уроков программы по порядку массива lessonIds.
+export async function reorderProgramLessons(
+  accessToken: string,
+  programId: string,
+  lessonIds: string[],
+): Promise<{ lessons: { lessonId: string; sortOrder: number }[] }> {
+  return request(`/programs/${programId}/lessons/reorder`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ lessonIds }),
+  });
+}
+
+// Создать блок-урок без привязки к потоку (копилка): POST /lessons без streamId.
+// Сервер вернёт спроецированный урок (streamId=null, status='draft').
+export async function createLessonBlock(
+  accessToken: string,
+  data: {
+    title: string;
+    videoUrl?: string;
+    summary?: string;
+    notes?: string;
+    sortOrder?: number;
+    teacherIds?: string[];
+    materials?: LessonMaterial[];
+  },
+): Promise<{ lesson: Lesson }> {
+  return request('/lessons', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
