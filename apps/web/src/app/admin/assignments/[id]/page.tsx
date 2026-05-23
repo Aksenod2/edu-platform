@@ -34,11 +34,13 @@ const statusLabels: Record<string, string> = {
   needs_revision: 'На доработке',
 };
 
-const statusVariants: Record<string, 'default' | 'secondary' | 'destructive'> = {
+const statusVariants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   assigned: 'secondary',
   submitted: 'secondary',
   reviewed: 'default',
-  needs_revision: 'destructive',
+  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано»
+  // (единый вид с карточкой студента /admin/students/[id]).
+  needs_revision: 'outline',
 };
 
 export default function AssignmentDetailPage() {
@@ -214,7 +216,7 @@ export default function AssignmentDetailPage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-lg border">
+              <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -295,7 +297,8 @@ export default function AssignmentDetailPage() {
                                   }
                                   placeholder="Что получилось, что доработать. Видит студент."
                                   rows={3}
-                                  className="min-w-[260px]"
+                                  // На узких экранах поле сжимается, на десктопе остаётся комфортным.
+                                  className="w-full sm:min-w-[260px]"
                                 />
                               </div>
                             )}

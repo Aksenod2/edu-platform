@@ -70,7 +70,8 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
   assigned: 'secondary',
   submitted: 'secondary',
   reviewed: 'default',
-  needs_revision: 'secondary',
+  // «На доработке» — отдельный вариант, чтобы не сливался с «Выдано»/«Сдано».
+  needs_revision: 'outline',
 };
 
 export default function StudentProfilePage() {
