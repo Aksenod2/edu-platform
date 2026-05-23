@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,11 +18,26 @@ import {
 export function LessonItem({
   lesson,
   compact = false,
+  onMarkDone,
 }: {
   lesson: ScheduleLesson;
   compact?: boolean;
+  onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
 }) {
   const cancelled = lesson.status === 'cancelled';
+  const [marking, setMarking] = useState(false);
+
+  const canMarkDone = !!onMarkDone && lesson.status === 'planned';
+
+  const handleMarkDone = async () => {
+    if (!onMarkDone) return;
+    setMarking(true);
+    try {
+      await onMarkDone(lesson);
+    } finally {
+      setMarking(false);
+    }
+  };
 
   return (
     <div
@@ -57,17 +74,32 @@ export function LessonItem({
         )}
       </div>
 
-      {lesson.meetingUrl && !cancelled && (
-        <a
-          href={lesson.meetingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-1 inline-block no-underline"
-        >
-          <Button size="sm" variant="secondary">
-            Присоединиться
-          </Button>
-        </a>
+      {((lesson.meetingUrl && !cancelled) || canMarkDone) && (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {lesson.meetingUrl && !cancelled && (
+            <a
+              href={lesson.meetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline"
+            >
+              <Button size="sm" variant="secondary">
+                Присоединиться
+              </Button>
+            </a>
+          )}
+          {canMarkDone && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleMarkDone}
+              disabled={marking}
+            >
+              {marking ? <Loader2 className="animate-spin" /> : <Check />}
+              Провести
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

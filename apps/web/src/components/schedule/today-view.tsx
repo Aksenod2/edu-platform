@@ -10,7 +10,13 @@ import {
 } from '@/components/schedule/utils';
 
 /** Список занятий на сегодня по всем/выбранному потоку. */
-export function TodayView({ lessons }: { lessons: ScheduleLesson[] }) {
+export function TodayView({
+  lessons,
+  onMarkDone,
+}: {
+  lessons: ScheduleLesson[];
+  onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
+}) {
   const todayLessons = useMemo(() => {
     const key = dateKey(new Date());
     return groupByDay(lessons).get(key) ?? [];
@@ -34,7 +40,7 @@ export function TodayView({ lessons }: { lessons: ScheduleLesson[] }) {
       ) : (
         <div className="flex flex-col gap-2">
           {todayLessons.map((lesson) => (
-            <LessonItem key={lessonKey(lesson)} lesson={lesson} />
+            <LessonItem key={lessonKey(lesson)} lesson={lesson} onMarkDone={onMarkDone} />
           ))}
         </div>
       )}

@@ -17,7 +17,13 @@ import {
 } from '@/components/schedule/utils';
 
 /** Недельный вид: 7 колонок (Пн–Вс) с занятиями и навигацией по неделям. */
-export function WeekView({ lessons }: { lessons: ScheduleLesson[] }) {
+export function WeekView({
+  lessons,
+  onMarkDone,
+}: {
+  lessons: ScheduleLesson[];
+  onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
+}) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
 
@@ -95,7 +101,12 @@ export function WeekView({ lessons }: { lessons: ScheduleLesson[] }) {
                   <span className="px-1 text-[11px] text-muted-foreground/60">—</span>
                 ) : (
                   dayLessons.map((lesson) => (
-                    <LessonItem key={lessonKey(lesson)} lesson={lesson} compact />
+                    <LessonItem
+                      key={lessonKey(lesson)}
+                      lesson={lesson}
+                      compact
+                      onMarkDone={onMarkDone}
+                    />
                   ))
                 )}
               </div>
