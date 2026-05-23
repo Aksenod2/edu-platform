@@ -156,7 +156,7 @@ export default function StudentsPage() {
       .catch((err) => {
         if (!cancelled) {
           setStreamMemberIds(new Set()); // при ошибке поток считаем пустым, чтобы не показывать чужих
-          setError(err instanceof Error ? err.message : 'Ошибка загрузки участников потока');
+          setError(err instanceof Error ? err.message : 'Ошибка загрузки участников группы');
         }
       })
       .finally(() => {
@@ -317,10 +317,10 @@ export default function StudentsPage() {
           onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}
         >
           <SelectTrigger className="w-full sm:w-56">
-            <SelectValue placeholder="Все потоки" />
+            <SelectValue placeholder="Все группы" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Все потоки</SelectItem>
+            <SelectItem value="all">Все группы</SelectItem>
             {streams.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
@@ -363,7 +363,7 @@ export default function StudentsPage() {
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   {streamFilter
-                    ? 'В этом потоке нет учеников'
+                    ? 'В этой группе нет учеников'
                     : 'Ученики не найдены'}
                 </TableCell>
               </TableRow>

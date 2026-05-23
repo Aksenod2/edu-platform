@@ -61,7 +61,7 @@ export function ProgramStreamsManager({
       await updateStream(accessToken, streamId, { programId: null });
       await onChange();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка отвязки потока');
+      toast.error(err instanceof Error ? err.message : 'Ошибка отвязки группы');
     } finally {
       setBusy(false);
     }
@@ -76,7 +76,7 @@ export function ProgramStreamsManager({
       const { streams } = await getStreams(accessToken);
       setPool(streams);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки потоков');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки групп');
     } finally {
       setLoadingPool(false);
     }
@@ -90,7 +90,7 @@ export function ProgramStreamsManager({
       setAddOpen(false);
       await onChange();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка привязки потока');
+      toast.error(err instanceof Error ? err.message : 'Ошибка привязки группы');
     } finally {
       setBusy(false);
     }
@@ -105,18 +105,18 @@ export function ProgramStreamsManager({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Потоки программы</CardTitle>
+        <CardTitle className="text-base">Группы программы</CardTitle>
         <CardAction>
           <Button size="sm" onClick={openAdd} disabled={busy}>
             <Plus />
-            Привязать поток
+            Привязать группу
           </Button>
         </CardAction>
       </CardHeader>
       <CardContent>
         {streams.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            К программе пока не привязан ни один поток.
+            К программе пока не привязана ни одна группа.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -152,9 +152,9 @@ export function ProgramStreamsManager({
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Привязать поток</DialogTitle>
+            <DialogTitle>Привязать группу</DialogTitle>
             <DialogDescription>
-              Выберите поток. В списке только потоки, ещё не привязанные к этой программе.
+              Выберите группу. В списке только группы, ещё не привязанные к этой программе.
             </DialogDescription>
           </DialogHeader>
 
@@ -164,12 +164,12 @@ export function ProgramStreamsManager({
             </div>
           ) : candidates.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Нет доступных потоков для привязки.
+              Нет доступных групп для привязки.
             </p>
           ) : (
             <Select value={selectedId} onValueChange={setSelectedId}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Выберите поток" />
+                <SelectValue placeholder="Выберите группу" />
               </SelectTrigger>
               <SelectContent>
                 {candidates.map((s) => (

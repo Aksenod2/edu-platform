@@ -334,7 +334,7 @@ export default function ApiKeysPage() {
           {[
             { title: 'Список учеников',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/users` },
             { title: 'Задания ученика',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  '${proxyBase}/student-assignments?studentId=ID'` },
-            { title: 'Список потоков',   code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/streams` },
+            { title: 'Список групп',     code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/streams` },
             { title: 'Профиль ученика',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/profiles/ID` },
             { title: 'Лента ученика',    code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/threads/ID` },
           ].map(({ title, code }) => (

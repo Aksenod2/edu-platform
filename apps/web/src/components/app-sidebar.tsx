@@ -77,7 +77,7 @@ const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Обучение',
     items: [
-      { label: 'Потоки', href: '/admin/streams', icon: Layers },
+      { label: 'Группы', href: '/admin/streams', icon: Layers },
       { label: 'Расписание', href: '/admin/schedule', icon: CalendarDays },
     ],
   },

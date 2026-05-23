@@ -490,7 +490,7 @@ function DeleteButton({
         <AlertDialogHeader>
           <AlertDialogTitle>Снять с расписания?</AlertDialogTitle>
           <AlertDialogDescription>
-            Снять занятие с расписания этого потока? Урок-шаблон и его материалы
+            Снять занятие с расписания этой группы? Урок-шаблон и его материалы
             сохранятся.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -677,10 +677,10 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
       <p className="text-sm font-medium">Новый урок</p>
       {streams.length > 1 && (
         <Field>
-          <FieldLabel htmlFor="new-stream">Поток</FieldLabel>
+          <FieldLabel htmlFor="new-stream">Группа</FieldLabel>
           <Select value={streamId} onValueChange={setStreamId}>
             <SelectTrigger id="new-stream" className="w-full">
-              <SelectValue placeholder="Выберите поток" />
+              <SelectValue placeholder="Выберите группу" />
             </SelectTrigger>
             <SelectContent>
               {streams.map((s) => (

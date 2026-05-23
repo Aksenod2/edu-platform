@@ -309,7 +309,7 @@ export function LessonScheduleSection({
       });
       cancelIssue();
       await load();
-      toast.success('ДЗ выдано студентам потока');
+      toast.success('ДЗ выдано студентам группы');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось выдать ДЗ');
     } finally {
@@ -389,8 +389,8 @@ export function LessonScheduleSection({
       ) : sessions.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {activeStreams.length === 0
-            ? 'Нет активных потоков для планирования.'
-            : 'Урок ещё не запланирован. Нажмите «Запланировать», чтобы поставить его в поток на дату.'}
+            ? 'Нет активных групп для планирования.'
+            : 'Урок ещё не запланирован. Нажмите «Запланировать», чтобы поставить его в группу на дату.'}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -627,7 +627,7 @@ export function LessonScheduleSection({
       {/* Подсказка: задание у урока выключено — выдавать нечего. */}
       {!loading && sessions.length > 0 && !hasAssignment && (
         <p className="text-xs text-muted-foreground">
-          Включите задание в уроке, чтобы выдавать ДЗ в потоки.
+          Включите задание в уроке, чтобы выдавать ДЗ в группы.
         </p>
       )}
 
@@ -635,15 +635,15 @@ export function LessonScheduleSection({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editStreamId ? 'Изменить занятие' : 'Запланировать урок'}</DialogTitle>
-            <DialogDescription>Поставьте урок в поток на дату и время.</DialogDescription>
+            <DialogDescription>Поставьте урок в группу на дату и время.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={submit} className="flex flex-col gap-4">
             <Field>
-              <FieldLabel htmlFor="sched-stream">Поток</FieldLabel>
+              <FieldLabel htmlFor="sched-stream">Группа</FieldLabel>
               <Select value={streamId} onValueChange={setStreamId} disabled={!!editStreamId}>
                 <SelectTrigger id="sched-stream" className="w-full">
-                  <SelectValue placeholder="Выберите поток" />
+                  <SelectValue placeholder="Выберите группу" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectStreams.map((s) => (
@@ -738,7 +738,7 @@ export function LessonScheduleSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Снять с расписания?</AlertDialogTitle>
             <AlertDialogDescription>
-              Занятие урока в этом потоке будет удалено (вместе со сдачами по нему). Сам
+              Занятие урока в этой группе будет удалено (вместе со сдачами по нему). Сам
               урок-блок останется в копилке.
             </AlertDialogDescription>
           </AlertDialogHeader>

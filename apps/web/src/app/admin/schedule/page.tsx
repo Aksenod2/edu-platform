@@ -140,17 +140,17 @@ export default function AdminSchedulePage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Расписание</h1>
           <p className="text-sm text-muted-foreground">
-            Занятия всех потоков в одном месте
+            Занятия всех групп в одном месте
           </p>
         </div>
         <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
           {streams.length > 0 && (
             <Select value={filterStreamId} onValueChange={setFilterStreamId}>
               <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Поток" />
+                <SelectValue placeholder="Группа" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_STREAMS}>Все потоки</SelectItem>
+                <SelectItem value={ALL_STREAMS}>Все группы</SelectItem>
                 {streams.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.name}
@@ -171,9 +171,9 @@ export default function AdminSchedulePage() {
         </div>
       </div>
 
-      <HintCallout storageKey="eduhint:schedule-global" title="Все занятия всех потоков">
-        Каждое занятие — это урок, поставленный конкретному потоку на дату.
-        Выберите поток вверху, чтобы планировать и редактировать занятия прямо в
+      <HintCallout storageKey="eduhint:schedule-global" title="Все занятия всех групп">
+        Каждое занятие — это урок, поставленный конкретной группе на дату.
+        Выберите группу вверху, чтобы планировать и редактировать занятия прямо в
         календаре.
       </HintCallout>
 
@@ -196,7 +196,7 @@ export default function AdminSchedulePage() {
         </div>
       ) : streams.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Активных потоков нет. Создайте поток, чтобы планировать занятия.
+          Активных групп нет. Создайте группу, чтобы планировать занятия.
         </p>
       ) : view === 'week' ? (
         <WeekView
@@ -303,7 +303,7 @@ function MonthView({
       )}
       {!editable && (
         <p className="text-sm text-muted-foreground">
-          Показаны занятия всех потоков. Выберите поток, чтобы редактировать
+          Показаны занятия всех групп. Выберите группу, чтобы редактировать
           занятия прямо в календаре.
         </p>
       )}

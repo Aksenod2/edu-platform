@@ -152,8 +152,8 @@ export default function AdminPage() {
 
       <HintCallout storageKey="eduhint:intro-model" title="Как устроена платформа">
         Коротко о модели: урок — переиспользуемый блок с контентом и ДЗ (живёт в
-        копилке); поток — группа учеников; расписание — когда урок проводят
-        конкретному потоку. Один урок можно вести в нескольких потоках.
+        копилке); группа — это набор учеников; расписание — когда урок проводят
+        конкретной группе. Один урок можно вести в нескольких группах.
       </HintCallout>
 
       {error && (
@@ -187,7 +187,7 @@ export default function AdminPage() {
               icon={CalendarDays}
             />
             <KpiCard
-              title="Активные потоки"
+              title="Активные группы"
               value={stats.streams.active}
               hint={`${stats.streams.archived} в архиве`}
               icon={Layers}
@@ -289,7 +289,7 @@ export default function AdminPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Ближайшие занятия</CardTitle>
-                  <CardDescription>Следующие 5 по всем потокам</CardDescription>
+                  <CardDescription>Следующие 5 по всем группам</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   {stats.schedule.upcoming.length === 0 ? (

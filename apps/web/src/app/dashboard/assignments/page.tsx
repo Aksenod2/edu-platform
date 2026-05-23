@@ -181,10 +181,10 @@ export default function StudentAssignmentsPage() {
             onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}
           >
             <SelectTrigger className="min-w-40">
-              <SelectValue placeholder="Все потоки" />
+              <SelectValue placeholder="Все группы" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Все потоки</SelectItem>
+              <SelectItem value="all">Все группы</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
