@@ -60,6 +60,8 @@ export default function ProgramsPage() {
     fetchPrograms();
   }, [fetchPrograms]);
 
+  // Ошибку сабмита намеренно не ловим здесь — её показывает ProgramFormDialog
+  // (диалог остаётся открытым при ошибке). Здесь только успешный путь + рефетч.
   const handleSubmit = async (values: ProgramFormValues) => {
     if (!accessToken) return;
     if (editing) {

@@ -24,13 +24,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getTeachers, type LessonMaterial, type Teacher } from '@/lib/api';
+import {
+  getLesson,
+  updateLesson,
+  getTeachers,
+  type Lesson,
+  type LessonMaterial,
+  type Teacher,
+} from '@/lib/api';
 import { TeacherPicker } from '@/components/lessons/teacher-picker';
 import { LessonVideoSection } from '@/components/lessons/lesson-video-section';
 import { LessonMaterialsSection } from '@/components/lessons/lesson-materials-section';
 import {
-  getLessonBlock,
-  updateLessonBlock,
   type AssignmentType,
   type LessonBlock,
 } from '@/components/lessons/lesson-block';
@@ -89,7 +94,7 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
     setLoading(true);
     try {
       const [{ lesson: l }, { teachers: t }] = await Promise.all([
-        getLessonBlock(accessToken, lessonId),
+        getLesson(accessToken, lessonId),
         getTeachers(accessToken),
       ]);
       setLesson(l);
@@ -109,8 +114,8 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
 
   // Видео/материалы пишутся отдельными запросами и возвращают свежий урок —
   // обновляем локальное состояние без полного рефетча.
-  const handleVideoChange = (updated: { videoUrl: string | null; videoKey?: string | null; videoFileUrl?: string | null }) => {
-    setLesson((prev) => (prev ? { ...prev, ...updated } : prev));
+  const handleVideoChange = (updated: Lesson) => {
+    setLesson((prev) => (prev ? { ...prev, ...updated } : updated));
   };
 
   const handleMaterialsChange = (materials: LessonMaterial[]) => {
@@ -150,7 +155,7 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
     try {
       // Шлём поля всегда (даже пустыми), иначе очистку не сохранить:
       // пустая строка на бэке превращается в null.
-      const { lesson: updated } = await updateLessonBlock(accessToken, lessonId, {
+      const { lesson: updated } = await updateLesson(accessToken, lessonId, {
         title: form.title.trim(),
         videoUrl: form.videoUrl.trim(),
         summary: form.summary,
@@ -163,8 +168,8 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
         assignmentType: form.assignmentType,
         assignmentTags: form.assignmentTags,
       });
-      // Сохраняем видео/материалы из текущего состояния (их меняли отдельно).
-      setLesson((prev) => ({ ...updated, videoFileUrl: prev?.videoFileUrl, materials: prev?.materials }));
+      // Ответ PATCH несёт свежие videoFileUrl/материалы (переподписанные) — берём его.
+      setLesson((prev) => ({ ...prev, ...updated }));
       toast.success('Урок сохранён');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');

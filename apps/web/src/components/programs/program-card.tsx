@@ -1,8 +1,7 @@
 'use client';
 
 import { BookOpen, GraduationCap, MoreHorizontal, SquarePen, Trash2 } from 'lucide-react';
-import type { Program } from '@/lib/api';
-import { PROGRAM_TYPE_LABELS } from '@/components/programs/program-type';
+import { PROGRAM_TYPE_LABELS, type Program } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {

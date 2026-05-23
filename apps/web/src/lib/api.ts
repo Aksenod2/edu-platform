@@ -510,6 +510,8 @@ export const LESSON_STATUS_LABELS: Record<LessonStatus, string> = {
   cancelled: 'Отменён',
 };
 
+export type AssignmentType = 'short' | 'long';
+
 export interface Lesson {
   id: string;
   // Опционально: сервер опускает streamId в режиме «Все потоки»/копилка
@@ -537,6 +539,14 @@ export interface Lesson {
   teachers?: { id: string; name: string }[];
   // Поток урока (для режима «Все потоки» на странице уроков).
   stream?: { id: string; name: string };
+  // Свёрнутое в блок задание (folded assignment) — есть у блоков-уроков копилки.
+  hasAssignment?: boolean;
+  assignmentTitle?: string | null;
+  assignmentDescription?: string | null;
+  assignmentCriteria?: string | null;
+  assignmentType?: AssignmentType | null;
+  assignmentTags?: string[];
+  assignmentMaterials?: LessonMaterial[];
 }
 
 export async function getLessons(
@@ -604,6 +614,14 @@ export async function updateLesson(
     sortOrder?: number;
     teacherIds?: string[];
     materials?: LessonMaterial[];
+    // Свёрнутое задание блока (folded assignment) — сохраняется при PATCH без streamId.
+    hasAssignment?: boolean;
+    assignmentTitle?: string | null;
+    assignmentDescription?: string | null;
+    assignmentCriteria?: string | null;
+    assignmentType?: AssignmentType | null;
+    assignmentTags?: string[];
+    assignmentMaterials?: LessonMaterial[];
   },
 ): Promise<{ lesson: Lesson }> {
   return request(`/lessons/${id}`, {
@@ -1689,7 +1707,7 @@ export type ProgramType = 'course' | 'intensive' | 'mentorship';
 export const PROGRAM_TYPE_LABELS: Record<ProgramType, string> = {
   course: 'Курс',
   intensive: 'Интенсив',
-  mentorship: 'Менторство',
+  mentorship: 'Менторская',
 };
 
 // Элемент списка программ (со счётчиками).
