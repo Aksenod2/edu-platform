@@ -12,6 +12,7 @@ import {
   deleteStream,
   getTeachers,
   type Stream,
+  type StreamWithCounts,
   type Teacher,
 } from '@/lib/api';
 import {
@@ -87,7 +88,7 @@ export default function StreamsPage() {
   const router = useRouter();
   const { user, accessToken } = useAuth();
 
-  const [streams, setStreams] = useState<Stream[]>([]);
+  const [streams, setStreams] = useState<StreamWithCounts[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [search, setSearch] = useState('');
   const [mineOnly, setMineOnly] = useState(false);
@@ -303,6 +304,7 @@ export default function StreamsPage() {
               <TableHead>Название</TableHead>
               <TableHead>Ведущий</TableHead>
               <TableHead>Преподаватели</TableHead>
+              <TableHead className="text-right">Учеников</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Создан</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>
@@ -418,6 +420,9 @@ export default function StreamsPage() {
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {stream.studentsCount}
                   </TableCell>
                   <TableCell>
                     {stream.status === 'active' ? (

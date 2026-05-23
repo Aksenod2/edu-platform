@@ -282,7 +282,7 @@ export interface Stream {
 export async function getStreams(
   accessToken: string,
   options?: { mine?: boolean },
-): Promise<{ streams: Stream[] }> {
+): Promise<{ streams: StreamWithCounts[] }> {
   const qs = options?.mine ? '?mine=true' : '';
   return request(`/streams${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CalendarPlus, Loader2 } from 'lucide-react';
+import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -53,12 +54,15 @@ export function PlanLessonDialog({
   streams,
   defaultStreamId,
   onPlanned,
+  triggerClassName,
 }: {
   accessToken: string;
   streams: Stream[];
   /** Предвыбранный поток (если на странице выбран конкретный). */
   defaultStreamId?: string;
   onPlanned: () => void | Promise<void>;
+  /** Доп. классы для кнопки-триггера (например, w-full на мобилке). */
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -168,7 +172,7 @@ export function PlanLessonDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button disabled={activeStreams.length === 0}>
+        <Button disabled={activeStreams.length === 0} className={cn(triggerClassName)}>
           <CalendarPlus />
           Запланировать занятие
         </Button>

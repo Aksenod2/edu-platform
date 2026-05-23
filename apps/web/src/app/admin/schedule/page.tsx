@@ -134,17 +134,19 @@ export default function AdminSchedulePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Шапка: заголовок слева, контролы (фильтр потока + планирование) справа в один ряд.
+          На мобилке контролы переносятся под заголовок и растягиваются на всю ширину. */}
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Расписание</h1>
           <p className="text-sm text-muted-foreground">
             Занятия всех потоков в одном месте
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
           {streams.length > 0 && (
             <Select value={filterStreamId} onValueChange={setFilterStreamId}>
-              <SelectTrigger className="w-full max-w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Поток" />
               </SelectTrigger>
               <SelectContent>
@@ -163,6 +165,7 @@ export default function AdminSchedulePage() {
               streams={streams}
               defaultStreamId={selectedStreamId || undefined}
               onPlanned={fetchAll}
+              triggerClassName="w-full sm:w-auto"
             />
           )}
         </div>
