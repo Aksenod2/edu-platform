@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { CalendarPlus, Loader2, Pencil, Trash2 } from 'lucide-react';
+import {
+  CalendarPlus,
+  CheckCircle2,
+  ClipboardCheck,
+  Loader2,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -33,10 +40,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  createAssignment,
+  getAssignments,
+  getLesson,
   getLessonSessions,
   getStreams,
   unscheduleLesson,
+  updateAssignment,
   updateLesson,
+  type Assignment,
+  type Lesson,
   type LessonSession,
   type LessonStatus,
   type Stream,
@@ -70,6 +83,10 @@ export function LessonScheduleSection({
 }) {
   const [sessions, setSessions] = useState<LessonSession[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
+  // Сохранённые folded-поля задания урока (берём с бэка, а не из формы редактора).
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  // Уже выданные задания по этому уроку, ключ — streamId (id = sessionId).
+  const [issuedByStream, setIssuedByStream] = useState<Record<string, Assignment>>({});
   const [loading, setLoading] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -83,25 +100,59 @@ export function LessonScheduleSection({
   const [status, setStatus] = useState<LessonStatus>('planned');
   const [saving, setSaving] = useState(false);
 
+  // Выдача ДЗ: какой поток сейчас выдаём/правим, значение дедлайна и флаг отправки.
+  const [issueStreamId, setIssueStreamId] = useState('');
+  const [issueDueDate, setIssueDueDate] = useState('');
+  const [issuing, setIssuing] = useState(false);
+
+  // Подтягиваем выданные задания для всех потоков, где урок запланирован.
+  // «Выдано» = есть синтетическое задание (Session) по этому lessonId в потоке.
+  const loadIssued = useCallback(
+    async (streamIds: string[]) => {
+      const entries = await Promise.all(
+        streamIds.map(async (sid) => {
+          try {
+            const { assignments } = await getAssignments(accessToken, sid);
+            const match = assignments.find((a) => a.lessonId === lessonId);
+            return match ? ([sid, match] as const) : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const map: Record<string, Assignment> = {};
+      for (const e of entries) {
+        if (e) map[e[0]] = e[1];
+      }
+      setIssuedByStream(map);
+    },
+    [accessToken, lessonId],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sessionsRes, streamsRes] = await Promise.all([
+      const [sessionsRes, streamsRes, lessonRes] = await Promise.all([
         getLessonSessions(accessToken, lessonId),
         getStreams(accessToken),
+        getLesson(accessToken, lessonId),
       ]);
       setSessions(sessionsRes.sessions);
       setStreams(streamsRes.streams);
+      setLesson(lessonRes.lesson);
+      await loadIssued(sessionsRes.sessions.map((s) => s.streamId));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
     } finally {
       setLoading(false);
     }
-  }, [accessToken, lessonId]);
+  }, [accessToken, lessonId, loadIssued]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const hasAssignment = lesson?.hasAssignment ?? false;
 
   const activeStreams = streams.filter((s) => s.status === 'active');
   const scheduledIds = new Set(sessions.map((s) => s.streamId));
@@ -162,6 +213,63 @@ export function LessonScheduleSection({
     }
   }
 
+  // Открыть строку выдачи ДЗ для потока: если уже выдано — подставить дедлайн.
+  function openIssue(sid: string) {
+    const existing = issuedByStream[sid];
+    setIssueStreamId(sid);
+    setIssueDueDate(existing?.dueDate ? existing.dueDate.slice(0, 10) : '');
+  }
+
+  function cancelIssue() {
+    setIssueStreamId('');
+    setIssueDueDate('');
+  }
+
+  // Выдать ДЗ в поток: createAssignment пишет folded-поля урока в Session и
+  // материализует StudentAssignment всем зачисленным студентам потока.
+  async function handleIssue(sid: string) {
+    if (!lesson || !hasAssignment || issuing) return;
+    setIssuing(true);
+    try {
+      await createAssignment(accessToken, {
+        streamId: sid,
+        lessonId,
+        title: lesson.assignmentTitle?.trim() || lesson.title,
+        description: lesson.assignmentDescription || undefined,
+        criteria: lesson.assignmentCriteria ?? undefined,
+        type: lesson.assignmentType ?? 'short',
+        tags: lesson.assignmentTags ?? [],
+        dueDate: issueDueDate || undefined,
+      });
+      cancelIssue();
+      await load();
+      toast.success('ДЗ выдано студентам потока');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выдать ДЗ');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  // Сменить дедлайн уже выданного ДЗ (id задания = sessionId).
+  async function handleUpdateDue(sid: string) {
+    const existing = issuedByStream[sid];
+    if (!existing || issuing) return;
+    setIssuing(true);
+    try {
+      await updateAssignment(accessToken, existing.id, {
+        dueDate: issueDueDate || null,
+      });
+      cancelIssue();
+      await load();
+      toast.success('Дедлайн обновлён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить дедлайн');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
   // Потоки в селекте: при редактировании — все активные (поток зафиксирован и
   // выключен), при добавлении — только ещё не запланированные.
   const selectStreams = editStreamId ? activeStreams : availableStreams;
@@ -192,44 +300,108 @@ export function LessonScheduleSection({
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {sessions.map((s) => (
-            <div
-              key={s.streamId}
-              className="flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm"
-            >
-              <span className="font-medium">{s.streamName}</span>
-              <Badge variant={STATUS_VARIANT[s.status]} className="font-normal">
-                {LESSON_STATUS_LABELS[s.status]}
-              </Badge>
-              <span className="text-muted-foreground">
-                {s.date ? formatDate(s.date) : 'без даты'}
-                {s.startTime ? `, ${s.startTime}` : ''}
-              </span>
-              <div className="ml-auto flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7"
-                  onClick={() => openEdit(s)}
-                >
-                  <Pencil className="size-4" />
-                  <span className="sr-only">Изменить</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 text-destructive hover:text-destructive"
-                  onClick={() => setRemoveStreamId(s.streamId)}
-                >
-                  <Trash2 className="size-4" />
-                  <span className="sr-only">Снять с расписания</span>
-                </Button>
+          {sessions.map((s) => {
+            const issued = issuedByStream[s.streamId];
+            const issueOpen = issueStreamId === s.streamId;
+            return (
+              <div
+                key={s.streamId}
+                className="flex flex-col gap-2 rounded-md border bg-card px-3 py-2 text-sm"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{s.streamName}</span>
+                  <Badge variant={STATUS_VARIANT[s.status]} className="font-normal">
+                    {LESSON_STATUS_LABELS[s.status]}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {s.date ? formatDate(s.date) : 'без даты'}
+                    {s.startTime ? `, ${s.startTime}` : ''}
+                  </span>
+                  {hasAssignment && issued && (
+                    <Badge variant="outline" className="gap-1 font-normal">
+                      <CheckCircle2 className="size-3" />
+                      ДЗ выдано
+                      {issued.dueDate ? ` · до ${formatDate(issued.dueDate.slice(0, 10))}` : ''}
+                    </Badge>
+                  )}
+                  <div className="ml-auto flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7"
+                      onClick={() => openEdit(s)}
+                    >
+                      <Pencil className="size-4" />
+                      <span className="sr-only">Изменить</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-destructive hover:text-destructive"
+                      onClick={() => setRemoveStreamId(s.streamId)}
+                    >
+                      <Trash2 className="size-4" />
+                      <span className="sr-only">Снять с расписания</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Выдача ДЗ — только если у урока включено folded-задание. */}
+                {hasAssignment &&
+                  (issueOpen ? (
+                    <div className="flex flex-wrap items-end gap-2 rounded-md bg-muted p-2">
+                      <Field className="min-w-0 flex-1">
+                        <FieldLabel htmlFor={`due-${s.streamId}`} className="text-xs">
+                          Дедлайн
+                        </FieldLabel>
+                        <Input
+                          id={`due-${s.streamId}`}
+                          type="date"
+                          value={issueDueDate}
+                          onChange={(e) => setIssueDueDate(e.target.value)}
+                          className="h-8"
+                        />
+                      </Field>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => (issued ? handleUpdateDue(s.streamId) : handleIssue(s.streamId))}
+                          disabled={issuing}
+                        >
+                          {issuing && <Loader2 className="animate-spin" />}
+                          {issued ? 'Сохранить дедлайн' : 'Выдать'}
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={cancelIssue}>
+                          Отмена
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={issued ? 'ghost' : 'outline'}
+                      className="w-fit"
+                      onClick={() => openIssue(s.streamId)}
+                    >
+                      <ClipboardCheck className="size-4" />
+                      {issued ? 'Изменить дедлайн' : 'Выдать ДЗ'}
+                    </Button>
+                  ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+      {/* Подсказка: задание у урока выключено — выдавать нечего. */}
+      {!loading && sessions.length > 0 && !hasAssignment && (
+        <p className="text-xs text-muted-foreground">
+          Включите задание в уроке, чтобы выдавать ДЗ в потоки.
+        </p>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
