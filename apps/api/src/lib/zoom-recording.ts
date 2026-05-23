@@ -39,12 +39,38 @@ export function pickMainRecording(
   return anyDownloadable ?? null;
 }
 
+// Анти-SSRF: download_url приходит из тела вебхука (недоверенные данные даже после
+// проверки подписи). Качаем с Bearer-токеном Zoom ТОЛЬКО с хостов Zoom, иначе
+// злоумышленник с валидной подписью мог бы увести наш OAuth-токен на чужой адрес
+// или достучаться до внутренней сети. Разрешаем только https и домены zoom.us/zoom.com.
+function isAllowedZoomDownloadUrl(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    return (
+      host === 'zoom.us' ||
+      host.endsWith('.zoom.us') ||
+      host === 'zoom.com' ||
+      host.endsWith('.zoom.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Качает download_url Zoom потоком (с Bearer-токеном) и возвращает тело ответа
-// для стримовой загрузки в S3. Бросает при не-2xx.
+// для стримовой загрузки в S3. Бросает при не-2xx или недопустимом хосте.
 async function fetchRecordingStream(
   downloadUrl: string,
   accessToken: string,
 ): Promise<ReadableStream> {
+  if (!isAllowedZoomDownloadUrl(downloadUrl)) {
+    throw new Error('Недопустимый хост ссылки на запись Zoom');
+  }
+  // Bearer уходит только на проверенный хост Zoom (первый хоп). При кросс-доменном
+  // редиректе на хранилище Zoom fetch по спецификации срезает Authorization —
+  // токен не утекает, а легитимная загрузка по редиректу не ломается.
   const res = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { prisma, Prisma } from '@platform/db';
 import {
   getZoomIntegrationByWebhookId,
@@ -125,6 +126,13 @@ async function processEventAsync(
 }
 
 export async function zoomWebhookRoutes(app: FastifyInstance) {
+  // Публичный эндпоинт без JWT — ограничиваем частоту запросов по IP
+  // (анти-DoS и анти-перебор webhookId). Скоуп-локально, как у auth-роутов.
+  await app.register(rateLimit, {
+    max: Number(process.env.ZOOM_WEBHOOK_RATE_LIMIT_MAX) || 120,
+    timeWindow: '1 minute',
+  });
+
   // СЫРОЕ ТЕЛО для HMAC. Парсер инкапсулирован в этом плагин-скоупе и НЕ влияет
   // на остальные роуты (Fastify изолирует content-type-parser по скоупу).
   // request.body здесь — Buffer (сырое тело), JSON парсим вручную.
@@ -138,7 +146,8 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
 
   // POST /webhooks/zoom/:webhookId — приём вебхуков Zoom. ПУБЛИЧНЫЙ эндпоинт:
   // аутентификация — по подписи Webhook Secret Token (HMAC-SHA256), не по JWT.
-  app.post('/webhooks/zoom/:webhookId', async (request, reply) => {
+  // bodyLimit: тело вебхука Zoom небольшое — ограничиваем публичный приём.
+  app.post('/webhooks/zoom/:webhookId', { bodyLimit: 1024 * 1024 }, async (request, reply) => {
     const { webhookId } = request.params as { webhookId: string };
 
     // Сырое тело — Buffer (для подписи). На всякий случай нормализуем.
