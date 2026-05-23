@@ -91,3 +91,87 @@ describe('projectLesson — recordingError только админам (M4)', ()
     expect(pStudent.recordingError).toBeNull();
   });
 });
+
+describe('projectLesson — развод учебного видео и записи Zoom-занятия', () => {
+  // Урок с учебным видео (грузится ДО урока): block.videoKey/videoUrl/videos[].
+  function blockWithVideo() {
+    return {
+      ...block(),
+      videoKey: 'lesson/learning-video.mp4',
+      videoUrl: 'https://cdn.example/learning-video.mp4',
+      videos: [{ id: 'v1', videoKey: 'lesson/learning-video.mp4', sortOrder: 0 }],
+    };
+  }
+
+  // Session с записью проведённого занятия (подтягивается ПОСЛЕ урока).
+  function sessionWithRecording() {
+    return {
+      status: 'completed' as const,
+      date: null,
+      startTime: null,
+      meetingUrl: null,
+      videoKey: 'session/zoom-recording.mp4',
+      videoUrl: 'https://cdn.example/zoom-recording.mp4',
+      summary: null,
+      summarySource: null,
+      recordingStatus: 'ready',
+      recordingError: null,
+    };
+  }
+
+  it('запись Zoom НЕ перетирает учебное видео: учебное из block, запись в recording*', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      blockWithVideo() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sessionWithRecording() as any,
+      true,
+    );
+    // Учебное видео — строго из блока, не перетёрто записью занятия.
+    expect(p.videoKey).toBe('lesson/learning-video.mp4');
+    expect(p.videoUrl).toBe('https://cdn.example/learning-video.mp4');
+    // Запись занятия — в отдельных полях, равна Session.videoKey/videoUrl.
+    expect(p.recordingVideoKey).toBe('session/zoom-recording.mp4');
+    expect(p.recordingVideoUrl).toBe('https://cdn.example/zoom-recording.mp4');
+  });
+
+  it('есть запись, но у урока нет учебного видео → учебные поля null, запись из Session', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any, // без учебного видео (videoKey/videoUrl = null)
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sessionWithRecording() as any,
+      true,
+    );
+    expect(p.videoKey).toBeNull();
+    expect(p.videoUrl).toBeNull();
+    expect(p.recordingVideoKey).toBe('session/zoom-recording.mp4');
+    expect(p.recordingVideoUrl).toBe('https://cdn.example/zoom-recording.mp4');
+  });
+
+  it('есть учебное видео, но записи нет (нет Session) → recording* = null, учебное сохранено', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = projectLesson(blockWithVideo() as any, null, null, true);
+    expect(p.videoKey).toBe('lesson/learning-video.mp4');
+    expect(p.videoUrl).toBe('https://cdn.example/learning-video.mp4');
+    expect(p.recordingVideoKey).toBeNull();
+    expect(p.recordingVideoUrl).toBeNull();
+  });
+
+  it('есть Session без записи (videoKey=null) → recording* = null, учебное из block', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      blockWithVideo() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      failedSession() as any, // videoKey/videoUrl = null
+      true,
+    );
+    expect(p.videoKey).toBe('lesson/learning-video.mp4');
+    expect(p.videoUrl).toBe('https://cdn.example/learning-video.mp4');
+    expect(p.recordingVideoKey).toBeNull();
+    expect(p.recordingVideoUrl).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { prisma } from '@platform/db';
 import { createNotification } from './notifications.js';
+import { sweepFailedRecordings } from './zoom-recording.js';
 
 /**
  * How many hours before deadline to send reminder (default: 24).
@@ -49,6 +50,20 @@ export function startCronJobs(): void {
       await cleanupOldZoomWebhookEvents();
     } catch (err) {
       console.error('[cron] cleanup zoom webhook events error', err);
+    }
+  });
+
+  // Свипер «недокачанных» записей Zoom — каждые 30 минут. Добирает транзиентные
+  // сбои, которые не вытянул авто-ретрай внутри обработки (файл доехал по CDN Zoom
+  // спустя минуты), и реанимирует «зависший processing». Сама выборка/повтор —
+  // в sweepFailedRecordings (zoom-recording.ts), ошибки внутри она глотает.
+  // NB: при >1 инстансе API возможны дубли проходов; сейчас инстанс ОДИН, поэтому
+  // распределённый лок не нужен (claim внутри обработки и так защищает от дублей).
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      await sweepFailedRecordings();
+    } catch (err) {
+      console.error('[cron] sweep zoom recordings error', err);
     }
   });
 

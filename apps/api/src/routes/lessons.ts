@@ -5,6 +5,7 @@ import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createZoomMeeting, shouldAutoCreate, canCreateMeeting } from '../lib/zoom.js';
+import { processRecordingForSession } from '../lib/zoom-recording.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -275,8 +276,10 @@ type SessionProjection = {
 //   - teachers → [{id,name}],
 //   - streamId — контекст потока (или null вне потока),
 //   - status/date/startTime/meetingUrl — из Session (если Session нет: draft / null),
-//   - видео: предпочитаем Session.videoKey/videoUrl блочным.
-// materials/videoFileUrl ре-подписываются вызывающим (они асинхронные).
+//   - видео: учебное (videoKey/videoUrl/videos[]) — СТРОГО из блока (грузится до урока);
+//     запись Zoom-занятия — в ОТДЕЛЬНЫЕ поля recordingVideoKey/recordingVideoUrl
+//     (из Session, подтягивается после). Это разные сущности, запись не перетирает учебное.
+// materials/videoFileUrl/recordingFileUrl ре-подписываются вызывающим (они асинхронные).
 // Экспортируется для unit-тестов проекции (в частности admin-only recordingError).
 export function projectLesson(
   block: LessonBlock,
@@ -309,15 +312,23 @@ export function projectLesson(
   createdAt: Date;
   updatedAt: Date;
   teachers: { id: string; name: string }[];
+  // Запись Zoom-занятия (Session). Отдельная сущность от учебного видео урока
+  // (block.videoKey/videoUrl/videos[]): учебное грузится ДО урока, запись —
+  // подтягивается ПОСЛЕ. Аддитивно: вне потока или без записи — null.
+  recordingVideoKey: string | null;
+  recordingVideoUrl: string | null;
   // Автосбор записи/итогов Zoom (Волна 2). Аддитивно: для уроков без Session
   // или со старыми данными — null, поведение не меняется.
   recordingStatus: string | null;
   recordingError: string | null;
   summarySource: string | null;
 } {
-  // Видео: Session перекрывает блок (запись конкретного занятия важнее блочной).
-  const videoKey = session?.videoKey ?? block.videoKey;
-  const videoUrl = session?.videoUrl ?? block.videoUrl;
+  // Учебное видео урока (block): грузится ДО урока, не перетирается записью занятия.
+  const videoKey = block.videoKey;
+  const videoUrl = block.videoUrl;
+  // Запись Zoom-занятия (Session): отдельные поля, подтягивается ПОСЛЕ урока.
+  const recordingVideoKey = session?.videoKey ?? null;
+  const recordingVideoUrl = session?.videoUrl ?? null;
   const date = session?.date ?? null;
 
   return {
@@ -345,6 +356,9 @@ export function projectLesson(
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
     teachers: (block.teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+    // Запись Zoom-занятия — отдельно от учебного видео урока.
+    recordingVideoKey,
+    recordingVideoUrl,
     // Статус автозагрузки записи Zoom и источник итогов (для UI). Вне потока
     // (Session нет) — null, как и для занятий без созвона Zoom.
     recordingStatus: session?.recordingStatus ?? null,
@@ -354,19 +368,23 @@ export function projectLesson(
   };
 }
 
-// Достраивает спроецированный урок асинхронными полями (videoFileUrl + ре-подписанные
-// materials). videoKey уже выбран с приоритетом Session в projectLesson.
+// Достраивает спроецированный урок асинхронными полями (videoFileUrl +
+// recordingFileUrl + ре-подписанные materials). Учебное videoKey и запись
+// recordingVideoKey разведены в projectLesson — подписываем их раздельно.
 async function finalizeLesson(
   projected: ReturnType<typeof projectLesson>,
   block: LessonBlock,
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, unknown> & { recordingFileUrl: string | null }> {
+  // Учебное видео урока (block.videoKey).
   const videoFileUrl = await videoFileUrlFor(projected.videoKey);
+  // Запись Zoom-занятия (Session.videoKey) — отдельная подпись.
+  const recordingFileUrl = await videoFileUrlFor(projected.recordingVideoKey);
   const materials = await regenerateLessonMaterialUrls(
     (block.materials as unknown as LessonMaterial[]) || [],
   );
   // Аддитивно: список из нескольких видео урока (одиночные videoUrl/videoFileUrl сохранены).
   const videos = await projectVideos(block.videos);
-  return { ...projected, videoFileUrl, materials, videos };
+  return { ...projected, videoFileUrl, recordingFileUrl, materials, videos };
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
@@ -1352,21 +1370,28 @@ export async function lessonRoutes(app: FastifyInstance) {
     });
 
     return {
-      sessions: sessions.map((s) => ({
-        streamId: s.streamId,
-        streamName: s.stream.name,
-        streamStatus: s.stream.status,
-        status: s.status,
-        date: s.date ? s.date.toISOString().slice(0, 10) : null,
-        startTime: s.startTime,
-        meetingUrl: s.meetingUrl,
-        // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
-        // итогов в блоке «Расписание». Для старых данных поля = null.
-        summary: s.summary,
-        summarySource: s.summarySource,
-        recordingStatus: s.recordingStatus,
-        recordingError: s.recordingError,
-      })),
+      // Подпись URL файла записи асинхронна — маппим через Promise.all (как в проекции).
+      sessions: await Promise.all(
+        sessions.map(async (s) => ({
+          streamId: s.streamId,
+          streamName: s.stream.name,
+          streamStatus: s.stream.status,
+          status: s.status,
+          date: s.date ? s.date.toISOString().slice(0, 10) : null,
+          startTime: s.startTime,
+          meetingUrl: s.meetingUrl,
+          // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
+          // итогов в блоке «Расписание». Для старых данных поля = null.
+          summary: s.summary,
+          summarySource: s.summarySource,
+          recordingStatus: s.recordingStatus,
+          recordingError: s.recordingError,
+          // Медиа записи занятия (admin-only): внешняя ссылка как есть и подписанный
+          // временный URL загруженного файла. Сырой videoKey наружу не отдаём.
+          recordingVideoUrl: s.videoUrl ?? null,
+          recordingFileUrl: await videoFileUrlFor(s.videoKey),
+        })),
+      ),
     };
   });
 
@@ -1380,6 +1405,85 @@ export async function lessonRoutes(app: FastifyInstance) {
       const { id, streamId } = request.params as { id: string; streamId: string };
       await prisma.session.deleteMany({ where: { lessonId: id, streamId } });
       return { message: 'Снято с расписания' };
+    },
+  );
+
+  // POST /lessons/:id/sessions/:streamId/recording/retry — повторно запустить
+  // автозагрузку записи Zoom для занятия (admin). Нужно, когда автоскачивание по
+  // вебхуку recording.completed упало (recordingStatus='failed') или зависло.
+  // Идемпотентность встроена в processRecordingForSession: если запись уже выгружена
+  // (videoKey есть) — она просто пометит 'ready'; если обработка уже идёт
+  // ('processing'/'ready') — claim не пройдёт и повтор не скачает второй раз; из
+  // 'failed'/'pending'/null claim пускает повтор.
+  app.post(
+    '/lessons/:id/sessions/:streamId/recording/retry',
+    { onRequest: adminOnly },
+    async (request, reply) => {
+      const { id, streamId } = request.params as { id: string; streamId: string };
+
+      const session = await prisma.session.findFirst({
+        where: { lessonId: id, streamId },
+        select: { id: true, zoomMeetingId: true, recordingStatus: true, lessonId: true },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      // Без привязки к встрече Zoom скачивать нечего (нет meetingId для API/вебхука).
+      if (!session.zoomMeetingId) {
+        return reply.status(400).send({ error: 'Нет привязки к встрече Zoom' });
+      }
+
+      // teacherUserId — пользователь, под чьим OAuth-токеном Zoom скачивается запись.
+      // ВЫБОР ВЛАДЕЛЬЦА: реальный владелец встречи в БД НЕ хранится — встреча
+      // создаётся через createZoomMeeting на POST /users/me/meetings под токеном того,
+      // КТО ПЛАНИРОВАЛ занятие (request.user в момент создания, обычно админ), и id
+      // владельца нигде не сохраняется. Поэтому определяем владельца каскадом фолбэков:
+      //   1) преподаватель урока (LessonTeacher) с рабочей Zoom-интеграцией;
+      //   2) текущий админ (request.user), если у него canCreateMeeting;
+      //   3) фолбэк на текущего админа без проверки — processRecordingForSession сам
+      //      безопасно зафиксирует ошибку токена в recordingError (SafeRecordingError),
+      //      не раскрывая сырых деталей.
+      const adminUserId = request.user!.userId;
+      const teachers = await prisma.lessonTeacher.findMany({
+        where: { lessonId: session.lessonId },
+        select: { userId: true },
+      });
+
+      let teacherUserId: string | null = null;
+      for (const t of teachers) {
+        if (await canCreateMeeting(t.userId)) {
+          teacherUserId = t.userId;
+          break;
+        }
+      }
+      if (!teacherUserId && (await canCreateMeeting(adminUserId))) {
+        teacherUserId = adminUserId;
+      }
+      if (!teacherUserId) {
+        teacherUserId = adminUserId; // последний фолбэк (ошибку токена обработают безопасно)
+      }
+
+      // Запускаем повтор fire-and-forget: тяжёлое скачивание/заливку не держим в
+      // запросе (как и в вебхуке). downloadToken НЕ передаём — при ручном ретрае его
+      // нет, processRecordingForSession сам возьмёт OAuth-токен (через ?access_token).
+      void processRecordingForSession({
+        sessionId: session.id,
+        meetingId: session.zoomMeetingId,
+        teacherUserId,
+      }).catch((err) => {
+        app.log.error(
+          { err, sessionId: session.id },
+          'Ошибка ручного ретрая записи Zoom',
+        );
+      });
+
+      // 202 Accepted: обработка запущена в фоне. Возвращаем текущий статус —
+      // claim в processRecordingForSession уже мог перевести 'failed'→'processing'.
+      return reply.status(202).send({
+        status: session.recordingStatus ?? 'processing',
+        message: 'Повторная загрузка записи запущена',
+      });
     },
   );
 

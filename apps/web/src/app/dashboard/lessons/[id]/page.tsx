@@ -3,7 +3,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList, Clock } from 'lucide-react';
+import {
+  Loader2,
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  ClipboardList,
+  Clock,
+  GraduationCap,
+  Video,
+} from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
@@ -26,6 +35,7 @@ import {
 } from '@/components/ui/card';
 import { MaterialRow } from '@/components/material-row';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
@@ -104,17 +114,38 @@ export default function StudentLessonPage() {
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
   const assignments = (lesson?.assignments ?? []).filter((a) => saByAssignment[a.id]);
 
-  const hasVideo = !!(
+  // Учебное видео урока (лекция, грузится ДО урока) — строго из блока урока.
+  const hasLessonVideo = !!(
     (lesson?.videos && lesson.videos.length > 0) ||
     lesson?.videoFileUrl ||
     lesson?.videoUrl
   );
-  // Прошедшее занятие, запись Zoom ещё едет (pending/processing) и видео пока нет —
-  // показываем «запись скоро появится» вместо пустоты. На failed/none ничего не обещаем.
+
+  // Запись занятия (запись Zoom-созвона, подтягивается ПОСЛЕ занятия) — отдельные поля.
+  const hasRecordingMedia = !!(lesson?.recordingFileUrl || lesson?.recordingVideoUrl);
+  const recordingEmbedUrl = lesson?.recordingVideoUrl
+    ? parseVideoEmbed(lesson.recordingVideoUrl)
+    : null;
+  // Запись ещё обрабатывается (Zoom едет) — обещаем студенту, что появится.
+  // [М-2] статус 'ready', но медиа нет (URL не подписался) — тоже «готовится»,
+  // секцию не прячем: запись по факту есть, просто временный URL не пришёл.
   const recordingPending =
+    !hasRecordingMedia &&
+    ['pending', 'processing', 'ready'].includes(lesson?.recordingStatus ?? '');
+  // Запись не получилась (Zoom вернул ошибку) — честно говорим «недоступна».
+  // Статус 'none' у проведённого занятия НЕ считаем недоступностью: Zoom ещё может
+  // прислать запись (бэк ставит 'pending' на meeting.ended), поэтому секцию не показываем.
+  const recordingUnavailable =
+    !hasRecordingMedia &&
+    !recordingPending &&
     lesson?.status === 'done' &&
-    !hasVideo &&
-    (lesson?.recordingStatus === 'pending' || lesson?.recordingStatus === 'processing');
+    lesson?.recordingStatus === 'failed';
+  // Показываем секцию записи, только если есть что показать (медиа/ожидание/недоступность).
+  // Если занятие ещё не проведено и записи нет — секцию не показываем (не обещаем пустоту).
+  // [М-3] у отменённого занятия записи быть не может — секцию не показываем вовсе.
+  const showRecordingSection =
+    lesson?.status !== 'cancelled' &&
+    (hasRecordingMedia || recordingPending || recordingUnavailable);
 
   return (
     <div className="flex flex-col gap-6">
@@ -150,92 +181,110 @@ export default function StudentLessonPage() {
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
           </div>
 
-          {/* Видео урока: если есть список (несколько видео) — показываем его;
-              иначе fallback на одиночное видео (файл или внешняя ссылка). */}
-          {lesson.videos && lesson.videos.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {lesson.videos.map((video) => {
-                const videoEmbed =
-                  video.kind === 'link' ? parseVideoEmbed(video.url) : null;
-                return (
-                  <div key={video.id} className="flex flex-col gap-2">
-                    {video.title && (
-                      <div className="text-sm font-medium">{video.title}</div>
-                    )}
-                    {video.kind === 'file' ? (
-                      <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-                        <video
-                          controls
-                          preload="metadata"
-                          controlsList="nodownload"
-                          onContextMenu={(e) => e.preventDefault()}
-                          className="max-h-[70vh] w-auto max-w-full"
-                          src={video.url}
-                        />
+          {/* Учебное видео урока (лекция, грузится ДО урока). Если несколько —
+              показываем список; иначе одиночное видео (файл или внешняя ссылка).
+              Нет учебного видео — секцию не показываем (без пустого плеера). */}
+          {hasLessonVideo && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GraduationCap className="size-5 shrink-0 text-muted-foreground" />
+                  Учебное видео урока
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Посмотрите до занятия</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {lesson.videos && lesson.videos.length > 0 ? (
+                  lesson.videos.map((video) => {
+                    const videoEmbed =
+                      video.kind === 'link' ? parseVideoEmbed(video.url) : null;
+                    return (
+                      <div key={video.id} className="flex flex-col gap-2">
+                        {video.title && (
+                          <div className="text-sm font-medium">{video.title}</div>
+                        )}
+                        {video.kind === 'file' ? (
+                          <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
+                        ) : videoEmbed ? (
+                          <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
+                        ) : (
+                          <Button asChild className="w-fit">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer">
+                              Смотреть видео
+                              <ExternalLink />
+                            </a>
+                          </Button>
+                        )}
                       </div>
-                    ) : videoEmbed ? (
-                      <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                        <iframe
-                          src={videoEmbed}
-                          title={video.title ?? lesson.title}
-                          className="size-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    ) : (
-                      <Button asChild className="w-fit">
-                        <a href={video.url} target="_blank" rel="noopener noreferrer">
-                          Смотреть видео
-                          <ExternalLink />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : lesson.videoFileUrl ? (
-            <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-              <video
-                controls
-                preload="metadata"
-                controlsList="nodownload"
-                onContextMenu={(e) => e.preventDefault()}
-                className="max-h-[70vh] w-auto max-w-full"
-                src={lesson.videoFileUrl}
-              />
-            </div>
-          ) : (
-            lesson.videoUrl && (
-              embedUrl ? (
-                <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                  <iframe
-                    src={embedUrl}
-                    title={lesson.title}
-                    className="size-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
-              ) : (
-                <Button asChild className="w-fit">
-                  <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
-                    Смотреть видео
-                    <ExternalLink />
-                  </a>
-                </Button>
-              )
-            )
+                    );
+                  })
+                ) : lesson.videoFileUrl ? (
+                  <VideoFileFrame src={lesson.videoFileUrl} label={lesson.title} />
+                ) : embedUrl ? (
+                  <VideoEmbedFrame src={embedUrl} title={lesson.title} />
+                ) : (
+                  lesson.videoUrl && (
+                    <Button asChild className="w-fit">
+                      <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
+                        Смотреть видео
+                        <ExternalLink />
+                      </a>
+                    </Button>
+                  )
+                )}
+              </CardContent>
+            </Card>
           )}
 
-          {/* Запись прошедшего занятия ещё обрабатывается — обещаем студенту, что
-              она появится, чтобы не было пустого экрана. */}
-          {recordingPending && (
-            <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-              <Clock className="size-5 shrink-0" />
-              <span>Запись занятия скоро появится здесь.</span>
-            </div>
+          {/* Запись занятия (запись Zoom-созвона, подтягивается ПОСЛЕ занятия).
+              Показываем плеер записи / «готовится» / «недоступна» — см. showRecordingSection.
+              Если занятие ещё не проведено и записи нет — секцию не рендерим. */}
+          {showRecordingSection && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Video className="size-5 shrink-0 text-muted-foreground" />
+                  Запись занятия
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Запись прошедшего созвона</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {hasRecordingMedia ? (
+                  lesson.recordingFileUrl ? (
+                    <VideoFileFrame
+                      src={lesson.recordingFileUrl}
+                      label={`Запись занятия — ${lesson.title}`}
+                    />
+                  ) : recordingEmbedUrl ? (
+                    <VideoEmbedFrame
+                      src={recordingEmbedUrl}
+                      title={`Запись занятия — ${lesson.title}`}
+                    />
+                  ) : (
+                    <Button asChild className="w-fit">
+                      <a
+                        href={lesson.recordingVideoUrl!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Смотреть запись
+                        <ExternalLink />
+                      </a>
+                    </Button>
+                  )
+                ) : recordingPending ? (
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                    <Clock className="size-5 shrink-0" />
+                    <span>Запись занятия готовится, появится здесь.</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                    <Video className="size-5 shrink-0" />
+                    <span>Запись занятия недоступна.</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* Итоги занятия: если у summary есть источник (zoom_ai/manual) — это итоги
@@ -305,8 +354,8 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!hasVideo &&
-            !recordingPending &&
+          {!hasLessonVideo &&
+            !showRecordingSection &&
             !lesson.summary &&
             (!lesson.materials || lesson.materials.length === 0) &&
             assignments.length === 0 && (

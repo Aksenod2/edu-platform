@@ -199,7 +199,11 @@ export default function AdminSchedulePage() {
           Активных потоков нет. Создайте поток, чтобы планировать занятия.
         </p>
       ) : view === 'week' ? (
-        <WeekView lessons={visibleLessons} onMarkDone={handleMarkDone} />
+        <WeekView
+          lessons={visibleLessons}
+          onMarkDone={handleMarkDone}
+          lessonBasePath="/admin/lessons"
+        />
       ) : (
         <MonthView
           lessons={visibleLessons}
@@ -307,6 +311,7 @@ function MonthView({
         editable={editable}
         lessons={lessons}
         streams={createStreams}
+        lessonBasePath="/admin/lessons"
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}

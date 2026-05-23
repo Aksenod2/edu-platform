@@ -115,6 +115,13 @@ function StudentLessonsContent() {
           {lessons.map((lesson, index) => {
             const upcoming = isUpcoming(lesson);
             const cancelled = lesson.status === 'cancelled';
+            // Учебное видео урока (лекция): файл, ссылка или несколько видео.
+            // Запись Zoom-занятия — отдельная сущность, в индикатор не входит.
+            const hasVideo = !!(
+              (lesson.videos && lesson.videos.length > 0) ||
+              lesson.videoFileUrl ||
+              lesson.videoUrl
+            );
 
             return (
               <Link
@@ -149,7 +156,7 @@ function StudentLessonsContent() {
                         <p className="truncate text-sm text-muted-foreground">{lesson.summary}</p>
                       )}
                     </div>
-                    {lesson.videoUrl && (
+                    {hasVideo && (
                       <PlayCircle className="size-5 shrink-0 text-muted-foreground" />
                     )}
                     <ChevronRight className="size-5 shrink-0 text-muted-foreground" />

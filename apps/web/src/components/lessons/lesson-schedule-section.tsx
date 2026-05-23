@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
+  ExternalLink,
   FileText,
   Loader2,
   Pencil,
+  RefreshCw,
   Trash2,
+  Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +23,8 @@ import { Field, FieldLabel } from '@/components/ui/field';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
+import { parseVideoEmbed } from '@/lib/video-embed';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +56,7 @@ import {
   getLesson,
   getLessonSessions,
   getStreams,
+  retrySessionRecording,
   unscheduleLesson,
   updateAssignment,
   updateLesson,
@@ -121,6 +128,9 @@ export function LessonScheduleSection({
   const [summaryStreamId, setSummaryStreamId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
+
+  // Повтор автозагрузки записи Zoom: streamId занятия, по которому идёт запрос.
+  const [retryingStreamId, setRetryingStreamId] = useState('');
 
   // Подтягиваем выданные задания для всех потоков, где урок запланирован.
   // «Выдано» = есть синтетическое задание (Session) по этому lessonId в потоке.
@@ -253,6 +263,21 @@ export function LessonScheduleSection({
     }
   }
 
+  // Повторить автозагрузку записи Zoom для зафейленного занятия (админ).
+  async function handleRetryRecording(sid: string) {
+    if (retryingStreamId) return;
+    setRetryingStreamId(sid);
+    try {
+      const { message } = await retrySessionRecording(accessToken, lessonId, sid);
+      await load();
+      toast.success(message || 'Перезапустили загрузку записи');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось перезапустить загрузку');
+    } finally {
+      setRetryingStreamId('');
+    }
+  }
+
   // Открыть строку выдачи ДЗ для потока: если уже выдано — подставить дедлайн.
   function openIssue(sid: string) {
     const existing = issuedByStream[sid];
@@ -373,6 +398,11 @@ export function LessonScheduleSection({
             const issued = issuedByStream[s.streamId];
             const issueOpen = issueStreamId === s.streamId;
             const summaryOpen = summaryStreamId === s.streamId;
+            // Запись занятия: даём админу проверить её до студентов.
+            const hasRecording = !!(s.recordingFileUrl || s.recordingVideoUrl);
+            const recordingEmbed = s.recordingVideoUrl
+              ? parseVideoEmbed(s.recordingVideoUrl)
+              : null;
             return (
               <div
                 key={s.streamId}
@@ -424,6 +454,62 @@ export function LessonScheduleSection({
                     </Button>
                   </div>
                 </div>
+
+                {/* Запись Zoom не получена: видимая причина (а не только в title бейджа)
+                    + ручной повтор автозагрузки для админа. На мобиле причина и кнопка
+                    идут колонкой (кнопка под текстом), на десктопе — в строку. */}
+                {s.status === 'done' && s.recordingStatus === 'failed' && (
+                  <div className="flex flex-col gap-2 rounded-md bg-muted p-2 sm:flex-row sm:items-center">
+                    <p className="flex min-w-0 flex-1 items-start gap-1.5 text-sm text-muted-foreground">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      <span className="min-w-0 break-words">
+                        {s.recordingError?.trim() || 'Не удалось получить запись'}
+                      </span>
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full shrink-0 sm:w-fit"
+                      onClick={() => handleRetryRecording(s.streamId)}
+                      disabled={retryingStreamId === s.streamId}
+                    >
+                      {retryingStreamId === s.streamId ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      Повторить
+                    </Button>
+                  </div>
+                )}
+
+                {/* Плеер записи занятия — для проверки админом до студентов.
+                    Файл → VideoFileFrame, распознанный embed → VideoEmbedFrame,
+                    иначе кнопка-ссылка. Компактно, под бейджами/статусом записи. */}
+                {hasRecording && (
+                  <div className="rounded-md bg-muted p-2">
+                    {s.recordingFileUrl ? (
+                      <VideoFileFrame
+                        src={s.recordingFileUrl}
+                        label={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : recordingEmbed ? (
+                      <VideoEmbedFrame
+                        src={recordingEmbed}
+                        title={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" className="w-fit" asChild>
+                        <a href={s.recordingVideoUrl!} target="_blank" rel="noopener noreferrer">
+                          <Video className="size-4" />
+                          Смотреть запись
+                          <ExternalLink className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
 
                 {/* Выдача ДЗ — только если у урока включено folded-задание. */}
                 {hasAssignment &&

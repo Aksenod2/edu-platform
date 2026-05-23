@@ -33,6 +33,7 @@ vi.mock('../../lib/crypto.js', () => ({
 vi.mock('../../lib/zoom-recording.js', () => ({
   processRecordingForSession: vi.fn(() => Promise.resolve()),
   processSummaryForSession: vi.fn(() => Promise.resolve()),
+  markRecordingPending: vi.fn(() => Promise.resolve()),
 }));
 
 import { zoomWebhookRoutes } from '../zoom-webhooks.js';
@@ -41,6 +42,7 @@ import { decryptSecret, isEncryptionKeySet } from '../../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  markRecordingPending,
 } from '../../lib/zoom-recording.js';
 
 const SECRET_TOKEN = 'whsec_test_token';
@@ -53,6 +55,7 @@ const mockDecrypt = vi.mocked(decryptSecret);
 const mockKeySet = vi.mocked(isEncryptionKeySet);
 const mockProcessRecording = vi.mocked(processRecordingForSession);
 const mockProcessSummary = vi.mocked(processSummaryForSession);
+const mockMarkPending = vi.mocked(markRecordingPending);
 
 function buildApp(): FastifyInstance {
   const app = Fastify();
@@ -346,6 +349,40 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     expect(mockProcessSummary).toHaveBeenCalledTimes(1);
     expect(mockProcessSummary.mock.calls[0][0].sessionId).toBe('sess-88');
     expect(mockProcessRecording).not.toHaveBeenCalled();
+  });
+
+  it('meeting.ended → находит Session по zoomMeetingId и помечает запись pending', async () => {
+    db.session.findFirst.mockResolvedValue({ id: 'sess-99' });
+
+    const ts = nowTs();
+    const body = JSON.stringify({
+      event: 'meeting.ended',
+      payload: { object: { id: 333 } },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    expect(db.session.findFirst).toHaveBeenCalledWith({
+      where: { zoomMeetingId: '333' },
+      select: { id: true },
+    });
+    expect(mockMarkPending).toHaveBeenCalledTimes(1);
+    expect(mockMarkPending.mock.calls[0][0]).toEqual({ sessionId: 'sess-99' });
+    // meeting.ended не качает запись и не собирает резюме.
+    expect(mockProcessRecording).not.toHaveBeenCalled();
+    expect(mockProcessSummary).not.toHaveBeenCalled();
   });
 
   it('recording.completed без подходящей Session → 200, обработка не запускается', async () => {

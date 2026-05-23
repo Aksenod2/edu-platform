@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { ChevronDown, FolderOpen, Play } from 'lucide-react';
+import { ChevronDown, ExternalLink, FolderOpen, Play } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { getStreams, getLessons, type Stream, type Lesson } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { MaterialRow } from '@/components/material-row';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
+import { parseVideoEmbed } from '@/lib/video-embed';
 import {
   Select,
   SelectContent,
@@ -114,8 +116,12 @@ function MaterialsContent() {
     return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   });
 
+  // Учебное видео урока: несколько видео (videos[]), загруженный файл (videoFileUrl)
+  // или внешняя ссылка (videoUrl). Запись Zoom-занятия сюда НЕ входит.
+  const hasLessonVideo = (l: Lesson) =>
+    (l.videos?.length ?? 0) > 0 || !!l.videoFileUrl || !!l.videoUrl;
   const hasContent = (l: Lesson) =>
-    !!l.videoUrl || !!l.summary || (l.materials?.length ?? 0) > 0;
+    hasLessonVideo(l) || !!l.summary || (l.materials?.length ?? 0) > 0;
   const lessonsWithMaterials = sortedLessons.filter(hasContent);
   const lessonsWithoutMaterials = sortedLessons.filter((l) => !hasContent(l));
 
@@ -166,7 +172,7 @@ function MaterialsContent() {
           <Separator orientation="vertical" className="h-8" />
           <div className="text-center">
             <p className="text-xl font-bold text-foreground">
-              {sortedLessons.filter((l) => l.videoUrl).length}
+              {sortedLessons.filter(hasLessonVideo).length}
             </p>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Видео</p>
           </div>
@@ -235,7 +241,11 @@ function LessonCard({
   /** Имя потока — показываем бейджем в режиме «Все потоки». */
   streamName?: string;
 }) {
-  const hasVideo = !!lesson.videoUrl;
+  // Учебное видео: несколько (videos[]), загруженный файл или внешняя ссылка.
+  const videos = lesson.videos ?? [];
+  const hasVideo = videos.length > 0 || !!lesson.videoFileUrl || !!lesson.videoUrl;
+  // Внешняя ссылка одиночного видео → embed (для встроенного плеера), иначе кнопка-ссылка.
+  const embedUrl = lesson.videoUrl ? parseVideoEmbed(lesson.videoUrl) : null;
   const hasSummary = !!lesson.summary;
   const files = lesson.materials ?? [];
   const hasFiles = files.length > 0;
@@ -282,18 +292,53 @@ function LessonCard({
       {/* Expanded content */}
       {expanded && (
         <div className="border-t px-5 py-5 space-y-5 bg-muted">
-          {/* Video */}
+          {/* Учебное видео урока: несколько видео → список плееров; иначе
+              одиночное (файл / embed / внешняя ссылка кнопкой). */}
           {hasVideo && (
             <div>
               <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-                Видеозапись
+                Учебное видео
               </p>
-              <Button asChild variant="outline" size="sm">
-                <a href={lesson.videoUrl!} target="_blank" rel="noopener noreferrer">
-                  <Play className="size-4" />
-                  Открыть видео
-                </a>
-              </Button>
+              {videos.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  {videos.map((video) => {
+                    const videoEmbed =
+                      video.kind === 'link' ? parseVideoEmbed(video.url) : null;
+                    return (
+                      <div key={video.id} className="flex flex-col gap-2">
+                        {video.title && (
+                          <div className="text-sm font-medium">{video.title}</div>
+                        )}
+                        {video.kind === 'file' ? (
+                          <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
+                        ) : videoEmbed ? (
+                          <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
+                        ) : (
+                          <Button asChild variant="outline" size="sm" className="w-fit">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer">
+                              <Play className="size-4" />
+                              Открыть видео
+                              <ExternalLink className="size-4" />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : lesson.videoFileUrl ? (
+                <VideoFileFrame src={lesson.videoFileUrl} label={lesson.title} />
+              ) : embedUrl ? (
+                <VideoEmbedFrame src={embedUrl} title={lesson.title} />
+              ) : (
+                <Button asChild variant="outline" size="sm" className="w-fit">
+                  <a href={lesson.videoUrl!} target="_blank" rel="noopener noreferrer">
+                    <Play className="size-4" />
+                    Открыть видео
+                    <ExternalLink className="size-4" />
+                  </a>
+                </Button>
+              )}
             </div>
           )}
 

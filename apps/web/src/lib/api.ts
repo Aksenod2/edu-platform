@@ -634,6 +634,13 @@ export interface Lesson {
   recordingStatus?: string | null;
   // Текст ошибки автозагрузки записи (для показа в UI), если recordingStatus = 'failed'.
   recordingError?: string | null;
+  // Запись Zoom-занятия — разведена с учебным видео урока (videos/videoUrl/videoFileUrl).
+  // Учебное видео грузится ДО урока (из блока), запись подтягивается ПОСЛЕ занятия (из Session).
+  // recordingVideoKey — ключ загруженной записи в хранилище;
+  // recordingVideoUrl — внешняя ссылка на запись; recordingFileUrl — подписанный URL файла записи.
+  recordingVideoKey?: string | null;
+  recordingVideoUrl?: string | null;
+  recordingFileUrl?: string | null;
   // Источник итогов занятия: 'zoom_ai' (AI Companion) | 'manual' (ввёл преподаватель).
   summarySource?: string | null;
 }
@@ -941,6 +948,10 @@ export interface LessonSession {
   summarySource?: string | null;
   recordingStatus?: string | null;
   recordingError?: string | null;
+  // Запись Zoom-занятия (разведена с учебным видео урока): внешняя ссылка
+  // (recordingVideoUrl) или подписанный URL загруженного файла (recordingFileUrl).
+  recordingFileUrl?: string | null;
+  recordingVideoUrl?: string | null;
 }
 
 // Сохранить ручные итоги КОНКРЕТНОГО занятия потока (Session.summary). Бэк ставит
@@ -977,6 +988,19 @@ export async function unscheduleLesson(
 ): Promise<{ message: string }> {
   return request(`/lessons/${lessonId}/sessions/${streamId}`, {
     method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Повторить автозагрузку записи Zoom для занятия (админ): перезапускает скачивание
+// записи, когда recordingStatus = 'failed' или процесс завис. Бэк отвечает 202.
+export async function retrySessionRecording(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<{ status: string; message: string }> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}/recording/retry`, {
+    method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

@@ -100,7 +100,11 @@ export default function StudentSchedulePage() {
         </div>
       ) : (
         <div className="mt-4">
-          <ScheduleCalendar lessons={visibleLessons} editable={false} />
+          <ScheduleCalendar
+            lessons={visibleLessons}
+            editable={false}
+            lessonBasePath="/dashboard/lessons"
+          />
         </div>
       )}
     </>

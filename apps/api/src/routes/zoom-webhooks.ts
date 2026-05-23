@@ -13,6 +13,7 @@ import { decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  markRecordingPending,
 } from '../lib/zoom-recording.js';
 
 // Окно допустимого расхождения времени запроса (анти-replay): 5 минут.
@@ -22,6 +23,9 @@ const REPLAY_WINDOW_MS = 5 * 60 * 1000;
 // валидируем на границе перед использованием).
 interface ZoomEventPayload {
   event?: string;
+  // download_token — короткоживущий токен для скачивания файлов записи, который
+  // Zoom кладёт на ВЕРХНЕМ уровне события recording.completed (рядом с event).
+  download_token?: string;
   payload?: {
     plainToken?: string;
     object?: {
@@ -79,6 +83,7 @@ async function processEventAsync(
   event: string,
   teacherUserId: string,
   obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+  downloadToken: string | null,
 ): Promise<void> {
   try {
     const meetingId = obj?.id !== undefined && obj?.id !== null ? String(obj.id) : null;
@@ -90,12 +95,17 @@ async function processEventAsync(
       });
 
       if (session) {
-        if (event === 'recording.completed') {
+        if (event === 'meeting.ended') {
+          // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
+          // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
+          await markRecordingPending({ sessionId: session.id });
+        } else if (event === 'recording.completed') {
           await processRecordingForSession({
             sessionId: session.id,
             meetingId,
             teacherUserId,
             payloadFiles: obj?.recording_files ?? null,
+            downloadToken,
           });
         } else if (event === 'meeting.summary_completed') {
           await processSummaryForSession({
@@ -242,8 +252,19 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
 
     // Тяжёлую работу (скачивание/резюме) делаем асинхронно, чтобы Zoom не
     // ретраил по таймауту. Отвечаем 200 сразу.
-    if (event === 'recording.completed' || event === 'meeting.summary_completed') {
-      void processEventAsync(app, webhookEventId, event, integration.userId, body.payload?.object);
+    if (
+      event === 'meeting.ended' ||
+      event === 'recording.completed' ||
+      event === 'meeting.summary_completed'
+    ) {
+      void processEventAsync(
+        app,
+        webhookEventId,
+        event,
+        integration.userId,
+        body.payload?.object,
+        body.download_token ?? null,
+      );
     } else {
       // Прочие события нам не интересны — сразу помечаем обработанными.
       void prisma.zoomWebhookEvent

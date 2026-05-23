@@ -20,9 +20,12 @@ import {
 export function WeekView({
   lessons,
   onMarkDone,
+  lessonBasePath = '/admin/lessons',
 }: {
   lessons: ScheduleLesson[];
   onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
+  /** Базовый путь страницы урока — пробрасывается в карточки занятий. */
+  lessonBasePath?: string;
 }) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
@@ -106,6 +109,7 @@ export function WeekView({
                       lesson={lesson}
                       compact
                       onMarkDone={onMarkDone}
+                      lessonBasePath={lessonBasePath}
                     />
                   ))
                 )}

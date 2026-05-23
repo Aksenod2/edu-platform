@@ -25,6 +25,18 @@ export const STATUS_ORDER: LessonStatus[] = ['draft', 'planned', 'done', 'cancel
 
 export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+/**
+ * Кнопку «Присоединиться» к созвону показываем только для запланированного
+ * занятия со ссылкой: у проведённого (done), отменённого (cancelled) или
+ * черновика (draft) присоединяться уже некуда.
+ */
+export function canJoinMeeting(lesson: {
+  status?: LessonStatus | null;
+  meetingUrl?: string | null;
+}): boolean {
+  return lesson.status === 'planned' && Boolean(lesson.meetingUrl);
+}
+
 /** Парсит дату из ISO-строки как локальную (без UTC-сдвига). */
 export function parseLocalDate(dateStr: string): Date {
   const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
