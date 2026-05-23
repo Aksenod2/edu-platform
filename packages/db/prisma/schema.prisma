@@ -456,3 +456,19 @@ model WalletTransaction {
 
   @@index([userId])
 }
+
+// Настройки интеграции с Zoom (Server-to-Server OAuth). Синглтон: единственная
+// строка с фиксированным id 'default' (приложение задаёт id явно). Секрет
+// клиента хранится зашифрованным (AES-256-GCM) в clientSecretEnc.
+model ZoomIntegration {
+  id                String    @id @default("default")
+  enabled           Boolean   @default(false)
+  accountId         String?
+  clientId          String?
+  clientSecretEnc   String?
+  autoCreateMeeting Boolean   @default(false)
+  lastTestedAt      DateTime?
+  lastTestOk        Boolean?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
