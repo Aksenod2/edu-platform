@@ -24,12 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -40,7 +35,10 @@ import {
 } from '@/components/ui/table';
 
 // Бейдж статуса заявки: одобрена — нейтральный, отклонена — destructive, ожидание — outline.
-const STATUS_VARIANT: Record<TopUpRequestStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const STATUS_VARIANT: Record<
+  TopUpRequestStatus,
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
   pending: 'outline',
   approved: 'default',
   rejected: 'destructive',
@@ -190,7 +188,8 @@ export default function StudentBalancePage() {
   }
 
   const hasSettings =
-    settings && (settings.qrUrl || settings.transferUrl || settings.transferPhone || settings.instructions);
+    settings &&
+    (settings.qrUrl || settings.transferUrl || settings.transferPhone || settings.instructions);
 
   return (
     <>
@@ -366,7 +365,7 @@ export default function StudentBalancePage() {
                     />
                   </div>
 
-                  <Button type="submit" disabled={submitting || !file}>
+                  <Button type="submit" disabled={submitting || !file || hasPending}>
                     {submitting && <Loader2 className="animate-spin" />}
                     {submitting ? 'Отправка...' : 'Отправить заявку'}
                   </Button>
@@ -377,9 +376,7 @@ export default function StudentBalancePage() {
 
           {/* Мои заявки на пополнение */}
           <section>
-            <h2 className="mb-3 text-xl font-bold tracking-tight text-foreground">
-              Мои заявки
-            </h2>
+            <h2 className="mb-3 text-xl font-bold tracking-tight text-foreground">Мои заявки</h2>
             {requestsError ? (
               <Alert variant="destructive">
                 <AlertDescription>{requestsError}</AlertDescription>
@@ -462,7 +459,9 @@ export default function StudentBalancePage() {
             <h2 className="mb-3 text-xl font-bold tracking-tight text-foreground">
               История операций
             </h2>
-            {transactions.length === 0 ? (
+            {error ? (
+              <p className="text-sm text-destructive">Не удалось загрузить историю операций.</p>
+            ) : transactions.length === 0 ? (
               <p className="text-sm text-muted-foreground">Операций пока нет.</p>
             ) : (
               <div className="rounded-lg border">
@@ -490,7 +489,8 @@ export default function StudentBalancePage() {
                               isTopup ? 'text-foreground' : 'text-destructive'
                             }`}
                           >
-                            {isTopup ? '+' : '−'}{formatKopecks(tx.amount)}
+                            {isTopup ? '+' : '−'}
+                            {formatKopecks(tx.amount)}
                           </TableCell>
                           <TableCell className="text-muted-foreground whitespace-pre-wrap">
                             {tx.note || '—'}
