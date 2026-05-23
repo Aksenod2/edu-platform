@@ -223,6 +223,11 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !form.title.trim()) return;
+    // Новая модель: задание всегда привязано к уроку (входит в его блок).
+    if (!form.lessonId) {
+      setFormError('Выберите урок для задания');
+      return;
+    }
     setSubmitting(true);
     setFormError('');
     try {
@@ -238,7 +243,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
           type: form.type,
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
-          lessonId: form.lessonId || null,
+          lessonId: form.lessonId,
           materials: formMaterials,
         });
       } else {
@@ -250,7 +255,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
           type: form.type,
           tags,
           dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
-          lessonId: form.lessonId || undefined,
+          lessonId: form.lessonId,
           materials: formMaterials,
         });
       }
@@ -389,21 +394,23 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
                 </div>
 
                 <div className="flex flex-1 flex-col gap-2">
-                  <Label>Урок (опционально)</Label>
+                  <Label>Урок *</Label>
                   <Select
-                    value={form.lessonId || '__none__'}
-                    onValueChange={(v) => setForm({ ...form, lessonId: v === '__none__' ? '' : v })}
+                    value={form.lessonId || undefined}
+                    onValueChange={(v) => setForm({ ...form, lessonId: v })}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="— Без привязки —" />
+                      <SelectValue placeholder="Выберите урок" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">— Без привязки —</SelectItem>
                       {lessons.map((l) => (
                         <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Задание привязывается к уроку и входит в его блок.
+                  </p>
                 </div>
 
                 <div className="flex flex-1 flex-col gap-2">
@@ -535,7 +542,7 @@ export function StreamAssignmentsManager({ streamId }: { streamId: string }) {
               )}
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={submitting || !form.title.trim()}>
+                <Button type="submit" disabled={submitting || !form.title.trim() || !form.lessonId}>
                   {submitting && <Loader2 className="size-4 animate-spin" />}
                   {submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать'}
                 </Button>

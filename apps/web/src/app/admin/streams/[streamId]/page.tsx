@@ -257,6 +257,8 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
     if (!accessToken) return;
     try {
       await updateLesson(accessToken, id, {
+        // Новая модель: расписание пишется в Session этого потока.
+        streamId: stream.id,
         title: data.title,
         date: data.date,
         startTime: data.startTime,

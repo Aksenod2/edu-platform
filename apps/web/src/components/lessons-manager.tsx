@@ -686,6 +686,9 @@ export function LessonsManager({ streamId }: { streamId: string }) {
     setError('');
     try {
       const { lesson } = await updateLesson(accessToken, viewLesson.id, {
+        // Новая модель: расписание урока пишется в Session конкретного потока,
+        // поэтому передаём streamId. В режиме «Все потоки» проп пуст — берём из урока.
+        streamId: viewLesson.streamId || streamId || undefined,
         title: editForm.title.trim(),
         // Шлём поля всегда (даже пустыми), иначе очистку не сохранить:
         // пустая строка на бэке превращается в null.

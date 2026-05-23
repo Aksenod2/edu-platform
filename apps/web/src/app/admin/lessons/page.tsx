@@ -159,7 +159,7 @@ function LessonsCalendar({
       setLessons(
         list.map((l) => ({
           ...l,
-          streamName: l.stream?.name ?? byId.get(l.streamId),
+          streamName: l.stream?.name ?? (l.streamId ? byId.get(l.streamId) : undefined),
         })),
       );
       setError('');
@@ -197,7 +197,10 @@ function LessonsCalendar({
     if (!accessToken) return;
     setError('');
     try {
+      // Новая модель: расписание пишется в Session потока — передаём streamId урока.
+      const targetStreamId = lessons.find((l) => l.id === id)?.streamId;
       await updateLesson(accessToken, id, {
+        streamId: targetStreamId,
         title: data.title,
         date: data.date,
         startTime: data.startTime,

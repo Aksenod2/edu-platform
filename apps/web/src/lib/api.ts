@@ -274,6 +274,9 @@ export interface Stream {
   // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
   ownerId?: string | null;
   owner?: { id: string; name: string } | null;
+  // Программа потока (новая модель): поток — это набор сессий по программе.
+  programId?: string | null;
+  program?: { id: string; name: string; type: string } | null;
 }
 
 export async function getStreams(
@@ -485,7 +488,8 @@ export async function purgeAllFiles(accessToken: string): Promise<{
   deletedFiles: number;
   clearedLessonVideos: number;
   clearedLessonMaterials: number;
-  clearedAssignmentMaterials: number;
+  // Видеозаписи теперь живут на сессиях потока (новая модель), отдельно от материалов.
+  clearedSessionVideos: number;
   clearedSubmissionFiles: number;
   deletedFileMessages: number;
 }> {
@@ -508,7 +512,9 @@ export const LESSON_STATUS_LABELS: Record<LessonStatus, string> = {
 
 export interface Lesson {
   id: string;
-  streamId: string;
+  // Опционально: сервер опускает streamId в режиме «Все потоки»/копилка
+  // (урок-шаблон без привязки к конкретному потоку).
+  streamId?: string;
   title: string;
   videoUrl: string | null;
   // Ключ загруженной видеозаписи в хранилище (отдельно от внешней ссылки videoUrl).
@@ -584,6 +590,9 @@ export async function updateLesson(
   accessToken: string,
   id: string,
   data: {
+    // Поток, чью сессию обновлять (новая модель: расписание урока живёт на
+    // пер-поточной Session). Без него поля статуса/даты/времени/ссылки не сохранятся.
+    streamId?: string;
     title?: string;
     videoUrl?: string;
     summary?: string;
