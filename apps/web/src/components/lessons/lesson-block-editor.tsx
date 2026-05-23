@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,16 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Field,
   FieldGroup,
@@ -27,6 +38,7 @@ import {
 import {
   getLesson,
   updateLesson,
+  deleteLesson,
   getTeachers,
   type LessonMaterial,
   type Teacher,
@@ -77,6 +89,7 @@ function lessonToForm(lesson: LessonBlock): FormState {
 // свёрнутое задание. Расписание (Session потока) здесь НЕ показываем.
 export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [lesson, setLesson] = useState<LessonBlock | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -86,6 +99,8 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!accessToken) return;
@@ -168,6 +183,19 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
       toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!accessToken) return;
+    setDeleting(true);
+    try {
+      await deleteLesson(accessToken, lessonId);
+      toast.success('Урок удалён');
+      router.push('/admin/lessons');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка удаления');
+      setDeleting(false);
     }
   };
 
@@ -379,7 +407,38 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
           {saving && <Loader2 className="animate-spin" />}
           {saving ? 'Сохранение...' : 'Сохранить'}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="ml-auto text-destructive hover:text-destructive"
+          disabled={deleting}
+          onClick={() => setConfirmDelete(true)}
+        >
+          {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          Удалить урок
+        </Button>
       </div>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Урок «{lesson.title}» будет удалён из всех программ и снят со всех потоков;
+              сдачи студентов по нему тоже удалятся. Действие необратимо.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }
