@@ -739,43 +739,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
       assignment,
     };
 
-    // Создаём ConversationEntry о сдаче, чтобы преподаватель видел её в треде.
-    if (status === 'submitted') {
-      // Авто-создание персонального канала, если ученик ещё не открывал тред.
-      let thread = await prisma.conversation.findUnique({
-        where: { studentId: sa.studentId },
-      });
-      if (!thread) {
-        thread = await prisma.conversation.create({ data: { studentId: sa.studentId, type: 'student' } });
-      }
-
-      if (thread) {
-        const entryContent = answerText || `Сдано задание «${assignment.title}»`;
-        const entryMetadata: Record<string, unknown> = {
-          submissionType: 'assignment',
-          studentAssignmentId: updatedRow.id,
-        };
-
-        if (updatedRow.fileUrl) {
-          entryMetadata.s3Key = updatedRow.fileUrl;
-          entryMetadata.fileName = updatedRow.fileName;
-          entryMetadata.mimeType = fileMimeType || null;
-          entryMetadata.size = updatedRow.fileSize;
-        }
-
-        await prisma.conversationEntry.create({
-          data: {
-            conversationId: thread.id,
-            authorId: sa.studentId,
-            type: updatedRow.fileUrl ? 'file' : 'text',
-            content: entryContent,
-            metadata: (entryMetadata as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata']),
-            // ConversationEntry привязан к уроку (lessonId), а не к заданию.
-            lessonId: sa.session.lessonId,
-          },
-        });
-      }
-    }
+    // Сдачу задания НЕ дублируем в чат: работа (ответ + файл) живёт в самом задании,
+    // преподаватель видит её на экране проверки. Чат — только для сообщений, которые
+    // студент отправляет сам. О факте сдачи преподаватель узнаёт из уведомления (ниже).
 
     // Generate signed URL for file if present
     if (updatedRow.fileUrl) {
