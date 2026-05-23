@@ -1,11 +1,13 @@
 import { prisma } from '@platform/db';
 import crypto from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -134,6 +136,64 @@ export async function uploadFile(
     key,
     url: `/files/${encodeURIComponent(key)}`,
     size: buffer.length,
+  };
+}
+
+// Размер части multipart-загрузки (16MB) и число параллельных частей.
+// Подобрано под большие файлы (записи Zoom на гигабайты): минимум сетевых
+// раундтрипов при умеренном расходе памяти (queueSize × partSize ≈ 64MB).
+const STREAM_PART_SIZE = 16 * 1024 * 1024; // 16MB
+const STREAM_QUEUE_SIZE = 4;
+
+/**
+ * Стримовая (multipart) загрузка большого объекта в S3 БЕЗ лимита MAX_FILE_SIZE.
+ * Предназначена для записей Zoom (гигабайты): тело качается потоком, не буферясь
+ * в память целиком.
+ *
+ * Ключ задаёт вызывающий (`key`) — функция кладёт объект ровно по нему и
+ * возвращает `{ key, url }` для последующего чтения через роут /files/*.
+ *
+ * `body` принимает Node.js Readable или web ReadableStream (например
+ * `response.body` от fetch) — web-поток оборачивается в Readable.fromWeb.
+ *
+ * Требует настроенного S3 (фолбэк в PostgreSQL для потоковой загрузки не
+ * поддерживается — большие записи в БД не место). Ошибки пробрасываются,
+ * чтобы вызывающий мог пометить запись как failed.
+ */
+export async function uploadStream(
+  body: Readable | ReadableStream,
+  key: string,
+  contentType: string,
+): Promise<{ key: string; url: string }> {
+  if (!s3 || !S3_BUCKET) {
+    throw new Error('S3 не настроен: стримовая загрузка недоступна');
+  }
+
+  // Приводим web ReadableStream к Node.js Readable (fetch отдаёт web-поток).
+  const nodeBody =
+    body instanceof Readable
+      ? body
+      : Readable.fromWeb(body as unknown as NodeWebReadableStream);
+
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: nodeBody,
+      ContentType: contentType,
+    },
+    queueSize: STREAM_QUEUE_SIZE,
+    partSize: STREAM_PART_SIZE,
+    // Догружать остаток при ошибке части не нужно — пробрасываем ошибку наружу.
+    leavePartsOnError: false,
+  });
+
+  await upload.done();
+
+  return {
+    key,
+    url: `/files/${encodeURIComponent(key)}`,
   };
 }
 

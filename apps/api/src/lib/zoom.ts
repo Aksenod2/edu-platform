@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { prisma } from '@platform/db';
 import { decryptSecret, isEncryptionKeySet } from './crypto.js';
 
@@ -71,6 +72,7 @@ export async function getZoomAccessToken(userId: string): Promise<string> {
 }
 
 interface ZoomMeetingResponse {
+  id?: number | string;
   join_url?: string;
 }
 
@@ -79,10 +81,11 @@ interface ZoomMeetingResponse {
 // type: 2 — встреча с фиксированным временем (есть startTime), иначе 1 — мгновенная.
 // startTime — ISO без зоны ('YYYY-MM-DDTHH:MM:00'), интерпретируется в timezone.
 // Бросает Error при неуспехе — вызывающий оборачивает в try/catch и не падает.
+// Возвращает joinUrl и meetingId (числовой id Zoom, храним строкой).
 export async function createZoomMeeting(
   userId: string,
   params: { topic: string; startTime: string | null; durationMinutes?: number },
-): Promise<{ joinUrl: string }> {
+): Promise<{ joinUrl: string; meetingId: string }> {
   const token = await getZoomAccessToken(userId);
 
   const body: Record<string, unknown> = {
@@ -125,12 +128,31 @@ export async function createZoomMeeting(
   if (!data.join_url) {
     throw new Error('Zoom не вернул join_url');
   }
-  return { joinUrl: data.join_url };
+  if (data.id === undefined || data.id === null) {
+    throw new Error('Zoom не вернул id встречи');
+  }
+  return { joinUrl: data.join_url, meetingId: String(data.id) };
 }
 
-// Можно ли автоматически создать встречу Zoom для пользователя:
-// интеграция включена, включено автосоздание, заполнены все реквизиты и
-// настроен ключ шифрования (без него не расшифровать секрет).
+// Технически ли возможно создать встречу Zoom для пользователя (БЕЗ учёта тумблера
+// автосоздания): интеграция включена, заполнены все реквизиты и настроен ключ
+// шифрования (без него не расшифровать секрет). Это предусловия самой интеграции —
+// используется и для ручной генерации по запросу (generateMeeting), и тумблером.
+export async function canCreateMeeting(userId: string): Promise<boolean> {
+  const integration = await getZoomIntegration(userId);
+  if (!integration) return false;
+  return Boolean(
+    integration.enabled &&
+      integration.accountId &&
+      integration.clientId &&
+      integration.clientSecretEnc &&
+      isEncryptionKeySet(),
+  );
+}
+
+// Можно ли АВТОМАТИЧЕСКИ создать встречу Zoom для пользователя (по глобальному
+// тумблеру): технические предусловия интеграции (canCreateMeeting) И включён
+// тумблер автосоздания autoCreateMeeting.
 export async function shouldAutoCreate(userId: string): Promise<boolean> {
   const integration = await getZoomIntegration(userId);
   if (!integration) return false;
@@ -142,4 +164,145 @@ export async function shouldAutoCreate(userId: string): Promise<boolean> {
       integration.clientSecretEnc &&
       isEncryptionKeySet(),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Вебхуки Zoom (Фаза 3): валидация подписи, URL-валидация эндпоинта, выгрузка
+// записей и AI-резюме встреч. Используются роутом вебхука и фоновой обработкой.
+// ---------------------------------------------------------------------------
+
+// Находит интеграцию Zoom по идентификатору вебхука (Zoom присылает его в payload
+// эндпоинт-событий). Возвращает null, если такой интеграции нет.
+export function getZoomIntegrationByWebhookId(webhookId: string) {
+  return prisma.zoomIntegration.findUnique({ where: { webhookId } });
+}
+
+// Проверяет подпись вебхука Zoom (Webhook Secret Token).
+// Zoom формирует message = `v0:${timestamp}:${rawBody}` и подписывает его
+// HMAC-SHA256 на секрет-токене (hex), присылая в заголовке `x-zm-signature`
+// значение вида `v0=<hash>`. Сравниваем timing-safe.
+// При несовпадении длины буферов (или любой иной аномалии) возвращаем false,
+// не бросая исключение.
+export function verifyZoomSignature(
+  secretToken: string,
+  rawBody: string,
+  timestamp: string,
+  signatureHeader: string,
+): boolean {
+  try {
+    if (!secretToken || !signatureHeader) return false;
+    const message = `v0:${timestamp}:${rawBody}`;
+    const hash = createHmac('sha256', secretToken).update(message).digest('hex');
+    const expected = `v0=${hash}`;
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const actualBuf = Buffer.from(signatureHeader, 'utf8');
+    // timingSafeEqual требует равной длины — иначе сразу false (но без раннего
+    // выхода это и так была бы не та подпись).
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return timingSafeEqual(expectedBuf, actualBuf);
+  } catch {
+    return false;
+  }
+}
+
+// Формирует ответ на событие endpoint.url_validation: Zoom присылает plainToken,
+// а в ответ ждёт { plainToken, encryptedToken }, где encryptedToken —
+// HMAC-SHA256(secretToken, plainToken) в hex.
+export function buildUrlValidationResponse(
+  secretToken: string,
+  plainToken: string,
+): { plainToken: string; encryptedToken: string } {
+  const encryptedToken = createHmac('sha256', secretToken).update(plainToken).digest('hex');
+  return { plainToken, encryptedToken };
+}
+
+// Минимально необходимое описание файла записи Zoom.
+export interface ZoomRecordingFile {
+  download_url?: string;
+  file_type?: string;
+  recording_type?: string;
+  file_extension?: string;
+}
+
+interface ZoomRecordingsResponse {
+  recording_files?: ZoomRecordingFile[];
+}
+
+// Возвращает список файлов записи встречи Zoom.
+// GET https://api.zoom.us/v2/meetings/{meetingId}/recordings (Bearer).
+// Бросает Error при неуспехе (вызывающий оборачивает и не падает).
+export async function getMeetingRecordings(
+  userId: string,
+  meetingId: string,
+): Promise<ZoomRecordingFile[]> {
+  const token = await getZoomAccessToken(userId);
+
+  const res = await fetch(
+    `${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}/recordings`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errBody = (await res.json()) as { message?: string };
+      detail = errBody.message || '';
+    } catch {
+      // тело может быть не JSON — игнорируем
+    }
+    throw new Error(
+      `Zoom вернул ошибку при получении записей (${res.status})${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  const data = (await res.json()) as ZoomRecordingsResponse;
+  return data.recording_files ?? [];
+}
+
+// Минимально необходимое описание AI-резюме встречи Zoom.
+export interface ZoomMeetingSummary {
+  summary_title?: string;
+  summary_overview?: string;
+  summary_details?: unknown;
+}
+
+// Возвращает AI-резюме встречи Zoom либо null, если оно недоступно.
+// GET https://api.zoom.us/v2/meetings/{meetingId}/meeting_summary (Bearer).
+// AI Companion может быть не включён → на 404/недоступность возвращаем null,
+// не бросая. На прочие ошибки бросаем Error.
+export async function getMeetingSummary(
+  userId: string,
+  meetingId: string,
+): Promise<ZoomMeetingSummary | null> {
+  const token = await getZoomAccessToken(userId);
+
+  const res = await fetch(
+    `${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}/meeting_summary`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+
+  // Резюме может быть не включено/ещё не готово — это не ошибка интеграции.
+  if (res.status === 404) return null;
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errBody = (await res.json()) as { message?: string };
+      detail = errBody.message || '';
+    } catch {
+      // тело может быть не JSON — игнорируем
+    }
+    throw new Error(
+      `Zoom вернул ошибку при получении резюме (${res.status})${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  const data = (await res.json()) as ZoomMeetingSummary;
+  return data;
 }

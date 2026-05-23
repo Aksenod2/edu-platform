@@ -278,6 +278,13 @@ model Session {
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
+  // Zoom-созвоны (Волна 2). Все поля nullable — фича аддитивна.
+  zoomMeetingId   String? // id встречи Zoom для сопоставления входящего вебхука с занятием
+  recordingStatus String? // статус записи: none | pending | processing | ready | failed (строкой, без enum)
+  recordingError  String? // текст ошибки автозагрузки записи (для UI)
+  summary         String? // итоги/конспект КОНКРЕТНОГО занятия потока (отдельно от Lesson.summary)
+  summarySource   String? // источник summary: 'zoom_ai' | 'manual'
+
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
@@ -286,6 +293,7 @@ model Session {
   @@index([streamId])
   @@index([lessonId])
   @@index([status, date])
+  @@index([zoomMeetingId])
 }
 
 model StudentAssignment {
@@ -468,6 +476,11 @@ model ZoomIntegration {
   accountId         String?
   clientId          String?
   clientSecretEnc   String?
+  // Webhook Secret Token в зашифрованном виде (шифруется как clientSecretEnc).
+  secretTokenEnc    String?
+  // Публичный неугадываемый id для персонального URL вебхука (/webhooks/zoom/<webhookId>).
+  // Заполняется приложением позже; здесь — просто nullable unique.
+  webhookId         String?   @unique
   autoCreateMeeting Boolean   @default(false)
   lastTestedAt      DateTime?
   lastTestOk        Boolean?
@@ -475,4 +488,15 @@ model ZoomIntegration {
   updatedAt         DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Идемпотентность обработки входящих вебхуков Zoom: каждое событие
+// записывается с уникальным dedupeKey, чтобы не обрабатывать повторно.
+model ZoomWebhookEvent {
+  id          String    @id @default(uuid())
+  dedupeKey   String    @unique // event + meetingId + recording uuid / хэш payload
+  event       String
+  status      String    @default("received") // received | processed | failed
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
 }

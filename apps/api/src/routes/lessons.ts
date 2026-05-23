@@ -4,7 +4,7 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { createZoomMeeting, shouldAutoCreate } from '../lib/zoom.js';
+import { createZoomMeeting, shouldAutoCreate, canCreateMeeting } from '../lib/zoom.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -161,9 +161,18 @@ function buildZoomStartTime(date: Date, startTime: string | null | undefined): s
   return `${datePart}T${time}:00`;
 }
 
-// Пытается автоматически создать встречу Zoom для занятия под аккаунтом текущего
-// преподавателя и вернуть её join_url. Возвращает null, если автосоздание не
+// Пытается создать встречу Zoom для занятия под аккаунтом текущего преподавателя
+// и вернуть её join_url вместе с meetingId. Возвращает null, если создание не
 // требуется/недоступно или ссылка уже задана (ручная/сохранённая — не перезатираем).
+//
+// Поле opts.generateMeeting управляет тем, КОГДА создавать встречу:
+//   - true      → создавать по запросу фронта даже при выключенном глобальном
+//                 тумблере autoCreateMeeting; нужны лишь технические предусловия
+//                 интеграции (canCreateMeeting) + дата + отсутствие ручной/сохранённой
+//                 ссылки;
+//   - false     → явный отказ: не создавать, даже если тумблер включён;
+//   - undefined → прежнее поведение: создавать по глобальному тумблеру
+//                 (shouldAutoCreate).
 //
 // УСТОЙЧИВОСТЬ: любые ошибки Zoom гасятся (логируем warn и возвращаем null) —
 // планирование занятия не должно падать из-за интеграции.
@@ -176,8 +185,11 @@ async function maybeCreateMeetingUrl(
     bodyMeetingUrl: string | null | undefined;
     existingMeetingUrl: string | null | undefined;
     topic: string;
+    generateMeeting?: boolean;
   },
-): Promise<string | null> {
+): Promise<{ joinUrl: string; meetingId: string } | null> {
+  // Явный отказ от генерации (даже при включённом тумблере).
+  if (opts.generateMeeting === false) return null;
   // Нужна дата занятия (без даты не планируем встречу).
   if (!opts.date) return null;
   // Ручной meetingUrl всегда уважаем; существующую/сохранённую ссылку не перезатираем.
@@ -185,17 +197,23 @@ async function maybeCreateMeetingUrl(
   if (opts.existingMeetingUrl && opts.existingMeetingUrl.trim()) return null;
 
   try {
-    if (!(await shouldAutoCreate(userId))) return null;
-    const { joinUrl } = await createZoomMeeting(userId, {
+    // generateMeeting === true → достаточно технических предусловий интеграции
+    // (игнорируем тумблер). Иначе (undefined) — по глобальному тумблеру.
+    const ok =
+      opts.generateMeeting === true
+        ? await canCreateMeeting(userId)
+        : await shouldAutoCreate(userId);
+    if (!ok) return null;
+    const { joinUrl, meetingId } = await createZoomMeeting(userId, {
       topic: opts.topic,
       startTime: buildZoomStartTime(opts.date, opts.startTime),
       durationMinutes: 60,
     });
-    return joinUrl;
+    return { joinUrl, meetingId };
   } catch (err) {
     app.log.warn(
       { err, userId },
-      'Не удалось автоматически создать встречу Zoom — продолжаем без ссылки',
+      'Не удалось создать встречу Zoom — продолжаем без ссылки',
     );
     return null;
   }
@@ -571,10 +589,17 @@ export async function lessonRoutes(app: FastifyInstance) {
       sortOrder?: number;
       teacherIds?: string[];
       materials?: LessonMaterial[];
+      // Сгенерировать ссылку Zoom по запросу фронта (независимо от глобального
+      // тумблера autoCreateMeeting). undefined — поведение по тумблеру.
+      generateMeeting?: boolean;
     };
 
     if (!body.title || !body.title.trim()) {
       return reply.status(400).send({ error: 'Название урока обязательно' });
+    }
+
+    if (body.generateMeeting !== undefined && typeof body.generateMeeting !== 'boolean') {
+      return reply.status(400).send({ error: 'Поле generateMeeting должно быть булевым' });
     }
 
     if (body.status !== undefined && !isLessonStatus(body.status)) {
@@ -668,17 +693,21 @@ export async function lessonRoutes(app: FastifyInstance) {
       }
     }
 
-    // Автосоздание встречи Zoom: только если дата задана, ручной meetingUrl не
-    // передан и Session ещё нет (новый блок — сохранённой ссылки тоже нет).
+    // Создание встречи Zoom: только если дата задана, ручной meetingUrl не передан
+    // и Session ещё нет (новый блок — сохранённой ссылки тоже нет). generateMeeting
+    // позволяет сгенерировать ссылку по запросу даже при выключенном тумблере.
     // Ошибки Zoom не валят планирование (см. maybeCreateMeetingUrl).
-    const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+    const autoMeeting = await maybeCreateMeetingUrl(app, request.user!.userId, {
       date,
       startTime: body.startTime,
       bodyMeetingUrl: body.meetingUrl,
       existingMeetingUrl: null,
       topic: block.title,
+      generateMeeting: body.generateMeeting,
     });
-    const meetingUrl = body.meetingUrl?.trim() || autoMeetingUrl || null;
+    const meetingUrl = body.meetingUrl?.trim() || autoMeeting?.joinUrl || null;
+    // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
+    const zoomMeetingId = autoMeeting?.meetingId ?? null;
 
     // 3) Session потока несёт расписание/статус/видео.
     const session = await prisma.session.upsert({
@@ -690,12 +719,14 @@ export async function lessonRoutes(app: FastifyInstance) {
         date,
         startTime: body.startTime?.trim() || null,
         meetingUrl,
+        ...(zoomMeetingId ? { zoomMeetingId } : {}),
       },
       update: {
         status,
         date,
         startTime: body.startTime?.trim() || null,
         meetingUrl,
+        ...(zoomMeetingId ? { zoomMeetingId } : {}),
       },
       select: sessionSelect,
     });
@@ -730,6 +761,9 @@ export async function lessonRoutes(app: FastifyInstance) {
       sortOrder?: number;
       teacherIds?: string[];
       materials?: LessonMaterial[];
+      // Сгенерировать ссылку Zoom по запросу фронта (независимо от глобального
+      // тумблера autoCreateMeeting). undefined — поведение по тумблеру.
+      generateMeeting?: boolean;
       // folded assignment* поля блока
       hasAssignment?: boolean;
       assignmentTitle?: string | null;
@@ -756,13 +790,21 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Недопустимый статус' });
     }
 
+    if (body.generateMeeting !== undefined && typeof body.generateMeeting !== 'boolean') {
+      return reply.status(400).send({ error: 'Поле generateMeeting должно быть булевым' });
+    }
+
     // Контекст потока для расписания (Session). Без него поля расписания игнорируем.
     const streamId = body.streamId;
+    // Запрос на генерацию встречи (generateMeeting === true) тоже трогает Session:
+    // нужно зайти в ветку upsert даже если расписание не меняли (например, дата уже
+    // сохранена, а ссылку просят создать сейчас). Явный отказ (false) Session не трогает.
     const scheduleTouched =
       body.status !== undefined ||
       body.date !== undefined ||
       body.startTime !== undefined ||
-      body.meetingUrl !== undefined;
+      body.meetingUrl !== undefined ||
+      body.generateMeeting === true;
 
     // Текущая Session (если есть streamId) — нужна для проекции и правила planned→date.
     let existingSession: SessionProjection = null;
@@ -844,15 +886,17 @@ export async function lessonRoutes(app: FastifyInstance) {
           ? body.startTime?.trim() || null
           : existingSession?.startTime ?? null;
 
-      // Автосоздание встречи Zoom: дата задана, ручной meetingUrl не передан и у
-      // занятия ещё нет сохранённой ссылки (не перезатираем ручную/существующую).
-      // Не создаём новый митинг на каждый PATCH — только когда ссылки нет.
-      const autoMeetingUrl = await maybeCreateMeetingUrl(app, request.user!.userId, {
+      // Создание встречи Zoom: дата задана, ручной meetingUrl не передан и у занятия
+      // ещё нет сохранённой ссылки (не перезатираем ручную/существующую). Не создаём
+      // новый митинг на каждый PATCH — только когда ссылки нет. generateMeeting
+      // позволяет сгенерировать ссылку по запросу даже при выключенном тумблере.
+      const autoMeeting = await maybeCreateMeetingUrl(app, request.user!.userId, {
         date: nextDate,
         startTime: nextStartTime,
         bodyMeetingUrl: body.meetingUrl,
         existingMeetingUrl: existingSession?.meetingUrl ?? null,
         topic: block.title,
+        generateMeeting: body.generateMeeting,
       });
 
       const sessionUpdate: Record<string, unknown> = {};
@@ -861,9 +905,13 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (body.startTime !== undefined) sessionUpdate.startTime = body.startTime?.trim() || null;
       if (body.meetingUrl !== undefined) {
         sessionUpdate.meetingUrl = body.meetingUrl?.trim() || null;
-      } else if (autoMeetingUrl) {
+      } else if (autoMeeting) {
         // meetingUrl не трогали явно, но автоматически создали встречу — сохраняем.
-        sessionUpdate.meetingUrl = autoMeetingUrl;
+        sessionUpdate.meetingUrl = autoMeeting.joinUrl;
+      }
+      // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
+      if (autoMeeting) {
+        sessionUpdate.zoomMeetingId = autoMeeting.meetingId;
       }
 
       const created = await prisma.session.upsert({
@@ -874,7 +922,8 @@ export async function lessonRoutes(app: FastifyInstance) {
           status: isLessonStatus(body.status) ? body.status : 'draft',
           date: body.date !== undefined ? parseLessonDate(body.date) : null,
           startTime: body.startTime?.trim() || null,
-          meetingUrl: body.meetingUrl?.trim() || autoMeetingUrl || null,
+          meetingUrl: body.meetingUrl?.trim() || autoMeeting?.joinUrl || null,
+          ...(autoMeeting ? { zoomMeetingId: autoMeeting.meetingId } : {}),
         },
         update: sessionUpdate,
         select: sessionSelect,

@@ -14,13 +14,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function isUpcoming(lesson: Lesson): boolean {
   return lesson.status === 'planned';
@@ -78,27 +72,29 @@ function StudentLessonsContent() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Уроки</h1>
-          <p className="text-sm text-muted-foreground">Видеозаписи, конспекты, материалы</p>
-        </div>
-        {streams.length > 1 ? (
-          <Select
-            value={selectedStreamId || ''}
-            onValueChange={(value) => setSelectedStreamId(value)}
-          >
-            <SelectTrigger className="w-full max-w-[200px]">
-              <SelectValue placeholder="Поток" />
-            </SelectTrigger>
-            <SelectContent>
-              {streams.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Уроки</h1>
+        <p className="text-sm text-muted-foreground">Видеозаписи, конспекты, материалы</p>
       </div>
+
+      {/* Переключатель потоков: вкладки показываем только если потоков больше одного */}
+      {streams.length > 1 ? (
+        <Tabs
+          value={selectedStreamId || ''}
+          onValueChange={(value) => setSelectedStreamId(value)}
+        >
+          {/* Горизонтальная прокрутка списка вкладок на узких экранах без слома вёрстки */}
+          <div className="-mx-1 overflow-x-auto px-1">
+            <TabsList className="w-max">
+              {streams.map((s) => (
+                <TabsTrigger key={s.id} value={s.id} className="flex-none shrink-0">
+                  {s.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        </Tabs>
+      ) : null}
 
       {error && (
         <Alert variant="destructive">

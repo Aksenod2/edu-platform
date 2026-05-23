@@ -8,6 +8,7 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
@@ -46,6 +47,8 @@ export default function ZoomIntegrationPage() {
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [secretToken, setSecretToken] = useState('');
+  const [showSecretToken, setShowSecretToken] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [autoCreateMeeting, setAutoCreateMeeting] = useState(false);
 
@@ -59,8 +62,9 @@ export default function ZoomIntegrationPage() {
     setClientId(data.clientId ?? '');
     setEnabled(data.enabled);
     setAutoCreateMeeting(data.autoCreateMeeting);
-    // Секрет никогда не приходит с сервера — поле всегда пустое после загрузки.
+    // Секреты никогда не приходят с сервера — поля всегда пустые после загрузки.
     setClientSecret('');
+    setSecretToken('');
   }, []);
 
   const fetchConfig = useCallback(async () => {
@@ -96,6 +100,10 @@ export default function ZoomIntegrationPage() {
       if (clientSecret.trim()) {
         payload.clientSecret = clientSecret.trim();
       }
+      // secretToken отправляем только если поле непустое — иначе токен не меняем.
+      if (secretToken.trim()) {
+        payload.secretToken = secretToken.trim();
+      }
       const data = await updateZoomIntegration(accessToken, payload);
       applyConfig(data);
       toast.success('Настройки сохранены');
@@ -122,6 +130,22 @@ export default function ZoomIntegrationPage() {
       toast.error(err instanceof Error ? err.message : 'Не удалось проверить подключение');
     } finally {
       setTesting(false);
+    }
+  };
+
+  // Полный URL персонального вебхука Zoom (или null, пока настройки не сохранены).
+  const webhookUrl =
+    config?.webhookId && typeof window !== 'undefined'
+      ? `${window.location.origin}/webhooks/zoom/${config.webhookId}`
+      : null;
+
+  const handleCopyWebhookUrl = async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success('Webhook URL скопирован');
+    } catch {
+      toast.error('Не удалось скопировать URL');
     }
   };
 
@@ -228,15 +252,20 @@ export default function ZoomIntegrationPage() {
                   <span className="font-medium">App Credentials</span>.
                 </li>
                 <li>
-                  На вкладке <span className="font-medium">Scopes</span> добавьте права:{' '}
+                  На вкладке <span className="font-medium">Scopes</span> добавьте два права:{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    meeting:write:meeting:admin
+                  </code>{' '}
+                  (создание встреч) и{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    user:read:user:admin
+                  </code>{' '}
+                  (проверка подключения). Если в приложении старый формат scope&apos;ов —
+                  используйте эквиваленты{' '}
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                     meeting:write:admin
-                  </code>
-                  ,{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    meeting:read:admin
-                  </code>
-                  ,{' '}
+                  </code>{' '}
+                  и{' '}
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                     user:read:admin
                   </code>
@@ -250,6 +279,14 @@ export default function ZoomIntegrationPage() {
                   Вставьте значения в форму ниже, нажмите{' '}
                   <span className="font-medium">«Сохранить»</span>, затем{' '}
                   <span className="font-medium">«Проверить подключение»</span>.
+                </li>
+                <li>
+                  Для записей и саммари настройте вебхук: на вкладке{' '}
+                  <span className="font-medium">Feature</span> →{' '}
+                  <span className="font-medium">Event Subscriptions</span> вставьте показанный ниже{' '}
+                  <span className="font-medium">Webhook URL</span>, а его{' '}
+                  <span className="font-medium">Secret Token</span> из Zoom — в поле{' '}
+                  <span className="font-medium">«Webhook Secret Token»</span> формы.
                 </li>
               </ol>
             </CardContent>
@@ -334,6 +371,40 @@ export default function ZoomIntegrationPage() {
                   </p>
                 </div>
 
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="zoom-secret-token">Webhook Secret Token</Label>
+                  <div className="relative">
+                    <Input
+                      id="zoom-secret-token"
+                      type={showSecretToken ? 'text' : 'password'}
+                      value={secretToken}
+                      onChange={(e) => setSecretToken(e.target.value)}
+                      placeholder={
+                        config.secretTokenSet
+                          ? `••••${config.secretTokenLast4 ?? ''}`
+                          : 'Введите Webhook Secret Token'
+                      }
+                      autoComplete="off"
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowSecretToken((v) => !v)}
+                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
+                      aria-label={showSecretToken ? 'Скрыть токен' : 'Показать токен'}
+                    >
+                      {showSecretToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {config.secretTokenSet
+                      ? 'Токен сохранён. Оставьте поле пустым, чтобы не менять его.'
+                      : 'Secret Token из настроек вебхука приложения Zoom. Пустое поле — токен не будет сохранён.'}
+                  </p>
+                </div>
+
                 <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
                   <div className="flex flex-col gap-0.5">
                     <Label htmlFor="zoom-auto-create" className="cursor-pointer">
@@ -394,6 +465,64 @@ export default function ZoomIntegrationPage() {
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* ─── Webhook URL ─────────────────────────────────────── */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Webhook URL</CardTitle>
+              <CardDescription>
+                Персональный адрес для уведомлений Zoom о завершённых записях и саммари встреч.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {webhookUrl ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    readOnly
+                    value={webhookUrl}
+                    aria-label="Webhook URL"
+                    className="font-mono text-xs"
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCopyWebhookUrl}
+                    className="w-full shrink-0 sm:w-auto"
+                  >
+                    <Copy className="size-4" />
+                    Скопировать
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Сохраните настройки, чтобы получить персональный Webhook URL.
+                </p>
+              )}
+
+              <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-foreground marker:text-muted-foreground">
+                <li>
+                  В приложении Zoom откройте вкладку{' '}
+                  <span className="font-medium">Feature</span> →{' '}
+                  <span className="font-medium">Event Subscriptions</span> и добавьте подписку.
+                </li>
+                <li>
+                  В поле <span className="font-medium">Event notification endpoint URL</span>{' '}
+                  вставьте Webhook URL выше.
+                </li>
+                <li>
+                  Подпишитесь на события{' '}
+                  <span className="font-medium">«Recording Completed»</span> и{' '}
+                  <span className="font-medium">«Meeting Summary Completed»</span>.
+                </li>
+                <li>
+                  Скопируйте показанный Zoom{' '}
+                  <span className="font-medium">Secret Token</span> и вставьте его в поле{' '}
+                  <span className="font-medium">«Webhook Secret Token»</span> выше, затем сохраните.
+                </li>
+              </ol>
             </CardContent>
           </Card>
         </div>

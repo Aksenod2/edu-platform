@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import {
   deriveStreamTeachers,
@@ -304,5 +304,29 @@ export async function streamRoutes(app: FastifyInstance) {
     });
 
     return { stream };
+  });
+
+  // DELETE /streams/:id — полное удаление потока (admin).
+  // В отличие от архивирования удаляет поток безвозвратно. Каскад на уровне БД
+  // (onDelete: Cascade) подчищает связанные StreamEnrollment, Session (и их
+  // StudentAssignment) и Conversation потока. Уроки-блоки (Lesson) — переиспользуемые
+  // шаблоны и НЕ удаляются.
+  app.delete('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      await prisma.stream.delete({ where: { id } });
+    } catch (err) {
+      // P2025 — запись для удаления не найдена (поток отсутствует или уже удалён).
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        return reply.status(404).send({ error: 'Поток не найден' });
+      }
+      throw err;
+    }
+
+    return { message: 'Поток удалён' };
   });
 }

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,12 @@ export function PlanLessonDialog({
   const [startTime, setStartTime] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
   const [status, setStatus] = useState<LessonStatus>('planned');
+  // Автогенерация Zoom-ссылки: переключатель + результат после сохранения.
+  const [generateMeeting, setGenerateMeeting] = useState(false);
+  const [savedMeetingUrl, setSavedMeetingUrl] = useState<string | null>(null);
+  const [generationFailed, setGenerationFailed] = useState(false);
+  // После успешного сохранения с генерацией остаёмся в диалоге показать ссылку.
+  const [saved, setSaved] = useState(false);
 
   const [blocks, setBlocks] = useState<Lesson[]>([]);
   const [blocksLoading, setBlocksLoading] = useState(false);
@@ -87,6 +94,10 @@ export function PlanLessonDialog({
     setStartTime('');
     setMeetingUrl('');
     setStatus('planned');
+    setGenerateMeeting(false);
+    setSavedMeetingUrl(null);
+    setGenerationFailed(false);
+    setSaved(false);
     setError('');
 
     let cancelled = false;
@@ -115,33 +126,38 @@ export function PlanLessonDialog({
     : (blocks.find((b) => b.id === blockId)?.title ?? '');
   const valid = !!streamId && !!effectiveTitle && !plannedWithoutDate;
 
+  // Генерацию запрашиваем только если ручную ссылку не вводили (бэк её не перезатирает).
+  const wantGenerate = generateMeeting && !meetingUrl.trim();
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || saving) return;
     setSaving(true);
     setError('');
+    setGenerationFailed(false);
     try {
-      if (isNewBlock) {
-        await createLesson(accessToken, {
-          streamId,
-          title: title.trim(),
-          date: date || null,
-          startTime: startTime || null,
-          status,
-          meetingUrl: meetingUrl.trim() || null,
-        });
-      } else {
-        // Планируем существующий блок в выбранный поток: бэк апсертит Session.
-        await updateLesson(accessToken, blockId, {
-          streamId,
-          date: date || null,
-          startTime: startTime || null,
-          status,
-          meetingUrl: meetingUrl.trim() || null,
-        });
-      }
+      const payload = {
+        streamId,
+        date: date || null,
+        startTime: startTime || null,
+        status,
+        meetingUrl: meetingUrl.trim() || null,
+        generateMeeting: wantGenerate,
+      };
+      const { lesson } = isNewBlock
+        ? await createLesson(accessToken, { ...payload, title: title.trim() })
+        : // Планируем существующий блок в выбранный поток: бэк апсертит Session.
+          await updateLesson(accessToken, blockId, payload);
       await onPlanned();
-      setOpen(false);
+      // Если запрашивали генерацию — остаёмся показать результат (ссылку или ошибку),
+      // иначе закрываем диалог как раньше.
+      if (wantGenerate) {
+        setSaved(true);
+        setSavedMeetingUrl(lesson.meetingUrl);
+        setGenerationFailed(!lesson.meetingUrl);
+      } else {
+        setOpen(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось запланировать занятие');
     } finally {
@@ -257,16 +273,17 @@ export function PlanLessonDialog({
             )}
           </Field>
 
-          <Field>
-            <FieldLabel htmlFor="plan-url">Ссылка на созвон</FieldLabel>
-            <Input
-              id="plan-url"
-              type="url"
-              value={meetingUrl}
-              onChange={(e) => setMeetingUrl(e.target.value)}
-              placeholder="https://zoom.us/j/..."
-            />
-          </Field>
+          <MeetingLinkField
+            accessToken={accessToken}
+            inputId="plan-url"
+            value={meetingUrl}
+            onValueChange={setMeetingUrl}
+            generateMeeting={generateMeeting}
+            onGenerateMeetingChange={setGenerateMeeting}
+            onConfigLoaded={setGenerateMeeting}
+            savedMeetingUrl={savedMeetingUrl}
+            generationFailed={generationFailed}
+          />
 
           {error && (
             <Alert variant="destructive">
@@ -275,13 +292,21 @@ export function PlanLessonDialog({
           )}
 
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Отмена
-            </Button>
-            <Button type="submit" disabled={!valid || saving}>
-              {saving && <Loader2 className="animate-spin" />}
-              Запланировать
-            </Button>
+            {saved ? (
+              <Button type="button" onClick={() => setOpen(false)}>
+                Готово
+              </Button>
+            ) : (
+              <>
+                <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                  Отмена
+                </Button>
+                <Button type="submit" disabled={!valid || saving}>
+                  {saving && <Loader2 className="animate-spin" />}
+                  Запланировать
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
