@@ -1,9 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { BackButton } from '@/components/back-button';
 import { LessonBlockEditor } from '@/components/lessons/lesson-block-editor';
 import { HintCallout } from '@/components/hint-callout';
 
@@ -14,12 +12,7 @@ export default function AdminLessonPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
-          <Link href="/admin/lessons">
-            <ArrowLeft />
-            Назад к Урокам
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/lessons">Назад к Урокам</BackButton>
         <h1 className="text-2xl font-bold tracking-tight">Урок</h1>
         <p className="text-sm text-muted-foreground">
           Переиспользуемый блок: видео, материалы, преподаватели и задание.

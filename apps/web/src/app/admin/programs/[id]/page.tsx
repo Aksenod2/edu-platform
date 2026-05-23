@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
+import { Loader2, SquarePen } from 'lucide-react';
+import { BackButton } from '@/components/back-button';
 import { useAuth } from '@/lib/auth-context';
 import {
   getProgram,
@@ -58,12 +58,7 @@ export default function ProgramDetailPage() {
   };
 
   const backButton = (
-    <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
-      <Link href="/admin/programs">
-        <ArrowLeft />
-        Назад к Программам
-      </Link>
-    </Button>
+    <BackButton fallbackHref="/admin/programs">Назад к Программам</BackButton>
   );
 
   if (loading) {
