@@ -13,6 +13,7 @@ import {
   BookOpen,
   GraduationCap,
   ClipboardList,
+  ClipboardCheck,
   MessagesSquare,
   FolderOpen,
   Wallet,
@@ -80,6 +81,7 @@ const ADMIN_NAV: NavGroup[] = [
     label: 'Люди',
     items: [
       { label: 'Студенты', href: '/admin/students', icon: Users },
+      { label: 'Задания', href: '/admin/assignments', icon: ClipboardCheck },
       { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
     ],
   },
