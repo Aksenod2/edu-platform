@@ -1,3 +1,14 @@
 xn--90ad2cb.xn--p1ai, xn--0-8sbf7bfq.xn--p1ai {
-    reverse_proxy web:3000
+    # Публичный вебхук Zoom: проксируем напрямую в API, минуя Next.js.
+    # handle (а не handle_path) — чтобы префикс /webhooks НЕ срезался и API
+    # получил полный путь /webhooks/zoom/:webhookId. Тело запроса передаётся
+    # как есть (сырое для HMAC), Caddy его не буферизирует и не модифицирует.
+    handle /webhooks/* {
+        reverse_proxy api:4000
+    }
+
+    # Всё остальное — на Next.js, как раньше.
+    handle {
+        reverse_proxy web:3000
+    }
 }
