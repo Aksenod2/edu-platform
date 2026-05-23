@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
-  ArrowLeft,
   Loader2,
   Users,
   BookOpen,
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { BackButton } from '@/components/back-button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -158,17 +158,7 @@ export default function StreamDetailPage() {
   if (error || !stream) {
     return (
       <div className="flex flex-col gap-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          asChild
-        >
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <Alert variant="destructive">
           <AlertDescription>{error || 'Поток не найден'}</AlertDescription>
         </Alert>
@@ -179,12 +169,7 @@ export default function StreamDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{stream.name}</h1>
           {stream.status === 'active' ? (

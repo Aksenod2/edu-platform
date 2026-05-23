@@ -34,6 +34,7 @@ import {
   type ThreadEntry,
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT, STATUS_ORDER } from '@/lib/assignment-status';
+import { useBack } from '@/components/back-button';
 import Link from 'next/link';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -44,6 +45,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function StudentAssignmentsPage() {
   const { user, accessToken } = useAuth();
   const router = useRouter();
+  const goBack = useBack('/dashboard');
 
   const [assignments, setAssignments] = useState<StudentAssignment[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -148,13 +150,14 @@ export default function StudentAssignmentsPage() {
       <div className="max-w-3xl">
         {/* Page header */}
         <div className="mb-8">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3 no-underline"
+          <button
+            type="button"
+            onClick={goBack}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
           >
             <ChevronLeft className="size-3.5" />
             Назад
-          </Link>
+          </button>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Мои задания
           </h1>

@@ -13,6 +13,7 @@ import {
   type StudentAssignment,
 } from '@/lib/api';
 import { ChevronLeft, Download, FileText, Link2, Loader2 } from 'lucide-react';
+import { useBack } from '@/components/back-button';
 import { toast } from 'sonner';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,8 @@ import {
 export default function AssignmentDetailPage() {
   const { user, accessToken } = useAuth();
   const router = useRouter();
+  // «Назад» уважает историю: вернуться откуда пришёл; иначе — к списку заданий.
+  const goBack = useBack('/admin/assignments');
   const params = useParams();
   const assignmentId = params.id as string;
 
@@ -142,7 +145,7 @@ export default function AssignmentDetailPage() {
     <>
       <div className="mb-4">
         <button
-          onClick={() => router.back()}
+          onClick={goBack}
           className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
