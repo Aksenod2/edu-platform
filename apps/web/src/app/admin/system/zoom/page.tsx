@@ -153,7 +153,8 @@ export default function ZoomIntegrationPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Интеграция Zoom</h1>
         <p className="text-sm text-muted-foreground">
-          Подключение по Server-to-Server OAuth для автоматического создания ссылок на занятия
+          Подключение по Server-to-Server OAuth для автоматического создания ссылок на занятия.
+          У каждого преподавателя свой ключ Zoom.
         </p>
       </div>
 
