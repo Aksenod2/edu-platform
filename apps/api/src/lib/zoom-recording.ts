@@ -75,17 +75,20 @@ function isAllowedZoomDownloadUrl(rawUrl: string): boolean {
 // для стримовой загрузки в S3. Бросает при не-2xx или недопустимом хосте.
 async function fetchRecordingStream(
   downloadUrl: string,
-  accessToken: string,
+  token: string,
 ): Promise<ReadableStream> {
   if (!isAllowedZoomDownloadUrl(downloadUrl)) {
     throw new SafeRecordingError('Недопустимый хост ссылки на запись Zoom');
   }
-  // Bearer уходит только на проверенный хост Zoom (первый хоп). При кросс-доменном
-  // редиректе на хранилище Zoom fetch по спецификации срезает Authorization —
-  // токен не утекает, а легитимная загрузка по редиректу не ломается.
-  const res = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  // Токен передаём query-параметром access_token, а НЕ заголовком Authorization:
+  // на скачивании Zoom отдаёт 302-редирект на хранилище, а fetch по спецификации
+  // срезает Authorization при кросс-доменном редиректе → хранилище видит запрос
+  // без токена и отвечает 401 (ровно этот баг и наблюдали). С access_token в URL
+  // аутентификация проходит на хосте Zoom, а редирект ведёт на уже подписанный
+  // URL хранилища. Токен уходит только на проверенный хост Zoom (хост проверен выше).
+  const url = new URL(downloadUrl);
+  url.searchParams.set('access_token', token);
+  const res = await fetch(url);
   if (!res.ok || !res.body) {
     // Только статус, без URL/тела ответа Zoom.
     throw new SafeRecordingError(`Не удалось скачать запись Zoom (HTTP ${res.status})`);
@@ -101,8 +104,12 @@ export async function processRecordingForSession(params: {
   meetingId: string;
   teacherUserId: string;
   payloadFiles?: ZoomRecordingFile[] | null;
+  // download_token из вебхука recording.completed — короткоживущий токен Zoom,
+  // выданный специально для скачивания файлов этого события. Предпочитаем его
+  // OAuth-токену аккаунта; у ручного ретрая его нет — там фолбэк на OAuth-токен.
+  downloadToken?: string | null;
 }): Promise<void> {
-  const { sessionId, meetingId, teacherUserId, payloadFiles } = params;
+  const { sessionId, meetingId, teacherUserId, payloadFiles, downloadToken } = params;
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
@@ -151,8 +158,9 @@ export async function processRecordingForSession(params: {
       throw new SafeRecordingError('В записи Zoom нет подходящего видеофайла (MP4)');
     }
 
-    const accessToken = await getZoomAccessToken(teacherUserId);
-    const body = await fetchRecordingStream(main.download_url, accessToken);
+    // Скачиваем под download_token из вебхука, если он есть; иначе — OAuth-токен.
+    const token = downloadToken ?? (await getZoomAccessToken(teacherUserId));
+    const body = await fetchRecordingStream(main.download_url, token);
 
     const key = `recordings/${sessionId}-${randomUUID()}.mp4`;
     const uploaded = await uploadStream(body, key, 'video/mp4');

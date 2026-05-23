@@ -246,6 +246,70 @@ describe('processRecordingForSession — атомарное застолблен
   });
 });
 
+describe('processRecordingForSession — токен скачивания (#3)', () => {
+  const params = {
+    sessionId: 'sess-1',
+    meetingId: 'mtg-1',
+    teacherUserId: 'teacher-1',
+  };
+
+  const files: ZoomRecordingFile[] = [
+    {
+      file_type: 'MP4',
+      recording_type: 'shared_screen_with_speaker_view',
+      download_url: 'https://zoom.us/rec/x',
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', videoKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    mockUpload.mockResolvedValue({ key: 'recordings/new.mp4' } as never);
+    mockGetToken.mockResolvedValue('access-token');
+  });
+
+  // Перехватывает URL вызова fetch (токен передаётся query-параметром access_token).
+  function stubFetchCapture(sink: { url: string }): () => void {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn((input: unknown) => {
+      sink.url = String(input);
+      return Promise.resolve({ ok: true, status: 200, body: { fake: 'stream' } });
+    }) as never;
+    return () => {
+      globalThis.fetch = original;
+    };
+  }
+
+  it('download_token из вебхука уходит в access_token, OAuth-токен не запрашивается', async () => {
+    const sink = { url: '' };
+    const restore = stubFetchCapture(sink);
+    try {
+      await processRecordingForSession({ ...params, payloadFiles: files, downloadToken: 'dl-token' });
+    } finally {
+      restore();
+    }
+
+    expect(sink.url).toContain('access_token=dl-token');
+    // Не Bearer-заголовок, а query-параметр (иначе теряется на редиректе → 401).
+    expect(mockGetToken).not.toHaveBeenCalled();
+  });
+
+  it('без download_token — фолбэк на OAuth-токен, тоже через access_token', async () => {
+    const sink = { url: '' };
+    const restore = stubFetchCapture(sink);
+    try {
+      await processRecordingForSession({ ...params, payloadFiles: files });
+    } finally {
+      restore();
+    }
+
+    expect(mockGetToken).toHaveBeenCalledTimes(1);
+    expect(sink.url).toContain('access_token=access-token');
+  });
+});
+
 describe('processRecordingForSession — recordingError без сырых деталей (M3)', () => {
   const params = {
     sessionId: 'sess-1',

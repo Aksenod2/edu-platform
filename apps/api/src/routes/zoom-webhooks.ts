@@ -22,6 +22,9 @@ const REPLAY_WINDOW_MS = 5 * 60 * 1000;
 // валидируем на границе перед использованием).
 interface ZoomEventPayload {
   event?: string;
+  // download_token — короткоживущий токен для скачивания файлов записи, который
+  // Zoom кладёт на ВЕРХНЕМ уровне события recording.completed (рядом с event).
+  download_token?: string;
   payload?: {
     plainToken?: string;
     object?: {
@@ -79,6 +82,7 @@ async function processEventAsync(
   event: string,
   teacherUserId: string,
   obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+  downloadToken: string | null,
 ): Promise<void> {
   try {
     const meetingId = obj?.id !== undefined && obj?.id !== null ? String(obj.id) : null;
@@ -96,6 +100,7 @@ async function processEventAsync(
             meetingId,
             teacherUserId,
             payloadFiles: obj?.recording_files ?? null,
+            downloadToken,
           });
         } else if (event === 'meeting.summary_completed') {
           await processSummaryForSession({
@@ -243,7 +248,14 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
     // Тяжёлую работу (скачивание/резюме) делаем асинхронно, чтобы Zoom не
     // ретраил по таймауту. Отвечаем 200 сразу.
     if (event === 'recording.completed' || event === 'meeting.summary_completed') {
-      void processEventAsync(app, webhookEventId, event, integration.userId, body.payload?.object);
+      void processEventAsync(
+        app,
+        webhookEventId,
+        event,
+        integration.userId,
+        body.payload?.object,
+        body.download_token ?? null,
+      );
     } else {
       // Прочие события нам не интересны — сразу помечаем обработанными.
       void prisma.zoomWebhookEvent
