@@ -128,9 +128,25 @@ export async function createZoomMeeting(
   return { joinUrl: data.join_url };
 }
 
-// Можно ли автоматически создать встречу Zoom для пользователя:
-// интеграция включена, включено автосоздание, заполнены все реквизиты и
-// настроен ключ шифрования (без него не расшифровать секрет).
+// Технически ли возможно создать встречу Zoom для пользователя (БЕЗ учёта тумблера
+// автосоздания): интеграция включена, заполнены все реквизиты и настроен ключ
+// шифрования (без него не расшифровать секрет). Это предусловия самой интеграции —
+// используется и для ручной генерации по запросу (generateMeeting), и тумблером.
+export async function canCreateMeeting(userId: string): Promise<boolean> {
+  const integration = await getZoomIntegration(userId);
+  if (!integration) return false;
+  return Boolean(
+    integration.enabled &&
+      integration.accountId &&
+      integration.clientId &&
+      integration.clientSecretEnc &&
+      isEncryptionKeySet(),
+  );
+}
+
+// Можно ли АВТОМАТИЧЕСКИ создать встречу Zoom для пользователя (по глобальному
+// тумблеру): технические предусловия интеграции (canCreateMeeting) И включён
+// тумблер автосоздания autoCreateMeeting.
 export async function shouldAutoCreate(userId: string): Promise<boolean> {
   const integration = await getZoomIntegration(userId);
   if (!integration) return false;
