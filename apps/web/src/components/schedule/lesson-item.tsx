@@ -10,6 +10,7 @@ import { RecordingStatusBadge } from '@/components/schedule/recording-status-bad
 import {
   LESSON_STATUS_LABELS,
   STATUS_BADGE_VARIANT,
+  canJoinMeeting,
   type ScheduleLesson,
 } from '@/components/schedule/utils';
 
@@ -21,10 +22,13 @@ export function LessonItem({
   lesson,
   compact = false,
   onMarkDone,
+  lessonBasePath = '/admin/lessons',
 }: {
   lesson: ScheduleLesson;
   compact?: boolean;
   onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
+  /** Базовый путь страницы урока — зависит от роли (студент vs админ). */
+  lessonBasePath?: string;
 }) {
   const cancelled = lesson.status === 'cancelled';
   const [marking, setMarking] = useState(false);
@@ -46,11 +50,11 @@ export function LessonItem({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`/admin/lessons/${lesson.id}`)}
+      onClick={() => router.push(`${lessonBasePath}/${lesson.id}`)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          router.push(`/admin/lessons/${lesson.id}`);
+          router.push(`${lessonBasePath}/${lesson.id}`);
         }
       }}
       className={cn(
@@ -96,11 +100,11 @@ export function LessonItem({
         )}
       </div>
 
-      {((lesson.meetingUrl && !cancelled) || canMarkDone) && (
+      {(canJoinMeeting(lesson) || canMarkDone) && (
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          {lesson.meetingUrl && !cancelled && (
+          {canJoinMeeting(lesson) && (
             <a
-              href={lesson.meetingUrl}
+              href={lesson.meetingUrl ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
               className="no-underline"

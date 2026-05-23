@@ -41,6 +41,7 @@ import {
   dateKey,
   isSameDay,
   lessonKey,
+  canJoinMeeting,
   STATUS_BADGE_VARIANT,
   STATUS_ORDER,
   WEEKDAYS_SHORT,
@@ -76,6 +77,8 @@ export interface ScheduleCalendarProps {
   editable?: boolean;
   /** Потоки — нужны при создании урока (выбор потока). */
   streams?: Stream[];
+  /** Базовый путь страницы урока — зависит от роли (студент vs админ). */
+  lessonBasePath?: string;
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
@@ -90,6 +93,7 @@ export function ScheduleCalendar({
   lessons,
   editable = false,
   streams = [],
+  lessonBasePath = '/admin/lessons',
   onCreate,
   onUpdate,
   onDelete,
@@ -279,6 +283,7 @@ export function ScheduleCalendar({
               lessons={selectedLessons}
               editable={editable}
               streams={streams}
+              lessonBasePath={lessonBasePath}
               onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
@@ -305,6 +310,7 @@ interface DayDetailProps {
   lessons: CalendarLesson[];
   editable: boolean;
   streams: Stream[];
+  lessonBasePath: string;
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
@@ -315,6 +321,7 @@ function DayDetail({
   lessons,
   editable,
   streams,
+  lessonBasePath,
   onCreate,
   onUpdate,
   onDelete,
@@ -384,9 +391,9 @@ function DayDetail({
                 </p>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                {lesson.meetingUrl && lesson.status !== 'cancelled' && (
+                {canJoinMeeting(lesson) && (
                   <a
-                    href={lesson.meetingUrl}
+                    href={lesson.meetingUrl ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="no-underline"
@@ -395,7 +402,7 @@ function DayDetail({
                   </a>
                 )}
                 <Button asChild size="sm" variant="outline">
-                  <Link href={`/admin/lessons/${lesson.id}`}>
+                  <Link href={`${lessonBasePath}/${lesson.id}`}>
                     <ExternalLink />
                     Открыть урок
                   </Link>

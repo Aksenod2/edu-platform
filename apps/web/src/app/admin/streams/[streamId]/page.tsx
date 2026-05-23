@@ -337,6 +337,7 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
         editable
         lessons={lessons}
         streams={[stream]}
+        lessonBasePath="/admin/lessons"
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
