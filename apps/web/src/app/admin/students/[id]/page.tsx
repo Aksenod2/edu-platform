@@ -765,7 +765,7 @@ export default function StudentProfilePage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        {['Задание', 'Статус', 'Поток', 'Назначено', 'Срок сдачи', 'Действия'].map((h) => (
+                        {['Задание', 'Статус', 'Группа', 'Назначено', 'Срок сдачи', 'Действия'].map((h) => (
                           <TableHead key={h}>{h}</TableHead>
                         ))}
                       </TableRow>

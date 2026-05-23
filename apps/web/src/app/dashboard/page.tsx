@@ -281,9 +281,9 @@ export default function DashboardPage() {
           {/* KPI strip */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
-              title="Мои потоки"
+              title="Мои группы"
               value={data.activeStreams}
-              hint="активных потоков"
+              hint="активных групп"
               icon={Layers}
               href="/dashboard/lessons"
             />
@@ -428,7 +428,7 @@ export default function DashboardPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Ближайшие занятия</CardTitle>
-                  <CardDescription>Следующие 5 по всем потокам</CardDescription>
+                  <CardDescription>Следующие 5 по всем группам</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   {data.upcoming.length === 0 ? (

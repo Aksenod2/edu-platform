@@ -135,7 +135,7 @@ export default function StreamDetailPage() {
       setStream(stream);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки потока');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки группы');
     } finally {
       setLoading(false);
     }
@@ -160,7 +160,7 @@ export default function StreamDetailPage() {
       <div className="flex flex-col gap-6">
         <BackButton fallbackHref="/admin/streams" />
         <Alert variant="destructive">
-          <AlertDescription>{error || 'Поток не найден'}</AlertDescription>
+          <AlertDescription>{error || 'Группа не найдена'}</AlertDescription>
         </Alert>
       </div>
     );
@@ -311,8 +311,8 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
         storageKey="eduhint:stream-schedule-tab"
         title="Расписание = когда урок идёт этой группе"
       >
-        Поставьте урок на дату — получится занятие (урок × этот поток × дата).
-        Один урок можно проводить разным потокам в разные дни.
+        Поставьте урок на дату — получится занятие (урок × эта группа × дата).
+        Один урок можно проводить разным группам в разные дни.
       </HintCallout>
 
       {error && (
@@ -390,7 +390,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
       await unscheduleLesson(accessToken, lesson.id, stream.id);
       await fetchLessons();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка снятия урока с потока');
+      setError(err instanceof Error ? err.message : 'Ошибка снятия урока с группы');
     } finally {
       setUnschedulingId(null);
     }
@@ -400,15 +400,15 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
     <div className="flex flex-col gap-4">
       <HintCallout
         storageKey="eduhint:stream-lessons-tab"
-        title="Уроки этого потока"
+        title="Уроки этой группы"
       >
-        Это уроки из копилки, поставленные в расписание группы. «Снять с потока»
+        Это уроки из копилки, поставленные в расписание группы. «Снять с группы»
         убирает занятие из расписания — сам урок-блок и его контент остаются в
         копилке.
       </HintCallout>
 
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
-        <h2 className="text-lg font-semibold tracking-tight">Уроки потока</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Уроки группы</h2>
         <Button asChild>
           <Link href="/admin/schedule">
             <CalendarDays />
@@ -447,7 +447,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                   colSpan={5}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет уроков. Запланируйте занятие в расписании.
+                  В группе пока нет уроков. Запланируйте занятие в расписании.
                 </TableCell>
               </TableRow>
             ) : (
@@ -501,10 +501,10 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                             ) : (
                               <CalendarX />
                             )}
-                            <span className="sr-only">Снять с потока</span>
+                            <span className="sr-only">Снять с группы</span>
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Снять с потока</TooltipContent>
+                        <TooltipContent>Снять с группы</TooltipContent>
                       </Tooltip>
                     </div>
                   </TableCell>
@@ -521,10 +521,10 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Снять урок с потока?</AlertDialogTitle>
+            <AlertDialogTitle>Снять урок с группы?</AlertDialogTitle>
             <AlertDialogDescription>
               {lessonToUnschedule &&
-                `Урок «${lessonToUnschedule.title}» будет снят с расписания этого потока. Сам урок-блок останется — его можно запланировать снова.`}
+                `Урок «${lessonToUnschedule.title}» будет снят с расписания этой группы. Сам урок-блок останется — его можно запланировать снова.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -533,7 +533,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
               variant="destructive"
               onClick={() => { if (lessonToUnschedule) handleUnschedule(lessonToUnschedule); }}
             >
-              Снять с потока
+              Снять с группы
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -620,12 +620,12 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
         storageKey="eduhint:stream-assignments-tab"
         title="Задания приходят из уроков"
       >
-        Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этому потоку:
+        Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этой группе:
         ученики сдают, вы проверяете. Само ДЗ создаётся и редактируется на
         странице урока.
       </HintCallout>
 
-      <h2 className="text-lg font-semibold tracking-tight">Задания потока</h2>
+      <h2 className="text-lg font-semibold tracking-tight">Задания группы</h2>
 
       {error && (
         <Alert variant="destructive">
@@ -655,7 +655,7 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
                   colSpan={3}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет заданий. Выдайте ДЗ со страницы урока.
+                  В группе пока нет заданий. Выдайте ДЗ со страницы урока.
                 </TableCell>
               </TableRow>
             ) : (
@@ -844,7 +844,7 @@ function OverviewTab({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                Поток считается общим, если по его урокам больше одного преподавателя.
+                Группа считается общей, если по её урокам больше одного преподавателя.
               </TooltipContent>
             </Tooltip>
           )}
@@ -863,7 +863,7 @@ function OverviewTab({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Преподаватели ещё не назначены на уроки потока.
+              Преподаватели ещё не назначены на уроки группы.
             </p>
           )}
         </CardContent>
@@ -1033,7 +1033,7 @@ function StudentsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <h2 className="text-lg font-semibold tracking-tight">Ученики потока</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Ученики группы</h2>
         <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
           <UserPlus />
           Добавить учеников
@@ -1069,7 +1069,7 @@ function StudentsTab({
                   colSpan={4}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет учеников
+                  В группе пока нет учеников
                 </TableCell>
               </TableRow>
             ) : (
@@ -1107,7 +1107,7 @@ function StudentsTab({
                       ) : (
                         <Trash2 />
                       )}
-                      <span className="sr-only">Убрать из потока</span>
+                      <span className="sr-only">Убрать из группы</span>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -1122,7 +1122,7 @@ function StudentsTab({
           <DialogHeader>
             <DialogTitle>Добавить учеников</DialogTitle>
             <DialogDescription>
-              Выберите учеников, которых нужно добавить в поток.
+              Выберите учеников, которых нужно добавить в группу.
             </DialogDescription>
           </DialogHeader>
 
@@ -1200,9 +1200,9 @@ function StudentsTab({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Убрать ученика из потока?</AlertDialogTitle>
+            <AlertDialogTitle>Убрать ученика из группы?</AlertDialogTitle>
             <AlertDialogDescription>
-              {studentToRemove && `Ученик «${studentToRemove.name}» будет убран из этого потока.`}
+              {studentToRemove && `Ученик «${studentToRemove.name}» будет убран из этой группы.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

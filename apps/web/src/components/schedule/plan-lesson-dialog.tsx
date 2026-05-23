@@ -181,16 +181,16 @@ export function PlanLessonDialog({
         <DialogHeader>
           <DialogTitle>Запланировать занятие</DialogTitle>
           <DialogDescription>
-            Поставьте урок-блок в поток на дату или создайте новый урок.
+            Поставьте урок-блок в группу на дату или создайте новый урок.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-4">
           <Field>
-            <FieldLabel htmlFor="plan-stream">Поток</FieldLabel>
+            <FieldLabel htmlFor="plan-stream">Группа</FieldLabel>
             <Select value={streamId} onValueChange={setStreamId}>
               <SelectTrigger id="plan-stream" className="w-full">
-                <SelectValue placeholder="Выберите поток" />
+                <SelectValue placeholder="Выберите группу" />
               </SelectTrigger>
               <SelectContent>
                 {activeStreams.map((s) => (

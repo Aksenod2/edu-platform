@@ -38,7 +38,7 @@ export function StudentCohortView() {
       setStreams(list);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки чатов потоков');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки чатов групп');
     } finally {
       setLoading(false);
     }
@@ -88,7 +88,7 @@ export function StudentCohortView() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
         <MessagesSquare className="size-10 opacity-40" />
-        <p className="text-sm">Вы пока не зачислены ни в один поток</p>
+        <p className="text-sm">Вы пока не зачислены ни в одну группу</p>
       </div>
     );
   }
@@ -101,9 +101,9 @@ export function StudentCohortView() {
           key={selected}
           source={source}
           onRead={fetchStreams}
-          placeholder="Сообщение в чат потока..."
-          emptyText="В чате потока пока нет сообщений"
-          loadErrorText="Ошибка загрузки чата потока"
+          placeholder="Сообщение в чат группы..."
+          emptyText="В чате группы пока нет сообщений"
+          loadErrorText="Ошибка загрузки чата группы"
         />
       </div>
     );
@@ -176,16 +176,16 @@ export function StudentCohortView() {
                 key={selected}
                 source={source}
                 onRead={fetchStreams}
-                placeholder="Сообщение в чат потока..."
-                emptyText="В чате потока пока нет сообщений"
-                loadErrorText="Ошибка загрузки чата потока"
+                placeholder="Сообщение в чат группы..."
+                emptyText="В чате группы пока нет сообщений"
+                loadErrorText="Ошибка загрузки чата группы"
               />
             </div>
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
             <MessagesSquare className="size-10 opacity-40" />
-            <p className="text-sm">Выберите поток</p>
+            <p className="text-sm">Выберите группу</p>
           </div>
         )}
       </div>

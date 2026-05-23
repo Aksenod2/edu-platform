@@ -28,7 +28,7 @@ const CATEGORY_ROWS: CategoryRow[] = [
   {
     category: 'learning',
     label: 'Учебный процесс',
-    description: 'Новые уроки и задания в потоке',
+    description: 'Новые уроки и задания в группе',
     roles: ['student'],
     system: false,
   },
@@ -49,7 +49,7 @@ const CATEGORY_ROWS: CategoryRow[] = [
   {
     category: 'schedule',
     label: 'Расписание',
-    description: 'Новые события в расписании потока',
+    description: 'Новые события в расписании группы',
     roles: ['student'],
     system: false,
   },

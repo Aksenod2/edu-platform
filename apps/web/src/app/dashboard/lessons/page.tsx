@@ -40,7 +40,7 @@ function StudentLessonsContent() {
         setSelectedStreamId(data.streams[0].id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки групп');
     }
   }, [accessToken, selectedStreamId]);
 
@@ -103,13 +103,13 @@ function StudentLessonsContent() {
       )}
 
       {streams.length === 0 && !loadingData ? (
-        <p className="text-sm text-muted-foreground">Потоков пока нет.</p>
+        <p className="text-sm text-muted-foreground">Групп пока нет.</p>
       ) : loadingData ? (
         <div className="flex justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : lessons.length === 0 ? (
-        <p className="text-sm text-muted-foreground">В этом потоке пока нет доступных уроков.</p>
+        <p className="text-sm text-muted-foreground">В этой группе пока нет доступных уроков.</p>
       ) : (
         <div className="flex flex-col gap-3">
           {lessons.map((lesson, index) => {

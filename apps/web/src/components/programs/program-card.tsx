@@ -72,7 +72,7 @@ export function ProgramCard({ program, onEdit, onDelete }: ProgramCardProps) {
         </span>
         <span className="flex items-center gap-1.5">
           <GraduationCap className="size-4" />
-          {program.streamsCount} потоков
+          {program.streamsCount} групп
         </span>
       </CardContent>
     </Card>

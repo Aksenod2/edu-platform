@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useAuth } from './auth-context';
+import { usePolling } from './chat-realtime';
 import {
   getNotifications,
   markAllNotificationsRead,
@@ -48,19 +49,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }, [accessToken]);
 
+  const isAuthed = !!user && !!accessToken;
+
+  // Первичная загрузка при входе; сброс при выходе.
   useEffect(() => {
-    if (!user || !accessToken) {
+    if (!isAuthed) {
       setNotifications([]);
       setUnreadCount(0);
       return;
     }
-
     setLoading(true);
     refresh().finally(() => setLoading(false));
+  }, [isAuthed, refresh]);
 
-    const interval = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [user, accessToken, refresh]);
+  // Живое обновление: тот же паттерн поллинга, что и в чате (пауза при скрытой
+  // вкладке, мгновенный refetch при возврате/фокусе, очистка при размонтировании).
+  usePolling(refresh, POLL_INTERVAL_MS, isAuthed);
 
   return (
     <NotificationsContext.Provider value={{ notifications, unreadCount, loading, markAllRead, refresh }}>

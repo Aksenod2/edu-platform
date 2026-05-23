@@ -119,7 +119,7 @@ export default function AssignmentsHubPage() {
           storageKey="eduhint:assignments-hub"
           title="Сюда стекаются работы на проверку"
         >
-          Список ДЗ по всем потокам со счётчиком сдач. Бейдж «На проверке» —
+          Список ДЗ по всем группам со счётчиком сдач. Бейдж «На проверке» —
           сколько работ ждёт вас. Нажмите «Проверить», чтобы открыть сдачи.
         </HintCallout>
       </div>
@@ -137,7 +137,7 @@ export default function AssignmentsHubPage() {
       ) : streamsData.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
           <p className="text-sm">
-            Заданий пока нет. Добавьте задание в потоке, чтобы проверять работы студентов.
+            Заданий пока нет. Добавьте задание в группе, чтобы проверять работы студентов.
           </p>
         </div>
       ) : (

@@ -130,10 +130,10 @@ export default function MaterialsPage() {
       <div className="flex flex-wrap gap-3 mb-5">
         <Select value={streamFilter || 'all'} onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}>
           <SelectTrigger className="w-full max-w-xs">
-            <SelectValue placeholder="Все потоки" />
+            <SelectValue placeholder="Все группы" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Все потоки</SelectItem>
+            <SelectItem value="all">Все группы</SelectItem>
             {streams.map((s) => (
               <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
             ))}
@@ -170,7 +170,7 @@ export default function MaterialsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                {['Тип', 'Название', 'Задание', 'Поток', 'Размер'].map((h) => (
+                {['Тип', 'Название', 'Задание', 'Группа', 'Размер'].map((h) => (
                   <TableHead key={h} className="whitespace-nowrap">
                     {h}
                   </TableHead>

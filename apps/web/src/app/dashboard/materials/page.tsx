@@ -138,10 +138,10 @@ function MaterialsContent() {
             onValueChange={(value) => { setSelectedStreamId(value); setExpandedId(null); }}
           >
             <SelectTrigger className="w-full max-w-[220px]">
-              <SelectValue placeholder="Поток" />
+              <SelectValue placeholder="Группа" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_STREAMS}>Все потоки</SelectItem>
+              <SelectItem value={ALL_STREAMS}>Все группы</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}

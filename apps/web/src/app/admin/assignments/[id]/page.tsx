@@ -157,7 +157,7 @@ export default function AssignmentDetailPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{loadingData ? '...' : (assignment?.title ?? 'Задание')}</h1>
           {assignment?.stream && (
-            <p className="text-sm text-muted-foreground">{`Поток: ${assignment.stream.name}`}</p>
+            <p className="text-sm text-muted-foreground">{`Группа: ${assignment.stream.name}`}</p>
           )}
         </div>
       </div>

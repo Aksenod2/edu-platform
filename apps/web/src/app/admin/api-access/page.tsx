@@ -365,7 +365,7 @@ export default function ApiAccessPage() {
                     ['POST', '/users/:id/invite', 'Сгенерировать ссылку-приглашение'],
                     ['POST', '/users/:id/reset-password', 'Сбросить пароль ученика'],
                     ['GET', '/users/:id/export', 'Выгрузить все данные ученика (профиль, задания, лента, файлы)'],
-                    ['GET', '/streams', 'Список потоков'],
+                    ['GET', '/streams', 'Список групп'],
                     ['GET', '/profiles/:studentId', 'Профиль ученика'],
                     ['GET', '/student-assignments?studentId=:id', 'Задания ученика'],
                     ['GET', '/threads/:studentId', 'Лента ученика'],
@@ -409,7 +409,7 @@ export default function ApiAccessPage() {
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  '${proxyBase}/student-assignments?studentId=ID_УЧЕНИКА'`}
           />
           <ExampleCard
-            title="Список потоков"
+            title="Список групп"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/streams`}
           />
           <ExampleCard

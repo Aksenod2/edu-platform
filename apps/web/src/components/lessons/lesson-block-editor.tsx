@@ -438,7 +438,7 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
             <AlertDialogDescription>
-              Урок «{lesson.title}» будет удалён из всех программ и снят со всех потоков;
+              Урок «{lesson.title}» будет удалён из всех программ и снят со всех групп;
               сдачи студентов по нему тоже удалятся. Действие необратимо.
             </AlertDialogDescription>
           </AlertDialogHeader>

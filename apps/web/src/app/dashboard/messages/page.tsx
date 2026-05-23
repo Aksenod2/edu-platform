@@ -42,7 +42,7 @@ function StudentMessagesContent() {
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="personal">С преподавателем</TabsTrigger>
-            <TabsTrigger value="cohort">Чат потока</TabsTrigger>
+            <TabsTrigger value="cohort">Чат группы</TabsTrigger>
           </TabsList>
         </div>
       </div>
