@@ -98,7 +98,9 @@ export function ProgramStreamsManager({
 
   // Потоки, ещё не привязанные к этой программе.
   const linkedIds = new Set(streams.map((s) => s.id));
-  const candidates = pool.filter((s) => !linkedIds.has(s.id));
+  // Кандидаты на привязку — только свободные потоки (без программы): привязка
+  // потока, уже принадлежащего другой программе, молча переотвязала бы его.
+  const candidates = pool.filter((s) => !linkedIds.has(s.id) && !s.programId);
 
   return (
     <Card>
