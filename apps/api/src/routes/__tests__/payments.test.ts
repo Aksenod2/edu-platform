@@ -1,0 +1,559 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import Fastify, { type FastifyInstance } from 'fastify';
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
+
+// Мокаем prisma: только методы, которые вызывает paymentRoutes (DB-free).
+vi.mock('@platform/db', () => ({
+  prisma: {
+    user: { findUnique: vi.fn(), update: vi.fn() },
+    topUpRequest: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    paymentSettings: { upsert: vi.fn() },
+    walletTransaction: { create: vi.fn() },
+    $transaction: vi.fn(),
+  },
+}));
+
+// Мокаем S3-хелперы (без сети): загрузка возвращает фиксированный ключ, getFileUrl — подписанную ссылку.
+vi.mock('../../lib/s3.js', () => ({
+  uploadFile: vi.fn(async (_buf: Buffer, name: string, _mime: string, folder: string) => ({
+    key: `${folder}/uploaded-${name}`,
+    url: `/files/${folder}/uploaded-${name}`,
+    size: 1,
+  })),
+  getFileUrl: vi.fn(async (key: string) => `https://signed.example/${encodeURIComponent(key)}`),
+  MAX_FILE_SIZE: 50 * 1024 * 1024,
+}));
+
+import multipart from '@fastify/multipart';
+import { paymentRoutes } from '../payments.js';
+import { prisma } from '@platform/db';
+import { signAccessToken } from '../../lib/jwt.js';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = prisma as any;
+
+async function buildApp(): Promise<FastifyInstance> {
+  const app = Fastify();
+  await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
+  await app.register(paymentRoutes);
+  await app.ready();
+  return app;
+}
+
+const adminToken = signAccessToken({ userId: 'admin-1', role: 'admin' });
+const studentToken = (id: string) => signAccessToken({ userId: id, role: 'student' });
+
+function authHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+// Собирает multipart/form-data вручную (без зависимости form-data): один файл +
+// опциональные текстовые поля. Поля идут ПОСЛЕ файла — проверяем, что роут читает
+// их через request.parts() независимо от порядка.
+function buildMultipart(opts: {
+  fileName?: string;
+  contentType?: string;
+  fields?: Record<string, string>;
+}): { payload: Buffer; headers: Record<string, string> } {
+  const boundary = '----vitestBoundary' + Math.random().toString(16).slice(2);
+  const CRLF = '\r\n';
+  const parts: Buffer[] = [];
+
+  parts.push(
+    Buffer.from(
+      `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="file"; filename="${opts.fileName ?? 'screenshot.png'}"${CRLF}` +
+        `Content-Type: ${opts.contentType ?? 'image/png'}${CRLF}${CRLF}`,
+    ),
+  );
+  parts.push(Buffer.from('fake-image-bytes'));
+  parts.push(Buffer.from(CRLF));
+
+  for (const [k, v] of Object.entries(opts.fields ?? {})) {
+    parts.push(
+      Buffer.from(
+        `--${boundary}${CRLF}` +
+          `Content-Disposition: form-data; name="${k}"${CRLF}${CRLF}` +
+          `${v}${CRLF}`,
+      ),
+    );
+  }
+
+  parts.push(Buffer.from(`--${boundary}--${CRLF}`));
+
+  return {
+    payload: Buffer.concat(parts),
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+// ─── POST /topup-requests (студент создаёт заявку) ────────────────────────────
+
+describe('POST /topup-requests', () => {
+  it('201 — успешное создание заявки (без screenshotKey в ответе)', async () => {
+    db.topUpRequest.findFirst.mockResolvedValueOnce(null); // нет pending
+    db.topUpRequest.create.mockResolvedValueOnce({
+      id: 'req-1',
+      status: 'pending',
+      claimedAmountKopecks: 100000,
+      createdAt: new Date('2026-05-23T10:00:00Z'),
+    });
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000', note: 'перевёл' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.id).toBe('req-1');
+    expect(body.status).toBe('pending');
+    expect(body.screenshotKey).toBeUndefined();
+    // Заявка привязана к userId из токена.
+    expect(db.topUpRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ userId: 's-1', status: 'pending', claimedAmountKopecks: 100000 }),
+      }),
+    );
+  });
+
+  it('409 — анти-спам: уже есть pending-заявка', async () => {
+    db.topUpRequest.findFirst.mockResolvedValueOnce({ id: 'existing' });
+
+    const app = await buildApp();
+    const mp = buildMultipart({});
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('У вас уже есть заявка на рассмотрении');
+    expect(db.topUpRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('400 — неверный mime файла (не изображение)', async () => {
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'doc.pdf', contentType: 'application/pdf' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.topUpRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('400 — claimedAmountKopecks дробный', async () => {
+    db.topUpRequest.findFirst.mockResolvedValue(null);
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100.5' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.topUpRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('401 — без токена', async () => {
+    const app = await buildApp();
+    const mp = buildMultipart({});
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+// ─── GET /topup-requests/me (студент видит только свои) ───────────────────────
+
+describe('GET /topup-requests/me', () => {
+  it('200 — свои заявки с подписанным screenshotUrl', async () => {
+    db.topUpRequest.findMany.mockResolvedValueOnce([
+      {
+        id: 'req-1',
+        status: 'pending',
+        claimedAmountKopecks: 5000,
+        creditedAmountKopecks: null,
+        note: null,
+        screenshotKey: 'topups/a.png',
+        reviewedAt: null,
+        createdAt: new Date('2026-05-23T10:00:00Z'),
+      },
+    ]);
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/topup-requests/me',
+      headers: authHeaders(studentToken('s-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.requests).toHaveLength(1);
+    expect(body.requests[0].screenshotUrl).toContain('signed.example');
+    expect(body.requests[0].screenshotKey).toBeUndefined();
+    // Запрос только по userId из токена.
+    expect(db.topUpRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 's-1' } }),
+    );
+  });
+});
+
+// ─── Авторизация admin-эндпоинтов ─────────────────────────────────────────────
+
+describe('авторизация admin-эндпоинтов', () => {
+  it('403 — студент не может смотреть список заявок', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/topup-requests',
+      headers: authHeaders(studentToken('s-1')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(db.topUpRequest.findMany).not.toHaveBeenCalled();
+  });
+
+  it('403 — студент не может одобрять заявку', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(studentToken('s-1')),
+      payload: { amountKopecks: 1000 },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('403 — студент не может менять настройки оплаты', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/admin/payment-settings',
+      headers: authHeaders(studentToken('s-1')),
+      payload: { transferPhone: '+79990000000' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(db.paymentSettings.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ─── GET /admin/topup-requests ────────────────────────────────────────────────
+
+describe('GET /admin/topup-requests', () => {
+  it('200 — список с user и подписанным screenshotUrl (default pending)', async () => {
+    db.topUpRequest.findMany.mockResolvedValueOnce([
+      {
+        id: 'req-1',
+        status: 'pending',
+        claimedAmountKopecks: 5000,
+        creditedAmountKopecks: null,
+        note: null,
+        screenshotKey: 'topups/a.png',
+        reviewedAt: null,
+        createdAt: new Date('2026-05-23T10:00:00Z'),
+        user: { id: 's-1', name: 'Студент', email: 's@e.x' },
+      },
+    ]);
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/topup-requests',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.topUpRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'pending' } }),
+    );
+    const body = res.json();
+    expect(body.requests[0].user.email).toBe('s@e.x');
+    expect(body.requests[0].screenshotUrl).toContain('signed.example');
+    expect(body.requests[0].screenshotKey).toBeUndefined();
+  });
+
+  it('200 — status=all снимает фильтр по статусу', async () => {
+    db.topUpRequest.findMany.mockResolvedValueOnce([]);
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/topup-requests?status=all',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(db.topUpRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+  });
+});
+
+// ─── POST /admin/topup-requests/:id/approve ───────────────────────────────────
+
+// Мок callback-формы $transaction: вызывает переданный колбэк с tx-объектом,
+// собранным из методов prisma-мока (как ведёт себя реальный интерактивный $transaction).
+function mockTxCallback() {
+  db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+    const tx = {
+      topUpRequest: db.topUpRequest,
+      user: db.user,
+      walletTransaction: db.walletTransaction,
+    };
+    return cb(tx);
+  });
+}
+
+describe('POST /admin/topup-requests/:id/approve', () => {
+  it('400 — невалидная сумма (0)', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 0 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('400 — невалидная сумма (дробная)', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 99.9 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('200 — одобрение зачисляет баланс и возвращает request/transaction', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' }); // имя админа
+    mockTxCallback();
+    db.topUpRequest.updateMany.mockResolvedValueOnce({ count: 1 });
+    db.topUpRequest.findUniqueOrThrow
+      .mockResolvedValueOnce({ userId: 's-1' }) // target
+      .mockResolvedValueOnce({
+        id: 'req-1',
+        status: 'approved',
+        claimedAmountKopecks: 5000,
+        creditedAmountKopecks: 5000,
+        note: null,
+        reviewedAt: new Date(),
+        createdAt: new Date(),
+      });
+    // creditBalance: user.update (increment) + walletTransaction.create
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 5000 });
+    db.walletTransaction.create.mockResolvedValueOnce({ id: 'tx-1', kind: 'topup', amount: 5000 });
+    db.topUpRequest.update.mockResolvedValueOnce({});
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 5000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.balanceKopecks).toBe(5000);
+    expect(body.transaction.id).toBe('tx-1');
+    expect(body.request.status).toBe('approved');
+    // Привязали walletTransactionId к заявке.
+    expect(db.topUpRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { walletTransactionId: 'tx-1' } }),
+    );
+    expect(db.walletTransaction.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 — повторное одобрение (уже обработана); баланс не двоится', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    // Заявка уже не pending → updateMany не затронул строк.
+    db.topUpRequest.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 5000 },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Заявка уже обработана');
+    // Баланс НЕ трогали и транзакцию НЕ создавали (откат на сентинел-ошибке).
+    expect(db.walletTransaction.create).not.toHaveBeenCalled();
+    expect(db.topUpRequest.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── POST /admin/topup-requests/:id/reject ────────────────────────────────────
+
+describe('POST /admin/topup-requests/:id/reject', () => {
+  it('200 — отклонение pending-заявки', async () => {
+    db.topUpRequest.updateMany.mockResolvedValueOnce({ count: 1 });
+    db.topUpRequest.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'req-1',
+      status: 'rejected',
+      claimedAmountKopecks: 5000,
+      creditedAmountKopecks: null,
+      note: 'не тот скрин',
+      reviewedAt: new Date(),
+      createdAt: new Date(),
+    });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/reject',
+      headers: authHeaders(adminToken),
+      payload: { note: 'не тот скрин' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().request.status).toBe('rejected');
+    expect(db.topUpRequest.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'req-1', status: 'pending' } }),
+    );
+  });
+
+  it('409 — заявка уже обработана', async () => {
+    db.topUpRequest.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/reject',
+      headers: authHeaders(adminToken),
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Заявка уже обработана');
+    expect(db.topUpRequest.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Настройки оплаты ─────────────────────────────────────────────────────────
+
+describe('payment-settings', () => {
+  it('GET /payment-settings — ленивый upsert + qrUrl без секретов', async () => {
+    db.paymentSettings.upsert.mockResolvedValueOnce({
+      transferUrl: 'https://pay.example',
+      transferPhone: '+79990000000',
+      instructions: 'переведите и пришлите скрин',
+      qrFileKey: 'payment/qr.png',
+    });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/payment-settings',
+      headers: authHeaders(studentToken('s-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.transferUrl).toBe('https://pay.example');
+    expect(body.qrUrl).toContain('signed.example');
+    expect(body.qrFileKey).toBeUndefined();
+  });
+
+  it('PUT /admin/payment-settings — upsert с updatedById', async () => {
+    db.paymentSettings.upsert.mockResolvedValueOnce({
+      transferUrl: null,
+      transferPhone: '+79991112233',
+      instructions: null,
+      qrFileKey: null,
+    });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/admin/payment-settings',
+      headers: authHeaders(adminToken),
+      payload: { transferPhone: '+79991112233' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().transferPhone).toBe('+79991112233');
+    const call = db.paymentSettings.upsert.mock.calls[0][0];
+    expect(call.update).toMatchObject({ transferPhone: '+79991112233', updatedById: 'admin-1' });
+    expect(res.json().qrUrl).toBeNull();
+  });
+
+  it('DELETE /admin/payment-settings/qr — обнуляет qrFileKey', async () => {
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/admin/payment-settings/qr',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().qrUrl).toBeNull();
+    const call = db.paymentSettings.upsert.mock.calls[0][0];
+    expect(call.update).toMatchObject({ qrFileKey: null, updatedById: 'admin-1' });
+  });
+
+  it('POST /admin/payment-settings/qr — загрузка QR (image) → qrUrl', async () => {
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'qr.png', contentType: 'image/png' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().qrUrl).toContain('signed.example');
+    expect(db.paymentSettings.upsert).toHaveBeenCalled();
+  });
+
+  it('POST /admin/payment-settings/qr — 400 на не-изображении', async () => {
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'doc.pdf', contentType: 'application/pdf' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.paymentSettings.upsert).not.toHaveBeenCalled();
+  });
+});

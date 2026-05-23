@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
+import { isPositiveInt } from '../lib/money.js';
 
 // Кошелёк студента: ручной баланс в копейках + история операций.
 // Пополнение/списание делает администратор вручную (после скриншота перевода в чате).
@@ -8,11 +9,10 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 //
 // TODO: автосписание за менторскую занятие (per-occurrence spend) появится вместе
 // с моделью «Занятие» — тогда списание будет привязано к занятию (рефакторинг этого роута).
-
-// Проверка: положительное целое число копеек (защита от NaN/дробей/отрицательных).
-function isPositiveInt(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
+//
+// isPositiveInt и логика пополнения вынесены в lib/money.ts (переиспользуются
+// в payments.ts). Здесь ручное пополнение оставлено на массивной форме
+// $transaction([...]) — поведение не меняем.
 
 export async function walletRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
