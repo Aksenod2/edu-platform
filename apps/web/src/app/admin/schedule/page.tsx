@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
   createLesson,
@@ -102,15 +103,29 @@ export default function AdminSchedulePage() {
   // (Session потока) → done.
   const handleMarkDone = useCallback(
     async (lesson: ScheduleLesson) => {
-      if (!accessToken || !lesson.streamId) return;
+      const streamId = lesson.streamId;
+      if (!accessToken || !streamId) return;
       try {
-        await updateLesson(accessToken, lesson.id, {
-          streamId: lesson.streamId,
-          status: 'done',
-        });
+        await updateLesson(accessToken, lesson.id, { streamId, status: 'done' });
         await fetchAll();
+        // Действие обратимо: даём «Отменить» тостом вместо блокирующего попапа.
+        toast.success('Занятие проведено', {
+          action: {
+            label: 'Отменить',
+            onClick: async () => {
+              try {
+                await updateLesson(accessToken, lesson.id, { streamId, status: 'planned' });
+                await fetchAll();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Не удалось отменить');
+              }
+            },
+          },
+        });
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось отметить занятие проведённым');
+        toast.error(
+          err instanceof Error ? err.message : 'Не удалось отметить занятие проведённым',
+        );
       }
     },
     [accessToken, fetchAll],
