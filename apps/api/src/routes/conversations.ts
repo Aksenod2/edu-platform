@@ -4,6 +4,11 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { notifyMany } from '../lib/notifications.js';
+import {
+  deriveStreamTeachers,
+  getStreamTeacherList,
+  streamTeacherSourcesInclude,
+} from '../lib/stream-teachers.js';
 
 // Типы записей, доступные в каналах преподавателей (штаб, поток): текст, файл, аудио, ссылка.
 // «comment»/«note» — специфика студенческого треда, здесь не используются.
@@ -40,20 +45,14 @@ async function getOrCreateCohortConversation(streamId: string) {
 }
 
 /**
- * Преподаватели потока — уникальные admin'ы по всем урокам потока (из LessonTeacher).
+ * Преподаватели потока — уникальные admin'ы по урокам потока (из LessonTeacher).
+ * Источник уроков перенесён в lib/stream-teachers.ts: программные потоки —
+ * через program.programLessons, менторские — через sessions.lesson.
  * «Общий» поток (shared) — тот, где преподаёт больше одного преподавателя.
- * Логика идентична streamRoutes.deriveStreamTeachers (см. routes/streams.ts).
  */
 async function getStreamTeachers(streamId: string): Promise<string[]> {
-  const lessons = await prisma.lesson.findMany({
-    where: { streamId },
-    select: { teachers: { select: { userId: true } } },
-  });
-  const ids = new Set<string>();
-  for (const lesson of lessons) {
-    for (const t of lesson.teachers) ids.add(t.userId);
-  }
-  return [...ids];
+  const teachers = await getStreamTeacherList(streamId);
+  return teachers.map((t) => t.id);
 }
 
 /**
@@ -203,22 +202,19 @@ export async function conversationRoutes(app: FastifyInstance) {
   app.get('/conversations/streams', { onRequest: adminOnly }, async (request) => {
     const user = request.user!;
 
-    // Все потоки с преподавателями по урокам — вычисляем «общие» в памяти.
+    // Все потоки с преподавателями по урокам (program + sessions) —
+    // вычисляем «общие» в памяти через общий хелпер deriveStreamTeachers.
     const streams = await prisma.stream.findMany({
       select: {
         id: true,
         name: true,
         status: true,
-        lessons: { select: { teachers: { select: { userId: true } } } },
+        ...streamTeacherSourcesInclude,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const shared = streams.filter((s) => {
-      const ids = new Set<string>();
-      for (const lesson of s.lessons) for (const t of lesson.teachers) ids.add(t.userId);
-      return ids.size > 1;
-    });
+    const shared = streams.filter((s) => deriveStreamTeachers(s).shared);
 
     const result = await Promise.all(
       shared.map(async (s) => {

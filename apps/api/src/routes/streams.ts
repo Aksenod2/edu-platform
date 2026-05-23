@@ -1,31 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
+import {
+  deriveStreamTeachers,
+  streamTeacherSourcesInclude,
+} from '../lib/stream-teachers.js';
 
-// Собирает уникальных преподавателей (admin) по всем урокам потока.
-// shared = true, если в потоке преподаёт больше одного преподавателя.
-function deriveStreamTeachers(
-  lessons: { teachers: { user: { id: string; name: string } }[] }[],
-): { teachers: { id: string; name: string }[]; shared: boolean } {
-  const map = new Map<string, { id: string; name: string }>();
-  for (const lesson of lessons) {
-    for (const t of lesson.teachers) {
-      if (!map.has(t.user.id)) {
-        map.set(t.user.id, { id: t.user.id, name: t.user.name });
-      }
-    }
-  }
-  const teachers = [...map.values()];
-  return { teachers, shared: teachers.length > 1 };
-}
-
+// Источник преподавателей потока перенесён в lib/stream-teachers.ts:
+// поток больше не владеет уроками, они достижимы через программу
+// (program.programLessons.lesson.teachers) и/или сессии (sessions.lesson.teachers).
 const streamTeachersInclude = {
   owner: { select: { id: true, name: true } },
-  lessons: {
-    select: {
-      teachers: { include: { user: { select: { id: true, name: true } } } },
-    },
-  },
+  ...streamTeacherSourcesInclude,
 } as const;
 
 export async function streamRoutes(app: FastifyInstance) {
@@ -49,25 +35,45 @@ export async function streamRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
     return {
-      streams: streams.map(({ lessons, owner, ...stream }) => ({
+      streams: streams.map(({ program, sessions, owner, ...stream }) => ({
         ...stream,
         owner,
-        ...deriveStreamTeachers(lessons),
+        program: program
+          ? { id: program.id, name: program.name, type: program.type }
+          : null,
+        ...deriveStreamTeachers({ program, sessions }),
       })),
     };
   });
 
   // POST /streams — создание потока
+  // programId опционален: с ним поток привязан к программе, без него —
+  // менторский поток (уроки набираются через сессии).
   app.post('/streams', { onRequest: adminOnly }, async (request, reply) => {
-    const { name } = request.body as { name: string };
+    const { name, programId } = request.body as { name: string; programId?: string | null };
 
     if (!name || !name.trim()) {
       return reply.status(400).send({ error: 'Название потока обязательно' });
     }
 
+    // Если задана программа — проверяем, что она существует.
+    if (programId !== undefined && programId !== null) {
+      const program = await prisma.program.findUnique({
+        where: { id: programId },
+        select: { id: true },
+      });
+      if (!program) {
+        return reply.status(400).send({ error: 'Программа не найдена' });
+      }
+    }
+
     // Создающий администратор становится ведущим потока.
     const stream = await prisma.stream.create({
-      data: { name: name.trim(), ownerId: request.user!.userId },
+      data: {
+        name: name.trim(),
+        ownerId: request.user!.userId,
+        ...(programId !== undefined && programId !== null && { programId }),
+      },
     });
 
     return reply.status(201).send({ stream });
@@ -76,7 +82,11 @@ export async function streamRoutes(app: FastifyInstance) {
   // PATCH /streams/:id — обновление потока (название и/или ведущий)
   app.patch('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { name, ownerId } = request.body as { name?: string; ownerId?: string | null };
+    const { name, ownerId, programId } = request.body as {
+      name?: string;
+      ownerId?: string | null;
+      programId?: string | null;
+    };
 
     const existing = await prisma.stream.findUnique({ where: { id } });
     if (!existing) {
@@ -98,11 +108,24 @@ export async function streamRoutes(app: FastifyInstance) {
       }
     }
 
+    // Если задаётся программа (не null) — проверяем её существование.
+    // programId === null допустим: поток становится менторским (без программы).
+    if (programId !== undefined && programId !== null) {
+      const program = await prisma.program.findUnique({
+        where: { id: programId },
+        select: { id: true },
+      });
+      if (!program) {
+        return reply.status(400).send({ error: 'Программа не найдена' });
+      }
+    }
+
     const stream = await prisma.stream.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
         ...(ownerId !== undefined && { ownerId }),
+        ...(programId !== undefined && { programId }),
       },
     });
 
@@ -117,9 +140,18 @@ export async function streamRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         _count: {
-          select: { enrollments: true, lessons: true },
+          // Stream больше не владеет уроками — считаем сессии (фолбэк для менторских).
+          select: { enrollments: true, sessions: true },
         },
-        ...streamTeachersInclude,
+        owner: { select: { id: true, name: true } },
+        sessions: streamTeacherSourcesInclude.sessions,
+        // program: источники преподавателей + _count.programLessons (число уроков программы).
+        program: {
+          select: {
+            ...streamTeacherSourcesInclude.program.select,
+            _count: { select: { programLessons: true } },
+          },
+        },
       },
     });
 
@@ -127,13 +159,18 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Поток не найден' });
     }
 
-    const { _count, lessons, ...streamFields } = stream;
+    const { _count, program, sessions, owner, ...streamFields } = stream;
+    // Число уроков: для программного потока — уроки программы; иначе — сессии.
+    const lessonsCount = stream.programId
+      ? program?._count.programLessons ?? 0
+      : _count.sessions;
     return {
       stream: {
         ...streamFields,
+        owner,
         studentsCount: _count.enrollments,
-        lessonsCount: _count.lessons,
-        ...deriveStreamTeachers(lessons),
+        lessonsCount,
+        ...deriveStreamTeachers({ program, sessions }),
       },
     };
   });
@@ -194,17 +231,19 @@ export async function streamRoutes(app: FastifyInstance) {
         skipDuplicates: true,
       });
 
-      // Бэкфилл: выдаём только что зачисленным студентам все существующие
-      // задания потока. skipDuplicates делает повторное зачисление безопасным.
-      const assignments = await prisma.assignment.findMany({
-        where: { streamId: id },
+      // Бэкфилл: выдаём только что зачисленным студентам задания по всем
+      // сессиям потока, у уроков которых есть задание (lesson.hasAssignment).
+      // Ключуем по sessionId (StudentAssignment(sessionId, studentId)).
+      // skipDuplicates делает повторное зачисление безопасным.
+      const sessions = await prisma.session.findMany({
+        where: { streamId: id, lesson: { hasAssignment: true } },
         select: { id: true },
       });
-      if (assignments.length > 0) {
+      if (sessions.length > 0) {
         await prisma.studentAssignment.createMany({
           data: validStudents.flatMap((s) =>
-            assignments.map((a) => ({
-              assignmentId: a.id,
+            sessions.map((session) => ({
+              sessionId: session.id,
               studentId: s.id,
               status: 'assigned' as const,
             })),
