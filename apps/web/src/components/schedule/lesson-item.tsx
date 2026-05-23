@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
@@ -26,6 +27,7 @@ export function LessonItem({
 }) {
   const cancelled = lesson.status === 'cancelled';
   const [marking, setMarking] = useState(false);
+  const router = useRouter();
 
   const canMarkDone = !!onMarkDone && lesson.status === 'planned';
 
@@ -41,8 +43,17 @@ export function LessonItem({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/admin/lessons/${lesson.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          router.push(`/admin/lessons/${lesson.id}`);
+        }
+      }}
       className={cn(
-        'flex flex-col gap-1.5 rounded-lg border bg-card p-3',
+        'flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         cancelled && 'opacity-60',
       )}
     >
@@ -82,6 +93,7 @@ export function LessonItem({
               target="_blank"
               rel="noopener noreferrer"
               className="no-underline"
+              onClick={(e) => e.stopPropagation()}
             >
               <Button size="sm" variant="secondary">
                 Присоединиться
@@ -92,7 +104,10 @@ export function LessonItem({
             <Button
               size="sm"
               variant="outline"
-              onClick={handleMarkDone}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMarkDone();
+              }}
               disabled={marking}
             >
               {marking ? <Loader2 className="animate-spin" /> : <Check />}

@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -382,16 +383,24 @@ function DayDetail({
                   {lesson.notes}
                 </p>
               )}
-              {lesson.meetingUrl && lesson.status !== 'cancelled' && (
-                <a
-                  href={lesson.meetingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-block no-underline"
-                >
-                  <Button size="sm">Присоединиться</Button>
-                </a>
-              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {lesson.meetingUrl && lesson.status !== 'cancelled' && (
+                  <a
+                    href={lesson.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="no-underline"
+                  >
+                    <Button size="sm">Присоединиться</Button>
+                  </a>
+                )}
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/admin/lessons/${lesson.id}`}>
+                    <ExternalLink />
+                    Открыть урок
+                  </Link>
+                </Button>
+              </div>
               {editable && (
                 <>
                   <Separator className="my-3" />
