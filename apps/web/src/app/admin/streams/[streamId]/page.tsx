@@ -896,6 +896,7 @@ function StudentsTab({
   onRosterChange: () => void;
 }) {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [roster, setRoster] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1041,7 +1042,12 @@ function StudentsTab({
               </TableRow>
             ) : (
               roster.map((student) => (
-                <TableRow key={student.id}>
+                // Вся строка ведёт на карточку студента (student.id — это userId).
+                <TableRow
+                  key={student.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/admin/students/${student.id}`)}
+                >
                   <TableCell className="font-medium">{student.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {student.email}
@@ -1053,7 +1059,10 @@ function StudentsTab({
                       <Badge variant="outline">Неактивен</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button
                       variant="ghost"
                       size="icon"
