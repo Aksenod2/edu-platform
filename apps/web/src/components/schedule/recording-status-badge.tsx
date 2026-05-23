@@ -55,9 +55,16 @@ export function RecordingStatusBadge({
   }
 
   if (status === 'failed') {
+    const reason = error?.trim() || 'Запись не получена';
     return (
-      // title несёт текст ошибки автозагрузки (recordingError) для подсказки админу.
-      <Badge variant="destructive" className={className} title={error ?? undefined}>
+      // title — подсказка по наведению; aria-label дублирует причину для скринридеров,
+      // т.к. сам title недоступен с клавиатуры/тача.
+      <Badge
+        variant="destructive"
+        className={className}
+        title={error ?? undefined}
+        aria-label={reason}
+      >
         <AlertTriangle className="size-3" />
         Запись не получена
       </Badge>

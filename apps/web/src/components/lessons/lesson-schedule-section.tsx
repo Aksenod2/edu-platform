@@ -9,6 +9,7 @@ import {
   FileText,
   Loader2,
   Pencil,
+  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ import {
   getLesson,
   getLessonSessions,
   getStreams,
+  retrySessionRecording,
   unscheduleLesson,
   updateAssignment,
   updateLesson,
@@ -121,6 +123,9 @@ export function LessonScheduleSection({
   const [summaryStreamId, setSummaryStreamId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
+
+  // Повтор автозагрузки записи Zoom: streamId занятия, по которому идёт запрос.
+  const [retryingStreamId, setRetryingStreamId] = useState('');
 
   // Подтягиваем выданные задания для всех потоков, где урок запланирован.
   // «Выдано» = есть синтетическое задание (Session) по этому lessonId в потоке.
@@ -250,6 +255,21 @@ export function LessonScheduleSection({
       toast.success('Снято с расписания');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  // Повторить автозагрузку записи Zoom для зафейленного занятия (админ).
+  async function handleRetryRecording(sid: string) {
+    if (retryingStreamId) return;
+    setRetryingStreamId(sid);
+    try {
+      const { message } = await retrySessionRecording(accessToken, lessonId, sid);
+      await load();
+      toast.success(message || 'Перезапустили загрузку записи');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось перезапустить загрузку');
+    } finally {
+      setRetryingStreamId('');
     }
   }
 
@@ -424,6 +444,31 @@ export function LessonScheduleSection({
                     </Button>
                   </div>
                 </div>
+
+                {/* Запись Zoom не получена: видимая причина (а не только в title бейджа)
+                    + ручной повтор автозагрузки для админа. */}
+                {s.status === 'done' && s.recordingStatus === 'failed' && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-2">
+                    <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                      {s.recordingError?.trim() || 'Не удалось получить запись'}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-fit"
+                      onClick={() => handleRetryRecording(s.streamId)}
+                      disabled={retryingStreamId === s.streamId}
+                    >
+                      {retryingStreamId === s.streamId ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      Повторить
+                    </Button>
+                  </div>
+                )}
 
                 {/* Выдача ДЗ — только если у урока включено folded-задание. */}
                 {hasAssignment &&

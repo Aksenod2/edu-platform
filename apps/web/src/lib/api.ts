@@ -988,6 +988,19 @@ export async function unscheduleLesson(
   });
 }
 
+// Повторить автозагрузку записи Zoom для занятия (админ): перезапускает скачивание
+// записи, когда recordingStatus = 'failed' или процесс завис. Бэк отвечает 202.
+export async function retrySessionRecording(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<{ status: string; message: string }> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}/recording/retry`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Assignments API
 
 export interface AssignmentMaterial {
