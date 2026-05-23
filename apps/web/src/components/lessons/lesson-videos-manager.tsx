@@ -263,7 +263,7 @@ export function LessonVideosManager({
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => {
                 if (confirmDeleteId) handleDelete(confirmDeleteId);
                 setConfirmDeleteId(null);

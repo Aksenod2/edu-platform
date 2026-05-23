@@ -19,6 +19,7 @@ import {
   Wallet,
   User,
   Settings,
+  Video,
   LogOut,
   ChevronsUpDown,
   type LucideIcon,
@@ -87,7 +88,10 @@ const ADMIN_NAV: NavGroup[] = [
   },
   {
     label: 'Система',
-    items: [{ label: 'API-доступ', href: '/admin/api-access', icon: KeyRound }],
+    items: [
+      { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
+      { label: 'Интеграция Zoom', href: '/admin/system/zoom', icon: Video },
+    ],
   },
 ];
 

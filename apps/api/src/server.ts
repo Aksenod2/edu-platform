@@ -24,6 +24,7 @@ import { pushSubscriptionRoutes } from './routes/push-subscriptions.js';
 import { apiKeyRoutes } from './routes/api-keys.js';
 import { fileRoutes } from './routes/files.js';
 import { statsRoutes } from './routes/stats.js';
+import { integrationRoutes } from './routes/integrations.js';
 import { startCronJobs } from './lib/cron.js';
 
 const app = Fastify({ logger: true });
@@ -66,6 +67,7 @@ await app.register(pushSubscriptionRoutes);
 await app.register(apiKeyRoutes);
 await app.register(fileRoutes);
 await app.register(statsRoutes);
+await app.register(integrationRoutes);
 
 app.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };

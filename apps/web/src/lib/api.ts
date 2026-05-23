@@ -1989,3 +1989,55 @@ export async function createLessonBlock(
     body: JSON.stringify(data),
   });
 }
+
+// --- Интеграция Zoom (Система → Интеграции) ----------------------------------
+// Безопасный вид настроек: секрет не отдаётся, доступен лишь признак secretSet
+// и последние 4 символа (secretLast4). encryptionKeySet сообщает, настроен ли
+// на сервере ключ шифрования (без него секрет нельзя сохранить/проверить).
+export interface ZoomIntegrationConfig {
+  enabled: boolean;
+  autoCreateMeeting: boolean;
+  accountId: string | null;
+  clientId: string | null;
+  secretSet: boolean;
+  secretLast4: string | null;
+  lastTestedAt: string | null;
+  lastTestOk: boolean | null;
+  encryptionKeySet: boolean;
+}
+
+// Получить текущие настройки Zoom.
+export async function getZoomIntegration(accessToken: string): Promise<ZoomIntegrationConfig> {
+  return request('/admin/integrations/zoom', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Сохранить настройки Zoom. clientSecret передавать только при изменении —
+// пустое/отсутствующее значение оставляет сохранённый секрет без изменений.
+export async function updateZoomIntegration(
+  accessToken: string,
+  data: {
+    enabled?: boolean;
+    autoCreateMeeting?: boolean;
+    accountId?: string;
+    clientId?: string;
+    clientSecret?: string;
+  },
+): Promise<ZoomIntegrationConfig> {
+  return request('/admin/integrations/zoom', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+// Проверить соединение с Zoom. Не бросает на ошибках Zoom — возвращает ok:false.
+export async function testZoomIntegration(
+  accessToken: string,
+): Promise<{ ok: boolean; message: string }> {
+  return request('/admin/integrations/zoom/test', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}

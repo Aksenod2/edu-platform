@@ -222,7 +222,7 @@ export default function ApiKeysPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (keyToRevoke) handleRevoke(keyToRevoke); }}
             >
               Отозвать

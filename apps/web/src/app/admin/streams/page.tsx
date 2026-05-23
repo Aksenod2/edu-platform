@@ -192,13 +192,14 @@ export default function StreamsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Потоки</h1>
           <p className="text-sm text-muted-foreground">Учебные группы и их уроки</p>
         </div>
         <Button
           variant={showCreateForm ? 'outline' : 'default'}
+          className="w-full shrink-0 sm:w-auto"
           onClick={() => setShowCreateForm(!showCreateForm)}
         >
           {showCreateForm ? (
@@ -501,7 +502,7 @@ export default function StreamsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => { if (streamToArchive) handleArchive(streamToArchive.id); }}
             >
               Архивировать

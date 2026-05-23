@@ -953,7 +953,7 @@ export default function StudentProfilePage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={() => {
                 if (pendingRevision) handleUpdateAssignment(pendingRevision.id, 'needs_revision');
                 setPendingRevision(null);

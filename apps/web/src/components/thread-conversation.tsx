@@ -412,7 +412,9 @@ export function ThreadConversation({
               inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'
             }
             rows={1}
-            className="max-h-40 min-h-9 flex-1 resize-none"
+            // min-h-10 совпадает с высотой кнопок (size-9 + рамка) и не клиппит
+            // одну строку; field-sizing-content авто-растит до max-h-40.
+            className="max-h-40 min-h-10 flex-1 resize-none py-2 leading-tight"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
