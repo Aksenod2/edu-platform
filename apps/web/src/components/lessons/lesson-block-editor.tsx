@@ -40,6 +40,7 @@ import {
   updateLesson,
   deleteLesson,
   getTeachers,
+  type AssignmentMaterial,
   type LessonMaterial,
   type Teacher,
 } from '@/lib/api';
@@ -47,6 +48,7 @@ import { TeacherPicker } from '@/components/lessons/teacher-picker';
 import { LessonVideosManager } from '@/components/lessons/lesson-videos-manager';
 import { LessonScheduleSection } from '@/components/lessons/lesson-schedule-section';
 import { LessonMaterialsSection } from '@/components/lessons/lesson-materials-section';
+import { AssignmentMaterialsField } from '@/components/lessons/assignment-materials-field';
 import {
   type AssignmentType,
   type LessonBlock,
@@ -68,6 +70,7 @@ type FormState = {
   assignmentCriteria: string;
   assignmentType: AssignmentType;
   assignmentTags: string[];
+  assignmentMaterials: AssignmentMaterial[];
 };
 
 function lessonToForm(lesson: LessonBlock): FormState {
@@ -82,6 +85,7 @@ function lessonToForm(lesson: LessonBlock): FormState {
     assignmentCriteria: lesson.assignmentCriteria || '',
     assignmentType: lesson.assignmentType ?? 'short',
     assignmentTags: lesson.assignmentTags ?? [],
+    assignmentMaterials: lesson.assignmentMaterials ?? [],
   };
 }
 
@@ -164,7 +168,7 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
     try {
       // Шлём поля всегда (даже пустыми), иначе очистку не сохранить:
       // пустая строка на бэке превращается в null.
-      const { lesson: updated } = await updateLesson(accessToken, lessonId, {
+      await updateLesson(accessToken, lessonId, {
         title: form.title.trim(),
         summary: form.summary,
         notes: form.notes,
@@ -175,10 +179,12 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
         assignmentCriteria: form.assignmentCriteria,
         assignmentType: form.assignmentType,
         assignmentTags: form.assignmentTags,
+        assignmentMaterials: form.assignmentMaterials,
       });
-      // Ответ PATCH несёт свежие videoFileUrl/материалы (переподписанные) — берём его.
-      setLesson((prev) => ({ ...prev, ...updated }));
+      // После сохранения закрываем страницу — возврат к списку уроков. Видео,
+      // материалы, расписание и выдача ДЗ сохраняются отдельными действиями.
       toast.success('Урок сохранён');
+      router.push('/admin/lessons');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
@@ -397,6 +403,14 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
                   Добавить
                 </Button>
               </div>
+            </Field>
+
+            <Field>
+              <AssignmentMaterialsField
+                accessToken={accessToken!}
+                materials={form.assignmentMaterials}
+                onChange={(m) => setForm({ ...form, assignmentMaterials: m })}
+              />
             </Field>
           </FieldGroup>
         )}
