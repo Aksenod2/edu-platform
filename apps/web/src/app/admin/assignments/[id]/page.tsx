@@ -7,6 +7,7 @@ import {
   getAssignment,
   getStudentAssignments,
   updateStudentAssignment,
+  createAssignment,
   fileDownloadUrl,
   type Assignment,
   type StudentAssignment,
@@ -43,6 +44,8 @@ export default function AssignmentDetailPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // Идёт ли сейчас выдача задания студентам (до-материализация StudentAssignment).
+  const [issuing, setIssuing] = useState(false);
   // Текст разбора, который преподаватель пишет к сдаче (по id назначения).
   const [reviewTexts, setReviewTexts] = useState<Record<string, string>>({});
   // Подсветка обязательной причины при «На доработку» (по id назначения).
@@ -101,6 +104,32 @@ export default function AssignmentDetailPage() {
       setError(err instanceof Error ? err.message : 'Ошибка обновления');
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  // Выдать задание студентам потока: эндпоинт идемпотентен (skipDuplicates),
+  // поэтому до-материализует пропущенных, не дублируя существующие назначения.
+  const handleIssue = async () => {
+    if (!accessToken || !assignment || issuing) return;
+    setIssuing(true);
+    try {
+      await createAssignment(accessToken, {
+        streamId: assignment.streamId,
+        lessonId: assignment.lessonId ?? undefined,
+        title: assignment.title,
+        description: assignment.description ?? undefined,
+        criteria: assignment.criteria ?? undefined,
+        type: assignment.type,
+        tags: assignment.tags,
+        materials: assignment.materials,
+        dueDate: assignment.dueDate ?? undefined,
+      });
+      await fetchData();
+      toast.success('Задание выдано студентам');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выдать задание');
+    } finally {
+      setIssuing(false);
     }
   };
 
@@ -223,10 +252,14 @@ export default function AssignmentDetailPage() {
             <h2 className="mb-4 text-lg font-semibold tracking-tight">Студенты</h2>
 
             {studentAssignments.length === 0 ? (
-              <div className="rounded-lg border bg-card px-6 py-8 text-center">
+              <div className="flex flex-col items-center gap-4 rounded-lg border bg-card px-6 py-8 text-center">
                 <p className="text-sm text-muted-foreground">
                   Задание ещё не назначено ни одному студенту.
                 </p>
+                <Button onClick={handleIssue} disabled={issuing}>
+                  {issuing && <Loader2 className="animate-spin" />}
+                  Выдать студентам
+                </Button>
               </div>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
