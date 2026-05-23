@@ -85,7 +85,7 @@ import {
   getLessons,
   createLesson,
   updateLesson,
-  deleteLesson,
+  unscheduleLesson,
   getTeachers,
   updateStream,
   type StreamWithCounts,
@@ -275,10 +275,11 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
     try {
-      await deleteLesson(accessToken, id);
+      // Снимаем занятие с расписания потока (не удаляем урок-блок целиком).
+      await unscheduleLesson(accessToken, id, stream.id);
       await fetchAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка удаления урока');
+      toast.error(err instanceof Error ? err.message : 'Ошибка снятия занятия');
     }
   };
 

@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   createLesson,
-  deleteLesson,
+  unscheduleLesson,
   getLessons,
   getStreams,
   updateLesson,
@@ -98,6 +98,24 @@ export default function AdminSchedulePage() {
     [lessons, selectedStreamId],
   );
 
+  // «Отметить проведённым» из списочных видов (Сегодня/Неделя): статус занятия
+  // (Session потока) → done.
+  const handleMarkDone = useCallback(
+    async (lesson: ScheduleLesson) => {
+      if (!accessToken || !lesson.streamId) return;
+      try {
+        await updateLesson(accessToken, lesson.id, {
+          streamId: lesson.streamId,
+          status: 'done',
+        });
+        await fetchAll();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Не удалось отметить занятие проведённым');
+      }
+    },
+    [accessToken, fetchAll],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -157,9 +175,9 @@ export default function AdminSchedulePage() {
           Активных потоков нет. Создайте поток, чтобы планировать занятия.
         </p>
       ) : view === 'today' ? (
-        <TodayView lessons={visibleLessons} />
+        <TodayView lessons={visibleLessons} onMarkDone={handleMarkDone} />
       ) : view === 'week' ? (
-        <WeekView lessons={visibleLessons} />
+        <WeekView lessons={visibleLessons} onMarkDone={handleMarkDone} />
       ) : (
         <MonthView
           lessons={visibleLessons}
@@ -240,10 +258,13 @@ function MonthView({
     if (!accessToken) return;
     setError('');
     try {
-      await deleteLesson(accessToken, id);
+      // Удаляем именно ЗАНЯТИЕ (Session потока), а не урок-блок целиком.
+      const targetStreamId = lessons.find((l) => l.id === id)?.streamId ?? selectedStreamId;
+      if (!targetStreamId) return;
+      await unscheduleLesson(accessToken, id, targetStreamId);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления занятия');
+      setError(err instanceof Error ? err.message : 'Ошибка снятия занятия');
     }
   };
 
