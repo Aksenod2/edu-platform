@@ -33,6 +33,7 @@ import {
 } from '@/lib/api';
 import { TeacherPicker } from '@/components/lessons/teacher-picker';
 import { LessonVideosManager } from '@/components/lessons/lesson-videos-manager';
+import { LessonScheduleSection } from '@/components/lessons/lesson-schedule-section';
 import { LessonMaterialsSection } from '@/components/lessons/lesson-materials-section';
 import {
   type AssignmentType,
@@ -197,6 +198,10 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
             onChange={(e) => setForm({ ...form, title: e.target.value })}
             placeholder="Название урока"
           />
+        </Field>
+
+        <Field>
+          <LessonScheduleSection accessToken={accessToken!} lessonId={lessonId} />
         </Field>
 
         <Field>

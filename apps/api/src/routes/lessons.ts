@@ -1154,6 +1154,48 @@ export async function lessonRoutes(app: FastifyInstance) {
     return await lessonVideosResponse(id);
   });
 
+  // GET /lessons/:id/sessions — занятия урока по всем потокам (admin).
+  // Для блока «Расписание» на странице урока: где и когда урок запланирован.
+  app.get('/lessons/:id/sessions', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const lesson = await prisma.lesson.findUnique({ where: { id }, select: { id: true } });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    const sessions = await prisma.session.findMany({
+      where: { lessonId: id },
+      include: { stream: { select: { id: true, name: true, status: true } } },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return {
+      sessions: sessions.map((s) => ({
+        streamId: s.streamId,
+        streamName: s.stream.name,
+        streamStatus: s.stream.status,
+        status: s.status,
+        date: s.date ? s.date.toISOString().slice(0, 10) : null,
+        startTime: s.startTime,
+        meetingUrl: s.meetingUrl,
+      })),
+    };
+  });
+
+  // DELETE /lessons/:id/sessions/:streamId — снять урок с расписания потока (admin).
+  // Удаляет Session (и каскадно её StudentAssignment). Сам блок-урок и его место в
+  // программе при этом не трогаются.
+  app.delete(
+    '/lessons/:id/sessions/:streamId',
+    { onRequest: adminOnly },
+    async (request) => {
+      const { id, streamId } = request.params as { id: string; streamId: string };
+      await prisma.session.deleteMany({ where: { lessonId: id, streamId } });
+      return { message: 'Снято с расписания' };
+    },
+  );
+
   // DELETE /lessons/:id — удаление урока (admin).
   // Удаляем блок Lesson: каскадно уходят ProgramLesson, Session и StudentAssignment.
   app.delete('/lessons/:id', { onRequest: adminOnly }, async (request, reply) => {

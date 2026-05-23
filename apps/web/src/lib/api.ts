@@ -842,6 +842,39 @@ export async function deleteLesson(
   });
 }
 
+// Занятие урока в конкретном потоке (для блока «Расписание» на странице урока).
+export interface LessonSession {
+  streamId: string;
+  streamName: string;
+  streamStatus: 'active' | 'archived';
+  status: LessonStatus;
+  date: string | null;
+  startTime: string | null;
+  meetingUrl: string | null;
+}
+
+// Список занятий урока по всем потокам (где и когда он запланирован).
+export async function getLessonSessions(
+  accessToken: string,
+  lessonId: string,
+): Promise<{ sessions: LessonSession[] }> {
+  return request(`/lessons/${lessonId}/sessions`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Снять урок с расписания потока (удалить занятие).
+export async function unscheduleLesson(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<{ message: string }> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Assignments API
 
 export interface AssignmentMaterial {
