@@ -109,6 +109,13 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+// Уникальный ключ занятия. Один блок-урок может быть запланирован в нескольких
+// потоках (когорты одной программы), поэтому ключ — пара поток×урок, иначе при
+// «Все потоки» возможны дубли React-ключей.
+function lessonKey(l: CalendarLesson): string {
+  return `${l.streamId ?? 'none'}:${l.id}`;
+}
+
 export function ScheduleCalendar({
   lessons,
   editable = false,
@@ -247,7 +254,7 @@ export function ScheduleCalendar({
                 <div className="flex flex-col gap-1">
                   {visible.map((lesson) => (
                     <span
-                      key={lesson.id}
+                      key={lessonKey(lesson)}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         setSelectedKey(key);
@@ -360,7 +367,7 @@ function DayDetail({
         {lessons.map((lesson) =>
           editable && editingId === lesson.id ? (
             <EditForm
-              key={lesson.id}
+              key={lessonKey(lesson)}
               lesson={lesson}
               onCancel={() => setEditingId(null)}
               onUpdate={onUpdate}
@@ -368,7 +375,7 @@ function DayDetail({
             />
           ) : (
             <div
-              key={lesson.id}
+              key={lessonKey(lesson)}
               className={cn(
                 'rounded-lg border bg-card p-3',
                 lesson.status === 'cancelled' && 'opacity-60',

@@ -151,17 +151,34 @@ function LessonsCalendar({
     if (!accessToken) return;
     setLoading(true);
     try {
-      const { lessons: list } = await getLessons(
-        accessToken,
-        selectedStreamId || undefined,
-      );
       const byId = new Map(streams.map((s) => [s.id, s.name]));
-      setLessons(
-        list.map((l) => ({
+      let list: CalendarLesson[];
+      if (selectedStreamId) {
+        const { lessons: streamLessons } = await getLessons(accessToken, selectedStreamId);
+        list = streamLessons.map((l) => ({
           ...l,
           streamName: l.stream?.name ?? (l.streamId ? byId.get(l.streamId) : undefined),
-        })),
-      );
+        }));
+      } else {
+        // «Все потоки»: расписание собираем по каждому потоку (Session = занятие).
+        // Без streamId бэкенд отдаёт блоки-уроки без расписания (date = null) —
+        // на календаре они не видны, поэтому здесь агрегируем по потокам и берём
+        // только занятия с датой. Один блок может быть в нескольких потоках, так
+        // что правка возможна лишь при выбранном потоке (см. editable ниже).
+        const results = await Promise.all(
+          streams.map((s) =>
+            getLessons(accessToken, s.id)
+              .then((res) =>
+                res.lessons
+                  .filter((l) => l.date)
+                  .map((l) => ({ ...l, streamName: l.stream?.name ?? s.name })),
+              )
+              .catch(() => [] as CalendarLesson[]),
+          ),
+        );
+        list = results.flat();
+      }
+      setLessons(list);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки уроков');
@@ -246,8 +263,14 @@ function LessonsCalendar({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      {!selectedStreamId && (
+        <p className="text-sm text-muted-foreground">
+          Показаны занятия всех потоков. Выберите поток, чтобы добавлять и
+          редактировать занятия.
+        </p>
+      )}
       <ScheduleCalendar
-        editable
+        editable={!!selectedStreamId}
         lessons={lessons}
         streams={createStreams}
         onCreate={handleCreate}
