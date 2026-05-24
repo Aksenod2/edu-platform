@@ -321,7 +321,7 @@ export default function AssignmentDetailPage() {
                                 variant="ghost"
                                 size="sm"
                                 title="Открыть общую переписку с учеником"
-                                onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
+                                onClick={() => router.push(`/admin/students/${sa.student!.id}?tab=thread`)}
                               >
                                 <MessageSquare />
                                 Переписка
