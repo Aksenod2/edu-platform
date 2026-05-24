@@ -402,7 +402,13 @@ function DayDetail({
                   </a>
                 )}
                 <Button asChild size="sm" variant="outline">
-                  <Link href={`${lessonBasePath}/${lesson.id}`}>
+                  <Link
+                    href={
+                      lessonBasePath === '/admin/lessons' && lesson.streamId
+                        ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
+                        : `${lessonBasePath}/${lesson.id}`
+                    }
+                  >
                     <ExternalLink />
                     Открыть урок
                   </Link>
