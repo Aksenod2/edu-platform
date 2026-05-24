@@ -4,14 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   Info,
   LogIn,
+  Minus,
   RefreshCw,
   UserPlus,
   Users,
   Video,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -138,14 +141,34 @@ function StatusToggle({
   );
 }
 
+// Read-only бейдж статуса для авто-режима (посещаемость берётся из Zoom).
+// «Был» — primary с галочкой, «Не был» — приглушённый outline.
+function StatusBadge({ present }: { present: boolean }) {
+  return present ? (
+    <Badge className="shrink-0">
+      <Check className="size-3" />
+      Был
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="shrink-0 text-muted-foreground">
+      <Minus className="size-3" />
+      Не был
+    </Badge>
+  );
+}
+
 /**
  * Блок «Посещаемость» во View Mode урока: сводка занятия (Session = lessonId ×
- * streamId) + ручная отметка по составу группы + привязка несопоставленных
+ * streamId) + статус посещаемости по составу группы + привязка несопоставленных
  * zoom-гостей. По образцу LessonAnalyticsSection (стиль/состояния).
  *
- * Источники статуса: ручная отметка (manual) приоритетнее авто-забора Zoom —
- * UI просто отражает сводку с бэка. «Обновить из Zoom» (resync) может вернуть
- * мягкий отказ (ok:false) — показываем причину ненавязчиво, без алярма.
+ * Режим определяется по данным: если в сводке есть хоть одна zoom-запись —
+ * посещаемость считается автоматически из Zoom и показывается read-only
+ * (бейдж «Был/Не был»). Если zoom-данных по занятию нет вовсе (оффлайн) —
+ * показываем прежний ручной переключатель как фолбэк.
+ *
+ * «Обновить из Zoom» (resync) может вернуть мягкий отказ (ok:false) —
+ * показываем причину ненавязчиво, без алярма.
  */
 export function LessonAttendanceSection({
   accessToken,
@@ -285,6 +308,14 @@ export function LessonAttendanceSection({
     [summary],
   );
 
+  // Режим определяется наличием zoom-данных по занятию: есть хоть одна запись
+  // source==='zoom_report' → АВТО (read-only из Zoom); нет ни одной → РУЧНОЙ
+  // (фолбэк для оффлайн-занятий, прежний переключатель «Был/Не был»).
+  const hasZoomData = useMemo(
+    () => (summary?.records ?? []).some((r) => r.source === 'zoom_report'),
+    [summary],
+  );
+
   const isEmpty =
     !!summary &&
     summary.records.length === 0 &&
@@ -370,9 +401,12 @@ export function LessonAttendanceSection({
                   <Info className="mt-0.5 size-4 shrink-0" />
                   <span>{resyncNotice}</span>
                 </p>
-                <p className="pl-6 text-xs text-muted-foreground">
-                  Ручная отметка ниже работает всегда — отметьте посещаемость вручную.
-                </p>
+                {/* Подсказка про ручную отметку уместна только в фолбэк-режиме. */}
+                {!hasZoomData && (
+                  <p className="pl-6 text-xs text-muted-foreground">
+                    Ручная отметка ниже работает всегда — отметьте посещаемость вручную.
+                  </p>
+                )}
               </div>
             )}
 
@@ -384,9 +418,21 @@ export function LessonAttendanceSection({
               </p>
             )}
 
-            {/* Ручная отметка по составу группы. */}
+            {/* Посещаемость по составу группы. */}
             <div className="flex flex-col gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Состав группы</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Состав группы</span>
+                {/* Подсказка, откуда берётся статус в текущем режиме. */}
+                {students.length > 0 &&
+                  (hasZoomData ? (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Video className="size-3" />
+                      статус из Zoom
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">отметьте вручную</span>
+                  ))}
+              </div>
               {students.length === 0 ? (
                 <p className="text-sm text-muted-foreground">В группе пока нет студентов.</p>
               ) : (
@@ -397,6 +443,8 @@ export function LessonAttendanceSection({
                     const status = record?.status ?? null;
                     const duration = zoom ? formatDuration(zoom.durationSec) : null;
                     const joinTime = zoom ? formatJoinTime(zoom.joinedAt) : null;
+                    // В авто-режиме «был» = есть сопоставленная present zoom-запись.
+                    const presentInZoom = zoom?.status === 'present';
                     return (
                       <li
                         key={student.id}
@@ -420,11 +468,17 @@ export function LessonAttendanceSection({
                             </span>
                           )}
                         </div>
-                        <StatusToggle
-                          status={status}
-                          disabled={pendingUserId === student.id}
-                          onChange={(next) => handleMark(student.id, next)}
-                        />
+                        {hasZoomData ? (
+                          // АВТО: статус определён Zoom, read-only.
+                          <StatusBadge present={presentInZoom} />
+                        ) : (
+                          // РУЧНОЙ фолбэк: нет данных Zoom — отмечаем вручную.
+                          <StatusToggle
+                            status={status}
+                            disabled={pendingUserId === student.id}
+                            onChange={(next) => handleMark(student.id, next)}
+                          />
+                        )}
                       </li>
                     );
                   })}
