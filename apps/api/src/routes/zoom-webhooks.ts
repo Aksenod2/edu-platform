@@ -120,6 +120,19 @@ async function processEventAsync(
               'Ошибка забора посещаемости на meeting.ended (добёрёт свипер)',
             );
           }
+
+          // Авто-перевод занятия в «Проведён»: созвон завершился → урок проведён.
+          // Это автоматически включает выдачу ДЗ / показ записи (они завязаны на
+          // status='done'). Переводим ТОЛЬКО из 'planned' — не трогаем уже
+          // отменённые ('cancelled') и уже завершённые ('done'). updateMany с
+          // условием status='planned' идемпотентен: повторный вебхук затронет 0
+          // строк. Откат done→planned руками (PATCH) тоже не перебивается —
+          // повторный meeting.ended на ту же встречу обычно не приходит, а если
+          // и придёт по ретраю — идемпотентность дедупа вебхука его отсечёт.
+          await prisma.session.updateMany({
+            where: { id: session.id, status: 'planned' },
+            data: { status: 'done' },
+          });
         } else if (event === 'recording.completed') {
           await processRecordingForSession({
             sessionId: session.id,

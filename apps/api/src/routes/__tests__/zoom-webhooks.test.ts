@@ -14,7 +14,10 @@ vi.mock('@platform/db', async () => {
     prisma: {
       zoomIntegration: { findUnique: vi.fn() },
       zoomWebhookEvent: { create: vi.fn(), update: vi.fn(() => Promise.resolve({})) },
-      session: { findFirst: vi.fn() },
+      session: {
+        findFirst: vi.fn(),
+        updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
+      },
     },
     Prisma: actual.Prisma,
   };
@@ -98,6 +101,7 @@ beforeEach(() => {
   db.zoomWebhookEvent.create.mockResolvedValue({ id: 'evt-1' });
   db.zoomWebhookEvent.update.mockResolvedValue({});
   db.session.findFirst.mockResolvedValue(null);
+  db.session.updateMany.mockResolvedValue({ count: 1 });
 });
 
 describe('POST /webhooks/zoom/:webhookId — интеграция и конфиг', () => {
@@ -402,6 +406,53 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     // meeting.ended не качает запись и не собирает резюме.
     expect(mockProcessRecording).not.toHaveBeenCalled();
     expect(mockProcessSummary).not.toHaveBeenCalled();
+
+    // meeting.ended авто-переводит занятие в 'done' ТОЛЬКО из 'planned'
+    // (атомарно через updateMany с условием status='planned').
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-99', status: 'planned' },
+      data: { status: 'done' },
+    });
+  });
+
+  it('meeting.ended авто-done идемпотентен: updateMany count=0 (статус уже не planned) не ломает обработку', async () => {
+    db.session.findFirst.mockResolvedValue({
+      id: 'sess-cancelled',
+      streamId: 'stream-1',
+      zoomMeetingId: '444',
+    });
+    // Занятие уже отменено/завершено — условие status='planned' не совпадёт,
+    // updateMany затронет 0 строк (его where и защищает 'cancelled'/'done').
+    db.session.updateMany.mockResolvedValue({ count: 0 });
+
+    const ts = nowTs();
+    const body = JSON.stringify({ event: 'meeting.ended', payload: { object: { id: 444 } } });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    // Запрос на авто-done всё равно делается, но с условием planned — отменённое
+    // занятие (status='planned' не совпадёт) останется нетронутым.
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-cancelled', status: 'planned' },
+      data: { status: 'done' },
+    });
+    // Событие всё равно помечается обработанным (count=0 не считается ошибкой).
+    expect(db.zoomWebhookEvent.update).toHaveBeenCalledWith({
+      where: { id: 'evt-1' },
+      data: { status: 'processed', processedAt: expect.any(Date) },
+    });
   });
 
   it('recording.completed без подходящей Session → 200, обработка не запускается', async () => {
