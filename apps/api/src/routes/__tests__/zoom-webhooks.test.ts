@@ -36,7 +36,10 @@ vi.mock('../../lib/crypto.js', () => ({
 vi.mock('../../lib/zoom-recording.js', () => ({
   processRecordingForSession: vi.fn(() => Promise.resolve()),
   processSummaryForSession: vi.fn(() => Promise.resolve()),
+  processTranscriptForSession: vi.fn(() => Promise.resolve()),
   markRecordingPending: vi.fn(() => Promise.resolve()),
+  markSummaryPending: vi.fn(() => Promise.resolve()),
+  markTranscriptPending: vi.fn(() => Promise.resolve()),
 }));
 
 // Забор посещаемости (B5) на meeting.ended — мокаем: проверяем, что роут ВЫЗЫВАЕТ
@@ -51,7 +54,10 @@ import { decryptSecret, isEncryptionKeySet } from '../../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  processTranscriptForSession,
   markRecordingPending,
+  markSummaryPending,
+  markTranscriptPending,
 } from '../../lib/zoom-recording.js';
 import { pullSessionAttendanceFromZoom } from '../../lib/zoom-attendance.js';
 
@@ -65,7 +71,10 @@ const mockDecrypt = vi.mocked(decryptSecret);
 const mockKeySet = vi.mocked(isEncryptionKeySet);
 const mockProcessRecording = vi.mocked(processRecordingForSession);
 const mockProcessSummary = vi.mocked(processSummaryForSession);
+const mockProcessTranscript = vi.mocked(processTranscriptForSession);
 const mockMarkPending = vi.mocked(markRecordingPending);
+const mockMarkSummaryPending = vi.mocked(markSummaryPending);
+const mockMarkTranscriptPending = vi.mocked(markTranscriptPending);
 const mockPullAttendance = vi.mocked(pullSessionAttendanceFromZoom);
 
 function buildApp(): FastifyInstance {
@@ -407,6 +416,49 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     expect(arg.teacherUserId).toBe(TEACHER_USER_ID);
     expect(arg.payloadFiles).toEqual(recordingFiles);
     expect(mockProcessSummary).not.toHaveBeenCalled();
+    // Фолбэк: recording.completed также пробует забрать транскрипт (вдруг уже есть).
+    expect(mockProcessTranscript).toHaveBeenCalledTimes(1);
+    expect(mockProcessTranscript.mock.calls[0][0].sessionId).toBe('sess-77');
+    expect(mockProcessTranscript.mock.calls[0][0].payloadFiles).toEqual(recordingFiles);
+  });
+
+  it('recording.transcript_completed → вызывает обработку транскрипта для найденной Session', async () => {
+    db.session.findFirst.mockResolvedValue({ id: 'sess-tr' });
+
+    const ts = nowTs();
+    const transcriptFiles = [
+      { file_type: 'TRANSCRIPT', recording_type: 'audio_transcript', download_url: 'https://z/t' },
+    ];
+    const body = JSON.stringify({
+      event: 'recording.transcript_completed',
+      download_token: 'dl-tok',
+      payload: { object: { id: 777, recording_files: transcriptFiles } },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    expect(mockProcessTranscript).toHaveBeenCalledTimes(1);
+    const targ = mockProcessTranscript.mock.calls[0][0];
+    expect(targ.sessionId).toBe('sess-tr');
+    expect(targ.meetingId).toBe('777');
+    expect(targ.teacherUserId).toBe(TEACHER_USER_ID);
+    expect(targ.payloadFiles).toEqual(transcriptFiles);
+    expect(targ.downloadToken).toBe('dl-tok');
+    // Это событие не качает запись и не собирает итоги.
+    expect(mockProcessRecording).not.toHaveBeenCalled();
+    expect(mockProcessSummary).not.toHaveBeenCalled();
   });
 
   it('meeting.summary_completed → вызывает обработку резюме для найденной Session', async () => {
@@ -472,6 +524,11 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     });
     expect(mockMarkPending).toHaveBeenCalledTimes(1);
     expect(mockMarkPending.mock.calls[0][0]).toEqual({ sessionId: 'sess-99' });
+    // meeting.ended также помечает итоги и транскрипт «готовится» (pending).
+    expect(mockMarkSummaryPending).toHaveBeenCalledTimes(1);
+    expect(mockMarkSummaryPending.mock.calls[0][0]).toEqual({ sessionId: 'sess-99' });
+    expect(mockMarkTranscriptPending).toHaveBeenCalledTimes(1);
+    expect(mockMarkTranscriptPending.mock.calls[0][0]).toEqual({ sessionId: 'sess-99' });
     // meeting.ended также запускает забор посещаемости из Zoom (best-effort).
     expect(mockPullAttendance).toHaveBeenCalledTimes(1);
     expect(mockPullAttendance.mock.calls[0][1]).toEqual({

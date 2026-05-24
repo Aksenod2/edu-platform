@@ -254,6 +254,8 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Уроки', method: 'GET', path: '/lessons/:id/sessions', desc: 'Проведения урока (сессии по потокам)' },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/sessions/:streamId', desc: 'Снять урок с расписания потока' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/sessions/:streamId/recording/retry', desc: 'Повторить автозагрузку записи Zoom' },
+  { group: 'Уроки', method: 'POST', path: '/lessons/:id/sessions/:streamId/refresh', desc: 'Обновить из Zoom: запись, итоги, транскрипт, посещаемость' },
+  { group: 'Уроки', method: 'GET', path: '/lessons/:id/sessions/:streamId/transcript', desc: 'Транскрипт занятия (vtt|txt) — препод урока/админ' },
 
   // ─── Задания/сдачи ───────────────────────────────────────────────────────
   { group: 'Задания/сдачи', method: 'GET', path: '/assignments', desc: 'Список заданий' },
