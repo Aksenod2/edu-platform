@@ -40,6 +40,10 @@ export async function userRoutes(app: FastifyInstance) {
         name: true,
         role: true,
         isActive: true,
+        // isDemo отдаём в списке студентов, чтобы фронт пометил демо/служебные аккаунты
+        // бейджем «Демо». Из списка их НЕ скрываем (админ ими управляет) — демо
+        // исключается только из числовых метрик (см. stats.ts, studentsCount и т.п.).
+        isDemo: true,
         balanceKopecks: true,
         createdAt: true,
         inviteToken: true,
@@ -117,6 +121,7 @@ export async function userRoutes(app: FastifyInstance) {
         name: true,
         role: true,
         isActive: true,
+        isDemo: true,
         mustChangePassword: true,
         createdAt: true,
         updatedAt: true,
@@ -140,6 +145,7 @@ export async function userRoutes(app: FastifyInstance) {
       isActive?: boolean;
       name?: string;
       email?: string;
+      isDemo?: boolean;
     };
 
     const existing = await prisma.user.findUnique({ where: { id } });
@@ -154,10 +160,17 @@ export async function userRoutes(app: FastifyInstance) {
       }
     }
 
+    // isDemo (демо/служебный аккаунт): принимаем только булево; такого студента не
+    // списываем (ни регулярно, ни разово) и (в другой задаче) скрываем из статистики.
+    if (body.isDemo !== undefined && typeof body.isDemo !== 'boolean') {
+      return reply.status(400).send({ error: 'isDemo должен быть булевым значением' });
+    }
+
     const data: Record<string, unknown> = {};
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.name) data.name = body.name;
     if (body.email) data.email = body.email;
+    if (body.isDemo !== undefined) data.isDemo = body.isDemo;
 
     // When deactivating, also invalidate all refresh tokens
     if (body.isActive === false) {
@@ -173,6 +186,7 @@ export async function userRoutes(app: FastifyInstance) {
         name: true,
         role: true,
         isActive: true,
+        isDemo: true,
         createdAt: true,
         deletedAt: true,
       },

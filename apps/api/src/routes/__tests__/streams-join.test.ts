@@ -10,11 +10,12 @@ process.env.CORS_ORIGIN = 'https://example.test';
 vi.mock('@platform/db', async () => {
   const actual = await vi.importActual<typeof import('@platform/db')>('@platform/db');
   const tx = {
-    user: { create: vi.fn(), findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
+    // findUnique нужен enrollStudentInStream — он читает isDemo студента (демо не платит).
+    user: { create: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
     streamEnrollment: { create: vi.fn() },
     session: { findMany: vi.fn() },
     studentAssignment: { createMany: vi.fn() },
-    // enrollStudentInStream читает priceKopecks потока через переданный tx-клиент.
+    // enrollStudentInStream читает priceKopecks/billingType потока через переданный tx-клиент.
     stream: { findUnique: vi.fn() },
     charge: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     walletTransaction: { create: vi.fn() },
@@ -274,8 +275,9 @@ describe('POST /public/streams/join/:token — регистрация по сс�
     // Бэкофилл: одна сессия потока с заданием.
     tx.session.findMany.mockResolvedValueOnce([{ id: 'sess-1' }]);
     tx.studentAssignment.createMany.mockResolvedValueOnce({ count: 1 });
-    // Платёжный план не задан (priceKopecks null) → начислений нет.
-    tx.stream.findUnique.mockResolvedValueOnce({ priceKopecks: null });
+    // Платёжный план не задан (priceKopecks null, разовая) → начислений нет.
+    tx.stream.findUnique.mockResolvedValueOnce({ priceKopecks: null, billingType: 'one_time' });
+    tx.user.findUnique.mockResolvedValueOnce({ isDemo: false });
     db.refreshToken.create.mockResolvedValueOnce({ id: 'rt-1' });
 
     const app = buildPublicApp();

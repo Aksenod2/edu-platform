@@ -12,7 +12,10 @@ export async function statsRoutes(app: FastifyInstance) {
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
 
-    const studentBase = { role: 'student' as const, deletedAt: null };
+    // Демо/служебные аккаунты (User.isDemo) исключаем из ВСЕХ метрик дашборда: они
+    // искусственно завышают количество студентов/активных/новых и засоряют списки
+    // «требует внимания». Сам аккаунт рабочий — он виден в ростерах (/users, /streams/:id/students).
+    const studentBase = { role: 'student' as const, deletedAt: null, isDemo: false };
 
     const [
       totalStudents,
@@ -95,7 +98,8 @@ export async function statsRoutes(app: FastifyInstance) {
       prisma.conversation.findMany({
         where: {
           type: 'student',
-          student: { deletedAt: null },
+          // Демо/служебные аккаунты не учитываем и в «неотвеченных тредах» дашборда.
+          student: { deletedAt: null, isDemo: false },
           entries: { some: {} },
         },
         select: {

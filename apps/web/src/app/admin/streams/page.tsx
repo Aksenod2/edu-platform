@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -11,9 +12,11 @@ import {
   archiveStream,
   deleteStream,
   getTeachers,
+  rublesToKopecks,
   type Stream,
   type StreamWithCounts,
   type Teacher,
+  type StreamBillingType,
 } from '@/lib/api';
 import {
   Loader2,
@@ -34,6 +37,13 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -74,6 +84,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { HintCallout } from '@/components/hint-callout';
 
+// Допустимые дни списания для менторских групп (бэк: 1..28).
+const BILLING_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
+
 // Инициалы из имени для аватара преподавателя
 function initials(name: string): string {
   return name
@@ -98,6 +111,12 @@ export default function StreamsPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  // Платёжный план новой группы (опционально). Разовая — цена; ежемесячная —
+  // сумма в месяц + день списания (1..28).
+  const [newBillingType, setNewBillingType] = useState<StreamBillingType>('one_time');
+  const [newPrice, setNewPrice] = useState('');
+  const [newMonthlyPrice, setNewMonthlyPrice] = useState('');
+  const [newBillingDay, setNewBillingDay] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -136,14 +155,54 @@ export default function StreamsPage() {
       .catch(() => {});
   }, [accessToken, user]);
 
+  // Собирает billing-опции новой группы с клиентской валидацией.
+  // Возвращает undefined для «без явного плана» (разовая, цена не указана) и
+  // null, если ввод невалиден (создание прерываем с тостом).
+  const buildNewBilling = ():
+    | Parameters<typeof createStream>[2]
+    | undefined
+    | null => {
+    if (newBillingType === 'monthly') {
+      const monthly = rublesToKopecks(newMonthlyPrice);
+      const day = newBillingDay === '' ? null : Number(newBillingDay);
+      if (monthly === null) {
+        toast.error('Укажите ежемесячную сумму (неотрицательное число)');
+        return null;
+      }
+      if (day === null || !Number.isInteger(day) || day < 1 || day > 28) {
+        toast.error('Выберите день списания (1–28)');
+        return null;
+      }
+      return { billingType: 'monthly', monthlyPriceKopecks: monthly, billingDayOfMonth: day };
+    }
+    // Разовая: цена опциональна. Пусто — план не задаём.
+    if (newPrice.trim() === '') return undefined;
+    const price = rublesToKopecks(newPrice);
+    if (price === null) {
+      toast.error('Укажите цену группы (неотрицательное число)');
+      return null;
+    }
+    return { billingType: 'one_time', priceKopecks: price };
+  };
+
+  const resetCreateForm = () => {
+    setNewName('');
+    setNewBillingType('one_time');
+    setNewPrice('');
+    setNewMonthlyPrice('');
+    setNewBillingDay('');
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !newName.trim()) return;
+    const billing = buildNewBilling();
+    if (billing === null) return; // невалидный план — не создаём
     setCreating(true);
     setError('');
     try {
-      await createStream(accessToken, newName.trim());
-      setNewName('');
+      await createStream(accessToken, newName.trim(), billing);
+      resetCreateForm();
       setShowCreateForm(false);
       await fetchStreams();
     } catch (err) {
@@ -262,6 +321,78 @@ export default function StreamsPage() {
                     required
                   />
                 </Field>
+
+                {/* Тип оплаты (опционально настраивается сразу при создании) */}
+                <Field>
+                  <FieldLabel>Тип оплаты</FieldLabel>
+                  <div className="grid grid-cols-2 gap-2 sm:max-w-sm">
+                    <Button
+                      type="button"
+                      variant={newBillingType === 'one_time' ? 'default' : 'outline'}
+                      aria-pressed={newBillingType === 'one_time'}
+                      onClick={() => setNewBillingType('one_time')}
+                    >
+                      Разовая
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={newBillingType === 'monthly' ? 'default' : 'outline'}
+                      aria-pressed={newBillingType === 'monthly'}
+                      onClick={() => setNewBillingType('monthly')}
+                    >
+                      Ежемесячная
+                    </Button>
+                  </div>
+                </Field>
+
+                {newBillingType === 'one_time' ? (
+                  <Field>
+                    <FieldLabel htmlFor="new-stream-price">Цена группы, ₽</FieldLabel>
+                    <Input
+                      id="new-stream-price"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="1"
+                      value={newPrice}
+                      onChange={(e) => setNewPrice(e.target.value)}
+                      placeholder="Необязательно, например 30000"
+                      className="sm:max-w-xs"
+                    />
+                  </Field>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <Field className="sm:max-w-xs">
+                      <FieldLabel htmlFor="new-stream-monthly">Сумма в месяц, ₽</FieldLabel>
+                      <Input
+                        id="new-stream-monthly"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="1"
+                        value={newMonthlyPrice}
+                        onChange={(e) => setNewMonthlyPrice(e.target.value)}
+                        placeholder="Например, 10000"
+                      />
+                    </Field>
+                    <Field className="sm:w-40">
+                      <FieldLabel htmlFor="new-stream-day">День списания</FieldLabel>
+                      <Select value={newBillingDay} onValueChange={setNewBillingDay}>
+                        <SelectTrigger id="new-stream-day" className="w-full">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BILLING_DAYS.map((d) => (
+                            <SelectItem key={d} value={String(d)}>
+                              {d}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                )}
+
                 <Field>
                   <Button
                     type="submit"

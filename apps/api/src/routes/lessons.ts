@@ -1648,7 +1648,11 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     // Знаменатель — состав потока (StreamEnrollment), а не материализованные
     // назначения: назначения могут быть ещё не созданы для всех зачисленных.
-    const enrolledCount = await prisma.streamEnrollment.count({ where: { streamId } });
+    // Демо/служебные аккаунты (User.isDemo) исключаем из знаменателя, иначе
+    // notSubmittedCount завысится на демо-учеников (они не портят статистику сдач).
+    const enrolledCount = await prisma.streamEnrollment.count({
+      where: { streamId, user: { isDemo: false } },
+    });
 
     // Распределение материализованных StudentAssignment этого занятия по статусам.
     const grouped = await prisma.studentAssignment.groupBy({
@@ -2202,7 +2206,10 @@ async function notifyEnrolledLessonCancelled(
 // records (их можно привязать через /match).
 async function buildAttendanceSummary(sessionId: string, streamId: string) {
   const [enrolledCount, records] = await Promise.all([
-    prisma.streamEnrollment.count({ where: { streamId } }),
+    // «Всего в группе» — без демо/служебных аккаунтов (User.isDemo), чтобы знаменатель
+    // совпадал со статистикой и present+absent не превышали enrolled (демо-присутствие
+    // также исключаем из present/absent ниже).
+    prisma.streamEnrollment.count({ where: { streamId, user: { isDemo: false } } }),
     prisma.sessionAttendance.findMany({
       where: { sessionId },
       select: {
@@ -2217,7 +2224,9 @@ async function buildAttendanceSummary(sessionId: string, streamId: string) {
         leftAt: true,
         durationSec: true,
         updatedAt: true,
-        user: { select: { name: true } },
+        // isDemo — чтобы исключить демо-учеников из present/absent (они не учитываются
+        // в статистике). В сам список records они при этом попадают (админ их видит).
+        user: { select: { name: true, isDemo: true } },
       },
       orderBy: { createdAt: 'asc' },
     }),
@@ -2239,6 +2248,11 @@ async function buildAttendanceSummary(sessionId: string, streamId: string) {
     }
     if (!r.userId) {
       unmatchedCount += 1;
+      continue;
+    }
+    // Демо/служебные ученики не учитываются в статистике present/absent (как и в
+    // enrolledCount). Сам ряд при этом остаётся в records — админ видит его.
+    if (r.user?.isDemo) {
       continue;
     }
     const isManual = r.source === 'manual';

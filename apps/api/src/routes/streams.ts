@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { prisma, Prisma } from '@platform/db';
+import { prisma, Prisma, type StreamBillingType } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import {
   deriveStreamTeachers,
@@ -8,6 +8,115 @@ import {
 } from '../lib/stream-teachers.js';
 import { enrollStudentInStreamTx } from '../lib/stream-enroll.js';
 import { isNonNegativeInt, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
+
+// День месяца для месячного списания: 1..28 (29–31 не допускаем во вводе — короткие
+// месяцы делают их неоднозначными; cron всё равно клампит, но на вводе требуем 1..28).
+const MIN_BILLING_DAY = 1;
+const MAX_BILLING_DAY = 28;
+
+// Поля плана биллинга группы из тела запроса (create/update).
+interface BillingInput {
+  billingType?: unknown;
+  monthlyPriceKopecks?: unknown;
+  billingDayOfMonth?: unknown;
+}
+
+// Нормализованный план биллинга для записи в Stream (только заданные ключи).
+interface BillingFields {
+  billingType?: StreamBillingType;
+  monthlyPriceKopecks?: number | null;
+  billingDayOfMonth?: number | null;
+}
+
+/**
+ * Валидирует и нормализует поля плана биллинга группы. Возвращает либо набор полей для
+ * записи (только присутствующие во вводе ключи), либо текст ошибки 400.
+ *
+ * Правила: billingType ∈ {one_time, monthly}; для monthly billingDayOfMonth обязателен и
+ * 1..28, monthlyPriceKopecks ≥ 0 (целое, ≤ потолка). `existing` — текущий тип группы (для
+ * PATCH, где billingType может не передаваться, но проверить инварианты надо).
+ *
+ * «Либо/либо»: при monthly разовая ветка зачисления не срабатывает (см. stream-enroll.ts),
+ * поэтому priceKopecks для monthly-группы остаётся справочным и здесь не трогается.
+ */
+function parseBilling(
+  body: BillingInput,
+  existing?: { billingType: StreamBillingType },
+): { fields: BillingFields } | { error: string } {
+  const fields: BillingFields = {};
+
+  // billingType (если передан) — строго из enum.
+  if (body.billingType !== undefined) {
+    if (body.billingType !== 'one_time' && body.billingType !== 'monthly') {
+      return { error: 'Тип биллинга должен быть one_time или monthly' };
+    }
+    fields.billingType = body.billingType;
+  }
+
+  // monthlyPriceKopecks (если передан) — целое 0..MAX (или null = снять сумму).
+  if (body.monthlyPriceKopecks !== undefined) {
+    if (body.monthlyPriceKopecks === null) {
+      fields.monthlyPriceKopecks = null;
+    } else if (!isNonNegativeInt(body.monthlyPriceKopecks)) {
+      return { error: 'Месячная сумма должна быть целым числом копеек не меньше нуля' };
+    } else if (body.monthlyPriceKopecks > MAX_AMOUNT_KOPECKS) {
+      return { error: 'Месячная сумма слишком большая' };
+    } else {
+      fields.monthlyPriceKopecks = body.monthlyPriceKopecks;
+    }
+  }
+
+  // billingDayOfMonth (если передан) — целое 1..28 (или null = снять день).
+  if (body.billingDayOfMonth !== undefined) {
+    if (body.billingDayOfMonth === null) {
+      fields.billingDayOfMonth = null;
+    } else if (
+      typeof body.billingDayOfMonth !== 'number' ||
+      !Number.isInteger(body.billingDayOfMonth) ||
+      body.billingDayOfMonth < MIN_BILLING_DAY ||
+      body.billingDayOfMonth > MAX_BILLING_DAY
+    ) {
+      return { error: 'День списания должен быть целым числом от 1 до 28' };
+    } else {
+      fields.billingDayOfMonth = body.billingDayOfMonth;
+    }
+  }
+
+  // Итоговый тип группы после применения изменений (для проверки инвариантов monthly).
+  const effectiveType = fields.billingType ?? existing?.billingType ?? 'one_time';
+
+  if (effectiveType === 'monthly') {
+    // Итоговый день и сумма с учётом текущих значений (для PATCH, где поле могло не прийти).
+    const effectiveDay =
+      body.billingDayOfMonth !== undefined ? fields.billingDayOfMonth : undefined;
+    const effectivePrice =
+      body.monthlyPriceKopecks !== undefined ? fields.monthlyPriceKopecks : undefined;
+
+    // При СОЗДАНИИ monthly (existing нет) день обязателен и сумма обязательна (≥0).
+    if (!existing) {
+      if (fields.billingDayOfMonth == null) {
+        return { error: 'Для ежемесячного биллинга укажите день списания (1–28)' };
+      }
+      if (fields.monthlyPriceKopecks == null) {
+        return { error: 'Для ежемесячного биллинга укажите месячную сумму' };
+      }
+    } else {
+      // При ОБНОВЛЕНИИ: если поле пришло — оно не должно обнулять обязательные значения.
+      if (effectiveDay === null) {
+        return { error: 'Для ежемесячного биллинга укажите день списания (1–28)' };
+      }
+      if (effectivePrice === null) {
+        return { error: 'Для ежемесячного биллинга укажите месячную сумму' };
+      }
+      // Переключение на monthly при PATCH без передачи дня — требуем явно задать день.
+      if (fields.billingType === 'monthly' && body.billingDayOfMonth === undefined) {
+        return { error: 'Для ежемесячного биллинга укажите день списания (1–28)' };
+      }
+    }
+  }
+
+  return { fields };
+}
 
 // Публичный токен инвайт-ссылки: 32 случайных байта в base64url (URL-safe).
 function generateJoinToken(): string {
@@ -45,7 +154,13 @@ export async function streamRoutes(app: FastifyInstance) {
         : mine
           ? { ownerId: request.user!.userId }
           : {},
-      include: { ...streamTeachersInclude, _count: { select: { enrollments: true } } },
+      include: {
+        ...streamTeachersInclude,
+        // studentsCount — без демо/служебных аккаунтов (User.isDemo): они портят
+        // счётчик количества учеников. Сами демо-зачисления остаются в группе и
+        // видны в ростере GET /streams/:id/students.
+        _count: { select: { enrollments: { where: { user: { isDemo: false } } } } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     return {
@@ -70,17 +185,18 @@ export async function streamRoutes(app: FastifyInstance) {
   // programId опционален: с ним поток привязан к программе, без него —
   // менторский поток (уроки набираются через сессии).
   app.post('/streams', { onRequest: adminOnly }, async (request, reply) => {
-    const { name, programId, priceKopecks } = request.body as {
+    const body = request.body as {
       name: string;
       programId?: string | null;
       priceKopecks?: number | null;
-    };
+    } & BillingInput;
+    const { name, programId, priceKopecks } = body;
 
     if (!name || !name.trim()) {
       return reply.status(400).send({ error: 'Название группы обязательно' });
     }
 
-    // Цена группы (платёжный план): null/undefined = план не задан; иначе целое ≥ 0.
+    // Цена группы (РАЗОВАЯ, billingType=one_time): null/undefined = план не задан; иначе целое ≥ 0.
     if (priceKopecks !== undefined && priceKopecks !== null) {
       if (!isNonNegativeInt(priceKopecks)) {
         return reply
@@ -91,6 +207,12 @@ export async function streamRoutes(app: FastifyInstance) {
       if (priceKopecks > MAX_AMOUNT_KOPECKS) {
         return reply.status(400).send({ error: 'Цена слишком большая' });
       }
+    }
+
+    // План биллинга (monthly): тип/сумма/день — валидируем и нормализуем общим хелпером.
+    const billing = parseBilling(body);
+    if ('error' in billing) {
+      return reply.status(400).send({ error: billing.error });
     }
 
     // Если задана программа — проверяем, что она существует.
@@ -111,6 +233,7 @@ export async function streamRoutes(app: FastifyInstance) {
         ownerId: request.user!.userId,
         ...(programId !== undefined && programId !== null && { programId }),
         ...(priceKopecks !== undefined && { priceKopecks }),
+        ...billing.fields,
       },
     });
 
@@ -120,12 +243,13 @@ export async function streamRoutes(app: FastifyInstance) {
   // PATCH /streams/:id — обновление потока (название и/или ведущий)
   app.patch('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { name, ownerId, programId, priceKopecks } = request.body as {
+    const body = request.body as {
       name?: string;
       ownerId?: string | null;
       programId?: string | null;
       priceKopecks?: number | null;
-    };
+    } & BillingInput;
+    const { name, ownerId, programId, priceKopecks } = body;
 
     const existing = await prisma.stream.findUnique({ where: { id } });
     if (!existing) {
@@ -149,6 +273,13 @@ export async function streamRoutes(app: FastifyInstance) {
       if (priceKopecks > MAX_AMOUNT_KOPECKS) {
         return reply.status(400).send({ error: 'Цена слишком большая' });
       }
+    }
+
+    // План биллинга (monthly): тип/сумма/день — валидация с учётом текущего типа группы.
+    // Уже созданные месячные Charge не пересчитываем (цена/период зафиксированы).
+    const billing = parseBilling(body, { billingType: existing.billingType });
+    if ('error' in billing) {
+      return reply.status(400).send({ error: billing.error });
     }
 
     // Если задаётся ведущий — проверяем, что это существующий администратор.
@@ -181,6 +312,7 @@ export async function streamRoutes(app: FastifyInstance) {
         ...(ownerId !== undefined && { ownerId }),
         ...(programId !== undefined && { programId }),
         ...(priceKopecks !== undefined && { priceKopecks }),
+        ...billing.fields,
       },
     });
 
@@ -196,7 +328,12 @@ export async function streamRoutes(app: FastifyInstance) {
       include: {
         _count: {
           // Stream больше не владеет уроками — считаем сессии (фолбэк для менторских).
-          select: { enrollments: true, sessions: true },
+          // enrollments — без демо/служебных (User.isDemo): демо не учитывается в
+          // счётчике учеников группы (но остаётся в ростере).
+          select: {
+            enrollments: { where: { user: { isDemo: false } } },
+            sessions: true,
+          },
         },
         owner: { select: { id: true, name: true } },
         sessions: streamTeacherSourcesInclude.sessions,
@@ -247,7 +384,10 @@ export async function streamRoutes(app: FastifyInstance) {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+          // isDemo отдаём в ростере, чтобы фронт пометил демо/служебные аккаунты
+          // бейджем «Демо». Демо-студентов из СПИСКА НЕ скрываем (админ управляет ими),
+          // исключаются они только из ЧИСЛОВЫХ счётчиков (studentsCount и т.п.).
+          select: { id: true, name: true, email: true, isActive: true, isDemo: true, createdAt: true },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -258,21 +398,27 @@ export async function streamRoutes(app: FastifyInstance) {
   });
 
   // GET /streams/:id/charges — статус оплаты по студентам группы (admin).
-  // Для каждого зачисленного студента: его начисление за эту группу (если есть) и
-  // статус оплаты — paid (оплачено) / partial (частично) / unpaid (должен) / none (нет
-  // начисления). Только админ (финансы группы видит админ).
+  //
+  // Долг считаем АГРЕГАТОМ по ВСЕМ открытым начислениям студента в этой группе (а не по
+  // «последнему» начислению): для месячных групп у студента несколько Charge по периодам,
+  // и долг — это сумма (amount−paid) по всем open. paymentStatus и outstandingKopecks
+  // отражают суммарную задолженность; периоды отдаём списком (periods) — фронт может
+  // показать детализацию и отличить месячные начисления по kind. Только админ.
+  //
+  // Совместимость с разовыми группами: при одном начислении агрегатные amountKopecks/
+  // paidKopecks/outstandingKopecks совпадают с одиночными значениями (форма не ломается).
   app.get('/streams/:id/charges', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const stream = await prisma.stream.findUnique({
       where: { id },
-      select: { id: true, priceKopecks: true },
+      select: { id: true, priceKopecks: true, billingType: true, monthlyPriceKopecks: true },
     });
     if (!stream) {
       return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
-    // Зачисленные студенты (без soft-deleted) + их начисления именно за эту группу.
+    // Зачисленные студенты (без soft-deleted) + ВСЕ их начисления именно за эту группу.
     const enrollments = await prisma.streamEnrollment.findMany({
       where: { streamId: id, user: { deletedAt: null } },
       include: {
@@ -289,6 +435,8 @@ export async function streamRoutes(app: FastifyInstance) {
                 amountKopecks: true,
                 paidKopecks: true,
                 status: true,
+                kind: true,
+                periodKey: true,
               },
             },
           },
@@ -298,14 +446,25 @@ export async function streamRoutes(app: FastifyInstance) {
     });
 
     const students = enrollments.map((e) => {
-      // Берём самое свежее начисление по группе (обычно одно открытое или одно paid).
-      const charge = e.user.charges[0] ?? null;
+      const charges = e.user.charges;
+
+      // Агрегаты по всем начислениям студента в этой группе.
+      const totalAmount = charges.reduce((s, c) => s + c.amountKopecks, 0);
+      const totalPaid = charges.reduce((s, c) => s + c.paidKopecks, 0);
+      // Долг — только по ОТКРЫТЫМ (amount−paid); refunded/paid не считаем.
+      const outstandingKopecks = charges.reduce(
+        (s, c) => (c.status === 'open' ? s + (c.amountKopecks - c.paidKopecks) : s),
+        0,
+      );
+
       let paymentStatus: 'paid' | 'partial' | 'unpaid' | 'none';
-      if (!charge) {
+      if (charges.length === 0) {
         paymentStatus = 'none';
-      } else if (charge.status === 'paid') {
+      } else if (outstandingKopecks <= 0) {
+        // Долга нет — всё, что начислено, погашено (или возвращено).
         paymentStatus = 'paid';
-      } else if (charge.paidKopecks > 0) {
+      } else if (totalPaid > 0) {
+        // Есть долг, но что-то уже оплачено — частично.
         paymentStatus = 'partial';
       } else {
         paymentStatus = 'unpaid';
@@ -315,14 +474,32 @@ export async function streamRoutes(app: FastifyInstance) {
         id: e.user.id,
         name: e.user.name,
         email: e.user.email,
-        amountKopecks: charge?.amountKopecks ?? null,
-        paidKopecks: charge?.paidKopecks ?? null,
-        status: charge?.status ?? null,
+        // Агрегатные суммы по всем начислениям (для разовой группы = одиночные значения).
+        amountKopecks: charges.length > 0 ? totalAmount : null,
+        paidKopecks: charges.length > 0 ? totalPaid : null,
+        outstandingKopecks,
+        // status — свежайшего начисления (совместимость с разовыми); истину о долге
+        // несут outstandingKopecks/paymentStatus (у месячных единого статуса нет).
+        status: charges[0]?.status ?? null,
         paymentStatus,
+        // Детализация по периодам (для месячных): фронт отличает их по kind/periodKey.
+        periods: charges.map((c) => ({
+          id: c.id,
+          amountKopecks: c.amountKopecks,
+          paidKopecks: c.paidKopecks,
+          status: c.status,
+          kind: c.kind,
+          periodKey: c.periodKey,
+        })),
       };
     });
 
-    return { priceKopecks: stream.priceKopecks, students };
+    return {
+      priceKopecks: stream.priceKopecks,
+      billingType: stream.billingType,
+      monthlyPriceKopecks: stream.monthlyPriceKopecks,
+      students,
+    };
   });
 
   // POST /streams/:id/students — зачисление студентов (admin)
@@ -364,7 +541,10 @@ export async function streamRoutes(app: FastifyInstance) {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+          // isDemo отдаём в ростере, чтобы фронт пометил демо/служебные аккаунты
+          // бейджем «Демо». Демо-студентов из СПИСКА НЕ скрываем (админ управляет ими),
+          // исключаются они только из ЧИСЛОВЫХ счётчиков (studentsCount и т.п.).
+          select: { id: true, name: true, email: true, isActive: true, isDemo: true, createdAt: true },
         },
       },
       orderBy: { createdAt: 'asc' },

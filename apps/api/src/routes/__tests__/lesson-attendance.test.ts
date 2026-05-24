@@ -104,7 +104,7 @@ describe('GET /lessons/:id/attendance — сводка посещаемости'
         leftAt: new Date('2026-05-24T11:00:00Z'),
         durationSec: 3600,
         updatedAt: new Date('2026-05-24T12:00:00Z'),
-        user: { name: 'Иван Петров' },
+        user: { name: 'Иван Петров', isDemo: false },
       },
       {
         // Ручная отметка absent у того же студента — должна перебить zoom present.
@@ -118,7 +118,7 @@ describe('GET /lessons/:id/attendance — сводка посещаемости'
         leftAt: null,
         durationSec: null,
         updatedAt: new Date('2026-05-24T13:00:00Z'),
-        user: { name: 'Иван Петров' },
+        user: { name: 'Иван Петров', isDemo: false },
       },
       {
         // Несопоставленный гость.
@@ -166,6 +166,70 @@ describe('GET /lessons/:id/attendance — сводка посещаемости'
     expect(db.session.findUnique.mock.calls[0][0].where).toEqual({
       streamId_lessonId: { streamId: 'stream-1', lessonId: 'lesson-1' },
     });
+    // «Всего в группе» считается БЕЗ демо/служебных аккаунтов (User.isDemo).
+    expect(db.streamEnrollment.count.mock.calls[0][0].where).toEqual({
+      streamId: 'stream-1',
+      user: { isDemo: false },
+    });
+  });
+
+  it('admin: демо-ученик исключён из present/absent, но остаётся в records', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    // enrolledCount уже без демо (фильтр user.isDemo=false проверяем отдельно): 2.
+    db.streamEnrollment.count.mockResolvedValueOnce(2);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([
+      {
+        // Обычный ученик — присутствовал.
+        id: 'a1',
+        userId: 'u1',
+        source: 'zoom_report',
+        status: 'present',
+        isHost: false,
+        displayName: 'Иван',
+        email: 'ivan@x.ru',
+        joinedAt: null,
+        leftAt: null,
+        durationSec: 3600,
+        updatedAt: new Date('2026-05-24T12:00:00Z'),
+        user: { name: 'Иван', isDemo: false },
+      },
+      {
+        // Демо/служебный ученик — присутствовал, но НЕ должен попасть в present.
+        id: 'a-demo',
+        userId: 'u-demo',
+        source: 'zoom_report',
+        status: 'present',
+        isHost: false,
+        displayName: 'Демо',
+        email: 'demo@x.ru',
+        joinedAt: null,
+        leftAt: null,
+        durationSec: 3600,
+        updatedAt: new Date('2026-05-24T12:30:00Z'),
+        user: { name: 'Демо Аккаунт', isDemo: true },
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/lessons/lesson-1/attendance?streamId=stream-1',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.enrolledCount).toBe(2);
+    // Демо-присутствие не учтено: present=1 (только обычный ученик), absent=0.
+    expect(body.presentCount).toBe(1);
+    expect(body.absentCount).toBe(0);
+    // present не превышает enrolled (инвариант сохранён).
+    expect(body.presentCount + body.absentCount).toBeLessThanOrEqual(body.enrolledCount);
+    // Но сам ряд демо-ученика остаётся в списке records — админ его видит.
+    const demoRecord = body.records.find((r: { id: string }) => r.id === 'a-demo');
+    expect(demoRecord).toBeDefined();
+    expect(demoRecord).toMatchObject({ userId: 'u-demo', studentName: 'Демо Аккаунт' });
+    expect(body.records).toHaveLength(2);
   });
 
   it('admin: ряд хоста отдаётся с isHost=true и исключён из счётчика гостей', async () => {
