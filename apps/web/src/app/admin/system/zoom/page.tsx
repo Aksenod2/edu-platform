@@ -252,24 +252,63 @@ export default function ZoomIntegrationPage() {
                   <span className="font-medium">App Credentials</span>.
                 </li>
                 <li>
-                  На вкладке <span className="font-medium">Scopes</span> добавьте два права:{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    meeting:write:meeting:admin
-                  </code>{' '}
-                  (создание встреч) и{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    user:read:user:admin
-                  </code>{' '}
-                  (проверка подключения). Если в приложении старый формат scope&apos;ов —
-                  используйте эквиваленты{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    meeting:write:admin
-                  </code>{' '}
-                  и{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    user:read:admin
-                  </code>
-                  .
+                  На вкладке <span className="font-medium">Scopes</span> добавьте права (если в
+                  приложении старый формат scope&apos;ов — используйте классические эквиваленты в
+                  скобках; в поиске Scopes удобно искать по ключевому слову):
+                  <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 marker:text-muted-foreground">
+                    <li>
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        meeting:write:meeting:admin
+                      </code>{' '}
+                      (
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        meeting:write:admin
+                      </code>
+                      ) — создание встреч.
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        user:read:user:admin
+                      </code>{' '}
+                      (
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        user:read:admin
+                      </code>
+                      ) — проверка подключения.
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        cloud_recording:read:list_recording_files:admin
+                      </code>{' '}
+                      (
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        recording:read:admin
+                      </code>
+                      ) — запись урока и дословный транскрипт.
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        report:read:list_meeting_participants:admin
+                      </code>{' '}
+                      (
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        report:read:admin
+                      </code>
+                      ) — посещаемость (участники встречи).
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        meeting:read:summary:admin
+                      </code>{' '}
+                      — итоги занятия (AI-резюме). Если такого нет — найдите в списке Scopes по
+                      слову <span className="font-medium">summary</span> (для AI Companion может
+                      называться{' '}
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                        meeting_summary:read:admin
+                      </code>
+                      ).
+                    </li>
+                  </ul>
                 </li>
                 <li>
                   Нажмите <span className="font-medium">Activate</span>, чтобы активировать
@@ -513,9 +552,21 @@ export default function ZoomIntegrationPage() {
                   вставьте Webhook URL выше.
                 </li>
                 <li>
-                  Подпишитесь на события{' '}
-                  <span className="font-medium">«Recording Completed»</span> и{' '}
-                  <span className="font-medium">«Meeting Summary Completed»</span>.
+                  Подпишитесь на события:{' '}
+                  <span className="font-medium">«Meeting Started»</span> (статус «Идёт»),{' '}
+                  <span className="font-medium">«Meeting Ended»</span> (авто-«Проведён» и
+                  посещаемость),{' '}
+                  <span className="font-medium">«Recording Completed»</span> (запись),{' '}
+                  <span className="font-medium">«Recording Transcript Completed»</span> (транскрипт)
+                  и <span className="font-medium">«Meeting Summary Completed»</span> (итоги).
+                </li>
+                <li>
+                  В <span className="font-medium">настройках аккаунта Zoom</span> включите{' '}
+                  <span className="font-medium">AI Companion → Meeting Summary</span> (итоги) и{' '}
+                  <span className="font-medium">Cloud recording → Audio transcript</span>{' '}
+                  (транскрипт), и задайте{' '}
+                  <span className="font-medium">язык транскрибации — русский</span>. Без этого Zoom
+                  не формирует итоги и транскрипт, и они не подтянутся.
                 </li>
                 <li>
                   Скопируйте показанный Zoom{' '}
