@@ -227,44 +227,56 @@ export default function StudentBalancePage() {
         </div>
       ) : (
         <div className="mt-4 flex flex-col gap-6">
-          {/* Текущий баланс */}
-          <Card>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                <Wallet className="size-5 text-muted-foreground" />
-                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                  Текущий баланс
-                </span>
-              </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">
-                {formatKopecks(balanceKopecks ?? 0)}
-              </p>
-            </CardContent>
-          </Card>
+          {/* Баланс + заметная плашка «К оплате» рядом, чтобы долг был на виду. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Текущий баланс */}
+            <Card>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Wallet className="size-5 text-muted-foreground" />
+                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                    Текущий баланс
+                  </span>
+                </div>
+                <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">
+                  {formatKopecks(balanceKopecks ?? 0)}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Долг: заметно при наличии (акцент через destructive-токены), спокойно — когда чисто. */}
+            {outstandingKopecks > 0 ? (
+              <Card className="border-destructive/40 bg-destructive/10">
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    <TriangleAlert className="size-5 text-destructive" />
+                    <span className="font-mono text-xs uppercase tracking-wider text-destructive">
+                      К оплате
+                    </span>
+                  </div>
+                  <p className="mt-2 text-3xl font-bold tabular-nums text-destructive">
+                    {formatKopecks(outstandingKopecks)}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="size-5 text-muted-foreground" />
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      К оплате
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">Задолженности нет</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
 
           {/* Начисления по группам (платёжный план). Показываем только если есть. */}
           {charges.length > 0 && (
             <section className="flex flex-col gap-3">
-              {/* Заметная плашка общего долга — нейтрально-предупреждающе, без блокировок */}
-              {outstandingKopecks > 0 ? (
-                <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-                  <TriangleAlert className="size-5 shrink-0 text-destructive" />
-                  <div className="flex flex-col">
-                    <span className="text-sm text-muted-foreground">К оплате по группам</span>
-                    <span className="text-xl font-bold tabular-nums text-destructive">
-                      {formatKopecks(outstandingKopecks)}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-4">
-                  <CheckCircle2 className="size-5 shrink-0 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Задолженности по группам нет.
-                  </span>
-                </div>
-              )}
-
               <Card>
                 <CardHeader>
                   <CardTitle>По группам</CardTitle>

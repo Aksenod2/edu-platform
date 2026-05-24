@@ -133,7 +133,7 @@ export function AppSidebar({
   const { isMobile, setOpenMobile } = useSidebar();
   const nav = role === 'admin' ? ADMIN_NAV : STUDENT_NAV;
   const rootHref = role === 'admin' ? '/admin' : '/dashboard';
-  const pendingTopups = usePendingTopupsCount(role === 'admin');
+  const pendingTopups = usePendingTopupsCount(role === 'admin', pathname);
 
   function closeOnMobile() {
     if (isMobile) setOpenMobile(false);
@@ -201,26 +201,53 @@ export function AppSidebar({
   );
 }
 
+// Как часто мягко обновлять счётчик pending-заявок фоновым опросом.
+const PENDING_TOPUPS_POLL_MS = 45_000;
+
 // Число заявок на пополнение «на рассмотрении» — для бейджа в сайдбаре.
 // Дозапрашиваем точечно (status=pending); тихо игнорируем ошибки — бейдж необязателен.
-function usePendingTopupsCount(enabled: boolean): number {
+// Авто-обновление без перезагрузки страницы: при смене маршрута (pathname),
+// мягким polling'ом и при возврате фокуса/видимости вкладки — чтобы бейдж не
+// «застревал» после модерации или создания заявки.
+function usePendingTopupsCount(enabled: boolean, pathname: string): number {
   const { accessToken } = useAuth();
   const [count, setCount] = useState(0);
 
   useEffect(() => {
     if (!enabled || !accessToken) return;
+
     let active = true;
-    getAdminTopUpRequests(accessToken, 'pending')
-      .then((data) => {
-        if (active) setCount(data.requests.length);
-      })
-      .catch(() => {
-        /* бейдж необязателен — молча игнорируем */
-      });
+
+    const refresh = () => {
+      getAdminTopUpRequests(accessToken, 'pending')
+        .then((data) => {
+          if (active) setCount(data.requests.length);
+        })
+        .catch(() => {
+          /* бейдж необязателен — молча игнорируем */
+        });
+    };
+
+    refresh();
+
+    const interval = setInterval(refresh, PENDING_TOPUPS_POLL_MS);
+
+    // Возврат на вкладку — повод сразу освежить счётчик.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refresh);
+
     return () => {
       active = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refresh);
     };
-  }, [enabled, accessToken]);
+    // pathname в зависимостях: переход по разделам пересоздаёт эффект и
+    // мгновенно перезапрашивает счётчик (в т.ч. после модерации на /admin/topups).
+  }, [enabled, accessToken, pathname]);
 
   return count;
 }
