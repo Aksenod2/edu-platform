@@ -667,6 +667,12 @@ export interface Lesson {
   recordingFileUrl?: string | null;
   // Источник итогов занятия: 'zoom_ai' (AI Companion) | 'manual' (ввёл преподаватель).
   summarySource?: string | null;
+  // Статус формирования итогов Zoom AI: none | pending | processing | ready | failed.
+  // Виден всем; для студенческой страницы управляет состоянием блока «Итоги».
+  summaryStatus?: string | null;
+  // Статус/ошибка транскрипта — ОПЦИОНАЛЬНЫ (только в препод/админ-проекции; у студента нет).
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
 }
 
 export async function getLessons(
@@ -972,6 +978,14 @@ export interface LessonSession {
   summarySource?: string | null;
   recordingStatus?: string | null;
   recordingError?: string | null;
+  // Статус формирования итогов Zoom AI: none | pending | processing | ready | failed.
+  // Виден ВСЕМ (включая студента) — управляет состоянием блока «Итоги занятия».
+  summaryStatus?: string | null;
+  // Статус и ошибка транскрипта. ОПЦИОНАЛЬНЫ: бэк отдаёт эти поля ТОЛЬКО
+  // админу/преподу урока; у студента их нет вовсе. Наличие transcriptStatus в
+  // объекте = признак того, что получатель админ/препод (по нему гейтим блок).
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
   // Запись Zoom-занятия (разведена с учебным видео урока): внешняя ссылка
   // (recordingVideoUrl) или подписанный URL загруженного файла (recordingFileUrl).
   recordingFileUrl?: string | null;
@@ -1149,6 +1163,55 @@ export async function retrySessionRecording(
 ): Promise<{ status: string; message: string }> {
   return request(`/lessons/${lessonId}/sessions/${streamId}/recording/retry`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Результат одного шага единой подтяжки из Zoom: ok + причина неуспеха (если есть).
+export interface ZoomRefreshStep {
+  ok: boolean;
+  reason?: string;
+}
+
+// Частичный результат единой ручной подтяжки занятия из Zoom (запись + итоги +
+// транскрипт + посещаемость). Каждый шаг независим: какие-то могут получиться,
+// какие-то — нет (с reason). Только admin/препод урока.
+export interface ZoomRefreshResult {
+  recording: ZoomRefreshStep;
+  summary: ZoomRefreshStep;
+  transcript: ZoomRefreshStep;
+  attendance: ZoomRefreshStep;
+}
+
+// Единая ручная подтяжка занятия из Zoom: запускает и ДОЖИДАЕТСЯ всех шагов
+// (запись/итоги/транскрипт/посещаемость), возвращает частичный результат по каждому.
+export async function refreshSessionFromZoom(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<ZoomRefreshResult> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}/refresh`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Транскрипт занятия в нужном формате. Возвращает подписанную ссылку на тело
+// (url) + статус. Доступно только преподу/админу урока (студенту — 403).
+export interface TranscriptResponse {
+  format: 'vtt' | 'txt';
+  url: string;
+  status: string;
+}
+
+export async function fetchTranscript(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+  format: 'vtt' | 'txt',
+): Promise<TranscriptResponse> {
+  const qs = new URLSearchParams({ format }).toString();
+  return request(`/lessons/${lessonId}/sessions/${streamId}/transcript?${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

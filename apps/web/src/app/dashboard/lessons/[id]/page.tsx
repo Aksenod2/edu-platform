@@ -37,6 +37,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { MaterialRow } from '@/components/material-row';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
@@ -333,11 +334,14 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {/* Итоги занятия: если у summary есть источник (zoom_ai/manual) — это итоги
-              конкретного занятия, показываем отдельным блоком с бейджем источника.
-              Иначе (легаси/блочное описание без источника) — прежний абзац. */}
-          {lesson.summary &&
-            (lesson.summarySource ? (
+          {/* Итоги занятия. Если есть текст summary:
+                - с источником (zoom_ai/manual) → блок-карточка с бейджем;
+                - без источника (легаси/блочное описание) → прежний абзац.
+              Если текста нет, но статус формирования итогов уже идёт
+              (pending/processing/failed) → показываем состояние (без кнопок —
+              ручную подтяжку студент не делает). status='none'/нет Zoom — ничего. */}
+          {lesson.summary ? (
+            lesson.summarySource ? (
               <Card>
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -353,7 +357,38 @@ export default function StudentLessonPage() {
               </Card>
             ) : (
               <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
-            ))}
+            )
+          ) : (
+            (lesson.summaryStatus === 'pending' ||
+              lesson.summaryStatus === 'processing' ||
+              lesson.summaryStatus === 'failed') && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Итоги занятия</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {lesson.summaryStatus === 'processing' ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm text-muted-foreground">
+                        Zoom формирует итоги занятия — обычно это занимает несколько минут.
+                      </p>
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-11/12" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </div>
+                  ) : lesson.summaryStatus === 'failed' ? (
+                    <p className="text-sm text-muted-foreground">
+                      Итоги по этому занятию пока недоступны.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Занятие завершилось — итоги появятся здесь, как только Zoom их сформирует.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          )}
 
           {/* Материалы урока (PDF/MD) */}
           {lesson.materials && lesson.materials.length > 0 && (

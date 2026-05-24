@@ -8,12 +8,16 @@ import {
   CalendarClock,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Clock,
+  Download,
   ExternalLink,
   FileText,
   GraduationCap,
   Loader2,
+  RefreshCw,
+  ScrollText,
   Tag,
   Users,
   Video,
@@ -26,6 +30,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Field, FieldLabel } from '@/components/ui/field';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -44,15 +53,20 @@ import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-se
 import { LessonAttendanceSection } from '@/components/lessons/lesson-attendance-section';
 import { parseVideoEmbed } from '@/lib/video-embed';
 import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
+import { cn } from '@platform/ui/lib/utils';
 import {
   createAssignment,
+  fetchTranscript,
+  fileDownloadUrl,
   getAssignments,
   getLesson,
   getLessonSessions,
+  refreshSessionFromZoom,
   type Assignment,
   type Lesson,
   type LessonSession,
   type LessonStatus,
+  type ZoomRefreshResult,
 } from '@/lib/api';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
@@ -451,6 +465,14 @@ export function LessonView({
   );
 }
 
+// Метки шагов единой подтяжки из Zoom для тоста по частичному результату.
+const ZOOM_REFRESH_LABELS: Record<keyof ZoomRefreshResult, string> = {
+  recording: 'Запись',
+  summary: 'Итоги',
+  transcript: 'Транскрипт',
+  attendance: 'Посещаемость',
+};
+
 // Блок «Это занятие»: статус/дата/ссылка/запись/итоги конкретного Session потока.
 function SessionContextCard({
   session,
@@ -464,6 +486,43 @@ function SessionContextCard({
   onChanged: () => void;
 }) {
   const router = useRouter();
+  const { accessToken } = useAuth();
+  // Идёт единая подтяжка из Zoom (спиннер/disabled на кнопках обновления).
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Признак «получатель — препод/админ»: бэк отдаёт transcriptStatus только им
+  // (у студента поля нет). По нему гейтим кнопку обновления и блок транскрипта.
+  const isStaff = !!session && session.transcriptStatus !== undefined;
+
+  // Единая ручная подтяжка занятия из Zoom: запись+итоги+транскрипт+посещаемость.
+  // Тост собираем по ЧАСТИЧНОМУ результату (что получилось / что нет — с причиной).
+  const handleRefresh = useCallback(async () => {
+    if (!accessToken || refreshing) return;
+    setRefreshing(true);
+    try {
+      const result = await refreshSessionFromZoom(accessToken, lessonId, streamId);
+      const parts = (Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[]).map(
+        (key) => {
+          const step = result[key];
+          const label = ZOOM_REFRESH_LABELS[key];
+          if (step?.ok) return `${label} ✓`;
+          return `${label} — ${step?.reason?.trim() || 'не получено'}`;
+        },
+      );
+      const allOk = (Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[]).every(
+        (key) => result[key]?.ok,
+      );
+      const message = parts.join(', ');
+      if (allOk) toast.success(message);
+      else toast.warning(message);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [accessToken, lessonId, streamId, refreshing, onChanged]);
+
   if (!session) {
     return (
       <Card>
@@ -504,19 +563,39 @@ function SessionContextCard({
             <CalendarClock className="size-5 shrink-0 text-muted-foreground" />
             Это занятие
           </CardTitle>
-          {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
-              От «Проведён» зависят ДЗ/запись/посещаемость → onChanged перезагружает
-              данные урока. «Запланирован» без даты → ведём в редактирование. */}
-          <SessionStatusControl
-            lessonId={lessonId}
-            streamId={streamId}
-            status={status}
-            hasDate={!!session.date}
-            onChanged={onChanged}
-            onEditRequest={() =>
-              router.push(`/admin/lessons/${lessonId}?mode=edit&streamId=${streamId}`)
-            }
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Единая ручная подтяжка из Zoom (запись+итоги+транскрипт+посещаемость).
+                Только препод/админ. Полезна, когда автосбор завис/не сработал. */}
+            {isStaff && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="min-h-9"
+              >
+                {refreshing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Обновить из Zoom
+              </Button>
+            )}
+            {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
+                От «Проведён» зависят ДЗ/запись/посещаемость → onChanged перезагружает
+                данные урока. «Запланирован» без даты → ведём в редактирование. */}
+            <SessionStatusControl
+              lessonId={lessonId}
+              streamId={streamId}
+              status={status}
+              hasDate={!!session.date}
+              onChanged={onChanged}
+              onEditRequest={() =>
+                router.push(`/admin/lessons/${lessonId}?mode=edit&streamId=${streamId}`)
+              }
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -590,26 +669,260 @@ function SessionContextCard({
           </div>
         )}
 
-        {/* Итоги занятия (Session.summary) с бейджем источника. */}
-        {session.summary && (
+        {/* Итоги занятия — со всеми состояниями (виден всем, вкл. студента).
+            Кнопку «Подтянуть итоги» при failed показываем только препод/админу. */}
+        <Separator />
+        <SessionSummaryBlock
+          session={session}
+          canRefresh={isStaff}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+        />
+
+        {/* Транскрипт занятия — ТОЛЬКО для препод/админа (у студента поля нет). */}
+        {isStaff && (
           <>
             <Separator />
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <FileText className="size-3.5" />
-                  Итоги занятия
-                </span>
-                <SummarySourceBadge source={session.summarySource} className="font-normal" />
-              </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
-                {session.summary}
-              </p>
-            </div>
+            <SessionTranscriptBlock
+              session={session}
+              lessonId={lessonId}
+              streamId={streamId}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Блок «Итоги занятия» со всеми состояниями (summaryStatus + наличие summary).
+// Виден всем, включая студента (на view-странице препода — здесь; у студента —
+// на его странице урока). Кнопка «Подтянуть итоги» доступна только препод/админу.
+function SessionSummaryBlock({
+  session,
+  canRefresh,
+  refreshing,
+  onRefresh,
+}: {
+  session: LessonSession;
+  canRefresh: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const status = session.summaryStatus ?? 'none';
+  const hasSummary = !!session.summary;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <FileText className="size-3.5" />
+          Итоги занятия
+        </span>
+        {hasSummary && (
+          <SummarySourceBadge source={session.summarySource} className="font-normal" />
+        )}
+      </div>
+
+      {hasSummary ? (
+        // ready (или ручные итоги): показываем текст с бейджем источника.
+        <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+          {session.summary}
+        </p>
+      ) : status === 'processing' ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">
+            Zoom формирует итоги занятия — обычно это занимает несколько минут.
+          </p>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-11/12" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      ) : status === 'pending' ? (
+        <p className="text-sm text-muted-foreground">
+          Занятие завершилось — итоги подтянутся автоматически из Zoom, как только будут готовы.
+        </p>
+      ) : status === 'failed' ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-sm text-muted-foreground">
+            Не удалось получить итоги занятия из Zoom.
+          </p>
+          {canRefresh && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="min-h-9"
+            >
+              {refreshing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              Подтянуть итоги
+            </Button>
+          )}
+        </div>
+      ) : (
+        // none / нет интеграции Zoom.
+        <p className="text-sm text-muted-foreground">
+          Итоги по этому занятию не формировались.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Блок «Транскрипт занятия» (только препод/админ) — свёрнутый Collapsible под
+// итогами. Состояния по transcriptStatus. Тело транскрипта не тянем заранее:
+// при ready действия «Открыть/Скачать» подгружают подписанный URL по клику.
+function SessionTranscriptBlock({
+  session,
+  lessonId,
+  streamId,
+  refreshing,
+  onRefresh,
+}: {
+  session: LessonSession;
+  lessonId: string;
+  streamId: string;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const { accessToken } = useAuth();
+  const [open, setOpen] = useState(false);
+  // Какое действие сейчас грузит подписанный URL ('open' | 'vtt' | 'txt' | null).
+  const [busy, setBusy] = useState<'open' | 'vtt' | 'txt' | null>(null);
+  const status = session.transcriptStatus ?? 'none';
+
+  // Ленивая загрузка тела: тянем подписанную ссылку только по клику на действие.
+  const openTranscript = useCallback(
+    async (action: 'open' | 'vtt' | 'txt') => {
+      if (!accessToken || busy) return;
+      setBusy(action);
+      try {
+        const format = action === 'open' ? 'txt' : action;
+        const { url } = await fetchTranscript(accessToken, lessonId, streamId, format);
+        if (action === 'open') {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          // Скачивание файла нужного формата (форс-вложением).
+          window.location.href = fileDownloadUrl(url);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Не удалось получить транскрипт');
+      } finally {
+        setBusy(null);
+      }
+    },
+    [accessToken, lessonId, streamId, busy],
+  );
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col gap-2">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex min-h-11 w-full items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ScrollText className="size-3.5" />
+          Транскрипт занятия
+          <ChevronDown
+            className={cn(
+              'ml-auto size-4 shrink-0 transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-2">
+        {status === 'processing' ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">Zoom формирует транскрипт занятия…</p>
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        ) : status === 'pending' ? (
+          <p className="text-sm text-muted-foreground">
+            Транскрипт готовится — он приходит из Zoom позже записи. Загляните чуть позже.
+          </p>
+        ) : status === 'failed' ? (
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-sm text-muted-foreground">
+              {session.transcriptError?.trim() ||
+                'Не удалось получить транскрипт занятия из Zoom.'}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="min-h-9"
+            >
+              {refreshing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              Подтянуть транскрипт
+            </Button>
+          </div>
+        ) : status === 'ready' ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openTranscript('open')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'open' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ExternalLink className="size-4" />
+              )}
+              Открыть
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openTranscript('vtt')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'vtt' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Скачать .vtt
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openTranscript('txt')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'txt' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Скачать .txt
+            </Button>
+          </div>
+        ) : (
+          // none / нет интеграции Zoom.
+          <p className="text-sm text-muted-foreground">
+            Транскрипт по этому занятию недоступен.
+          </p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
