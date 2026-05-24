@@ -84,10 +84,127 @@ async function countUnread(conversationId: string, userId: string): Promise<numb
   });
 }
 
+/**
+ * Суммарное непрочитанное в cohort-чатах пользователя ОДНИМ запросом, без
+ * ленивого создания Conversation в цикле. Для каждого cohort-канала «непрочитано» =
+ * число чужих записей с createdAt > lastReadAt текущего пользователя (если отметки
+ * прочтения ещё нет — считаются все чужие записи). Считаем агрегатом по записям:
+ * groupBy по conversationId среди cohort-каналов нужных потоков, затем для каждого
+ * сверяем с lastReadAt из ConversationRead. Если cohort-канал ещё не создан —
+ * непрочитанного в нём заведомо нет (создаём лениво лишь при открытии ленты).
+ */
+async function countCohortsUnread(userId: string, streamIds: string[]): Promise<number> {
+  if (streamIds.length === 0) return 0;
+
+  // Cohort-каналы только тех потоков, что нужны (для студента — его enrollments,
+  // для админа — все). Каналы, которых ещё нет в БД, в выборку не попадут (0).
+  const conversations = await prisma.conversation.findMany({
+    where: { type: 'cohort', streamId: { in: streamIds } },
+    select: { id: true },
+  });
+  if (conversations.length === 0) return 0;
+  const conversationIds = conversations.map((c) => c.id);
+
+  // Отметки прочтения пользователя по этим каналам — одним запросом.
+  const reads = await prisma.conversationRead.findMany({
+    where: { userId, conversationId: { in: conversationIds } },
+    select: { conversationId: true, lastReadAt: true },
+  });
+  const lastReadByConversation = new Map(reads.map((r) => [r.conversationId, r.lastReadAt]));
+
+  // Параллельные count'ы по каналам: чужие записи новее отметки прочтения.
+  // Запросов = число cohort-каналов пользователя (обычно единицы), без выборки лент.
+  const counts = await Promise.all(
+    conversationIds.map((conversationId) => {
+      const lastReadAt = lastReadByConversation.get(conversationId);
+      return prisma.conversationEntry.count({
+        where: {
+          conversationId,
+          authorId: { not: userId },
+          ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
+        },
+      });
+    }),
+  );
+
+  return counts.reduce((sum, n) => sum + n, 0);
+}
+
 export async function conversationRoutes(app: FastifyInstance) {
   // Гард для staff/stream-каналов: ТОЛЬКО админы (преподаватели).
   // Студенты не имеют доступа к этим каналам ни на чтение, ни на запись.
   const adminOnly = requireRole('admin');
+
+  // GET /messages/unread-count — лёгкий суммарный счётчик непрочитанных входящих во
+  // ВСЕХ каналах сообщений текущего пользователя (для бейджа в сайдбаре). Роль-зависимый,
+  // считает ТОЛЬКО «своё», БЕЗ выборки лент и БЕЗ пометки прочитанным. Контракт ответа
+  // намеренно минимален: { unreadCount: number }.
+  //
+  // АДМИН (суммируем 3 канала):
+  //   (а) все личные треды со студентами — входящие от студентов с readAt=null
+  //       (та же механика, что в GET /threads, но только count);
+  //   (б) штаб-канал персонала — как GET /conversations/staff/unread;
+  //   (в) все cohort-чаты потоков — сумма непрочитанного по ConversationRead.
+  //
+  // СТУДЕНТ (суммируем 2 канала, чужого НЕ видит):
+  //   (а) ЕГО личный тред с преподавателем — входящие от admin/staff с readAt=null
+  //       (БЕЗ пометки прочитанным, в отличие от GET /threads/:studentId);
+  //   (б) его cohort-чаты по его enrollments.
+  app.get('/messages/unread-count', { onRequest: authenticate }, async (request) => {
+    const user = request.user!;
+
+    if (user.role === 'admin') {
+      const [personalUnread, staffConversation, allStreams] = await Promise.all([
+        // (а) Личные треды: входящие от студентов, ещё не прочитанные админом.
+        // Один count по всем student-каналам сразу (без разбивки по студентам).
+        prisma.conversationEntry.count({
+          where: {
+            conversation: { type: 'student' },
+            author: { role: 'student' },
+            authorId: { not: user.userId },
+            readAt: null,
+          },
+        }),
+        // (б) Штаб-канал (создаём лениво, как и остальные хендлеры штаба).
+        getOrCreateStaffConversation(),
+        // Потоки для cohort-чатов: админу — все.
+        prisma.stream.findMany({ select: { id: true } }),
+      ]);
+
+      const [staffUnread, cohortsUnread] = await Promise.all([
+        countUnread(staffConversation.id, user.userId),
+        countCohortsUnread(user.userId, allStreams.map((s) => s.id)),
+      ]);
+
+      return { unreadCount: personalUnread + staffUnread + cohortsUnread };
+    }
+
+    // Студент: только ЕГО личный тред + ЕГО cohort-чаты.
+    const [personalUnread, enrollments] = await Promise.all([
+      // (а) Входящие в собственном треде от не-студентов (admin/staff), не прочитанные.
+      // Фильтр conversation.studentId = me гарантирует приватность (только свой тред).
+      prisma.conversationEntry.count({
+        where: {
+          conversation: { type: 'student', studentId: user.userId },
+          author: { role: { not: 'student' } },
+          authorId: { not: user.userId },
+          readAt: null,
+        },
+      }),
+      // (б) Потоки студента — только его зачисления.
+      prisma.streamEnrollment.findMany({
+        where: { userId: user.userId },
+        select: { streamId: true },
+      }),
+    ]);
+
+    const cohortsUnread = await countCohortsUnread(
+      user.userId,
+      enrollments.map((e) => e.streamId),
+    );
+
+    return { unreadCount: personalUnread + cohortsUnread };
+  });
 
   // GET /conversations/staff — лента штаба + текущий счётчик непрочитанного.
   // Порядок важен: unreadCount считаем ДО upsert lastReadAt, иначе всегда 0.

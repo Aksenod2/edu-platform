@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getAdminTopUpRequests } from '@/lib/api';
+import { getAdminTopUpRequests, getMessagesUnreadCount } from '@/lib/api';
 import {
   Avatar,
   AvatarFallback,
@@ -54,8 +54,25 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 
-type NavItem = { label: string; href: string; icon: LucideIcon };
+// Ключ счётчика-бейджа. Привязывает пункт меню к источнику числа, без хардкода href.
+type BadgeKey = 'topups' | 'messages';
+type NavItem = { label: string; href: string; icon: LucideIcon; badge?: BadgeKey };
 type NavGroup = { label: string; items: NavItem[] };
+
+// Человекочитаемая расшифровка бейджа для скринридеров (склонение по числу).
+const BADGE_SR_LABEL: Record<BadgeKey, (n: number) => string> = {
+  topups: (n) => `${n} ${plural(n, 'заявка на пополнение', 'заявки на пополнение', 'заявок на пополнение')}`,
+  messages: (n) =>
+    `${n} ${plural(n, 'непрочитанное сообщение', 'непрочитанных сообщения', 'непрочитанных сообщений')}`,
+};
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
 
 // Версия сборки. NEXT_PUBLIC_APP_VERSION прокидывается build-аргументом при
 // деплое (см. scripts/vps-up.sh) и инлайнится в бандл — обновляется каждый push.
@@ -85,8 +102,8 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: 'Студенты', href: '/admin/students', icon: Users },
       { label: 'Задания', href: '/admin/assignments', icon: ClipboardCheck },
-      { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare },
-      { label: 'Пополнения', href: '/admin/topups', icon: Banknote },
+      { label: 'Сообщения', href: '/admin/messages', icon: MessagesSquare, badge: 'messages' },
+      { label: 'Пополнения', href: '/admin/topups', icon: Banknote, badge: 'topups' },
     ],
   },
   {
@@ -114,7 +131,7 @@ const STUDENT_NAV: NavGroup[] = [
   {
     label: 'Личное',
     items: [
-      { label: 'Сообщения', href: '/dashboard/messages', icon: MessagesSquare },
+      { label: 'Сообщения', href: '/dashboard/messages', icon: MessagesSquare, badge: 'messages' },
       { label: 'Баланс', href: '/dashboard/balance', icon: Wallet },
     ],
   },
@@ -133,7 +150,7 @@ export function AppSidebar({
   const { isMobile, setOpenMobile } = useSidebar();
   const nav = role === 'admin' ? ADMIN_NAV : STUDENT_NAV;
   const rootHref = role === 'admin' ? '/admin' : '/dashboard';
-  const pendingTopups = usePendingTopupsCount(role === 'admin', pathname);
+  const counters = useSidebarCounters(role, pathname);
 
   function closeOnMobile() {
     if (isMobile) setOpenMobile(false);
@@ -168,23 +185,46 @@ export function AppSidebar({
           <SidebarGroup key={group.label || `group-${i}`}>
             {group.label ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
             <SidebarMenu>
-              {group.items.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.href)}
-                    tooltip={item.label}
-                  >
-                    <Link href={item.href} onClick={closeOnMobile}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                  {item.href === '/admin/topups' && pendingTopups > 0 && (
-                    <SidebarMenuBadge>{pendingTopups}</SidebarMenuBadge>
-                  )}
-                </SidebarMenuItem>
-              ))}
+              {group.items.map((item) => {
+                const count = item.badge ? counters[item.badge] : 0;
+                const srLabel = item.badge && count > 0 ? BADGE_SR_LABEL[item.badge](count) : null;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.href)}
+                      tooltip={item.label}
+                    >
+                      <Link href={item.href} onClick={closeOnMobile}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                    {srLabel ? (
+                      <>
+                        {/* Развёрнутое меню и мобилка (Sheet): числовой бейдж.
+                            Тон bg-primary — «очередь/внимание»; на активном пункте
+                            переопределяем унаследованный text-sidebar-accent-foreground. */}
+                        <SidebarMenuBadge className="bg-primary text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground">
+                          <span aria-hidden>{count > 99 ? '99+' : count}</span>
+                          <span className="sr-only">{srLabel}</span>
+                        </SidebarMenuBadge>
+                        {/* Свёрнутое (icon) меню: числовой бейдж скрыт через
+                            display:none (group-data-[collapsible=icon]:hidden) →
+                            его sr-only текст тоже недоступен. Показываем точку-маркер
+                            поверх иконки и даём ей собственную sr-only расшифровку. */}
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute top-1.5 right-1.5 hidden size-2 rounded-full bg-primary ring-2 ring-sidebar group-data-[collapsible=icon]:block"
+                        />
+                        <span className="sr-only hidden group-data-[collapsible=icon]:inline">
+                          {srLabel}
+                        </span>
+                      </>
+                    ) : null}
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroup>
         ))}
@@ -201,38 +241,68 @@ export function AppSidebar({
   );
 }
 
-// Как часто мягко обновлять счётчик pending-заявок фоновым опросом.
-const PENDING_TOPUPS_POLL_MS = 45_000;
+// Как часто мягко обновлять счётчики-бейджи фоновым опросом.
+const SIDEBAR_COUNTERS_POLL_MS = 45_000;
 
-// Число заявок на пополнение «на рассмотрении» — для бейджа в сайдбаре.
-// Дозапрашиваем точечно (status=pending); тихо игнорируем ошибки — бейдж необязателен.
-// Авто-обновление без перезагрузки страницы: при смене маршрута (pathname),
-// мягким polling'ом и при возврате фокуса/видимости вкладки — чтобы бейдж не
-// «застревал» после модерации или создания заявки.
-function usePendingTopupsCount(enabled: boolean, pathname: string): number {
+// Какие источники счётчиков актуальны для роли.
+// topups — только admin (заявки на пополнение «на рассмотрении»);
+// messages — admin и student (суммарно непрочитанные сообщения).
+const COUNTER_SOURCES: Record<
+  BadgeKey,
+  { roles: ReadonlyArray<'admin' | 'student'>; fetch: (token: string) => Promise<number> }
+> = {
+  topups: {
+    roles: ['admin'],
+    fetch: (token) => getAdminTopUpRequests(token, 'pending').then((d) => d.requests.length),
+  },
+  messages: {
+    roles: ['admin', 'student'],
+    fetch: (token) => getMessagesUnreadCount(token).then((d) => d.unreadCount),
+  },
+};
+
+// Счётчики-бейджи сайдбара. Один общий хук опрашивает все источники, актуальные
+// для роли. Тихо игнорируем ошибки — бейджи необязательны. Авто-обновление без
+// перезагрузки: при смене маршрута (pathname), мягким polling'ом и при возврате
+// фокуса/видимости вкладки — чтобы бейдж не «застревал» после модерации/прочтения.
+// При старте и смене токена счётчики держим в 0 (не показываем чужое).
+function useSidebarCounters(
+  role: 'admin' | 'student',
+  pathname: string,
+): Record<BadgeKey, number> {
   const { accessToken } = useAuth();
-  const [count, setCount] = useState(0);
+  const [counts, setCounts] = useState<Record<BadgeKey, number>>({ topups: 0, messages: 0 });
+
+  // Сброс при смене токена — чтобы не мелькнули чужие числа до первого ответа.
+  useEffect(() => {
+    setCounts({ topups: 0, messages: 0 });
+  }, [accessToken]);
 
   useEffect(() => {
-    if (!enabled || !accessToken) return;
+    if (!accessToken) return;
 
     let active = true;
 
     const refresh = () => {
-      getAdminTopUpRequests(accessToken, 'pending')
-        .then((data) => {
-          if (active) setCount(data.requests.length);
-        })
-        .catch(() => {
-          /* бейдж необязателен — молча игнорируем */
-        });
+      for (const key of Object.keys(COUNTER_SOURCES) as BadgeKey[]) {
+        const source = COUNTER_SOURCES[key];
+        if (!source.roles.includes(role)) continue;
+        source
+          .fetch(accessToken)
+          .then((value) => {
+            if (active) setCounts((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }));
+          })
+          .catch(() => {
+            /* бейдж необязателен — молча игнорируем */
+          });
+      }
     };
 
     refresh();
 
-    const interval = setInterval(refresh, PENDING_TOPUPS_POLL_MS);
+    const interval = setInterval(refresh, SIDEBAR_COUNTERS_POLL_MS);
 
-    // Возврат на вкладку — повод сразу освежить счётчик.
+    // Возврат на вкладку — повод сразу освежить счётчики.
     const onVisible = () => {
       if (document.visibilityState === 'visible') refresh();
     };
@@ -246,10 +316,10 @@ function usePendingTopupsCount(enabled: boolean, pathname: string): number {
       window.removeEventListener('focus', refresh);
     };
     // pathname в зависимостях: переход по разделам пересоздаёт эффект и
-    // мгновенно перезапрашивает счётчик (в т.ч. после модерации на /admin/topups).
-  }, [enabled, accessToken, pathname]);
+    // мгновенно перезапрашивает счётчики (в т.ч. после модерации/прочтения).
+  }, [role, accessToken, pathname]);
 
-  return count;
+  return counts;
 }
 
 function initials(name: string) {

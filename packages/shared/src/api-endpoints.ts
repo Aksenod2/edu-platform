@@ -371,6 +371,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/conversations/cohorts', desc: 'Список своих когорт-чатов' },
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/conversations/cohort/:streamId', desc: 'Когорта-чат (для участника)' },
   { group: 'Ленты/треды/чаты', method: 'POST', path: '/conversations/cohort/:streamId/entries', desc: 'Написать в когорта-чат (append-only)' },
+  { group: 'Ленты/треды/чаты', method: 'GET', path: '/messages/unread-count', desc: 'Суммарный счётчик непрочитанных сообщений во всех каналах (для бейджа)' },
 
   // ─── Уведомления ─────────────────────────────────────────────────────────
   { group: 'Уведомления', method: 'GET', path: '/notifications/count', desc: 'Счётчик уведомлений (?unread=true)' },
