@@ -10,7 +10,7 @@ export default function AdminStudentThreadPage() {
   const studentId = params.id as string;
 
   return (
-    <div className="-mx-4 -mb-4 flex w-full max-w-3xl flex-1 flex-col min-h-0 md:mx-auto md:-mb-6">
+    <div className="-mx-4 -mb-4 flex w-full flex-1 flex-col min-h-0 md:-mx-6 md:-mb-6">
       <div className="border-b px-4 pt-4 pb-3">
         <BackButton
           fallbackHref="/admin/students"
