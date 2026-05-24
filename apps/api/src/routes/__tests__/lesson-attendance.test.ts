@@ -552,4 +552,64 @@ describe('PATCH /lessons/:id/attendance/:attendanceId/match — привязка
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it('admin: пустой userId → СБРОС привязки (userId=null), без проверки зачисления', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    db.sessionAttendance.findFirst.mockResolvedValueOnce({ id: 'a3' });
+    db.sessionAttendance.update.mockResolvedValueOnce({ id: 'a3' });
+    db.streamEnrollment.count.mockResolvedValueOnce(2);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/lessons/lesson-1/attendance/a3/match',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1', userId: '' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Зачисление НЕ проверяется при сбросе.
+    expect(db.streamEnrollment.findUnique).not.toHaveBeenCalled();
+    expect(db.sessionAttendance.update.mock.calls[0][0]).toEqual({
+      where: { id: 'a3' },
+      data: { userId: null },
+    });
+  });
+
+  it('admin: userId не передан вовсе → тоже СБРОС привязки', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    db.sessionAttendance.findFirst.mockResolvedValueOnce({ id: 'a3' });
+    db.sessionAttendance.update.mockResolvedValueOnce({ id: 'a3' });
+    db.streamEnrollment.count.mockResolvedValueOnce(2);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/lessons/lesson-1/attendance/a3/match',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.sessionAttendance.update.mock.calls[0][0]).toEqual({
+      where: { id: 'a3' },
+      data: { userId: null },
+    });
+  });
+
+  it('admin: сброс — 404 если записи нет', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    db.sessionAttendance.findFirst.mockResolvedValueOnce(null);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/lessons/lesson-1/attendance/zzz/match',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1', userId: '' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(db.sessionAttendance.update).not.toHaveBeenCalled();
+  });
 });

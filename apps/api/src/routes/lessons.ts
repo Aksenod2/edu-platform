@@ -1824,7 +1824,9 @@ export async function lessonRoutes(app: FastifyInstance) {
   });
 
   // PATCH /lessons/:id/attendance/:attendanceId/match — привязать несопоставленного
-  // zoom-гостя к студенту потока. Тело: { streamId, userId }.
+  // zoom-гостя к студенту потока либо СБРОСИТЬ привязку. Тело: { streamId, userId }.
+  // Пустой/непереданный userId = сброс (userId → null), запись снова станет
+  // несопоставленным гостем; переназначение = сбросить → привязать заново.
   app.patch(
     '/lessons/:id/attendance/:attendanceId/match',
     { onRequest: adminOnly },
@@ -1836,9 +1838,6 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       if (!streamId) {
         return reply.status(400).send({ error: 'streamId обязателен' });
-      }
-      if (!userId) {
-        return reply.status(400).send({ error: 'userId обязателен' });
       }
 
       const session = await prisma.session.findUnique({
@@ -1856,6 +1855,16 @@ export async function lessonRoutes(app: FastifyInstance) {
       });
       if (!record) {
         return reply.status(404).send({ error: 'Запись посещаемости не найдена' });
+      }
+
+      // Пустой userId — сброс привязки (отвязка), без проверки зачисления.
+      if (!userId) {
+        await prisma.sessionAttendance.update({
+          where: { id: record.id },
+          data: { userId: null },
+        });
+        const summary = await buildAttendanceSummary(session.id, streamId);
+        return summary;
       }
 
       // Студент должен быть зачислен в поток.
@@ -1988,10 +1997,16 @@ export async function lessonRoutes(app: FastifyInstance) {
       //   - 'ready'      → { ok:true } (данные получены);
       //   - 'processing' → { ok:false, reason:'ещё формируется' } — данных у Zoom ЕЩЁ
       //                    НЕТ/не готовы; это НЕ ошибка, фронт-тост скажет «формируется»;
-      //   - throw        → { ok:false, reason:<failReason> } — РЕАЛЬНАЯ ошибка («не
-      //                    удалось обновить …»). reason всегда безопасный (без сырых
-      //                    деталей Zoom/сети).
-      const step = async (fn: () => Promise<ProcessOutcome>, failReason: string) => {
+      //   - throw        → { ok:false, reason:<...> } — РЕАЛЬНАЯ ошибка.
+      // При exposeError=true (summary/transcript) reason несёт ФАКТИЧЕСКИЙ текст ошибки
+      // Zoom (с кодом статуса, напр. «Zoom вернул ошибку … (403)») — это admin/teacher
+      // эндпоинт, текст безопасен (без сырых URL/токенов, см. getMeetingSummary). Иначе
+      // reason — общий failReason. «ещё формируется» (processing) НЕ ошибка — без кода.
+      const step = async (
+        fn: () => Promise<ProcessOutcome>,
+        failReason: string,
+        exposeError = false,
+      ) => {
         try {
           const outcome = await fn();
           if (outcome === 'processing') {
@@ -2000,7 +2015,9 @@ export async function lessonRoutes(app: FastifyInstance) {
           return { ok: true as const };
         } catch (err) {
           app.log.error({ err, sessionId: session.id }, `refresh: ${failReason}`);
-          return { ok: false as const, reason: failReason };
+          const detail = err instanceof Error ? err.message.trim() : '';
+          const reason = exposeError && detail ? detail : failReason;
+          return { ok: false as const, reason };
         }
       };
 
@@ -2023,6 +2040,7 @@ export async function lessonRoutes(app: FastifyInstance) {
               teacherUserId,
             }),
           'не удалось обновить итоги',
+          true,
         ),
         step(
           () =>
@@ -2032,6 +2050,7 @@ export async function lessonRoutes(app: FastifyInstance) {
               teacherUserId,
             }),
           'не удалось обновить транскрипт',
+          true,
         ),
         // Посещаемость возвращает { ok, reason } САМА (не бросает) — оборачиваем
         // дополнительно на случай неожиданного исключения.
