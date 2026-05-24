@@ -36,6 +36,12 @@ vi.mock('../../lib/zoom-recording.js', () => ({
   markRecordingPending: vi.fn(() => Promise.resolve()),
 }));
 
+// Забор посещаемости (B5) на meeting.ended — мокаем: проверяем, что роут ВЫЗЫВАЕТ
+// его с правильными аргументами; саму lib покрывают тесты lesson-attendance.
+vi.mock('../../lib/zoom-attendance.js', () => ({
+  pullSessionAttendanceFromZoom: vi.fn(() => Promise.resolve({ ok: true })),
+}));
+
 import { zoomWebhookRoutes } from '../zoom-webhooks.js';
 import { prisma, Prisma } from '@platform/db';
 import { decryptSecret, isEncryptionKeySet } from '../../lib/crypto.js';
@@ -44,6 +50,7 @@ import {
   processSummaryForSession,
   markRecordingPending,
 } from '../../lib/zoom-recording.js';
+import { pullSessionAttendanceFromZoom } from '../../lib/zoom-attendance.js';
 
 const SECRET_TOKEN = 'whsec_test_token';
 const WEBHOOK_ID = 'wh-123';
@@ -56,6 +63,7 @@ const mockKeySet = vi.mocked(isEncryptionKeySet);
 const mockProcessRecording = vi.mocked(processRecordingForSession);
 const mockProcessSummary = vi.mocked(processSummaryForSession);
 const mockMarkPending = vi.mocked(markRecordingPending);
+const mockPullAttendance = vi.mocked(pullSessionAttendanceFromZoom);
 
 function buildApp(): FastifyInstance {
   const app = Fastify();
@@ -310,7 +318,7 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
 
     expect(db.session.findFirst).toHaveBeenCalledWith({
       where: { zoomMeetingId: '12345' },
-      select: { id: true },
+      select: { id: true, streamId: true, zoomMeetingId: true },
     });
     expect(mockProcessRecording).toHaveBeenCalledTimes(1);
     const arg = mockProcessRecording.mock.calls[0][0];
@@ -351,8 +359,12 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     expect(mockProcessRecording).not.toHaveBeenCalled();
   });
 
-  it('meeting.ended → находит Session по zoomMeetingId и помечает запись pending', async () => {
-    db.session.findFirst.mockResolvedValue({ id: 'sess-99' });
+  it('meeting.ended → помечает запись pending и запускает забор посещаемости', async () => {
+    db.session.findFirst.mockResolvedValue({
+      id: 'sess-99',
+      streamId: 'stream-99',
+      zoomMeetingId: '333',
+    });
 
     const ts = nowTs();
     const body = JSON.stringify({
@@ -376,10 +388,17 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
 
     expect(db.session.findFirst).toHaveBeenCalledWith({
       where: { zoomMeetingId: '333' },
-      select: { id: true },
+      select: { id: true, streamId: true, zoomMeetingId: true },
     });
     expect(mockMarkPending).toHaveBeenCalledTimes(1);
     expect(mockMarkPending.mock.calls[0][0]).toEqual({ sessionId: 'sess-99' });
+    // meeting.ended также запускает забор посещаемости из Zoom (best-effort).
+    expect(mockPullAttendance).toHaveBeenCalledTimes(1);
+    expect(mockPullAttendance.mock.calls[0][1]).toEqual({
+      id: 'sess-99',
+      streamId: 'stream-99',
+      zoomMeetingId: '333',
+    });
     // meeting.ended не качает запись и не собирает резюме.
     expect(mockProcessRecording).not.toHaveBeenCalled();
     expect(mockProcessSummary).not.toHaveBeenCalled();

@@ -2,6 +2,18 @@ import cron from 'node-cron';
 import { prisma } from '@platform/db';
 import { createNotification } from './notifications.js';
 import { sweepFailedRecordings } from './zoom-recording.js';
+import { sweepSessionAttendance } from './zoom-attendance.js';
+
+// Минимальный логгер (форма Fastify-логгера) для свиперов, работающих вне
+// HTTP-контекста (нет request/app в cron). Пишем в console, как остальные задачи.
+const cronLogger = {
+  log: {
+    error: (...args: unknown[]) => console.error('[cron]', ...args),
+    warn: (...args: unknown[]) => console.warn('[cron]', ...args),
+    info: (...args: unknown[]) => console.log('[cron]', ...args),
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
 
 /**
  * How many hours before deadline to send reminder (default: 24).
@@ -64,6 +76,19 @@ export function startCronJobs(): void {
       await sweepFailedRecordings();
     } catch (err) {
       console.error('[cron] sweep zoom recordings error', err);
+    }
+  });
+
+  // Свипер посещаемости Zoom — каждые 15 минут. Report participants готов НЕ сразу
+  // после meeting.ended (Zoom агрегирует минуты), поэтому добираем недавно
+  // завершённые занятия с привязкой к встрече, у которых ещё нет zoom-записей
+  // посещаемости. Выборка/повтор/грейсфул — в sweepSessionAttendance
+  // (zoom-attendance.ts), ошибки внутри она глотает.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      await sweepSessionAttendance(cronLogger);
+    } catch (err) {
+      console.error('[cron] sweep zoom attendance error', err);
     }
   });
 

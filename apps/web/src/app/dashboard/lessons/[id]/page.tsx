@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ClipboardList,
   Clock,
+  Calendar,
   GraduationCap,
   Video,
 } from 'lucide-react';
@@ -21,10 +22,14 @@ import {
   getStudentAssignments,
   LESSON_STATUS_LABELS,
   type Lesson,
-  type LessonStatus,
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
+import {
+  STATUS_BADGE_VARIANT,
+  canJoinMeeting,
+  parseLocalDate,
+} from '@/components/schedule/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -40,13 +45,6 @@ import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-fram
 import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
-
-const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
 
 export default function StudentLessonPage() {
   const { accessToken } = useAuth();
@@ -115,6 +113,15 @@ export default function StudentLessonPage() {
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
   const assignments = (lesson?.assignments ?? []).filter((a) => saByAssignment[a.id]);
 
+  // Дата занятия как в «Расписании»: parseLocalDate (без UTC-сдвига), без года.
+  const lessonDateLabel = lesson?.date
+    ? parseLocalDate(lesson.date).toLocaleDateString('ru-RU', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })
+    : null;
+
   // Учебное видео урока (лекция, грузится ДО урока) — строго из блока урока.
   const hasLessonVideo = !!(
     (lesson?.videos && lesson.videos.length > 0) ||
@@ -170,11 +177,58 @@ export default function StudentLessonPage() {
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
+              <Badge variant={STATUS_BADGE_VARIANT[lesson.status] ?? 'default'}>
                 {LESSON_STATUS_LABELS[lesson.status] ?? lesson.status}
               </Badge>
             </div>
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
+
+            {/* Дата и время занятия. Показываем только если дата назначена
+                (бэк подбирает Session потока). Время — как есть, font-mono.
+                Для прошедшего/отменённого занятия — приглушённо. */}
+            {lessonDateLabel && (
+              <div
+                className={
+                  'flex flex-wrap items-center gap-x-2 gap-y-1 text-sm ' +
+                  (lesson.status === 'planned'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground')
+                }
+              >
+                <Calendar className="size-4 shrink-0" aria-hidden="true" />
+                {lesson.status === 'done' ? (
+                  <span>Занятие прошло {lessonDateLabel}</span>
+                ) : lesson.status === 'cancelled' ? (
+                  <span className="line-through">{lessonDateLabel}</span>
+                ) : (
+                  <>
+                    <span>{lessonDateLabel}</span>
+                    {lesson.startTime && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <Clock className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="font-mono">{lesson.startTime}</span>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Присоединиться к созвону — только для запланированного занятия со
+                ссылкой (canJoinMeeting). На мобилке кнопка во всю ширину. */}
+            {canJoinMeeting(lesson) && (
+              <Button asChild className="mt-1 min-h-11 w-full sm:w-fit">
+                <a
+                  href={lesson.meetingUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Video aria-hidden="true" />
+                  Присоединиться к занятию
+                </a>
+              </Button>
+            )}
           </div>
 
           {/* Учебное видео урока (лекция, грузится ДО урока). Если несколько —

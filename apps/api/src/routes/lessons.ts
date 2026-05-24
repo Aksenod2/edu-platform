@@ -6,6 +6,7 @@ import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createZoomMeeting, shouldAutoCreate, canCreateMeeting } from '../lib/zoom.js';
 import { processRecordingForSession } from '../lib/zoom-recording.js';
+import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -1493,6 +1494,210 @@ export async function lessonRoutes(app: FastifyInstance) {
     };
   });
 
+  // ── Посещаемость занятия (B5, фаза 2; admin) ───────────────────────────────
+  // Контекст как у analytics: занятие = Session(lessonId=:id × streamId).
+  // Записи посещаемости двух природ: source='zoom_report' (авто-забор; userId
+  // проставлен при сопоставлении по email) и source='manual' (ручная отметка).
+
+  // GET /lessons/:id/attendance?streamId= — сводка + список записей посещаемости.
+  app.get('/lessons/:id/attendance', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { streamId } = request.query as { streamId?: string };
+
+    if (!streamId || !streamId.trim()) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return summary;
+  });
+
+  // POST /lessons/:id/attendance/resync — забрать посещаемость из Zoom заново.
+  // streamId — в теле или query. Возвращает свежую сводку при успехе, либо
+  // { ok:false, reason } (понятно для UI; НЕ 500) при недоступности отчёта/scope.
+  app.post('/lessons/:id/attendance/resync', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const query = request.query as { streamId?: string };
+    const body = (request.body ?? {}) as { streamId?: string };
+    const streamId = (body.streamId ?? query.streamId ?? '').trim();
+
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true, streamId: true, zoomMeetingId: true, lessonId: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // teacherUserId — под чьим OAuth-токеном дёргать Zoom report. Каскад как у
+    // ручного ретрая записи: преподаватель урока с рабочей интеграцией → текущий
+    // админ (если canCreateMeeting) → фолбэк на админа (lib сама вернёт ok:false
+    // при невалидном токене). Передаём override, чтобы lib не определяла повторно.
+    const adminUserId = request.user!.userId;
+    const teachers = await prisma.lessonTeacher.findMany({
+      where: { lessonId: session.lessonId },
+      select: { userId: true },
+    });
+    let teacherUserId: string | null = null;
+    for (const t of teachers) {
+      if (await canCreateMeeting(t.userId)) {
+        teacherUserId = t.userId;
+        break;
+      }
+    }
+    if (!teacherUserId && (await canCreateMeeting(adminUserId))) {
+      teacherUserId = adminUserId;
+    }
+    if (!teacherUserId) teacherUserId = adminUserId;
+
+    const result = await pullSessionAttendanceFromZoom(
+      app,
+      {
+        id: session.id,
+        streamId: session.streamId,
+        zoomMeetingId: session.zoomMeetingId,
+      },
+      teacherUserId,
+    );
+
+    if (!result.ok) {
+      // Мягкий отказ (нет scope / отчёт ещё не готов / нет встречи) — 200 с
+      // { ok:false, reason }, чтобы UI показал понятную причину, а не ошибку 500.
+      return { ok: false, reason: result.reason };
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return { ok: true, ...summary };
+  });
+
+  // POST /lessons/:id/attendance/mark — ручная отметка посещаемости студента.
+  // Тело: { streamId, userId, status:'present'|'absent' }. Дедуп вручную по
+  // (sessionId, userId, source='manual'): findFirst → update/create.
+  app.post('/lessons/:id/attendance/mark', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as {
+      streamId?: string;
+      userId?: string;
+      status?: string;
+    };
+    const streamId = (body.streamId ?? '').trim();
+    const userId = (body.userId ?? '').trim();
+    const status = body.status;
+
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+    if (!userId) {
+      return reply.status(400).send({ error: 'userId обязателен' });
+    }
+    if (status !== 'present' && status !== 'absent') {
+      return reply.status(400).send({ error: 'status должен быть present или absent' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // Студент должен быть зачислен в поток этого занятия.
+    const enrollment = await prisma.streamEnrollment.findUnique({
+      where: { streamId_userId: { streamId, userId } },
+      select: { id: true },
+    });
+    if (!enrollment) {
+      return reply.status(400).send({ error: 'Студент не зачислен в поток' });
+    }
+
+    // Дедуп ручного ряда вручную по (sessionId, userId, source='manual').
+    const existing = await prisma.sessionAttendance.findFirst({
+      where: { sessionId: session.id, userId, source: 'manual' },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.sessionAttendance.update({
+        where: { id: existing.id },
+        data: { status },
+      });
+    } else {
+      await prisma.sessionAttendance.create({
+        data: { sessionId: session.id, userId, source: 'manual', status },
+      });
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return summary;
+  });
+
+  // PATCH /lessons/:id/attendance/:attendanceId/match — привязать несопоставленного
+  // zoom-гостя к студенту потока. Тело: { streamId, userId }.
+  app.patch(
+    '/lessons/:id/attendance/:attendanceId/match',
+    { onRequest: adminOnly },
+    async (request, reply) => {
+      const { id, attendanceId } = request.params as { id: string; attendanceId: string };
+      const body = (request.body ?? {}) as { streamId?: string; userId?: string };
+      const streamId = (body.streamId ?? '').trim();
+      const userId = (body.userId ?? '').trim();
+
+      if (!streamId) {
+        return reply.status(400).send({ error: 'streamId обязателен' });
+      }
+      if (!userId) {
+        return reply.status(400).send({ error: 'userId обязателен' });
+      }
+
+      const session = await prisma.session.findUnique({
+        where: { streamId_lessonId: { streamId, lessonId: id } },
+        select: { id: true },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      // Запись должна существовать и принадлежать этому занятию.
+      const record = await prisma.sessionAttendance.findFirst({
+        where: { id: attendanceId, sessionId: session.id },
+        select: { id: true },
+      });
+      if (!record) {
+        return reply.status(404).send({ error: 'Запись посещаемости не найдена' });
+      }
+
+      // Студент должен быть зачислен в поток.
+      const enrollment = await prisma.streamEnrollment.findUnique({
+        where: { streamId_userId: { streamId, userId } },
+        select: { id: true },
+      });
+      if (!enrollment) {
+        return reply.status(400).send({ error: 'Студент не зачислен в поток' });
+      }
+
+      await prisma.sessionAttendance.update({
+        where: { id: record.id },
+        data: { userId },
+      });
+
+      const summary = await buildAttendanceSummary(session.id, streamId);
+      return summary;
+    },
+  );
+
   // DELETE /lessons/:id/sessions/:streamId — снять урок с расписания потока (admin).
   // Удаляет Session (и каскадно её StudentAssignment). Сам блок-урок и его место в
   // программе при этом не трогаются.
@@ -1618,4 +1823,88 @@ async function notifyEnrolledLessonVisible(
     `Урок «${title}» доступен`,
     { lessonId },
   );
+}
+
+// Строит сводку посещаемости занятия для фронта: счётчики + список записей с
+// именем сопоставленного студента (join к User). present/absent считаем по полю
+// status; matched — есть ли сопоставленный userId.
+//
+// ВАЖНО про двойной учёт: у одного студента может быть И zoom-ряд (сопоставленный),
+// И ручной ряд (manual имеет приоритет). Чтобы счётчики present/absent отражали
+// фактическое присутствие без задвоения, считаем их по УНИКАЛЬНЫМ сопоставленным
+// студентам (по userId; manual имеет приоритет над zoom_report). Несопоставленные
+// гости (userId=null) в present/absent не входят, но видны в unmatchedCount и в
+// records (их можно привязать через /match).
+async function buildAttendanceSummary(sessionId: string, streamId: string) {
+  const [enrolledCount, records] = await Promise.all([
+    prisma.streamEnrollment.count({ where: { streamId } }),
+    prisma.sessionAttendance.findMany({
+      where: { sessionId },
+      select: {
+        id: true,
+        userId: true,
+        source: true,
+        status: true,
+        displayName: true,
+        email: true,
+        joinedAt: true,
+        leftAt: true,
+        durationSec: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ]);
+
+  // Статус на студента: manual приоритетнее zoom_report.
+  const statusByUser = new Map<string, { status: string; manual: boolean }>();
+  let unmatchedCount = 0;
+  let lastSyncedAt: Date | null = null;
+
+  for (const r of records) {
+    if (r.source === 'zoom_report') {
+      if (!lastSyncedAt || r.updatedAt > lastSyncedAt) lastSyncedAt = r.updatedAt;
+    }
+    if (!r.userId) {
+      unmatchedCount += 1;
+      continue;
+    }
+    const isManual = r.source === 'manual';
+    const prev = statusByUser.get(r.userId);
+    // Записываем, если ещё нет, либо текущий manual перебивает прежний zoom-ряд.
+    if (!prev || (isManual && !prev.manual)) {
+      statusByUser.set(r.userId, { status: r.status, manual: isManual });
+    }
+  }
+
+  let presentCount = 0;
+  let absentCount = 0;
+  for (const v of statusByUser.values()) {
+    if (v.status === 'present') presentCount += 1;
+    else if (v.status === 'absent') absentCount += 1;
+  }
+
+  return {
+    sessionId,
+    streamId,
+    enrolledCount,
+    presentCount,
+    absentCount,
+    unmatchedCount,
+    lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
+    records: records.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      studentName: r.user?.name ?? null,
+      source: r.source,
+      status: r.status,
+      displayName: r.displayName,
+      email: r.email,
+      joinedAt: r.joinedAt ? r.joinedAt.toISOString() : null,
+      leftAt: r.leftAt ? r.leftAt.toISOString() : null,
+      durationSec: r.durationSec,
+      matched: r.userId !== null,
+    })),
+  };
 }
