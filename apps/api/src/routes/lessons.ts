@@ -639,6 +639,15 @@ export async function lessonRoutes(app: FastifyInstance) {
       // Сгенерировать ссылку Zoom по запросу фронта (независимо от глобального
       // тумблера autoCreateMeeting). undefined — поведение по тумблеру.
       generateMeeting?: boolean;
+      // folded assignment*-поля блока (аддитивно — те же, что у PATCH). Срабатывают
+      // только если переданы; веб-флоу «Создать урок» их не шлёт.
+      hasAssignment?: boolean;
+      assignmentTitle?: string | null;
+      assignmentDescription?: string | null;
+      assignmentCriteria?: string | null;
+      assignmentType?: 'short' | 'long' | null;
+      assignmentTags?: string[];
+      assignmentMaterials?: unknown;
     };
 
     if (!body.title || !body.title.trim()) {
@@ -653,12 +662,40 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Недопустимый статус' });
     }
 
+    if (
+      body.assignmentType !== undefined &&
+      body.assignmentType !== null &&
+      body.assignmentType !== 'short' &&
+      body.assignmentType !== 'long'
+    ) {
+      return reply.status(400).send({ error: 'Тип задания: short или long' });
+    }
+
     const status: LessonStatusValue = isLessonStatus(body.status) ? body.status : 'draft';
     const date = parseLessonDate(body.date);
 
     const teacherIds = Array.isArray(body.teacherIds)
       ? await filterAdminIds(body.teacherIds)
       : [];
+
+    // folded assignment*-поля блока: собираем только переданные (аддитивно). Нормализация
+    // как в PATCH /lessons (пустые строки → null, assignmentMaterials через JSON-копию).
+    // Пишем в data.create блока в обеих ветках (с streamId и без).
+    const assignmentData: Record<string, unknown> = {};
+    if (body.hasAssignment !== undefined) assignmentData.hasAssignment = body.hasAssignment;
+    if (body.assignmentTitle !== undefined)
+      assignmentData.assignmentTitle = body.assignmentTitle || null;
+    if (body.assignmentDescription !== undefined)
+      assignmentData.assignmentDescription = body.assignmentDescription || null;
+    if (body.assignmentCriteria !== undefined)
+      assignmentData.assignmentCriteria = body.assignmentCriteria || null;
+    if (body.assignmentType !== undefined) assignmentData.assignmentType = body.assignmentType;
+    if (body.assignmentTags !== undefined) assignmentData.assignmentTags = body.assignmentTags;
+    if (body.assignmentMaterials !== undefined) {
+      assignmentData.assignmentMaterials = JSON.parse(
+        JSON.stringify(body.assignmentMaterials ?? []),
+      );
+    }
 
     // ── Без streamId: создаём только блок-урок (копилка) ──────────────────────
     if (!body.streamId) {
@@ -670,6 +707,7 @@ export async function lessonRoutes(app: FastifyInstance) {
           notes: body.notes || null,
           sortOrder: body.sortOrder ?? 0,
           materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
+          ...assignmentData,
           ...(teacherIds.length > 0 && {
             teachers: { create: teacherIds.map((userId) => ({ userId })) },
           }),
@@ -710,6 +748,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         notes: body.notes || null,
         sortOrder: body.sortOrder ?? 0,
         materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
+        ...assignmentData,
         ...(teacherIds.length > 0 && {
           teachers: { create: teacherIds.map((userId) => ({ userId })) },
         }),

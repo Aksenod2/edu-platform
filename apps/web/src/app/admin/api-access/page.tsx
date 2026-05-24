@@ -8,7 +8,7 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
-import { API_ENDPOINTS, API_ENDPOINT_GROUPS } from '@/lib/api-endpoints';
+import { API_ENDPOINTS, API_ENDPOINT_GROUPS, type ApiEndpoint } from '@/lib/api-endpoints';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { ChevronRight } from 'lucide-react';
 
 export default function ApiAccessPage() {
   const { accessToken } = useAuth();
@@ -384,6 +385,9 @@ export default function ApiAccessPage() {
               Параметры пути указаны в стиле <code className="font-mono text-xs">:id</code>.
               Списочные эндпоинты принимают фильтры через query-параметры (например,{' '}
               <code className="font-mono text-xs">/student-assignments?studentId=ID</code>).
+              У write-эндпоинтов со значком{' '}
+              <ChevronRight className="inline size-3 align-middle" /> можно раскрыть схему
+              тела запроса (body) и готовый пример <code className="font-mono text-xs">curl</code>.
             </p>
             <div className="rounded-lg border">
               <Table>
@@ -399,7 +403,7 @@ export default function ApiAccessPage() {
                     const rows = API_ENDPOINTS.filter((e) => e.group === group);
                     if (rows.length === 0) return null;
                     return (
-                      <GroupRows key={group} group={group} rows={rows} />
+                      <GroupRows key={group} group={group} rows={rows} proxyBase={proxyBase} />
                     );
                   })}
                 </TableBody>
@@ -482,9 +486,11 @@ export default function ApiAccessPage() {
 function GroupRows({
   group,
   rows,
+  proxyBase,
 }: {
   group: string;
   rows: typeof API_ENDPOINTS;
+  proxyBase: string;
 }) {
   return (
     <>
@@ -494,16 +500,105 @@ function GroupRows({
         </TableCell>
       </TableRow>
       {rows.map((e) => (
-        <TableRow key={`${e.method} ${e.path}`} className="align-top">
-          <TableCell>
-            <Badge variant="outline" className="font-mono text-[11px]">{e.method}</Badge>
-          </TableCell>
-          <TableCell>
-            <code className="font-mono text-xs whitespace-nowrap">{e.path}</code>
-          </TableCell>
-          <TableCell className="text-muted-foreground">{e.desc}</TableCell>
-        </TableRow>
+        <EndpointRow key={`${e.method} ${e.path}`} endpoint={e} proxyBase={proxyBase} />
       ))}
+    </>
+  );
+}
+
+// Строка эндпоинта. Если есть схема тела (body) или пример — клик по строке
+// раскрывает дополнительную строку с таблицей полей и готовым curl. Без них —
+// обычная строка. Radix Collapsible НЕ используем внутри <table>: его обёртки
+// ломают валидную структуру таблицы — управляем раскрытием простым состоянием.
+function EndpointRow({ endpoint, proxyBase }: { endpoint: ApiEndpoint; proxyBase: string }) {
+  const [open, setOpen] = useState(false);
+  const hasDocs = (endpoint.body && endpoint.body.length > 0) || !!endpoint.example;
+
+  if (!hasDocs) {
+    return (
+      <TableRow className="align-top">
+        <TableCell>
+          <Badge variant="outline" className="font-mono text-[11px]">{endpoint.method}</Badge>
+        </TableCell>
+        <TableCell>
+          <code className="font-mono text-xs whitespace-nowrap">{endpoint.path}</code>
+        </TableCell>
+        <TableCell className="text-muted-foreground">{endpoint.desc}</TableCell>
+      </TableRow>
+    );
+  }
+
+  // <BASE> в примерах из shared заменяем на реальный прокси-URL клиента.
+  const example = endpoint.example?.replaceAll('<BASE>', proxyBase);
+
+  return (
+    <>
+      <TableRow
+        className="align-top cursor-pointer"
+        role="button"
+        aria-expanded={open}
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+      >
+        <TableCell>
+          <Badge variant="outline" className="font-mono text-[11px]">{endpoint.method}</Badge>
+        </TableCell>
+        <TableCell>
+          <span className="flex items-start gap-1.5">
+            <ChevronRight
+              className={`size-3.5 mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+            />
+            <code className="font-mono text-xs whitespace-nowrap">{endpoint.path}</code>
+          </span>
+        </TableCell>
+        <TableCell className="text-muted-foreground">{endpoint.desc}</TableCell>
+      </TableRow>
+      {open && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={3} className="bg-muted/30">
+            <div className="flex flex-col gap-4 py-1">
+              {endpoint.body && endpoint.body.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-2">Тело запроса (JSON)</p>
+                  <div className="flex flex-col gap-2">
+                    {endpoint.body.map((f) => (
+                      <div
+                        key={f.name}
+                        className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2"
+                      >
+                        <span className="flex items-center gap-2 shrink-0">
+                          <code className="font-mono text-xs text-foreground">{f.name}</code>
+                          <span className="font-mono text-[11px] text-muted-foreground">{f.type}</span>
+                          {f.required ? (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">обязательно</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">опц.</Badge>
+                          )}
+                        </span>
+                        {f.note && (
+                          <span className="text-xs text-muted-foreground sm:flex-1">{f.note}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {example && (
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-2">Пример</p>
+                  <CodeBlock>{example}</CodeBlock>
+                </div>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
     </>
   );
 }
