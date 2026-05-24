@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   getAssignment,
@@ -12,7 +12,7 @@ import {
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
-import { ChevronLeft, Download, FileText, Link2, Loader2, MessageSquare } from 'lucide-react';
+import { Calendar, ChevronLeft, Download, FileText, Link2, Loader2, MessageSquare } from 'lucide-react';
 import { useBack } from '@/components/back-button';
 import { toast } from 'sonner';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
@@ -22,26 +22,19 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
 import {
   STATUS_LABELS as statusLabels,
   STATUS_VARIANT as statusVariants,
 } from '@/lib/assignment-status';
 
-export default function AssignmentDetailPage() {
+export default function ExperimentAssignmentPage() {
   const { user, accessToken } = useAuth();
   const router = useRouter();
-  // «Назад» уважает историю: вернуться откуда пришёл; иначе — к списку заданий.
-  const goBack = useBack('/admin/assignments');
-  const params = useParams();
-  const assignmentId = params.id as string;
+  // «Назад» уважает историю: вернуться откуда пришёл; иначе — в админ-панель.
+  const goBack = useBack('/admin');
 
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([]);
@@ -55,23 +48,32 @@ export default function AssignmentDetailPage() {
   // Подсветка обязательной причины при «На доработку» (по id назначения).
   const [reviewErrors, setReviewErrors] = useState<Record<string, boolean>>({});
 
+  // Экспериментальная страница не привязана к URL-:id. Для предпросмотра редизайна
+  // сами подбираем задание: предпочитаем то, где есть сданная работа (чтобы был
+  // виден блок «Разбор работы»), иначе берём любое первое.
   const fetchData = useCallback(async () => {
-    if (!accessToken || !assignmentId) return;
+    if (!accessToken) return;
     setLoadingData(true);
     try {
-      const [{ assignment: a }, { studentAssignments: sa }] = await Promise.all([
-        getAssignment(accessToken, assignmentId),
-        getStudentAssignments(accessToken, {}),
-      ]);
+      const { studentAssignments: all } = await getStudentAssignments(accessToken, {});
+      const target =
+        all.find((s) => s.status === 'submitted')?.assignmentId ?? all[0]?.assignmentId ?? null;
+      if (!target) {
+        setAssignment(null);
+        setStudentAssignments([]);
+        setError('');
+        return;
+      }
+      const { assignment: a } = await getAssignment(accessToken, target);
       setAssignment(a);
-      setStudentAssignments(sa.filter((s) => s.assignmentId === assignmentId));
+      setStudentAssignments(all.filter((s) => s.assignmentId === target));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
       setLoadingData(false);
     }
-  }, [accessToken, assignmentId]);
+  }, [accessToken]);
 
   useEffect(() => {
     if (accessToken && user?.role === 'admin') fetchData();
@@ -142,6 +144,15 @@ export default function AssignmentDetailPage() {
     ? new Date(assignment.dueDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
     : null;
 
+  // Инициалы для аватара студента (по имени или e-mail) — fallback при отсутствии фото.
+  const studentInitials = (name?: string | null, email?: string | null) => {
+    const source = name?.trim() || email?.trim() || '';
+    if (!source) return '?';
+    const parts = source.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return source.slice(0, 2).toUpperCase();
+  };
+
   return (
     <>
       <div className="mb-4">
@@ -153,6 +164,14 @@ export default function AssignmentDetailPage() {
           Назад
         </button>
       </div>
+
+      <Alert className="mb-4">
+        <AlertDescription>
+          🧪 Экспериментальная страница для предпросмотра редизайна блока «Студенты»
+          на странице задания. Задание подобрано автоматически. На прод и на боевую
+          страницу задания не влияет.
+        </AlertDescription>
+      </Alert>
 
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -174,7 +193,10 @@ export default function AssignmentDetailPage() {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : !assignment ? (
-        <div className="text-muted-foreground text-sm">Задание не найдено.</div>
+        <div className="text-muted-foreground text-sm">
+          Нет ни одного задания для предпросмотра. Создайте задание и выдайте его
+          студентам, затем вернитесь сюда.
+        </div>
       ) : (
         <div className="flex flex-col gap-6">
           {/* Assignment meta card */}
@@ -267,8 +289,11 @@ export default function AssignmentDetailPage() {
             </div>
 
             {studentAssignments.length === 0 ? (
-              <div className="flex flex-col items-center gap-4 rounded-lg border bg-card px-6 py-8 text-center">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed bg-card px-6 py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <FileText className="size-5" />
+                </div>
+                <p className="max-w-xs text-sm text-muted-foreground">
                   Задание ещё не назначено ни одному студенту.
                 </p>
                 <Button onClick={handleIssue} disabled={issuing}>
@@ -277,51 +302,82 @@ export default function AssignmentDetailPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Студент</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>Отправлено</TableHead>
-                      <TableHead>Работа</TableHead>
-                      <TableHead>Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {studentAssignments.map((sa) => (
-                      <TableRow key={sa.id}>
-                        <TableCell>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-foreground">
-                              {sa.student?.name ?? '—'}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {sa.student?.email ?? ''}
+              // Список карточек сдач: по карточке на студента — поле «Разбор работы»
+              // и действия получают полноценное место и на десктопе, и на мобилке.
+              <div className="flex flex-col gap-4">
+                {studentAssignments.map((sa) => {
+                  const isUpdating = updatingId === sa.id;
+                  const isPending = sa.status === 'submitted';
+                  return (
+                    <Card key={sa.id} className="overflow-hidden">
+                      <CardContent className="flex flex-col gap-4">
+                        {/* Шапка карточки: студент + статус + переписка */}
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <Avatar className="size-10 shrink-0">
+                              <AvatarFallback className="text-xs font-medium">
+                                {studentInitials(sa.student?.name, sa.student?.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate font-medium text-foreground">
+                                {sa.student?.name ?? '—'}
+                              </span>
+                              {sa.student?.email && (
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {sa.student.email}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Badge variant={statusVariants[sa.status] ?? 'secondary'}>
+                              {statusLabels[sa.status] ?? sa.status}
+                            </Badge>
+                            {sa.student && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Открыть общую переписку с учеником"
+                                onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
+                              >
+                                <MessageSquare />
+                                Переписка
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Мета: дата отправки + файл работы */}
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Calendar className="size-4 shrink-0" />
+                            <span>
+                              Отправлено:{' '}
+                              <span className="text-foreground">
+                                {sa.submittedAt
+                                  ? new Date(sa.submittedAt).toLocaleDateString('ru-RU', {
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric',
+                                    })
+                                  : '—'}
+                              </span>
                             </span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={statusVariants[sa.status] ?? 'secondary'}>
-                            {statusLabels[sa.status] ?? sa.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {sa.submittedAt
-                            ? new Date(sa.submittedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-                            : '—'}
-                        </TableCell>
-                        <TableCell>
                           {sa.fileName ? (
-                            <div className="flex max-w-[240px] flex-col gap-1.5">
-                              <div className="flex items-center gap-2 text-sm">
-                                <FileText className="size-4 shrink-0 text-muted-foreground" />
-                                <span className="truncate text-foreground" title={sa.fileName}>
-                                  {sa.fileName}
-                                </span>
-                              </div>
+                            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md bg-muted/50 px-3 py-2">
+                              <FileText className="size-4 shrink-0 text-muted-foreground" />
+                              <span
+                                className="min-w-0 flex-1 truncate text-sm text-foreground"
+                                title={sa.fileName}
+                              >
+                                {sa.fileName}
+                              </span>
                               {sa.fileSignedUrl && (
-                                <div className="flex items-center gap-1">
+                                <div className="flex shrink-0 items-center gap-1">
                                   {isMarkdownFile(sa.fileName) && (
                                     <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
                                   )}
@@ -340,14 +396,20 @@ export default function AssignmentDetailPage() {
                               )}
                             </div>
                           ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
+                            <span className="text-sm text-muted-foreground">Работа не загружена</span>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-2">
-                            {sa.status === 'submitted' && (
+                        </div>
+
+                        {/* Разбор и действия — только для работ на проверке */}
+                        {isPending && (
+                          <>
+                            <Separator />
+                            <div className="flex flex-col gap-3">
                               <div className="flex flex-col gap-1.5">
-                                <Label htmlFor={`review-${sa.id}`} className="text-xs text-muted-foreground">
+                                <Label
+                                  htmlFor={`review-${sa.id}`}
+                                  className="text-xs text-muted-foreground"
+                                >
                                   Разбор работы (вердикт + комментарий)
                                 </Label>
                                 <Textarea
@@ -366,8 +428,7 @@ export default function AssignmentDetailPage() {
                                   placeholder="Что получилось, что доработать. Видит студент."
                                   rows={3}
                                   aria-invalid={reviewErrors[sa.id] ? true : undefined}
-                                  // На узких экранах поле сжимается, на десктопе остаётся комфортным.
-                                  className="w-full sm:min-w-[260px]"
+                                  className="w-full"
                                 />
                                 {reviewErrors[sa.id] && (
                                   <span className="text-xs text-destructive">
@@ -375,47 +436,32 @@ export default function AssignmentDetailPage() {
                                   </span>
                                 )}
                               </div>
-                            )}
-                            <div className="flex items-center gap-2">
-                              {sa.student && (
+                              <div className="flex flex-col gap-2 sm:flex-row">
                                 <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Открыть общую переписку с учеником"
-                                  onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
+                                  className="w-full sm:w-auto"
+                                  disabled={isUpdating}
+                                  onClick={() => handleStatusChange(sa.id, 'reviewed')}
                                 >
-                                  <MessageSquare />
-                                  Переписка
+                                  {isUpdating && <Loader2 className="animate-spin" />}
+                                  Принять
                                 </Button>
-                              )}
-                              {sa.status === 'submitted' && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    disabled={updatingId === sa.id}
-                                    onClick={() => handleStatusChange(sa.id, 'reviewed')}
-                                  >
-                                    {updatingId === sa.id && <Loader2 className="animate-spin" />}
-                                    Принять
-                                  </Button>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={updatingId === sa.id}
-                                    onClick={() => handleStatusChange(sa.id, 'needs_revision')}
-                                  >
-                                    {updatingId === sa.id && <Loader2 className="animate-spin" />}
-                                    На доработку
-                                  </Button>
-                                </>
-                              )}
+                                <Button
+                                  variant="secondary"
+                                  className="w-full sm:w-auto"
+                                  disabled={isUpdating}
+                                  onClick={() => handleStatusChange(sa.id, 'needs_revision')}
+                                >
+                                  {isUpdating && <Loader2 className="animate-spin" />}
+                                  На доработку
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>

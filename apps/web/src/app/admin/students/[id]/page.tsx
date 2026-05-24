@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { Download, FileText, Loader2, Wallet } from 'lucide-react';
+import { ChevronLeft, Download, FileText, Loader2, Wallet } from 'lucide-react';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
+import { BackButton } from '@/components/back-button';
 
 const THREAD_POLL_INTERVAL_MS = 5000;
 import { toast } from 'sonner';
@@ -414,7 +415,13 @@ export default function StudentProfilePage() {
   if (error && !data) {
     return (
       <div className="p-4">
-        <a href="/admin/students" className="text-muted-foreground no-underline text-sm">← К списку учеников</a>
+        <BackButton
+          fallbackHref="/admin/students"
+          className="h-auto px-2 text-muted-foreground"
+          icon={<ChevronLeft className="size-4" />}
+        >
+          К списку учеников
+        </BackButton>
         <Alert variant="destructive" className="mt-4">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -445,9 +452,13 @@ export default function StudentProfilePage() {
 
         {/* ── Header ── */}
         <div>
-          <a href="/admin/students" className="text-muted-foreground no-underline text-sm hover:text-foreground transition-colors">
-            ← К списку учеников
-          </a>
+          <BackButton
+            fallbackHref="/admin/students"
+            className="-ml-2 h-auto px-2 text-muted-foreground"
+            icon={<ChevronLeft className="size-4" />}
+          >
+            К списку учеников
+          </BackButton>
 
           <div className="mt-2 mb-1 min-w-0">
             <h1 className="m-0 mb-1 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
