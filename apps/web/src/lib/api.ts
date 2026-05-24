@@ -1024,6 +1024,97 @@ export async function getLessonAnalytics(
   });
 }
 
+// ── Посещаемость занятия (B5) ───────────────────────────────────────────────
+
+// Одна запись посещаемости. source='zoom_report' — авто-забор из Zoom (matched
+// проставлен при сопоставлении по email); source='manual' — ручная отметка
+// (всегда привязана к студенту). studentName — имя сопоставленного студента.
+export interface SessionAttendanceRecord {
+  id: string;
+  userId: string | null;
+  studentName: string | null;
+  source: 'zoom_report' | 'manual';
+  status: 'present' | 'absent';
+  displayName: string | null;
+  email: string | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  durationSec: number | null;
+  matched: boolean;
+}
+
+// Сводка посещаемости занятия. present/absent считаются по уникальным
+// сопоставленным студентам (manual приоритетнее zoom_report); несопоставленные
+// гости — в unmatchedCount и в records. lastSyncedAt — время последнего zoom-забора.
+export interface SessionAttendanceSummary {
+  sessionId: string;
+  streamId: string;
+  enrolledCount: number;
+  presentCount: number;
+  absentCount: number;
+  unmatchedCount: number;
+  lastSyncedAt: string | null;
+  records: SessionAttendanceRecord[];
+}
+
+// Мягкий отказ resync (нет scope / отчёт ещё не готов / нет встречи Zoom).
+export type AttendanceResyncResult =
+  | ({ ok: true } & SessionAttendanceSummary)
+  | { ok: false; reason: string };
+
+// Получить сводку посещаемости занятия урока в потоке (только admin).
+export async function getLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<SessionAttendanceSummary> {
+  const qs = new URLSearchParams({ streamId }).toString();
+  return request(`/lessons/${lessonId}/attendance?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Перезабрать посещаемость из Zoom. Возвращает свежую сводку (ok:true) либо
+// мягкий отказ (ok:false, reason) — UI показывает причину, без ошибки.
+export async function resyncLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<AttendanceResyncResult> {
+  return request(`/lessons/${lessonId}/attendance/resync`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ streamId }),
+  });
+}
+
+// Ручная отметка посещаемости студента. Возвращает обновлённую сводку.
+export async function markLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  params: { streamId: string; userId: string; status: 'present' | 'absent' },
+): Promise<SessionAttendanceSummary> {
+  return request(`/lessons/${lessonId}/attendance/mark`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(params),
+  });
+}
+
+// Привязать несопоставленного zoom-гостя к студенту потока. Возвращает сводку.
+export async function matchLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  attendanceId: string,
+  params: { streamId: string; userId: string },
+): Promise<SessionAttendanceSummary> {
+  return request(`/lessons/${lessonId}/attendance/${attendanceId}/match`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(params),
+  });
+}
+
 // Список занятий урока по всем потокам (где и когда он запланирован).
 export async function getLessonSessions(
   accessToken: string,

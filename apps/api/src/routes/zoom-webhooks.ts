@@ -15,6 +15,7 @@ import {
   processSummaryForSession,
   markRecordingPending,
 } from '../lib/zoom-recording.js';
+import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 
 // Окно допустимого расхождения времени запроса (анти-replay): 5 минут.
 const REPLAY_WINDOW_MS = 5 * 60 * 1000;
@@ -91,7 +92,7 @@ async function processEventAsync(
     if (meetingId) {
       const session = await prisma.session.findFirst({
         where: { zoomMeetingId: meetingId },
-        select: { id: true },
+        select: { id: true, streamId: true, zoomMeetingId: true },
       });
 
       if (session) {
@@ -99,6 +100,26 @@ async function processEventAsync(
           // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
           // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
           await markRecordingPending({ sessionId: session.id });
+
+          // Забор посещаемости из Zoom Report API. Отчёт участников готов НЕ сразу
+          // после meeting.ended (Zoom агрегирует минуты), поэтому здесь это
+          // best-effort: ранний прогон может вернуть ok:false («отчёт ещё не
+          // сформирован» / нет scope) — окончательно добирает свипер по cron
+          // (sweepSessionAttendance). pullSessionAttendanceFromZoom сама не бросает
+          // (возвращает ok:false при ошибке), но на всякий случай ловим и тут,
+          // чтобы сбой посещаемости не повалил обработку записи/вебхука.
+          try {
+            await pullSessionAttendanceFromZoom(app, {
+              id: session.id,
+              streamId: session.streamId,
+              zoomMeetingId: session.zoomMeetingId,
+            });
+          } catch (err) {
+            app.log.error(
+              { err, sessionId: session.id },
+              'Ошибка забора посещаемости на meeting.ended (добёрёт свипер)',
+            );
+          }
         } else if (event === 'recording.completed') {
           await processRecordingForSession({
             sessionId: session.id,
