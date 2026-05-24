@@ -1,4 +1,4 @@
-import { Prisma, type Charge } from '@platform/db';
+import { Prisma, type Charge, type ChargeKind } from '@platform/db';
 import { debitBalance } from './money.js';
 
 // Ledger «Оплата и баланс»: начисления студенту за участие в группе (Charge) и их
@@ -11,17 +11,22 @@ import { debitBalance } from './money.js';
 type Tx = Prisma.TransactionClient;
 
 /**
- * Создаёт начисление студенту за участие в группе. ИДЕМПОТЕНТНО: на пару (streamId, userId)
- * допускается не более ОДНОГО открытого начисления (гарантируется partial unique index
- * "charge_active_uniq" WHERE status='open'). Если открытое начисление уже есть — НЕ создаём
- * второе, возвращаем существующее (страхует от двойного зачисления студента / повторного
- * вызова инвайт-флоу).
+ * Создаёт начисление студенту за участие в группе. ИДЕМПОТЕНТНО, но правило зависит от вида:
  *
- * После полного погашения (status='paid') открытого начисления нет — новый вызов создаст
- * новое начисление (повторное участие можно начислить снова).
+ *  - РАЗОВОЕ (periodKey = null, kind = 'one_time', по умолчанию): на пару (streamId, userId)
+ *    допускается не более ОДНОГО открытого начисления (partial unique "charge_active_uniq"
+ *    WHERE status='open' AND periodKey IS NULL). Если открытое уже есть — НЕ создаём второе,
+ *    возвращаем существующее (страхует от двойного зачисления / повторного инвайт-флоу).
+ *    После полного погашения (status='paid') открытого нет — новый вызов создаст новое.
  *
- * Цена фиксируется на момент зачисления (amountKopecks) — последующее изменение
- * Stream.priceKopecks существующие начисления не трогает.
+ *  - МЕСЯЧНОЕ (periodKey задан, kind = 'monthly'): ровно одно начисление на тройку
+ *    (streamId, userId, periodKey) в ЛЮБОМ статусе (partial unique "charge_period_uniq"
+ *    WHERE periodKey IS NOT NULL). Долг прошлого месяца НЕ блокирует начисление за новый
+ *    период. Если за этот период начисление уже есть (даже непогашенное) — НЕ создаём
+ *    второе, возвращаем существующее (идемпотентность повторного прогона cron).
+ *
+ * Цена фиксируется на момент создания (amountKopecks) — последующее изменение
+ * Stream.priceKopecks / monthlyPriceKopecks существующие начисления не трогает.
  */
 export async function createCharge(
   tx: Tx,
@@ -31,31 +36,52 @@ export async function createCharge(
     amountKopecks: number;
     createdById?: string | null;
     note?: string | null;
+    // Период месячного начисления 'YYYY-MM' (null = разовое).
+    periodKey?: string | null;
+    // Вид начисления: 'one_time' (разовое) | 'monthly' (ежемесячное менторское).
+    kind?: ChargeKind;
   },
 ): Promise<Charge> {
   const { streamId, userId, amountKopecks } = params;
   const createdById = params.createdById ?? null;
   const note = params.note ?? null;
+  const periodKey = params.periodKey ?? null;
+  const kind: ChargeKind = params.kind ?? 'one_time';
 
-  // Предварительная проверка открытого начисления (быстрый путь идемпотентности).
-  const existing = await tx.charge.findFirst({
-    where: { streamId, userId, status: 'open' },
-  });
+  // Условие быстрого пути идемпотентности зависит от вида начисления:
+  //  - месячное: одно начисление на (streamId, userId, periodKey) в любом статусе;
+  //  - разовое: одно ОТКРЫТОЕ начисление на (streamId, userId) без периода.
+  const existingWhere =
+    periodKey != null
+      ? { streamId, userId, periodKey }
+      : { streamId, userId, status: 'open' as const, periodKey: null };
+
+  // Предварительная проверка (быстрый путь идемпотентности).
+  const existing = await tx.charge.findFirst({ where: existingWhere });
   if (existing) {
     return existing;
   }
 
   try {
     return await tx.charge.create({
-      data: { streamId, userId, amountKopecks, paidKopecks: 0, status: 'open', createdById, note },
+      data: {
+        streamId,
+        userId,
+        amountKopecks,
+        paidKopecks: 0,
+        status: 'open',
+        createdById,
+        note,
+        periodKey,
+        kind,
+      },
     });
   } catch (err) {
-    // Гонка: параллельно уже создали открытое начисление (нарушение partial unique).
-    // Не дублируем — возвращаем существующее открытое.
+    // Гонка/повторный прогон: уже создано начисление (нарушение partial unique —
+    // charge_active_uniq для разовых либо charge_period_uniq для месячных). Не
+    // дублируем — возвращаем существующее.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      const created = await tx.charge.findFirst({
-        where: { streamId, userId, status: 'open' },
-      });
+      const created = await tx.charge.findFirst({ where: existingWhere });
       if (created) return created;
     }
     throw err;

@@ -4,6 +4,7 @@ import { createNotification } from './notifications.js';
 import { sweepFailedRecordings } from './zoom-recording.js';
 import { sweepSessionAttendance } from './zoom-attendance.js';
 import { sweepAutoDoneSessions } from './session-status.js';
+import { sweepMentorshipCharges, sweepMentorshipWarnings } from './mentorship-billing.js';
 
 // Минимальный логгер (форма Fastify-логгера) для свиперов, работающих вне
 // HTTP-контекста (нет request/app в cron). Пишем в console, как остальные задачи.
@@ -102,6 +103,33 @@ export function startCronJobs(): void {
       await sweepAutoDoneSessions(cronLogger);
     } catch (err) {
       console.error('[cron] sweep auto-done sessions error', err);
+    }
+  });
+
+  // Свипер месячных авто-списаний за менторские группы — каждый час (в :10).
+  // Раз в месяц (в день billingDayOfMonth по Москве) начисляет monthlyPriceKopecks
+  // не-демо студентам активных monthly-групп и тут же гасит с баланса; не хватило —
+  // долг + уведомление. Идемпотентность периода (charge_period_uniq + catch P2002):
+  // повторный прогон за период не двоит начисление. Ошибки на каждом студенте
+  // sweepMentorshipCharges глотает — cron не падает. NB: инстанс ОДИН, поэтому
+  // распределённый лок не нужен (идемпотентность периода и так защищает от дублей).
+  cron.schedule('10 * * * *', async () => {
+    try {
+      await sweepMentorshipCharges({});
+    } catch (err) {
+      console.error('[cron] sweep mentorship charges error', err);
+    }
+  });
+
+  // Свипер предупреждений о ближайшем списании за менторскую группу — каждый час (в :20).
+  // За MENTORSHIP_REMINDER_DAYS дней до списания при прогнозе нехватки средств шлёт
+  // студенту уведомление (с дедупом по периоду). Об успешном списании НЕ уведомляет.
+  // Ошибки на каждом студенте sweepMentorshipWarnings глотает.
+  cron.schedule('20 * * * *', async () => {
+    try {
+      await sweepMentorshipWarnings({});
+    } catch (err) {
+      console.error('[cron] sweep mentorship warnings error', err);
     }
   });
 

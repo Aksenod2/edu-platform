@@ -12,11 +12,14 @@ type PrismaLike = typeof prisma | Prisma.TransactionClient;
  * 2. Бэкофилл StudentAssignment по всем сессиям потока, у уроков которых есть
  *    задание (lesson.hasAssignment). Ключуется по StudentAssignment(sessionId,
  *    studentId); skipDuplicates делает повторный вызов безопасным.
- * 3. Платёжный план группы (эпик «Оплата и баланс»): если у потока задана цена
- *    (Stream.priceKopecks != null), создаёт начисление (createCharge — идемпотентно,
- *    второе ОТКРЫТОЕ начисление не появится) и сразу гасит долг доступными средствами
- *    (settleOutstandingCharges — частичное погашение, баланс не уводится в минус).
- *    Без цены шаг 3 пропускается.
+ * 3. Платёжный план группы (эпик «Оплата и баланс»): создаёт РАЗОВОЕ начисление
+ *    (createCharge — идемпотентно, второе ОТКРЫТОЕ начисление не появится) и сразу гасит
+ *    долг доступными средствами (settleOutstandingCharges — частичное погашение, баланс
+ *    не уводится в минус). Шаг 3 выполняется ТОЛЬКО для разовых групп с заданной ценой:
+ *      - billingType='monthly' (менторская): разовое начисление НЕ создаём — первое
+ *        месячное сделает cron в день billingDayOfMonth (эпик «Авто-списание за группы»);
+ *      - student.isDemo=true (демо/служебный): не начисляем ВООБЩЕ (демо не платит);
+ *      - priceKopecks == null (разовая цена не задана): шаг 3 пропускается.
  *
  * Студент, зачисленный по инвайт-ссылке, получает задания так же, как при ручном
  * добавлении админом (паритет). ВСЕ шаги выполняются через переданный `client`; для
@@ -58,12 +61,26 @@ export async function enrollStudentInStream(
     });
   }
 
-  // Платёжный план группы: начисляем и сразу гасим долг доступными средствами.
-  const stream = await client.stream.findUnique({
-    where: { id: streamId },
-    select: { priceKopecks: true },
-  });
-  if (stream && stream.priceKopecks != null) {
+  // Платёжный план группы: разовое начисление + авто-погашение долга. Только для
+  // разовых групп (billingType='one_time') с заданной ценой и НЕ для демо-студентов.
+  // Менторские (monthly) начисляет cron (первое — в день billingDayOfMonth); демо не платит.
+  const [stream, student] = await Promise.all([
+    client.stream.findUnique({
+      where: { id: streamId },
+      select: { priceKopecks: true, billingType: true },
+    }),
+    client.user.findUnique({
+      where: { id: userId },
+      select: { isDemo: true },
+    }),
+  ]);
+  if (
+    stream &&
+    stream.billingType === 'one_time' &&
+    stream.priceKopecks != null &&
+    student &&
+    !student.isDemo
+  ) {
     await createCharge(client, {
       streamId,
       userId,

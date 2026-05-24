@@ -7,6 +7,7 @@ import {
   InsufficientFundsError,
   MAX_AMOUNT_KOPECKS,
 } from '../lib/money.js';
+import { computeNextChargeInfo } from '../lib/mentorship-billing.js';
 
 // Кошелёк студента: ручной баланс в копейках + история операций.
 // Пополнение/списание делает администратор вручную (после скриншота перевода в чате).
@@ -130,7 +131,7 @@ export async function walletRoutes(app: FastifyInstance) {
 
     const student = await prisma.user.findUnique({
       where: { id },
-      select: { balanceKopecks: true, role: true },
+      select: { balanceKopecks: true, role: true, isDemo: true },
     });
     if (!student || student.role !== 'student') {
       return reply.status(404).send({ error: 'Студент не найден' });
@@ -140,6 +141,58 @@ export async function walletRoutes(app: FastifyInstance) {
       where: { userId: id },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Прогноз ближайших месячных списаний по активным менторским группам студента.
+    // Демо-аккаунты не списываются — для них список пуст. Для каждой активной monthly-группы
+    // с заданными суммой(>0) и днём считаем дату/период следующего списания и признак
+    // нехватки средств (упрощённо: текущий баланс < месячной суммы).
+    const nextMentorshipCharges: Array<{
+      streamId: string;
+      streamName: string;
+      nextChargeDate: string;
+      amountKopecks: number;
+      willGoIntoDebt: boolean;
+    }> = [];
+
+    if (!student.isDemo) {
+      const monthlyEnrollments = await prisma.streamEnrollment.findMany({
+        where: {
+          userId: id,
+          stream: {
+            status: 'active',
+            billingType: 'monthly',
+            monthlyPriceKopecks: { gt: 0 },
+            billingDayOfMonth: { not: null },
+          },
+        },
+        select: {
+          stream: {
+            select: {
+              id: true,
+              name: true,
+              monthlyPriceKopecks: true,
+              billingDayOfMonth: true,
+            },
+          },
+        },
+      });
+
+      const now = new Date();
+      for (const { stream } of monthlyEnrollments) {
+        const { nextChargeDate, amountKopecks } = computeNextChargeInfo(stream, now);
+        nextMentorshipCharges.push({
+          streamId: stream.id,
+          streamName: stream.name,
+          nextChargeDate: nextChargeDate.toISOString(),
+          amountKopecks,
+          willGoIntoDebt: student.balanceKopecks < amountKopecks,
+        });
+      }
+      // Ближайшее списание — первым.
+      nextMentorshipCharges.sort((a, b) =>
+        a.nextChargeDate < b.nextChargeDate ? -1 : a.nextChargeDate > b.nextChargeDate ? 1 : 0,
+      );
+    }
 
     // Начисления за группы (ledger «Оплата и баланс»): что и сколько начислено/погашено.
     // Финансы видит только админ либо сам студент (guard self||admin выше).
@@ -171,6 +224,12 @@ export async function walletRoutes(app: FastifyInstance) {
       0,
     );
 
-    return { balanceKopecks: student.balanceKopecks, transactions, charges, outstandingKopecks };
+    return {
+      balanceKopecks: student.balanceKopecks,
+      transactions,
+      charges,
+      outstandingKopecks,
+      nextMentorshipCharges,
+    };
   });
 }

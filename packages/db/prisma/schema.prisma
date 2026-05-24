@@ -89,6 +89,25 @@ enum NotificationType {
   assignment_reviewed
   schedule_entry_created
   topup_requested
+  mentorship_charge_upcoming
+  mentorship_charge_debt
+}
+
+// Тип биллинга группы (дискриминатор): one_time — разовая оплата за участие
+// (Stream.priceKopecks), monthly — ежемесячное авто-списание за менторскую группу
+// (Stream.monthlyPriceKopecks в день Stream.billingDayOfMonth). Эпик «Авто-списание
+// за менторские группы».
+enum StreamBillingType {
+  one_time
+  monthly
+}
+
+// Тип начисления (атрибуция): one_time — разовое начисление за участие в группе;
+// monthly — ежемесячное менторское начисление (с привязкой к периоду Charge.periodKey).
+// Позволяет отличать менторские списания от разовых в статистике/отчётах.
+enum ChargeKind {
+  one_time
+  monthly
 }
 
 model User {
@@ -101,6 +120,10 @@ model User {
   isActive            Boolean   @default(true)
   mustChangePassword  Boolean   @default(false)
   balanceKopecks      Int       @default(0)
+  // Единый флаг «демо/служебный аккаунт»: НЕ списывать деньги (ни регулярно, ни разово)
+  // И скрывать из статистики. Один флаг на пользователе (не per-enrollment). Эпик
+  // «Авто-списание за менторские группы».
+  isDemo              Boolean   @default(false)
   inviteToken         String?   @unique
   inviteExpiresAt     DateTime?
   resetToken          String?   @unique
@@ -176,7 +199,17 @@ model Stream {
   joinTokenAt DateTime?
   // Платёжный план группы: цена за участие в копейках. null = план не задан
   // (студенты не начисляются автоматически). Эпик «Оплата и баланс».
+  // Смысл — РАЗОВАЯ цена (billingType = one_time).
   priceKopecks Int?
+  // Тип биллинга группы: one_time (разовая, priceKopecks) либо monthly (ежемесячное
+  // авто-списание, monthlyPriceKopecks в день billingDayOfMonth). Эпик
+  // «Авто-списание за менторские группы».
+  billingType         StreamBillingType @default(one_time)
+  // Месячная сумма авто-списания в копейках (смысл при billingType = monthly).
+  monthlyPriceKopecks Int?
+  // День месяца для авто-списания (1–28; значения 29–31 cron клампит к последнему дню
+  // месяца — в БД хранится как есть, валидация на стороне приложения).
+  billingDayOfMonth   Int?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -603,9 +636,13 @@ model TopUpRequest {
 // (одно начисление может гаситься несколькими WalletTransaction). status: open → paid после
 // полного погашения; refunded — возврат админом. createdById — админ-создатель (для аудита/возврата).
 //
-// ИДЕМПОТЕНТНОСТЬ: ровно одно ОТКРЫТОЕ начисление на пару (streamId, userId) — гарантируется
-// PARTIAL UNIQUE INDEX "charge_active_uniq" ... WHERE status='open' (создаётся сырым SQL в миграции,
-// т.к. Prisma не умеет partial unique в schema). После полного погашения можно создать новое.
+// ИДЕМПОТЕНТНОСТЬ (создаётся сырым SQL в миграции, т.к. Prisma не умеет partial unique в schema):
+//  - РАЗОВЫЕ (periodKey IS NULL): ровно одно ОТКРЫТОЕ начисление на пару (streamId, userId) —
+//    PARTIAL UNIQUE "charge_active_uniq" WHERE status='open' AND periodKey IS NULL. После
+//    полного погашения можно создать новое.
+//  - МЕСЯЧНЫЕ (periodKey IS NOT NULL): ровно одно начисление на (streamId, userId, periodKey)
+//    в любом статусе — PARTIAL UNIQUE "charge_period_uniq" WHERE periodKey IS NOT NULL (долг
+//    прошлого месяца НЕ блокирует начисление за новый период).
 model Charge {
   id            String       @id @default(uuid())
   streamId      String
@@ -615,6 +652,12 @@ model Charge {
   status        ChargeStatus @default(open)
   note          String?
   createdById   String? // админ-создатель начисления (для аудита/возврата)
+  // Период месячного начисления в формате 'YYYY-MM' (напр. '2026-05'). null = разовое
+  // начисление. Используется для идемпотентности ежемесячного авто-списания
+  // (partial unique "charge_period_uniq" по (streamId,userId,periodKey) WHERE periodKey IS NOT NULL).
+  periodKey     String?
+  // Тип начисления (атрибуция): one_time — разовое, monthly — ежемесячное менторское.
+  kind          ChargeKind   @default(one_time)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

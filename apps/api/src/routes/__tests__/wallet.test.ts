@@ -9,6 +9,7 @@ vi.mock('@platform/db', () => ({
     user: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     walletTransaction: { create: vi.fn(), findMany: vi.fn() },
     charge: { findMany: vi.fn() },
+    streamEnrollment: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -247,8 +248,9 @@ describe('GET /students/:id/wallet', () => {
   });
 
   it('200 — админ: баланс, история, charges и outstandingKopecks', async () => {
-    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 3000, role: 'student' });
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 3000, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([
       {
         id: 'c-1',
@@ -290,8 +292,9 @@ describe('GET /students/:id/wallet', () => {
   });
 
   it('200 — сам студент (token userId === :id)', async () => {
-    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 1500, role: 'student' });
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 1500, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([]);
     const app = buildApp();
     const res = await app.inject({
@@ -302,5 +305,94 @@ describe('GET /students/:id/wallet', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().balanceKopecks).toBe(1500);
     expect(res.json().outstandingKopecks).toBe(0);
+    expect(res.json().nextMentorshipCharges).toEqual([]);
+  });
+});
+
+describe('GET /students/:id/wallet — nextMentorshipCharges (прогноз месячных списаний)', () => {
+  it('200 — отдаёт ближайшие списания по активным monthly-группам + признак нехватки', async () => {
+    // Баланс 100000; одна monthly-группа на 500000 → willGoIntoDebt=true.
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 100000, role: 'student', isDemo: false });
+    db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([
+      {
+        stream: {
+          id: 'st-1',
+          name: 'Менторская',
+          monthlyPriceKopecks: 500000,
+          billingDayOfMonth: 15,
+        },
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/students/s-1/wallet',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.nextMentorshipCharges).toHaveLength(1);
+    expect(body.nextMentorshipCharges[0]).toMatchObject({
+      streamId: 'st-1',
+      streamName: 'Менторская',
+      amountKopecks: 500000,
+      willGoIntoDebt: true,
+    });
+    // Дата следующего списания — валидный ISO.
+    expect(typeof body.nextMentorshipCharges[0].nextChargeDate).toBe('string');
+    expect(Number.isNaN(Date.parse(body.nextMentorshipCharges[0].nextChargeDate))).toBe(false);
+    // Выборка зачислений ограничена активными monthly-группами с планом.
+    expect(db.streamEnrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 's-1',
+          stream: expect.objectContaining({
+            status: 'active',
+            billingType: 'monthly',
+            monthlyPriceKopecks: { gt: 0 },
+            billingDayOfMonth: { not: null },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('200 — баланса хватает → willGoIntoDebt=false', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 600000, role: 'student', isDemo: false });
+    db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([
+      { stream: { id: 'st-1', name: 'Менторская', monthlyPriceKopecks: 500000, billingDayOfMonth: 15 } },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/students/s-1/wallet',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.json().nextMentorshipCharges[0].willGoIntoDebt).toBe(false);
+  });
+
+  it('200 — демо-студент: прогноз пуст и зачисления не запрашиваются (демо не платит)', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 0, role: 'student', isDemo: true });
+    db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/students/s-1/wallet',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().nextMentorshipCharges).toEqual([]);
+    expect(db.streamEnrollment.findMany).not.toHaveBeenCalled();
   });
 });

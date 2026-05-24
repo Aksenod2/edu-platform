@@ -108,6 +108,90 @@ describe('createCharge — идемпотентность', () => {
   });
 });
 
+describe('createCharge — идемпотентность периода (месячные начисления)', () => {
+  it('возвращает существующее начисление за период (любой статус) и НЕ создаёт второе', async () => {
+    const tx = makeTx();
+    // За период уже есть начисление (даже непогашенное) — повторный прогон не двоит.
+    const existing = { id: 'c-m1', streamId: 's-1', userId: 'u-1', periodKey: '2026-05', status: 'open' };
+    tx.charge.findFirst.mockResolvedValueOnce(existing);
+
+    const res = await createCharge(tx as AnyTx, {
+      streamId: 's-1',
+      userId: 'u-1',
+      amountKopecks: 500000,
+      periodKey: '2026-05',
+      kind: 'monthly',
+    });
+
+    expect(res).toBe(existing);
+    expect(tx.charge.create).not.toHaveBeenCalled();
+    // Идемпотентность месячных ищется по (streamId, userId, periodKey), а не по status.
+    expect(tx.charge.findFirst).toHaveBeenCalledWith({
+      where: { streamId: 's-1', userId: 'u-1', periodKey: '2026-05' },
+    });
+  });
+
+  it('создаёт месячное начисление с periodKey/kind, если за период его ещё нет', async () => {
+    const tx = makeTx();
+    tx.charge.findFirst.mockResolvedValueOnce(null);
+    const created = { id: 'c-m2', periodKey: '2026-05', kind: 'monthly', status: 'open' };
+    tx.charge.create.mockResolvedValueOnce(created);
+
+    const res = await createCharge(tx as AnyTx, {
+      streamId: 's-1',
+      userId: 'u-1',
+      amountKopecks: 500000,
+      periodKey: '2026-05',
+      kind: 'monthly',
+    });
+
+    expect(res).toBe(created);
+    expect(tx.charge.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ periodKey: '2026-05', kind: 'monthly', amountKopecks: 500000 }),
+      }),
+    );
+  });
+
+  it('гонка/повторный прогон P2002 (charge_period_uniq) → возвращает существующее за период', async () => {
+    const tx = makeTx();
+    tx.charge.findFirst
+      .mockResolvedValueOnce(null) // первая проверка — пусто
+      .mockResolvedValueOnce({ id: 'c-m3', periodKey: '2026-05', status: 'open' }); // после P2002
+    tx.charge.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique', { code: 'P2002', clientVersion: 'test' }),
+    );
+
+    const res = await createCharge(tx as AnyTx, {
+      streamId: 's-1',
+      userId: 'u-1',
+      amountKopecks: 500000,
+      periodKey: '2026-05',
+      kind: 'monthly',
+    });
+
+    expect(res).toMatchObject({ id: 'c-m3' });
+  });
+
+  it('по умолчанию (без periodKey) пишет periodKey=null и kind=one_time (разовое)', async () => {
+    const tx = makeTx();
+    tx.charge.findFirst.mockResolvedValueOnce(null);
+    tx.charge.create.mockResolvedValueOnce({ id: 'c-o1' });
+
+    await createCharge(tx as AnyTx, { streamId: 's-1', userId: 'u-1', amountKopecks: 10000 });
+
+    expect(tx.charge.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ periodKey: null, kind: 'one_time' }),
+      }),
+    );
+    // Идемпотентность разовых — по открытому начислению без периода.
+    expect(tx.charge.findFirst).toHaveBeenCalledWith({
+      where: { streamId: 's-1', userId: 'u-1', status: 'open', periodKey: null },
+    });
+  });
+});
+
 describe('settleOutstandingCharges — частичное погашение без минуса', () => {
   it('нет открытых начислений → 0 списаний', async () => {
     const tx = makeTx();
