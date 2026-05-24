@@ -389,6 +389,60 @@ describe('POST /lessons/:id/attendance/resync — забор из Zoom', () => {
     );
   });
 
+  it('admin: пересинк НЕ затирает ручную привязку гостя (регрессия)', async () => {
+    db.session.findUnique.mockResolvedValueOnce({
+      id: 'session-1',
+      streamId: 'stream-1',
+      zoomMeetingId: '999',
+      lessonId: 'lesson-1',
+    });
+    db.lessonTeacher.findMany.mockResolvedValue([]);
+    // В составе нет совпадения по email гостя — авто-сопоставление дало бы null.
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    // Зум-ряд гостя УЖЕ есть и сопоставлен вручную (userId='manual-student').
+    db.sessionAttendance.findFirst.mockResolvedValue({
+      id: 'a1',
+      userId: 'manual-student',
+    });
+    db.sessionAttendance.update.mockResolvedValue({ id: 'a1' });
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      zoomReportResponse([
+        {
+          id: 'p2',
+          name: 'Гость',
+          user_email: 'guest@x.ru',
+          join_time: '2026-05-24T10:05:00Z',
+          leave_time: '2026-05-24T10:30:00Z',
+          duration: 1500,
+        },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    db.streamEnrollment.count.mockResolvedValueOnce(1);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/lesson-1/attendance/resync',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Ряд уже был → update, не create.
+    expect(db.sessionAttendance.update).toHaveBeenCalledTimes(1);
+    expect(db.sessionAttendance.create).not.toHaveBeenCalled();
+    // Ручная привязка сохранена (не сброшена в null при пересинке).
+    expect(db.sessionAttendance.update.mock.calls[0][0].data.userId).toBe(
+      'manual-student',
+    );
+    // А прочие поля из Zoom обновились.
+    expect(db.sessionAttendance.update.mock.calls[0][0].data.displayName).toBe('Гость');
+  });
+
   it('admin: Zoom 403 (scope не выдан) → ok:false без падения', async () => {
     db.session.findUnique.mockResolvedValueOnce({
       id: 'session-1',
