@@ -12,10 +12,11 @@ import {
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
-import { ChevronLeft, Download, FileText, Link2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Download, FileText, Link2, Loader2, MessageSquare } from 'lucide-react';
 import { useBack } from '@/components/back-button';
 import { toast } from 'sonner';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
+import { HintCallout } from '@/components/hint-callout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -254,6 +255,17 @@ export default function AssignmentDetailPage() {
           <div>
             <h2 className="mb-4 text-lg font-semibold tracking-tight">Студенты</h2>
 
+            <div className="mb-4">
+              <HintCallout
+                storageKey="eduhint:assignment-review-thread"
+                title="Разбор и переписка — это одно общение с учеником"
+              >
+                «Разбор работы» (вердикт + комментарий) приходит ученику в его
+                переписку с преподавателем. Отдельного чата у задания нет — кнопка
+                «Переписка» открывает ту же самую переписку целиком.
+              </HintCallout>
+            </div>
+
             {studentAssignments.length === 0 ? (
               <div className="flex flex-col items-center gap-4 rounded-lg border bg-card px-6 py-8 text-center">
                 <p className="text-sm text-muted-foreground">
@@ -369,9 +381,11 @@ export default function AssignmentDetailPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  title="Открыть общую переписку с учеником"
                                   onClick={() => router.push(`/admin/students/${sa.student!.id}/thread`)}
                                 >
-                                  Сообщения
+                                  <MessageSquare />
+                                  Переписка
                                 </Button>
                               )}
                               {sa.status === 'submitted' && (
