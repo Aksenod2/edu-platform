@@ -2222,7 +2222,8 @@ export type NotificationType =
   | 'thread_entry'
   | 'assignment_submitted'
   | 'assignment_reviewed'
-  | 'schedule_entry_created';
+  | 'schedule_entry_created'
+  | 'topup_requested';
 
 export interface Notification {
   id: string;
@@ -2309,6 +2310,8 @@ export function getNotificationLink(
       return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
     case 'schedule_entry_created':
       return role === 'student' ? '/dashboard/schedule' : '/admin/lessons';
+    case 'topup_requested':
+      return '/admin/topups';
     default:
       return null;
   }

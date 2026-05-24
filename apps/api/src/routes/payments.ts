@@ -6,6 +6,7 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { isPositiveInt, creditBalance, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 import { settleOutstandingCharges } from '../lib/charges.js';
+import { notifyMany } from '../lib/notifications.js';
 
 // Эпик «Оплата и баланс», Фаза 1.
 //
@@ -44,6 +45,17 @@ async function fileUrlFor(key: string | null | undefined): Promise<string | null
   } catch {
     return null;
   }
+}
+
+// Форматирование суммы (копейки → рубли) для текста уведомления, напр. 500000 → «5 000 ₽».
+// Деньги хранятся в копейках; в уведомлении показываем рубли с разделителями тысяч.
+function formatRubles(kopecks: number): string {
+  const rubles = kopecks / 100;
+  // Целые рубли — без копеек; с копейками — две цифры после запятой.
+  const formatted = Number.isInteger(rubles)
+    ? rubles.toLocaleString('ru-RU')
+    : rubles.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${formatted} ₽`;
 }
 
 // Сентинел-ошибка для отката транзакции с понятным HTTP-кодом 409 («уже обработана»).
@@ -160,6 +172,29 @@ export async function paymentRoutes(app: FastifyInstance) {
         },
         select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
       });
+
+      // Best-effort: уведомляем всех админов о новой заявке на пополнение.
+      // Ошибка уведомления НЕ должна валить создание заявки (.catch как в других местах).
+      // Имя студента берём из БД (в JWT-пэйлоаде имени нет).
+      void (async () => {
+        const [student, admins] = await Promise.all([
+          prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+          prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+        ]);
+        const adminIds = admins.map((a) => a.id);
+        if (adminIds.length === 0) return;
+
+        const studentName = student?.name?.trim() || 'Студент';
+        const body =
+          claimedAmountKopecks != null
+            ? `${studentName} · ${formatRubles(claimedAmountKopecks)}`
+            : `${studentName} приложил оплату`;
+
+        await notifyMany(adminIds, 'topup_requested', 'Новая заявка на пополнение', body, {
+          studentId: userId,
+          requestId: created.id,
+        });
+      })().catch(() => {});
 
       // Ответ без screenshotKey (приватный ключ в публичные поля не отдаём).
       return reply.status(201).send(created);
