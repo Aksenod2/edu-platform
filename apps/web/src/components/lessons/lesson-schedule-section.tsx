@@ -3,22 +3,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
+  ExternalLink,
   FileText,
   Loader2,
   Pencil,
+  RefreshCw,
   Trash2,
+  Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
+import { parseVideoEmbed } from '@/lib/video-embed';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +57,7 @@ import {
   getLesson,
   getLessonSessions,
   getStreams,
+  retrySessionRecording,
   unscheduleLesson,
   updateAssignment,
   updateLesson,
@@ -61,17 +69,16 @@ import {
   type Stream,
 } from '@/lib/api';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   LESSON_STATUS_LABELS,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
   dateKey,
 } from '@/components/schedule/utils';
-
-const STATUS_VARIANT: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -121,6 +128,9 @@ export function LessonScheduleSection({
   const [summaryStreamId, setSummaryStreamId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
+
+  // Повтор автозагрузки записи Zoom: streamId занятия, по которому идёт запрос.
+  const [retryingStreamId, setRetryingStreamId] = useState('');
 
   // Подтягиваем выданные задания для всех потоков, где урок запланирован.
   // «Выдано» = есть синтетическое задание (Session) по этому lessonId в потоке.
@@ -253,6 +263,21 @@ export function LessonScheduleSection({
     }
   }
 
+  // Повторить автозагрузку записи Zoom для зафейленного занятия (админ).
+  async function handleRetryRecording(sid: string) {
+    if (retryingStreamId) return;
+    setRetryingStreamId(sid);
+    try {
+      const { message } = await retrySessionRecording(accessToken, lessonId, sid);
+      await load();
+      toast.success(message || 'Перезапустили загрузку записи');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось перезапустить загрузку');
+    } finally {
+      setRetryingStreamId('');
+    }
+  }
+
   // Открыть строку выдачи ДЗ для потока: если уже выдано — подставить дедлайн.
   function openIssue(sid: string) {
     const existing = issuedByStream[sid];
@@ -284,7 +309,7 @@ export function LessonScheduleSection({
       });
       cancelIssue();
       await load();
-      toast.success('ДЗ выдано студентам потока');
+      toast.success('ДЗ выдано студентам группы');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось выдать ДЗ');
     } finally {
@@ -364,8 +389,8 @@ export function LessonScheduleSection({
       ) : sessions.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {activeStreams.length === 0
-            ? 'Нет активных потоков для планирования.'
-            : 'Урок ещё не запланирован. Нажмите «Запланировать», чтобы поставить его в поток на дату.'}
+            ? 'Нет активных групп для планирования.'
+            : 'Урок ещё не запланирован. Нажмите «Запланировать», чтобы поставить его в группу на дату.'}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -373,6 +398,11 @@ export function LessonScheduleSection({
             const issued = issuedByStream[s.streamId];
             const issueOpen = issueStreamId === s.streamId;
             const summaryOpen = summaryStreamId === s.streamId;
+            // Запись занятия: даём админу проверить её до студентов.
+            const hasRecording = !!(s.recordingFileUrl || s.recordingVideoUrl);
+            const recordingEmbed = s.recordingVideoUrl
+              ? parseVideoEmbed(s.recordingVideoUrl)
+              : null;
             return (
               <div
                 key={s.streamId}
@@ -380,9 +410,7 @@ export function LessonScheduleSection({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{s.streamName}</span>
-                  <Badge variant={STATUS_VARIANT[s.status]} className="font-normal">
-                    {LESSON_STATUS_LABELS[s.status]}
-                  </Badge>
+                  <LessonStatusBadge status={s.status} className="font-normal" />
                   <span className="text-muted-foreground">
                     {s.date ? formatDate(s.date) : 'без даты'}
                     {s.startTime ? `, ${s.startTime}` : ''}
@@ -392,6 +420,7 @@ export function LessonScheduleSection({
                     <RecordingStatusBadge
                       status={s.recordingStatus}
                       error={s.recordingError}
+                      requestedAt={s.recordingRequestedAt}
                     />
                   )}
                   {hasAssignment && issued && (
@@ -402,28 +431,94 @@ export function LessonScheduleSection({
                     </Badge>
                   )}
                   <div className="ml-auto flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7"
-                      onClick={() => openEdit(s)}
-                    >
-                      <Pencil className="size-4" />
-                      <span className="sr-only">Изменить</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-destructive hover:text-destructive"
-                      onClick={() => setRemoveStreamId(s.streamId)}
-                    >
-                      <Trash2 className="size-4" />
-                      <span className="sr-only">Снять с расписания</span>
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onClick={() => openEdit(s)}
+                        >
+                          <Pencil className="size-4" />
+                          <span className="sr-only">Изменить занятие</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Изменить занятие</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-destructive hover:text-destructive"
+                          onClick={() => setRemoveStreamId(s.streamId)}
+                        >
+                          <Trash2 className="size-4" />
+                          <span className="sr-only">Снять с расписания</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Снять с расписания</TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
+
+                {/* Запись Zoom не получена: видимая причина (а не только в title бейджа)
+                    + ручной повтор автозагрузки для админа. На мобиле причина и кнопка
+                    идут колонкой (кнопка под текстом), на десктопе — в строку. */}
+                {s.status === 'done' && s.recordingStatus === 'failed' && (
+                  <div className="flex flex-col gap-2 rounded-md bg-muted p-2 sm:flex-row sm:items-center">
+                    <p className="flex min-w-0 flex-1 items-start gap-1.5 text-sm text-muted-foreground">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      <span className="min-w-0 break-words">
+                        {s.recordingError?.trim() || 'Не удалось получить запись'}
+                      </span>
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full shrink-0 sm:w-fit"
+                      onClick={() => handleRetryRecording(s.streamId)}
+                      disabled={retryingStreamId === s.streamId}
+                    >
+                      {retryingStreamId === s.streamId ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      Повторить
+                    </Button>
+                  </div>
+                )}
+
+                {/* Плеер записи занятия — для проверки админом до студентов.
+                    Файл → VideoFileFrame, распознанный embed → VideoEmbedFrame,
+                    иначе кнопка-ссылка. Компактно, под бейджами/статусом записи. */}
+                {hasRecording && (
+                  <div className="rounded-md bg-muted p-2">
+                    {s.recordingFileUrl ? (
+                      <VideoFileFrame
+                        src={s.recordingFileUrl}
+                        label={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : recordingEmbed ? (
+                      <VideoEmbedFrame
+                        src={recordingEmbed}
+                        title={`Запись занятия — ${s.streamName}`}
+                      />
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" className="w-fit" asChild>
+                        <a href={s.recordingVideoUrl!} target="_blank" rel="noopener noreferrer">
+                          <Video className="size-4" />
+                          Смотреть запись
+                          <ExternalLink className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
 
                 {/* Выдача ДЗ — только если у урока включено folded-задание. */}
                 {hasAssignment &&
@@ -433,11 +528,11 @@ export function LessonScheduleSection({
                         <FieldLabel htmlFor={`due-${s.streamId}`} className="text-xs">
                           Дедлайн
                         </FieldLabel>
-                        <Input
+                        <DatePicker
                           id={`due-${s.streamId}`}
-                          type="date"
                           value={issueDueDate}
-                          onChange={(e) => setIssueDueDate(e.target.value)}
+                          onChange={(v) => setIssueDueDate(v ?? '')}
+                          placeholder="Без дедлайна"
                           className="h-8"
                         />
                       </Field>
@@ -541,7 +636,7 @@ export function LessonScheduleSection({
       {/* Подсказка: задание у урока выключено — выдавать нечего. */}
       {!loading && sessions.length > 0 && !hasAssignment && (
         <p className="text-xs text-muted-foreground">
-          Включите задание в уроке, чтобы выдавать ДЗ в потоки.
+          Включите задание в уроке, чтобы выдавать ДЗ в группы.
         </p>
       )}
 
@@ -549,15 +644,15 @@ export function LessonScheduleSection({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editStreamId ? 'Изменить занятие' : 'Запланировать урок'}</DialogTitle>
-            <DialogDescription>Поставьте урок в поток на дату и время.</DialogDescription>
+            <DialogDescription>Поставьте урок в группу на дату и время.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={submit} className="flex flex-col gap-4">
             <Field>
-              <FieldLabel htmlFor="sched-stream">Поток</FieldLabel>
+              <FieldLabel htmlFor="sched-stream">Группа</FieldLabel>
               <Select value={streamId} onValueChange={setStreamId} disabled={!!editStreamId}>
                 <SelectTrigger id="sched-stream" className="w-full">
-                  <SelectValue placeholder="Выберите поток" />
+                  <SelectValue placeholder="Выберите группу" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectStreams.map((s) => (
@@ -572,11 +667,10 @@ export function LessonScheduleSection({
             <div className="grid grid-cols-2 gap-3">
               <Field>
                 <FieldLabel htmlFor="sched-date">Дата</FieldLabel>
-                <Input
+                <DatePicker
                   id="sched-date"
-                  type="date"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(v) => setDate(v ?? '')}
                 />
               </Field>
               <Field>
@@ -597,7 +691,7 @@ export function LessonScheduleSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUS_ORDER.map((s) => (
+                  {MANUAL_STATUS_ORDER.map((s) => (
                     <SelectItem key={s} value={s}>
                       {LESSON_STATUS_LABELS[s]}
                     </SelectItem>
@@ -652,7 +746,7 @@ export function LessonScheduleSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Снять с расписания?</AlertDialogTitle>
             <AlertDialogDescription>
-              Занятие урока в этом потоке будет удалено (вместе со сдачами по нему). Сам
+              Занятие урока в этой группе будет удалено (вместе со сдачами по нему). Сам
               урок-блок останется в копилке.
             </AlertDialogDescription>
           </AlertDialogHeader>

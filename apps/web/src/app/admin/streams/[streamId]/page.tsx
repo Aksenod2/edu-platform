@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
-  ArrowLeft,
   Loader2,
   Users,
   BookOpen,
@@ -17,10 +16,16 @@ import {
   UserPlus,
   ExternalLink,
   CalendarX,
+  Send,
+  Wallet,
+  Undo2,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { BackButton } from '@/components/back-button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -87,18 +92,27 @@ import {
   updateLesson,
   unscheduleLesson,
   getAssignments,
+  createAssignment,
   deleteAssignment,
   getTeachers,
   updateStream,
-  LESSON_STATUS_LABELS,
+  getStreamCharges,
+  refundCharge,
+  formatKopecks,
+  rublesToKopecks,
+  kopecksToRublesInput,
   type StreamWithCounts,
   type Student,
   type Teacher,
   type Lesson,
-  type LessonStatus,
   type Assignment,
+  type StreamChargeRow,
+  type StreamChargePaymentStatus,
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
+import { InviteLinkDialog } from '@/components/invite-link-dialog';
+import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
 const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
@@ -133,7 +147,7 @@ export default function StreamDetailPage() {
       setStream(stream);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки потока');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки группы');
     } finally {
       setLoading(false);
     }
@@ -156,19 +170,9 @@ export default function StreamDetailPage() {
   if (error || !stream) {
     return (
       <div className="flex flex-col gap-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          asChild
-        >
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <Alert variant="destructive">
-          <AlertDescription>{error || 'Поток не найден'}</AlertDescription>
+          <AlertDescription>{error || 'Группа не найдена'}</AlertDescription>
         </Alert>
       </div>
     );
@@ -177,12 +181,7 @@ export default function StreamDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-          <Link href="/admin/streams">
-            <ArrowLeft />
-            Назад
-          </Link>
-        </Button>
+        <BackButton fallbackHref="/admin/streams" />
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{stream.name}</h1>
           {stream.status === 'active' ? (
@@ -197,7 +196,7 @@ export default function StreamDetailPage() {
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
-            <TabsTrigger value="students">Ученики</TabsTrigger>
+            <TabsTrigger value="students">Студенты</TabsTrigger>
             <TabsTrigger value="lessons">Уроки</TabsTrigger>
             <TabsTrigger value="assignments">Задания</TabsTrigger>
             <TabsTrigger value="schedule">Расписание</TabsTrigger>
@@ -213,7 +212,11 @@ export default function StreamDetailPage() {
         </TabsContent>
 
         <TabsContent value="students" className="mt-4">
-          <StudentsTab streamId={streamId} onRosterChange={fetchStream} />
+          <StudentsTab
+            streamId={streamId}
+            streamName={stream.name}
+            onRosterChange={fetchStream}
+          />
         </TabsContent>
 
         <TabsContent value="lessons" className="mt-4">
@@ -324,8 +327,8 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
         storageKey="eduhint:stream-schedule-tab"
         title="Расписание = когда урок идёт этой группе"
       >
-        Поставьте урок на дату — получится занятие (урок × этот поток × дата).
-        Один урок можно проводить разным потокам в разные дни.
+        Поставьте урок на дату — получится занятие (урок × эта группа × дата).
+        Один урок можно проводить разным группам в разные дни.
       </HintCallout>
 
       {error && (
@@ -337,24 +340,15 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
         editable
         lessons={lessons}
         streams={[stream]}
+        lessonBasePath="/admin/lessons"
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
+        onChanged={fetchAll}
       />
     </div>
   );
 }
-
-// Вариант бейджа для статуса урока (совпадает с другими экранами уроков).
-const lessonStatusBadgeVariant: Record<
-  LessonStatus,
-  'secondary' | 'default' | 'outline' | 'destructive'
-> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
 
 /** Дата "YYYY-MM-DD" в формате "ДД.ММ.ГГГГ" (без UTC-сдвига). */
 function formatLessonDate(date: string): string {
@@ -366,6 +360,7 @@ function formatLessonDate(date: string): string {
 // странице урока /admin/lessons/[id]; здесь — только обзор и «снять с потока».
 function LessonsTab({ stream }: { stream: StreamWithCounts }) {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -402,7 +397,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
       await unscheduleLesson(accessToken, lesson.id, stream.id);
       await fetchLessons();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка снятия урока с потока');
+      setError(err instanceof Error ? err.message : 'Ошибка снятия урока с группы');
     } finally {
       setUnschedulingId(null);
     }
@@ -412,21 +407,26 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
     <div className="flex flex-col gap-4">
       <HintCallout
         storageKey="eduhint:stream-lessons-tab"
-        title="Уроки этого потока"
+        title="Уроки этой группы"
       >
-        Это уроки из копилки, поставленные в расписание группы. «Снять с потока»
-        убирает занятие из расписания — сам урок-блок и его контент остаются в
-        копилке.
+        Это уроки из копилки, поставленные в расписание группы. «Запланировать
+        занятие» добавляет урок в эту группу. «Снять с группы» убирает занятие из
+        расписания — сам урок-блок и его контент остаются в копилке.
       </HintCallout>
 
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
-        <h2 className="text-lg font-semibold tracking-tight">Уроки потока</h2>
-        <Button asChild>
-          <Link href="/admin/schedule">
-            <CalendarDays />
-            Запланировать занятие
-          </Link>
-        </Button>
+        <h2 className="text-lg font-semibold tracking-tight">Уроки группы</h2>
+        {/* Планируем урок прямо здесь с предвыбранной текущей группой. Для архивной
+            группы кнопка диалога задизейблена (нет активных потоков для планирования). */}
+        {accessToken && (
+          <PlanLessonDialog
+            accessToken={accessToken}
+            streams={[stream]}
+            defaultStreamId={stream.id}
+            onPlanned={fetchLessons}
+            triggerClassName="w-full sm:w-auto"
+          />
+        )}
       </div>
 
       {error && (
@@ -459,7 +459,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                   colSpan={5}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет уроков. Запланируйте занятие в расписании.
+                  В группе пока нет уроков. Нажмите «Запланировать занятие».
                 </TableCell>
               </TableRow>
             ) : (
@@ -469,17 +469,28 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                     {lesson.sortOrder}
                   </TableCell>
                   <TableCell>
+                    {/* ?streamId — forward-compatible: будущий View Mode урока
+                        покажет контекст этой группы; текущая страница его игнорирует. */}
                     <Link
-                      href={`/admin/lessons/${lesson.id}`}
+                      href={`/admin/lessons/${lesson.id}?streamId=${stream.id}`}
                       className="font-medium text-foreground underline-offset-4 hover:underline"
                     >
                       {lesson.title}
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={lessonStatusBadgeVariant[lesson.status] ?? 'default'}>
-                      {LESSON_STATUS_LABELS[lesson.status]}
-                    </Badge>
+                    {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
+                        «Запланирован» требует даты → предлагаем открыть урок (там дата). */}
+                    <SessionStatusControl
+                      lessonId={lesson.id}
+                      streamId={stream.id}
+                      status={lesson.status}
+                      hasDate={!!lesson.date}
+                      onChanged={fetchLessons}
+                      onEditRequest={() =>
+                        router.push(`/admin/lessons/${lesson.id}?streamId=${stream.id}`)
+                      }
+                    />
                   </TableCell>
                   <TableCell className="tabular-nums text-muted-foreground">
                     {lesson.date
@@ -491,7 +502,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8" asChild>
-                            <Link href={`/admin/lessons/${lesson.id}`}>
+                            <Link href={`/admin/lessons/${lesson.id}?streamId=${stream.id}`}>
                               <ExternalLink />
                               <span className="sr-only">Открыть урок</span>
                             </Link>
@@ -513,10 +524,10 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                             ) : (
                               <CalendarX />
                             )}
-                            <span className="sr-only">Снять с потока</span>
+                            <span className="sr-only">Снять с группы</span>
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Снять с потока</TooltipContent>
+                        <TooltipContent>Снять с группы</TooltipContent>
                       </Tooltip>
                     </div>
                   </TableCell>
@@ -533,10 +544,10 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Снять урок с потока?</AlertDialogTitle>
+            <AlertDialogTitle>Снять урок с группы?</AlertDialogTitle>
             <AlertDialogDescription>
               {lessonToUnschedule &&
-                `Урок «${lessonToUnschedule.title}» будет снят с расписания этого потока. Сам урок-блок останется — его можно запланировать снова.`}
+                `Урок «${lessonToUnschedule.title}» будет снят с расписания этой группы. Сам урок-блок останется — его можно запланировать снова.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -545,7 +556,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
               variant="destructive"
               onClick={() => { if (lessonToUnschedule) handleUnschedule(lessonToUnschedule); }}
             >
-              Снять с потока
+              Снять с группы
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -565,6 +576,8 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
   // Подтверждение снятия задания + индикатор по конкретному заданию.
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Индикатор выдачи по конкретному заданию (до-материализация назначений).
+  const [issuingId, setIssuingId] = useState<string | null>(null);
 
   const fetchAssignments = useCallback(async () => {
     if (!accessToken || !streamId) return;
@@ -598,18 +611,44 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
     }
   };
 
+  // Выдать задание студентам потока: эндпоинт идемпотентен (skipDuplicates) —
+  // материализует StudentAssignment всем зачисленным без дублей.
+  const handleIssue = async (assignment: Assignment) => {
+    if (!accessToken) return;
+    setIssuingId(assignment.id);
+    try {
+      await createAssignment(accessToken, {
+        streamId: assignment.streamId,
+        lessonId: assignment.lessonId ?? undefined,
+        title: assignment.title,
+        description: assignment.description ?? undefined,
+        criteria: assignment.criteria ?? undefined,
+        type: assignment.type,
+        tags: assignment.tags,
+        materials: assignment.materials,
+        dueDate: assignment.dueDate ?? undefined,
+      });
+      await fetchAssignments();
+      toast.success('Задание выдано студентам');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выдать задание');
+    } finally {
+      setIssuingId(null);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <HintCallout
         storageKey="eduhint:stream-assignments-tab"
         title="Задания приходят из уроков"
       >
-        Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этому потоку:
-        ученики сдают, вы проверяете. Само ДЗ создаётся и редактируется на
+        Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этой группе:
+        студенты сдают, вы проверяете. Само ДЗ создаётся и редактируется на
         странице урока.
       </HintCallout>
 
-      <h2 className="text-lg font-semibold tracking-tight">Задания потока</h2>
+      <h2 className="text-lg font-semibold tracking-tight">Задания группы</h2>
 
       {error && (
         <Alert variant="destructive">
@@ -639,7 +678,7 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
                   colSpan={3}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет заданий. Выдайте ДЗ со страницы урока.
+                  В группе пока нет заданий. Выдайте ДЗ со страницы урока.
                 </TableCell>
               </TableRow>
             ) : (
@@ -663,9 +702,26 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/admin/assignments/${a.id}`}>Проверить</Link>
-                      </Button>
+                      {/* Назначений нет — проверять нечего: предлагаем выдать. */}
+                      {a._count?.studentAssignments === 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={issuingId === a.id}
+                          onClick={() => handleIssue(a)}
+                        >
+                          {issuingId === a.id ? (
+                            <Loader2 className="animate-spin" />
+                          ) : (
+                            <Send />
+                          )}
+                          Выдать
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/admin/assignments/${a.id}`}>Проверить</Link>
+                        </Button>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -729,6 +785,364 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() ?? '')
     .join('');
+}
+
+// Бейдж платёжного статуса студента по группе.
+const PAYMENT_STATUS_META: Record<
+  StreamChargePaymentStatus,
+  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+> = {
+  paid: { label: 'Оплачено', variant: 'default' },
+  partial: { label: 'Частично', variant: 'secondary' },
+  unpaid: { label: 'Должен', variant: 'destructive' },
+  none: { label: 'Нет начислений', variant: 'outline' },
+};
+
+// Карточка платёжного плана группы: ввод цены (рубли ↔ копейки) + сохранение.
+// Пустое значение = «план не задан» (priceKopecks: null).
+function PaymentPlanCard({
+  stream,
+  onChanged,
+}: {
+  stream: StreamWithCounts;
+  onChanged: () => void;
+}) {
+  const { accessToken } = useAuth();
+  const [value, setValue] = useState(kopecksToRublesInput(stream.priceKopecks));
+  const [saving, setSaving] = useState(false);
+
+  // Синхронизируем поле, если цена изменилась извне (после рефетча группы).
+  useEffect(() => {
+    setValue(kopecksToRublesInput(stream.priceKopecks));
+  }, [stream.priceKopecks]);
+
+  const currentKopecks = stream.priceKopecks ?? null;
+  // «Грязное» состояние: введённое отличается от сохранённого.
+  const trimmed = value.trim();
+  const parsed = trimmed === '' ? null : rublesToKopecks(trimmed);
+  const invalid = trimmed !== '' && parsed === null;
+  const dirty = (parsed ?? null) !== currentKopecks;
+
+  const handleSave = async () => {
+    if (!accessToken || invalid) return;
+    setSaving(true);
+    try {
+      await updateStream(accessToken, stream.id, { priceKopecks: parsed });
+      toast.success(parsed === null ? 'Платёжный план снят' : 'Цена группы сохранена');
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения цены');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+        <Wallet className="size-4 text-muted-foreground" />
+        <CardTitle className="text-base">Платёжный план</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+            <Label htmlFor="stream-price">Цена группы, ₽</Label>
+            <Input
+              id="stream-price"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="1"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Например, 30000"
+              aria-invalid={invalid}
+            />
+          </div>
+          <Button
+            onClick={handleSave}
+            disabled={saving || invalid || !dirty}
+            className="w-full sm:w-auto"
+          >
+            {saving && <Loader2 className="animate-spin" />}
+            Сохранить
+          </Button>
+        </div>
+        {invalid ? (
+          <p className="text-sm text-destructive">Укажите неотрицательную сумму в рублях.</p>
+        ) : currentKopecks === null ? (
+          <p className="text-sm text-muted-foreground">
+            План не задан — начисления по группе не делаются. Укажите цену, чтобы включить
+            платёжный план.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Текущая цена: <span className="font-medium text-foreground">{formatKopecks(currentKopecks)}</span>.
+            Очистите поле и сохраните, чтобы снять план.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Таблица оплат группы: студент / начислено / оплачено / остаток / статус + возврат.
+// На мобильных таблица превращается в стек карточек.
+function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
+  const { accessToken } = useAuth();
+
+  const [priceKopecks, setPriceKopecks] = useState<number | null>(null);
+  const [rows, setRows] = useState<StreamChargeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
+
+  // Возврат: выбранная строка + сумма (рубли) + индикатор.
+  const [refundRow, setRefundRow] = useState<StreamChargeRow | null>(null);
+  const [refundRubles, setRefundRubles] = useState('');
+  const [refunding, setRefunding] = useState(false);
+
+  const fetchCharges = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const data = await getStreamCharges(accessToken, stream.id);
+      setPriceKopecks(data.priceKopecks);
+      setRows(data.students);
+      setError('');
+      setForbidden(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ошибка загрузки оплат';
+      if (message.toLowerCase().includes('доступ')) setForbidden(true);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, stream.id]);
+
+  useEffect(() => {
+    fetchCharges();
+  }, [fetchCharges]);
+
+  const openRefund = (row: StreamChargeRow) => {
+    setRefundRow(row);
+    // По умолчанию — вся оплаченная сумма (её и можно вернуть).
+    setRefundRubles(kopecksToRublesInput(row.paidKopecks));
+  };
+
+  const handleRefund = async () => {
+    if (!accessToken || !refundRow) return;
+    const kopecks = rublesToKopecks(refundRubles);
+    if (kopecks === null || kopecks <= 0) {
+      toast.error('Укажите корректную сумму возврата');
+      return;
+    }
+    if (kopecks > refundRow.paidKopecks) {
+      toast.error('Сумма возврата больше оплаченной');
+      return;
+    }
+    setRefunding(true);
+    try {
+      await refundCharge(accessToken, refundRow.id, kopecks);
+      toast.success(`Возвращено ${formatKopecks(kopecks)} на баланс студента`);
+      setRefundRow(null);
+      await fetchCharges();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выполнить возврат');
+    } finally {
+      setRefunding(false);
+    }
+  };
+
+  // Остаток долга по строке (только для open-начислений).
+  const outstanding = (row: StreamChargeRow) => Math.max(row.amountKopecks - row.paidKopecks, 0);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+        <Wallet className="size-4 text-muted-foreground" />
+        <CardTitle className="text-base">Оплаты</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {forbidden ? (
+          <p className="text-sm text-muted-foreground">
+            Недостаточно прав для просмотра оплат группы.
+          </p>
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : loading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : priceKopecks === null ? (
+          <div className="flex items-start gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Цена группы не задана. Укажите её в блоке «Платёжный план» выше — тогда здесь
+              появятся начисления и оплаты студентов.
+            </span>
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">В группе пока нет студентов.</p>
+        ) : (
+          <>
+            {/* Десктоп: таблица */}
+            <div className="hidden rounded-lg border sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Студент</TableHead>
+                    <TableHead className="text-right">Начислено</TableHead>
+                    <TableHead className="text-right">Оплачено</TableHead>
+                    <TableHead className="text-right">Остаток</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="w-[1%] text-right">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => {
+                    const meta = PAYMENT_STATUS_META[row.paymentStatus];
+                    const due = outstanding(row);
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-foreground">{row.name}</span>
+                            <span className="text-xs text-muted-foreground">{row.email}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatKopecks(row.paidKopecks)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right tabular-nums font-medium ${
+                            due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {due > 0 ? formatKopecks(due) : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={meta.variant}>{meta.label}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {row.paidKopecks > 0 ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openRefund(row)}
+                            >
+                              <Undo2 />
+                              Вернуть
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Мобильные: карточки-стек */}
+            <ul className="flex flex-col gap-3 sm:hidden">
+              {rows.map((row) => {
+                const meta = PAYMENT_STATUS_META[row.paymentStatus];
+                const due = outstanding(row);
+                return (
+                  <li key={row.id} className="rounded-lg border p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate font-medium text-foreground">{row.name}</span>
+                        <span className="truncate text-xs text-muted-foreground">{row.email}</span>
+                      </div>
+                      <Badge variant={meta.variant} className="shrink-0">
+                        {meta.label}
+                      </Badge>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Начислено</dt>
+                        <dd className="tabular-nums">
+                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Оплачено</dt>
+                        <dd className="tabular-nums">{formatKopecks(row.paidKopecks)}</dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Остаток</dt>
+                        <dd
+                          className={`tabular-nums font-medium ${
+                            due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {due > 0 ? formatKopecks(due) : '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                    {row.paidKopecks > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 w-full"
+                        onClick={() => openRefund(row)}
+                      >
+                        <Undo2 />
+                        Вернуть
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </CardContent>
+
+      {/* Диалог возврата с подтверждением суммы */}
+      <Dialog open={!!refundRow} onOpenChange={(open) => { if (!open) setRefundRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Вернуть оплату</DialogTitle>
+            <DialogDescription>
+              {refundRow &&
+                `Сумма вернётся на баланс студента «${refundRow.name}». Оплачено по группе: ${formatKopecks(refundRow.paidKopecks)}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="refund-amount">Сумма возврата, ₽</Label>
+            <Input
+              id="refund-amount"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={refundRubles}
+              onChange={(e) => setRefundRubles(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundRow(null)} disabled={refunding}>
+              Отмена
+            </Button>
+            <Button onClick={handleRefund} disabled={refunding}>
+              {refunding && <Loader2 className="animate-spin" />}
+              Вернуть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
 }
 
 // Сентинел «без ведущего» — Radix Select не допускает пустую строку как value.
@@ -811,7 +1225,7 @@ function OverviewTab({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                Поток считается общим, если по его урокам больше одного преподавателя.
+                Группа считается общей, если по её урокам больше одного преподавателя.
               </TooltipContent>
             </Tooltip>
           )}
@@ -830,7 +1244,7 @@ function OverviewTab({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Преподаватели ещё не назначены на уроки потока.
+              Преподаватели ещё не назначены на уроки группы.
             </p>
           )}
         </CardContent>
@@ -840,7 +1254,7 @@ function OverviewTab({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Учеников
+              Студентов
             </CardTitle>
             <Users className="size-4 text-muted-foreground" />
           </CardHeader>
@@ -864,6 +1278,10 @@ function OverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {/* Платёжный план группы (цена) + таблица оплат студентов */}
+      <PaymentPlanCard stream={stream} onChanged={onOwnerChange} />
+      <StreamChargesSection stream={stream} />
 
       <Card>
         <CardHeader>
@@ -889,12 +1307,15 @@ function OverviewTab({
 
 function StudentsTab({
   streamId,
+  streamName,
   onRosterChange,
 }: {
   streamId: string;
+  streamName: string;
   onRosterChange: () => void;
 }) {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [roster, setRoster] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -920,7 +1341,7 @@ function StudentsTab({
       setRoster(students);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки учеников');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки студентов');
     } finally {
       setLoading(false);
     }
@@ -999,11 +1420,20 @@ function StudentsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <h2 className="text-lg font-semibold tracking-tight">Ученики потока</h2>
-        <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
-          <UserPlus />
-          Добавить учеников
-        </Button>
+        <h2 className="text-lg font-semibold tracking-tight">Студенты группы</h2>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          {accessToken && (
+            <InviteLinkDialog
+              streamId={streamId}
+              streamName={streamName}
+              accessToken={accessToken}
+            />
+          )}
+          <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
+            <UserPlus />
+            Добавить студентов
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -1035,12 +1465,17 @@ function StudentsTab({
                   colSpan={4}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В потоке пока нет учеников
+                  В группе пока нет студентов
                 </TableCell>
               </TableRow>
             ) : (
               roster.map((student) => (
-                <TableRow key={student.id}>
+                // Вся строка ведёт на карточку студента (student.id — это userId).
+                <TableRow
+                  key={student.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/admin/students/${student.id}`)}
+                >
                   <TableCell className="font-medium">{student.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {student.email}
@@ -1052,7 +1487,10 @@ function StudentsTab({
                       <Badge variant="outline">Неактивен</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1065,7 +1503,7 @@ function StudentsTab({
                       ) : (
                         <Trash2 />
                       )}
-                      <span className="sr-only">Убрать из потока</span>
+                      <span className="sr-only">Убрать из группы</span>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -1078,9 +1516,9 @@ function StudentsTab({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Добавить учеников</DialogTitle>
+            <DialogTitle>Добавить студентов</DialogTitle>
             <DialogDescription>
-              Выберите учеников, которых нужно добавить в поток.
+              Выберите студентов, которых нужно добавить в группу.
             </DialogDescription>
           </DialogHeader>
 
@@ -1101,7 +1539,7 @@ function StudentsTab({
               </div>
             ) : candidates.length === 0 ? (
               <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                Нет доступных учеников для добавления
+                Нет доступных студентов для добавления
               </div>
             ) : (
               <ul className="divide-y">
@@ -1158,9 +1596,9 @@ function StudentsTab({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Убрать ученика из потока?</AlertDialogTitle>
+            <AlertDialogTitle>Убрать студента из группы?</AlertDialogTitle>
             <AlertDialogDescription>
-              {studentToRemove && `Ученик «${studentToRemove.name}» будет убран из этого потока.`}
+              {studentToRemove && `Студент «${studentToRemove.name}» будет убран из этой группы.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

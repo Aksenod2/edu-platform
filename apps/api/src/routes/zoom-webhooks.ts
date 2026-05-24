@@ -13,7 +13,12 @@ import { decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  processTranscriptForSession,
+  markRecordingPending,
+  markSummaryPending,
+  markTranscriptPending,
 } from '../lib/zoom-recording.js';
+import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 
 // Окно допустимого расхождения времени запроса (анти-replay): 5 минут.
 const REPLAY_WINDOW_MS = 5 * 60 * 1000;
@@ -22,6 +27,9 @@ const REPLAY_WINDOW_MS = 5 * 60 * 1000;
 // валидируем на границе перед использованием).
 interface ZoomEventPayload {
   event?: string;
+  // download_token — короткоживущий токен для скачивания файлов записи, который
+  // Zoom кладёт на ВЕРХНЕМ уровне события recording.completed (рядом с event).
+  download_token?: string;
   payload?: {
     plainToken?: string;
     object?: {
@@ -79,6 +87,7 @@ async function processEventAsync(
   event: string,
   teacherUserId: string,
   obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+  downloadToken: string | null,
 ): Promise<void> {
   try {
     const meetingId = obj?.id !== undefined && obj?.id !== null ? String(obj.id) : null;
@@ -86,16 +95,102 @@ async function processEventAsync(
     if (meetingId) {
       const session = await prisma.session.findFirst({
         where: { zoomMeetingId: meetingId },
-        select: { id: true },
+        select: { id: true, streamId: true, zoomMeetingId: true },
       });
 
       if (session) {
-        if (event === 'recording.completed') {
+        if (event === 'meeting.started') {
+          // Созвон начался → занятие «Идёт» (live). Переводим ТОЛЬКО из 'planned':
+          // не трогаем уже завершённые ('done'), отменённые ('cancelled') и
+          // черновики ('draft'). updateMany с условием status='planned' идемпотентен:
+          // повторный meeting.started затронет 0 строк (занятие уже 'live'), а откат
+          // руками в иной статус не перебивается. ВАЖНО: фактическая доставка
+          // 'meeting.started' зависит от включения этого события в подписке Zoom-
+          // приложения (вне кода) — код к нему готов заранее.
+          const { count } = await prisma.session.updateMany({
+            where: { id: session.id, status: 'planned' },
+            data: { status: 'live' },
+          });
+          app.log.info(
+            { sessionId: session.id, meetingId, updated: count },
+            'meeting.started: занятие переведено в live (из planned)',
+          );
+        } else if (event === 'meeting.ended') {
+          // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
+          // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
+          await markRecordingPending({ sessionId: session.id });
+          // Итоги (AI Companion) и транскрипт тоже готовятся минуты после конца
+          // созвона — помечаем «готовится», чтобы UI не показывал ложное «нет данных».
+          // transcriptRequestedAt фиксируется внутри markTranscriptPending (для таймаута).
+          await markSummaryPending({ sessionId: session.id });
+          await markTranscriptPending({ sessionId: session.id });
+
+          // Забор посещаемости из Zoom Report API. Отчёт участников готов НЕ сразу
+          // после meeting.ended (Zoom агрегирует минуты), поэтому здесь это
+          // best-effort: ранний прогон может вернуть ok:false («отчёт ещё не
+          // сформирован» / нет scope) — окончательно добирает свипер по cron
+          // (sweepSessionAttendance). pullSessionAttendanceFromZoom сама не бросает
+          // (возвращает ok:false при ошибке), но на всякий случай ловим и тут,
+          // чтобы сбой посещаемости не повалил обработку записи/вебхука.
+          try {
+            await pullSessionAttendanceFromZoom(app, {
+              id: session.id,
+              streamId: session.streamId,
+              zoomMeetingId: session.zoomMeetingId,
+            });
+          } catch (err) {
+            app.log.error(
+              { err, sessionId: session.id },
+              'Ошибка забора посещаемости на meeting.ended (добёрёт свипер)',
+            );
+          }
+
+          // Авто-перевод занятия в «Проведён»: созвон завершился → урок проведён.
+          // Это автоматически включает выдачу ДЗ / показ записи (они завязаны на
+          // status='done'). Переводим из 'planned' ИЛИ 'live' (занятие могло быть
+          // в эфире, если ранее пришёл meeting.started) — не трогаем уже отменённые
+          // ('cancelled'), уже завершённые ('done') и черновики ('draft').
+          // updateMany с условием status IN ('planned','live') идемпотентен:
+          // повторный вебхук затронет 0 строк. Откат done→planned руками (PATCH)
+          // тоже не перебивается — повторный meeting.ended на ту же встречу обычно
+          // не приходит, а если придёт по ретраю — дедуп вебхука его отсечёт.
+          await prisma.session.updateMany({
+            where: { id: session.id, status: { in: ['planned', 'live'] } },
+            data: { status: 'done' },
+          });
+        } else if (event === 'recording.completed') {
           await processRecordingForSession({
             sessionId: session.id,
             meetingId,
             teacherUserId,
             payloadFiles: obj?.recording_files ?? null,
+            downloadToken,
+          });
+          // Фолбэк: транскрипт нередко уже лежит в recording_files того же события
+          // (или подъедет к моменту запроса API) — пробуем забрать. Если его ещё
+          // нет, processTranscriptForSession просто выйдет без изменения статуса.
+          // best-effort: ошибка транскрипта не должна валить обработку записи.
+          try {
+            await processTranscriptForSession({
+              sessionId: session.id,
+              meetingId,
+              teacherUserId,
+              payloadFiles: obj?.recording_files ?? null,
+              downloadToken,
+            });
+          } catch (err) {
+            app.log.error(
+              { err, sessionId: session.id },
+              'recording.completed: ошибка фолбэк-забора транскрипта (добёрёт transcript_completed)',
+            );
+          }
+        } else if (event === 'recording.transcript_completed') {
+          await processTranscriptForSession({
+            sessionId: session.id,
+            meetingId,
+            teacherUserId,
+            payloadFiles: obj?.recording_files ?? null,
+            downloadToken,
           });
         } else if (event === 'meeting.summary_completed') {
           await processSummaryForSession({
@@ -242,8 +337,21 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
 
     // Тяжёлую работу (скачивание/резюме) делаем асинхронно, чтобы Zoom не
     // ретраил по таймауту. Отвечаем 200 сразу.
-    if (event === 'recording.completed' || event === 'meeting.summary_completed') {
-      void processEventAsync(app, webhookEventId, event, integration.userId, body.payload?.object);
+    if (
+      event === 'meeting.started' ||
+      event === 'meeting.ended' ||
+      event === 'recording.completed' ||
+      event === 'recording.transcript_completed' ||
+      event === 'meeting.summary_completed'
+    ) {
+      void processEventAsync(
+        app,
+        webhookEventId,
+        event,
+        integration.userId,
+        body.payload?.object,
+        body.download_token ?? null,
+      );
     } else {
       // Прочие события нам не интересны — сразу помечаем обработанными.
       void prisma.zoomWebhookEvent

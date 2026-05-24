@@ -10,10 +10,14 @@ process.env.CORS_ORIGIN = 'https://example.test';
 vi.mock('@platform/db', async () => {
   const actual = await vi.importActual<typeof import('@platform/db')>('@platform/db');
   const tx = {
-    user: { create: vi.fn() },
+    user: { create: vi.fn(), findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
     streamEnrollment: { create: vi.fn() },
     session: { findMany: vi.fn() },
     studentAssignment: { createMany: vi.fn() },
+    // enrollStudentInStream читает priceKopecks потока через переданный tx-клиент.
+    stream: { findUnique: vi.fn() },
+    charge: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    walletTransaction: { create: vi.fn() },
   };
   return {
     prisma: {
@@ -270,6 +274,8 @@ describe('POST /public/streams/join/:token — регистрация по сс�
     // Бэкофилл: одна сессия потока с заданием.
     tx.session.findMany.mockResolvedValueOnce([{ id: 'sess-1' }]);
     tx.studentAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+    // Платёжный план не задан (priceKopecks null) → начислений нет.
+    tx.stream.findUnique.mockResolvedValueOnce({ priceKopecks: null });
     db.refreshToken.create.mockResolvedValueOnce({ id: 'rt-1' });
 
     const app = buildPublicApp();
@@ -341,7 +347,7 @@ describe('POST /public/streams/join/:token — регистрация по сс�
     });
 
     expect(res.statusCode).toBe(409);
-    expect((res.json() as { error: string }).error).toBe('Набор в этот поток закрыт');
+    expect((res.json() as { error: string }).error).toBe('Набор в эту группу закрыт');
     expect(tx.user.create).not.toHaveBeenCalled();
   });
 

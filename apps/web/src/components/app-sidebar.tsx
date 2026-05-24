@@ -15,7 +15,6 @@ import {
   ClipboardList,
   ClipboardCheck,
   MessagesSquare,
-  FolderOpen,
   Wallet,
   Banknote,
   User,
@@ -77,7 +76,7 @@ const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Обучение',
     items: [
-      { label: 'Потоки', href: '/admin/streams', icon: Layers },
+      { label: 'Группы', href: '/admin/streams', icon: Layers },
       { label: 'Расписание', href: '/admin/schedule', icon: CalendarDays },
     ],
   },
@@ -110,7 +109,6 @@ const STUDENT_NAV: NavGroup[] = [
       { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Уроки', href: '/dashboard/lessons', icon: BookOpen },
       { label: 'Задания', href: '/dashboard/assignments', icon: ClipboardList },
-      { label: 'Материалы', href: '/dashboard/materials', icon: FolderOpen },
     ],
   },
   {
@@ -124,7 +122,7 @@ const STUDENT_NAV: NavGroup[] = [
 
 const ROLE_LABEL: Record<'admin' | 'student', string> = {
   admin: 'Администратор',
-  student: 'Ученик',
+  student: 'Студент',
 };
 
 export function AppSidebar({

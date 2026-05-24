@@ -134,6 +134,34 @@ export async function createZoomMeeting(
   return { joinUrl: data.join_url, meetingId: String(data.id) };
 }
 
+// Удаляет встречу Zoom под аккаунтом пользователя.
+// DELETE https://api.zoom.us/v2/meetings/{meetingId} (Bearer).
+// Best-effort: вызывающий (отмена занятия) оборачивает в try/catch и НЕ валит
+// операцию при ошибке Zoom. 404 («встречи уже нет») трактуем как успех —
+// результат тот же. На прочие ошибки бросаем Error, чтобы вызывающий залогировал.
+export async function deleteZoomMeeting(userId: string, meetingId: string): Promise<void> {
+  const token = await getZoomAccessToken(userId);
+
+  const res = await fetch(`${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // 204 — удалено; 404 — встречи уже нет (тот же итог) — оба считаем успехом.
+  if (res.ok || res.status === 404) return;
+
+  let detail = '';
+  try {
+    const errBody = (await res.json()) as { message?: string };
+    detail = errBody.message || '';
+  } catch {
+    // тело может быть не JSON — игнорируем
+  }
+  throw new Error(
+    `Zoom вернул ошибку при удалении встречи (${res.status})${detail ? `: ${detail}` : ''}`,
+  );
+}
+
 // Технически ли возможно создать встречу Zoom для пользователя (БЕЗ учёта тумблера
 // автосоздания): интеграция включена, заполнены все реквизиты и настроен ключ
 // шифрования (без него не расшифровать секрет). Это предусловия самой интеграции —
@@ -228,9 +256,22 @@ interface ZoomRecordingsResponse {
   recording_files?: ZoomRecordingFile[];
 }
 
+// Ошибка вызова API Zoom с СОХРАНЁННЫМ HTTP-кодом. Нужна вызывающему (обработке
+// записи/транскрипта), чтобы отличить «записи ещё нет» (404 на листинге recordings
+// → данные формируются) от реальной ошибки доступа (403/нет scope → сбой). Текст
+// безопасен (только код, без сырого URL/тела ответа Zoom).
+export class ZoomApiHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message?: string) {
+    super(message ?? `Zoom вернул ошибку (HTTP ${status})`);
+    this.status = status;
+  }
+}
+
 // Возвращает список файлов записи встречи Zoom.
 // GET https://api.zoom.us/v2/meetings/{meetingId}/recordings (Bearer).
-// Бросает Error при неуспехе (вызывающий оборачивает и не падает).
+// Бросает ZoomApiHttpError при неуспехе (вызывающий смотрит status: 404 = записи
+// ещё нет/не готова → processing; прочее, напр. 403 = реальная ошибка → failed).
 export async function getMeetingRecordings(
   userId: string,
   meetingId: string,
@@ -253,7 +294,8 @@ export async function getMeetingRecordings(
     } catch {
       // тело может быть не JSON — игнорируем
     }
-    throw new Error(
+    throw new ZoomApiHttpError(
+      res.status,
       `Zoom вернул ошибку при получении записей (${res.status})${detail ? `: ${detail}` : ''}`,
     );
   }

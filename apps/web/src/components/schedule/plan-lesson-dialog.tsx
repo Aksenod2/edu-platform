@@ -5,6 +5,7 @@ import { CalendarPlus, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
@@ -34,7 +35,7 @@ import {
 } from '@/lib/api';
 import {
   LESSON_STATUS_LABELS,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
   dateKey,
 } from '@/components/schedule/utils';
 
@@ -181,16 +182,16 @@ export function PlanLessonDialog({
         <DialogHeader>
           <DialogTitle>Запланировать занятие</DialogTitle>
           <DialogDescription>
-            Поставьте урок-блок в поток на дату или создайте новый урок.
+            Поставьте урок-блок в группу на дату или создайте новый урок.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-4">
           <Field>
-            <FieldLabel htmlFor="plan-stream">Поток</FieldLabel>
+            <FieldLabel htmlFor="plan-stream">Группа</FieldLabel>
             <Select value={streamId} onValueChange={setStreamId}>
               <SelectTrigger id="plan-stream" className="w-full">
-                <SelectValue placeholder="Выберите поток" />
+                <SelectValue placeholder="Выберите группу" />
               </SelectTrigger>
               <SelectContent>
                 {activeStreams.map((s) => (
@@ -238,11 +239,10 @@ export function PlanLessonDialog({
           <div className="grid grid-cols-2 gap-3">
             <Field>
               <FieldLabel htmlFor="plan-date">Дата</FieldLabel>
-              <Input
+              <DatePicker
                 id="plan-date"
-                type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(v) => setDate(v ?? '')}
               />
             </Field>
             <Field>
@@ -263,7 +263,7 @@ export function PlanLessonDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {STATUS_ORDER.map((s) => (
+                {MANUAL_STATUS_ORDER.map((s) => (
                   <SelectItem key={s} value={s}>
                     {LESSON_STATUS_LABELS[s]}
                   </SelectItem>

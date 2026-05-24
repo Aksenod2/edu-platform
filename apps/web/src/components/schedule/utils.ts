@@ -7,23 +7,58 @@ import type { CalendarLesson } from '@/components/schedule-calendar';
 /** Урок-занятие для единого расписания (псевдоним CalendarLesson; `streamName` уже в нём). */
 export type ScheduleLesson = CalendarLesson;
 
-/** Вариант бейджа статуса занятия. */
+/**
+ * Вариант бейджа статуса занятия. Для 'live' («Идёт») берём акцентный 'default',
+ * но визуально его рендерит «живой» бейдж (LessonStatusBadge) с пульсирующей
+ * точкой — вариант здесь оставлен для единообразия словаря и фолбэков.
+ */
 export const STATUS_BADGE_VARIANT: Record<
   LessonStatus,
   'secondary' | 'default' | 'outline' | 'destructive'
 > = {
   draft: 'secondary',
   planned: 'default',
+  live: 'default',
   done: 'outline',
   cancelled: 'destructive',
 };
 
 export { LESSON_STATUS_LABELS };
 
-/** Все статусы в порядке для Select. */
-export const STATUS_ORDER: LessonStatus[] = ['draft', 'planned', 'done', 'cancelled'];
+/**
+ * Все статусы в порядке для Select. 'live' стоит после 'planned' (логичный ход
+ * жизни занятия), хотя в ручных меню он скрывается — это системный статус Zoom.
+ */
+export const STATUS_ORDER: LessonStatus[] = [
+  'draft',
+  'planned',
+  'live',
+  'done',
+  'cancelled',
+];
+
+/**
+ * Статусы, доступные для РУЧНОГО выбора (Select при создании/редактировании,
+ * меню смены статуса). 'live' исключён — это системный статус: его ставит/снимает
+ * Zoom автоматически (между meeting.started и meeting.ended).
+ */
+export const MANUAL_STATUS_ORDER: LessonStatus[] = STATUS_ORDER.filter(
+  (s) => s !== 'live',
+);
 
 export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+/**
+ * Кнопку «Присоединиться» к созвону показываем только для запланированного
+ * занятия со ссылкой: у проведённого (done), отменённого (cancelled) или
+ * черновика (draft) присоединяться уже некуда.
+ */
+export function canJoinMeeting(lesson: {
+  status?: LessonStatus | null;
+  meetingUrl?: string | null;
+}): boolean {
+  return lesson.status === 'planned' && Boolean(lesson.meetingUrl);
+}
 
 /** Парсит дату из ISO-строки как локальную (без UTC-сдвига). */
 export function parseLocalDate(dateStr: string): Date {

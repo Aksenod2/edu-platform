@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,6 @@ export default function ProfilePage() {
   const [error, setError] = useState('');
 
   const [resume, setResume] = useState('');
-  const [portfolio, setPortfolio] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
   const [contactTelegram, setContactTelegram] = useState('');
   const [direction, setDirection] = useState('');
 
@@ -34,8 +32,6 @@ export default function ProfilePage() {
       setProfile(data.profile);
       if (data.profile) {
         setResume(data.profile.resume || '');
-        setPortfolio(data.profile.portfolio || '');
-        setContactEmail(data.profile.contacts?.email || '');
         setContactTelegram(data.profile.contacts?.telegram || '');
         setDirection(data.profile.direction || '');
       }
@@ -64,8 +60,8 @@ export default function ProfilePage() {
     e.preventDefault();
     if (!accessToken || !user) return;
 
-    if (!resume.trim() || !portfolio.trim() || !contactEmail.trim() || !direction.trim()) {
-      setError('Все поля обязательны для заполнения');
+    if (!resume.trim() || !direction.trim()) {
+      setError('Заполните резюме и направление');
       return;
     }
 
@@ -75,8 +71,7 @@ export default function ProfilePage() {
     try {
       const result = await updateProfile(accessToken, user.id, {
         resume: resume.trim(),
-        portfolio: portfolio.trim(),
-        contacts: { email: contactEmail.trim(), telegram: contactTelegram.trim() },
+        contacts: { telegram: contactTelegram.trim() },
         direction: direction.trim(),
       });
       setProfile(result.profile);
@@ -110,6 +105,26 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Приветствие новичку — показываем, пока анкета не заполнена */}
+      {!isCompleted && (
+        <Card className="mt-4 border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Рады видеть вас в группе!</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
+            <p>
+              Вы в личном кабинете школы «Основа»: здесь вы будете проходить уроки,
+              выполнять задания и получать обратную связь преподавателя — всё в одном месте.
+            </p>
+            <p>
+              Первый шаг — знакомство. Заполните короткую анкету ниже: расскажите о себе
+              и выберите направление. Так преподаватель сразу поймёт, с чего вам начать.
+              Обязательны два поля — «Резюме» и «Направление». Поехали!
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Avatar + status strip */}
       <Card className="mb-8 mt-4">
         <CardContent className="flex items-center gap-4">
@@ -125,16 +140,6 @@ export default function ProfilePage() {
           {isCompleted && <Badge variant="secondary" className="flex-shrink-0">Анкета заполнена</Badge>}
         </CardContent>
       </Card>
-
-      {/* Warning */}
-      {!isCompleted && (
-        <Alert className="mb-6">
-          <TriangleAlert />
-          <AlertDescription>
-            Заполните анкету, чтобы преподаватель знал ваш профессиональный бэкграунд. Все поля обязательны.
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Validation error */}
       {error && (
@@ -164,42 +169,12 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Портфолио */}
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Портфолио <span className="text-destructive">*</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Input
-              id="portfolio"
-              type="text"
-              value={portfolio}
-              onChange={(e) => setPortfolio(e.target.value)}
-              placeholder="Ссылка на портфолио (Behance, Dribbble, и т.д.)"
-            />
-          </CardContent>
-        </Card>
-
         {/* Контакты */}
         <Card>
           <CardHeader>
             <CardTitle>Контакты</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="contact-email">
-                Email <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="contact-email"
-                type="email"
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="email@example.com"
-              />
-            </div>
+          <CardContent>
             <div className="flex flex-col gap-2">
               <Label htmlFor="contact-telegram">Telegram</Label>
               <Input

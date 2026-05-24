@@ -74,10 +74,10 @@ export default function StudentSchedulePage() {
         {streams.length > 1 ? (
           <Select value={filterStreamId} onValueChange={setFilterStreamId}>
             <SelectTrigger className="w-full max-w-[200px]">
-              <SelectValue placeholder="Поток" />
+              <SelectValue placeholder="Группа" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_STREAMS}>Все потоки</SelectItem>
+              <SelectItem value={ALL_STREAMS}>Все группы</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -100,7 +100,11 @@ export default function StudentSchedulePage() {
         </div>
       ) : (
         <div className="mt-4">
-          <ScheduleCalendar lessons={visibleLessons} editable={false} />
+          <ScheduleCalendar
+            lessons={visibleLessons}
+            editable={false}
+            lessonBasePath="/dashboard/lessons"
+          />
         </div>
       )}
     </>

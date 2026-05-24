@@ -1,0 +1,1091 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import {
+  CalendarClock,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardCheck,
+  Clock,
+  Download,
+  ExternalLink,
+  FileText,
+  GraduationCap,
+  Loader2,
+  RefreshCw,
+  ScrollText,
+  Tag,
+  Users,
+  Video,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { DatePicker } from '@/components/ui/date-picker';
+import { Separator } from '@/components/ui/separator';
+import { Field, FieldLabel } from '@/components/ui/field';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { MaterialRow } from '@/components/material-row';
+import { useAuth } from '@/lib/auth-context';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
+import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import {
+  resolveProcessingKind,
+  RECORDING_STALE_AFTER_MS,
+  SUMMARY_STALE_AFTER_MS,
+  TRANSCRIPT_STALE_AFTER_MS,
+} from '@/components/schedule/processing-status';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
+import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
+import { LessonAttendanceSection } from '@/components/lessons/lesson-attendance-section';
+import { parseVideoEmbed } from '@/lib/video-embed';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
+import { cn } from '@platform/ui/lib/utils';
+import {
+  createAssignment,
+  fetchTranscript,
+  fileDownloadUrl,
+  getAssignments,
+  getLesson,
+  getLessonSessions,
+  refreshSessionFromZoom,
+  type Assignment,
+  type Lesson,
+  type LessonSession,
+  type LessonStatus,
+  type ZoomRefreshResult,
+} from '@/lib/api';
+
+type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
+
+const ASSIGNMENT_TYPE_LABELS: Record<'short' | 'long', string> = {
+  short: 'Короткое',
+  long: 'Развёрнутое',
+};
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}.${m}.${y}`;
+}
+
+// Любое учебное видео урока (несколько videos / одиночное videoFileUrl / videoUrl)?
+function hasLessonVideo(lesson: Lesson): boolean {
+  return !!(
+    (lesson.videos && lesson.videos.length > 0) ||
+    lesson.videoFileUrl ||
+    lesson.videoUrl
+  );
+}
+
+/**
+ * View Mode урока для админа/препода — читаемый экран (не редактор).
+ *
+ * Контекст занятия: при streamId показываем блок «Это занятие» по конкретному
+ * потоку (статус/дата/запись/итоги из Session) + post-session CTA (выдать ДЗ /
+ * проверить сдачи) + статистику сдач. Без streamId — урок-шаблон (видео,
+ * материалы, задание, преподаватели) и список занятий по потокам.
+ *
+ * Редактирование контента, расписания, выдача/итоги/запись — в режиме
+ * «Редактирование» (LessonBlockEditor + LessonScheduleSection), ссылка на него —
+ * кнопкой «Редактировать».
+ */
+export function LessonView({
+  lessonId,
+  streamId,
+}: {
+  lessonId: string;
+  streamId?: string;
+}) {
+  const { accessToken } = useAuth();
+  const [lesson, setLesson] = useState<LessonWithAssignments | null>(null);
+  const [sessions, setSessions] = useState<LessonSession[]>([]);
+  // Выданное ДЗ по текущему потоку (если streamId задан): match по lessonId.
+  const [issued, setIssued] = useState<Assignment | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // Диалог выдачи ДЗ (post-session CTA): дедлайн + флаг отправки.
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueDue, setIssueDue] = useState('');
+  const [issuing, setIssuing] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const [{ lesson: l }, { sessions: s }] = await Promise.all([
+        getLesson(accessToken, lessonId),
+        getLessonSessions(accessToken, lessonId),
+      ]);
+      setLesson(l);
+      setSessions(s);
+      // Выданное ДЗ ищем только в контексте потока (для CTA «Выдать/Проверить»).
+      if (streamId) {
+        try {
+          const { assignments } = await getAssignments(accessToken, streamId);
+          setIssued(assignments.find((a) => a.lessonId === lessonId) ?? null);
+        } catch {
+          setIssued(null);
+        }
+      } else {
+        setIssued(null);
+      }
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки урока');
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, lessonId, streamId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Занятие текущего потока (если открыли с ?streamId).
+  const session = useMemo(
+    () => (streamId ? sessions.find((s) => s.streamId === streamId) ?? null : null),
+    [sessions, streamId],
+  );
+
+  // Выдать ДЗ в поток: тот же контракт, что в LessonScheduleSection.handleIssue.
+  async function handleIssue() {
+    if (!lesson || !streamId || !accessToken || issuing) return;
+    setIssuing(true);
+    try {
+      await createAssignment(accessToken, {
+        streamId,
+        lessonId,
+        title: lesson.assignmentTitle?.trim() || lesson.title,
+        description: lesson.assignmentDescription || undefined,
+        criteria: lesson.assignmentCriteria ?? undefined,
+        type: lesson.assignmentType ?? 'short',
+        tags: lesson.assignmentTags ?? [],
+        materials: lesson.assignmentMaterials ?? [],
+        dueDate: issueDue || undefined,
+      });
+      setIssueOpen(false);
+      setIssueDue('');
+      await load();
+      toast.success('ДЗ выдано студентам группы');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выдать ДЗ');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-9 w-2/3" />
+        <Skeleton className="h-48 w-full rounded-lg" />
+        <Skeleton className="h-32 w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  if (error || !lesson) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{error || 'Урок не найден'}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  const hasAssignment = lesson.hasAssignment ?? false;
+  const embedUrl = lesson.videoUrl ? parseVideoEmbed(lesson.videoUrl) : null;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Заголовок урока. Переключение Просмотр/Редактирование — в табах на
+          странице урока (page.tsx), отдельные кнопки под заголовком не нужны. */}
+      <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
+
+      {/* ── Контекст занятия (есть только при ?streamId) ───────────────────── */}
+      {streamId && (
+        <SessionContextCard
+          session={session}
+          lessonId={lessonId}
+          streamId={streamId}
+          onChanged={load}
+        />
+      )}
+
+      {/* Post-session CTA: занятие проведено + у урока есть ДЗ-шаблон.
+          Не выдано → primary «Выдать ДЗ»; выдано → «Проверить сдачи». */}
+      {streamId && session?.status === 'done' && hasAssignment && (
+        <PostSessionCta
+          issued={issued}
+          onIssue={() => {
+            setIssueDue('');
+            setIssueOpen(true);
+          }}
+        />
+      )}
+
+      {/* Статистика сдач по занятию (только в контексте потока). */}
+      {streamId && (
+        <LessonAnalyticsSection
+          accessToken={accessToken!}
+          lessonId={lessonId}
+          streamId={streamId}
+          assignmentId={issued?.id ?? null}
+        />
+      )}
+
+      {/* Посещаемость занятия (только в контексте потока). */}
+      {streamId && (
+        <LessonAttendanceSection
+          accessToken={accessToken!}
+          lessonId={lessonId}
+          streamId={streamId}
+        />
+      )}
+
+      {/* ── Учебный контент урока-шаблона (read-only) ──────────────────────── */}
+      {hasLessonVideo(lesson) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="size-5 shrink-0 text-muted-foreground" />
+              Учебное видео урока
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {lesson.videos && lesson.videos.length > 0 ? (
+              lesson.videos.map((video) => {
+                const videoEmbed = video.kind === 'link' ? parseVideoEmbed(video.url) : null;
+                return (
+                  <div key={video.id} className="flex flex-col gap-2">
+                    {video.title && <div className="text-sm font-medium">{video.title}</div>}
+                    {video.kind === 'file' ? (
+                      <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
+                    ) : videoEmbed ? (
+                      <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
+                    ) : (
+                      <Button asChild variant="outline" className="w-fit">
+                        <a href={video.url} target="_blank" rel="noopener noreferrer">
+                          Смотреть видео
+                          <ExternalLink className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                );
+              })
+            ) : lesson.videoFileUrl ? (
+              <VideoFileFrame src={lesson.videoFileUrl} label={lesson.title} />
+            ) : embedUrl ? (
+              <VideoEmbedFrame src={embedUrl} title={lesson.title} />
+            ) : (
+              lesson.videoUrl && (
+                <Button asChild variant="outline" className="w-fit">
+                  <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
+                    Смотреть видео
+                    <ExternalLink className="size-4" />
+                  </a>
+                </Button>
+              )
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {lesson.summary && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Краткое описание</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+              {lesson.summary}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Заметки преподавателя — видны только преподавателям (это админский экран). */}
+      {lesson.notes && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="size-5 shrink-0 text-muted-foreground" />
+              Заметки преподавателя
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+              {lesson.notes}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {lesson.materials && lesson.materials.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Материалы</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {lesson.materials.map((m) => (
+              <MaterialRow key={m.s3Key} material={m} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Свёрнутое задание урока (шаблон ДЗ) — read-only превью. */}
+      {hasAssignment && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardCheck className="size-5 shrink-0 text-muted-foreground" />
+              Задание к уроку
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">
+                {lesson.assignmentTitle?.trim() || lesson.title}
+              </span>
+              <Badge variant="secondary" className="font-normal">
+                {ASSIGNMENT_TYPE_LABELS[lesson.assignmentType ?? 'short']}
+              </Badge>
+            </div>
+            {lesson.assignmentDescription && (
+              <p className="whitespace-pre-wrap text-muted-foreground">
+                {lesson.assignmentDescription}
+              </p>
+            )}
+            {lesson.assignmentCriteria && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">Критерии оценки</span>
+                <p className="whitespace-pre-wrap text-muted-foreground">
+                  {lesson.assignmentCriteria}
+                </p>
+              </div>
+            )}
+            {lesson.assignmentTags && lesson.assignmentTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Tag className="size-3.5 text-muted-foreground" />
+                {lesson.assignmentTags.map((tag) => (
+                  <Badge key={tag} variant="outline" className="font-normal">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {lesson.assignmentMaterials && lesson.assignmentMaterials.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Материалы задания</span>
+                {lesson.assignmentMaterials.map((m, i) => (
+                  <a
+                    key={`${m.url}-${i}`}
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-md border p-2 text-foreground transition-colors hover:bg-accent/50"
+                  >
+                    <FileText className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                    <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {lesson.teachers && lesson.teachers.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="size-5 shrink-0 text-muted-foreground" />
+              Преподаватели
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-1.5">
+            {lesson.teachers.map((t) => (
+              <Badge key={t.id} variant="secondary" className="font-normal">
+                {t.name}
+              </Badge>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Список занятий по потокам (когда смотрим урок-шаблон без потока) ── */}
+      {!streamId && <SessionsListCard sessions={sessions} lessonId={lessonId} />}
+
+      {/* Диалог выдачи ДЗ (дедлайн). */}
+      <Dialog open={issueOpen} onOpenChange={(o) => !issuing && setIssueOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Выдать ДЗ группе</DialogTitle>
+            <DialogDescription>
+              Задание материализуется всем студентам группы. Дедлайн необязателен.
+            </DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="issue-due">Дедлайн</FieldLabel>
+            <DatePicker
+              id="issue-due"
+              value={issueDue}
+              onChange={(v) => setIssueDue(v ?? '')}
+              placeholder="Без дедлайна"
+            />
+          </Field>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIssueOpen(false)} disabled={issuing}>
+              Отмена
+            </Button>
+            <Button onClick={handleIssue} disabled={issuing}>
+              {issuing && <Loader2 className="animate-spin" />}
+              Выдать ДЗ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Метки шагов единой подтяжки из Zoom для тоста по частичному результату.
+const ZOOM_REFRESH_LABELS: Record<keyof ZoomRefreshResult, string> = {
+  recording: 'Запись',
+  summary: 'Итоги',
+  transcript: 'Транскрипт',
+  attendance: 'Посещаемость',
+};
+
+// Блок «Это занятие»: статус/дата/ссылка/запись/итоги конкретного Session потока.
+function SessionContextCard({
+  session,
+  lessonId,
+  streamId,
+  onChanged,
+}: {
+  session: LessonSession | null;
+  lessonId: string;
+  streamId: string;
+  onChanged: () => void;
+}) {
+  const router = useRouter();
+  const { accessToken } = useAuth();
+  // Идёт единая подтяжка из Zoom (спиннер/disabled на кнопках обновления).
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Признак «получатель — препод/админ»: бэк отдаёт transcriptStatus только им
+  // (у студента поля нет). По нему гейтим кнопку обновления и блок транскрипта.
+  const isStaff = !!session && session.transcriptStatus !== undefined;
+
+  // Единая ручная подтяжка занятия из Zoom: запись+итоги+транскрипт+посещаемость.
+  // Тост собираем по ЧАСТИЧНОМУ результату (что получилось / что нет — с причиной).
+  const handleRefresh = useCallback(async () => {
+    if (!accessToken || refreshing) return;
+    setRefreshing(true);
+    try {
+      const result = await refreshSessionFromZoom(accessToken, lessonId, streamId);
+      // «Ещё формируется» — НЕ ошибка: бэк присылает reason про формирование.
+      // Такой шаг показываем нейтрально (…), а реальные сбои — с причиной.
+      const isPending = (reason?: string | null) =>
+        !!reason && /формир|ещё формируется|готов/i.test(reason);
+      const keys = Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[];
+      const parts = keys.map((key) => {
+        const step = result[key];
+        const label = ZOOM_REFRESH_LABELS[key];
+        if (step?.ok) return `${label} ✓`;
+        if (isPending(step?.reason)) return `${label} — формируется…`;
+        return `${label} — ${step?.reason?.trim() || 'не получено'}`;
+      });
+      // Реальная ошибка = шаг не ok и причина НЕ про формирование.
+      const hasRealError = keys.some(
+        (key) => !result[key]?.ok && !isPending(result[key]?.reason),
+      );
+      const message = parts.join(', ');
+      // Всё ok или «формируется» — это не ошибка (success/info), а не warning.
+      if (hasRealError) toast.warning(message);
+      else toast.success(message);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [accessToken, lessonId, streamId, refreshing, onChanged]);
+
+  if (!session) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarClock className="size-5 shrink-0 text-muted-foreground" />
+            Это занятие
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Этот урок ещё не запланирован занятием в выбранной группе. Запланируйте его в
+            режиме редактирования.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const status = session.status as LessonStatus;
+  const hasRecording = !!(session.recordingFileUrl || session.recordingVideoUrl);
+  const recordingEmbed = session.recordingVideoUrl
+    ? parseVideoEmbed(session.recordingVideoUrl)
+    : null;
+  const canJoin = status === 'planned' && !!session.meetingUrl;
+  // Состояние автозагрузки записи Zoom. Показываем его, как только оно появилось
+  // (не дожидаясь done и не дожидаясь готового файла) — чтобы сразу после занятия
+  // было видно «ждём видео». Инфоблок не нужен, когда плеер записи уже есть.
+  const recState = session.recordingStatus;
+  // Единый «вид» состояния записи: формируется (синий) / недоступно (серое) /
+  // ошибка (красный) / готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  const recKind = resolveProcessingKind({
+    status: recState,
+    hasData: hasRecording,
+    requestedAt: session.recordingRequestedAt,
+    staleAfterMs: RECORDING_STALE_AFTER_MS,
+  });
+  const showRecordingStatus =
+    !hasRecording && recKind !== 'ready' && recKind !== 'empty';
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <CalendarClock className="size-5 shrink-0 text-muted-foreground" />
+            Это занятие
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Единая ручная подтяжка из Zoom (запись+итоги+транскрипт+посещаемость).
+                Только препод/админ. Полезна, когда автосбор завис/не сработал. */}
+            {isStaff && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="min-h-9"
+              >
+                {refreshing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Обновить из Zoom
+              </Button>
+            )}
+            {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
+                От «Проведён» зависят ДЗ/запись/посещаемость → onChanged перезагружает
+                данные урока. «Запланирован» без даты → ведём в редактирование. */}
+            <SessionStatusControl
+              lessonId={lessonId}
+              streamId={streamId}
+              status={status}
+              hasDate={!!session.date}
+              onChanged={onChanged}
+              onEditRequest={() =>
+                router.push(`/admin/lessons/${lessonId}?mode=edit&streamId=${streamId}`)
+              }
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 text-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="flex items-center gap-1.5 font-medium">
+            <Users className="size-4 text-muted-foreground" />
+            {session.streamName}
+          </span>
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <CalendarDays className="size-4" />
+            {session.date ? formatDate(session.date) : 'без даты'}
+            {session.startTime ? `, ${session.startTime}` : ''}
+          </span>
+        </div>
+
+        {/* Состояние записи занятия — понятным инфоблоком, как только оно есть
+            (раньше done): после проведения сразу видно «занятие завершилось,
+            ждём видео от Zoom». При готовой записи блок скрыт — ниже сам плеер. */}
+        {showRecordingStatus && (
+          <div
+            className={cn(
+              'flex flex-col gap-1 rounded-md border p-3',
+              // Формируется — синий инфо; ошибка — красный; недоступно — нейтральный muted.
+              recKind === 'processing' &&
+                'border-blue-500/30 bg-blue-500/10',
+              recKind === 'failed' && 'border-destructive/40 bg-destructive/5',
+              recKind === 'stale' && 'bg-muted/50',
+            )}
+          >
+            <RecordingStatusBadge
+              status={recState}
+              error={session.recordingError}
+              requestedAt={session.recordingRequestedAt}
+              className="w-fit"
+            />
+            <p
+              className={cn(
+                'text-xs',
+                recKind === 'processing'
+                  ? 'text-blue-700 dark:text-blue-300'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {recKind === 'failed'
+                ? session.recordingError?.trim() ||
+                  'Запись с Zoom не получена — обновите позже или перезапустите загрузку в режиме редактирования.'
+                : recKind === 'stale'
+                  ? 'Запись от Zoom пока не пришла. Загляните позже или обновите вручную.'
+                  : 'Формируется запись конференции. Занятие завершилось — запись подтянется автоматически из Zoom. Зайдите позже.'}
+            </p>
+          </div>
+        )}
+
+        {canJoin && (
+          <Button asChild variant="secondary" className="w-fit">
+            <a href={session.meetingUrl!} target="_blank" rel="noopener noreferrer">
+              <Video className="size-4" />
+              Присоединиться к созвону
+              <ExternalLink className="size-4" />
+            </a>
+          </Button>
+        )}
+
+        {/* Запись занятия (если есть) — встроенный плеер или ссылка. */}
+        {hasRecording && (
+          <div className="flex flex-col gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Video className="size-3.5" />
+              Запись занятия
+            </span>
+            {session.recordingFileUrl ? (
+              <VideoFileFrame
+                src={session.recordingFileUrl}
+                label={`Запись занятия — ${session.streamName}`}
+              />
+            ) : recordingEmbed ? (
+              <VideoEmbedFrame
+                src={recordingEmbed}
+                title={`Запись занятия — ${session.streamName}`}
+              />
+            ) : (
+              <Button asChild variant="outline" className="w-fit">
+                <a href={session.recordingVideoUrl!} target="_blank" rel="noopener noreferrer">
+                  <Video className="size-4" />
+                  Смотреть запись
+                  <ExternalLink className="size-4" />
+                </a>
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Итоги занятия — со всеми состояниями (виден всем, вкл. студента).
+            Кнопку «Подтянуть итоги» при failed показываем только препод/админу. */}
+        <Separator />
+        <SessionSummaryBlock
+          session={session}
+          canRefresh={isStaff}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+        />
+
+        {/* Транскрипт занятия — ТОЛЬКО для препод/админа (у студента поля нет). */}
+        {isStaff && (
+          <>
+            <Separator />
+            <SessionTranscriptBlock
+              session={session}
+              lessonId={lessonId}
+              streamId={streamId}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Блок «Итоги занятия» со всеми состояниями (summaryStatus + наличие summary).
+// Виден всем, включая студента (на view-странице препода — здесь; у студента —
+// на его странице урока). Кнопка «Подтянуть итоги» доступна только препод/админу.
+function SessionSummaryBlock({
+  session,
+  canRefresh,
+  refreshing,
+  onRefresh,
+}: {
+  session: LessonSession;
+  canRefresh: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const hasSummary = !!session.summary;
+  // Единый «вид»: формируется (синий) / недоступно (серое) / ошибка (красный) /
+  // готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  const kind = resolveProcessingKind({
+    status: session.summaryStatus,
+    hasData: hasSummary,
+    requestedAt: session.summaryRequestedAt,
+    staleAfterMs: SUMMARY_STALE_AFTER_MS,
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <FileText className="size-3.5" />
+          Итоги занятия
+        </span>
+        {hasSummary && (
+          <SummarySourceBadge source={session.summarySource} className="font-normal" />
+        )}
+      </div>
+
+      {kind === 'ready' ? (
+        // ready (или ручные итоги): показываем текст с бейджем источника.
+        <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+          {session.summary}
+        </p>
+      ) : kind === 'processing' ? (
+        // Дружелюбное «формируется» — синий инфо + скелетоны.
+        <div className="flex flex-col gap-2">
+          <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+            <Loader2 className="size-3.5 animate-spin" />
+            Формируются итоги занятия — Zoom обычно готовит их за несколько минут. Зайдите позже.
+          </p>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-11/12" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      ) : kind === 'stale' ? (
+        // Данных давно нет — нейтральное серое «недоступно».
+        <p className="text-sm text-muted-foreground">
+          Итоги занятия пока недоступны. Загляните позже или обновите вручную.
+        </p>
+      ) : kind === 'failed' ? (
+        // Реальная ошибка — единственное место с акцентом ошибки.
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-sm text-destructive">
+            Не удалось получить итоги занятия из Zoom.
+          </p>
+          {canRefresh && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="min-h-9"
+            >
+              {refreshing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              Подтянуть итоги
+            </Button>
+          )}
+        </div>
+      ) : (
+        // empty — none / нет интеграции Zoom.
+        <p className="text-sm text-muted-foreground">
+          Итоги по этому занятию не формировались.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Блок «Транскрипт занятия» (только препод/админ) — свёрнутый Collapsible под
+// итогами. Состояния по transcriptStatus. Тело транскрипта не тянем заранее:
+// при ready действия «Открыть/Скачать» подгружают подписанный URL по клику.
+function SessionTranscriptBlock({
+  session,
+  lessonId,
+  streamId,
+  refreshing,
+  onRefresh,
+}: {
+  session: LessonSession;
+  lessonId: string;
+  streamId: string;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const { accessToken } = useAuth();
+  const [open, setOpen] = useState(false);
+  // Какое действие сейчас грузит подписанный URL ('open' | 'vtt' | 'txt' | null).
+  const [busy, setBusy] = useState<'open' | 'vtt' | 'txt' | null>(null);
+  // Единый «вид»: формируется (синий) / недоступно (серое) / ошибка (красный) /
+  // готово / нет. Транскрипт приходит позже остального → больший порог давности.
+  // hasData=false: тело не тянем заранее, ready определяем по статусу.
+  const kind = resolveProcessingKind({
+    status: session.transcriptStatus,
+    requestedAt: session.transcriptRequestedAt,
+    staleAfterMs: TRANSCRIPT_STALE_AFTER_MS,
+  });
+
+  // Ленивая загрузка тела: тянем подписанную ссылку только по клику на действие.
+  const openTranscript = useCallback(
+    async (action: 'open' | 'vtt' | 'txt') => {
+      if (!accessToken || busy) return;
+      setBusy(action);
+      try {
+        const format = action === 'open' ? 'txt' : action;
+        const { url } = await fetchTranscript(accessToken, lessonId, streamId, format);
+        if (action === 'open') {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          // Скачивание файла нужного формата (форс-вложением).
+          window.location.href = fileDownloadUrl(url);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Не удалось получить транскрипт');
+      } finally {
+        setBusy(null);
+      }
+    },
+    [accessToken, lessonId, streamId, busy],
+  );
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col gap-2">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex min-h-11 w-full items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ScrollText className="size-3.5" />
+          Транскрипт занятия
+          <ChevronDown
+            className={cn(
+              'ml-auto size-4 shrink-0 transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-2">
+        {kind === 'processing' ? (
+          // Дружелюбное «формируется» — синий инфо. Транскрипт приходит позже записи.
+          <div className="flex flex-col gap-2">
+            <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+              <Loader2 className="size-3.5 animate-spin" />
+              Формируется транскрипт занятия — он приходит из Zoom позже записи. Загляните позже.
+            </p>
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        ) : kind === 'stale' ? (
+          // Данных давно нет — нейтральное серое «недоступно».
+          <p className="text-sm text-muted-foreground">
+            Транскрипт по этому занятию пока недоступен. Загляните позже или обновите вручную.
+          </p>
+        ) : kind === 'failed' ? (
+          // Реальная ошибка — единственное место с акцентом ошибки.
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-sm text-destructive">
+              {session.transcriptError?.trim() ||
+                'Не удалось получить транскрипт занятия из Zoom.'}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="min-h-9"
+            >
+              {refreshing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              Подтянуть транскрипт
+            </Button>
+          </div>
+        ) : kind === 'ready' ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openTranscript('open')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'open' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ExternalLink className="size-4" />
+              )}
+              Открыть
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openTranscript('vtt')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'vtt' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Скачать .vtt
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openTranscript('txt')}
+              disabled={!!busy}
+              className="min-h-9"
+            >
+              {busy === 'txt' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Скачать .txt
+            </Button>
+          </div>
+        ) : (
+          // none / нет интеграции Zoom.
+          <p className="text-sm text-muted-foreground">
+            Транскрипт по этому занятию недоступен.
+          </p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// Post-session CTA: заметный primary «Выдать ДЗ» или «Проверить сдачи (N)».
+function PostSessionCta({
+  issued,
+  onIssue,
+}: {
+  issued: Assignment | null;
+  onIssue: () => void;
+}) {
+  if (issued) {
+    const submitted = issued._count?.studentAssignments ?? 0;
+    return (
+      <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">ДЗ выдано группе</span>
+            <span className="text-sm text-muted-foreground">
+              {issued.dueDate
+                ? `Дедлайн: ${formatDate(issued.dueDate)}`
+                : 'Без дедлайна'}
+            </span>
+          </div>
+        </div>
+        <Button asChild className="w-full sm:w-auto">
+          <Link href={`/admin/assignments/${issued.id}`}>
+            <ClipboardCheck className="size-4" />
+            {submitted > 0 ? `Проверить сдачи (${submitted})` : 'Проверить сдачи'}
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <ClipboardCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">Занятие проведено — выдайте ДЗ</span>
+          <span className="text-sm text-muted-foreground">
+            Студенты группы получат задание к этому уроку.
+          </span>
+        </div>
+      </div>
+      <Button onClick={onIssue} className="w-full sm:w-auto">
+        <ClipboardCheck className="size-4" />
+        Выдать ДЗ
+      </Button>
+    </div>
+  );
+}
+
+// Список занятий урока по потокам (для урока-шаблона без выбранного потока).
+function SessionsListCard({
+  sessions,
+  lessonId,
+}: {
+  sessions: LessonSession[];
+  lessonId: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClock className="size-5 shrink-0 text-muted-foreground" />
+          Занятия по группам
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Урок ещё не запланирован ни в одной группе. Поставьте его в расписание в режиме
+            редактирования.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {sessions.map((s) => (
+              <Link
+                key={s.streamId}
+                href={`/admin/lessons/${lessonId}?streamId=${s.streamId}`}
+                className="no-underline"
+              >
+                <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 transition-colors hover:bg-accent/50">
+                  <span className="font-medium">{s.streamName}</span>
+                  <LessonStatusBadge status={s.status} className="font-normal" />
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Clock className="size-3.5" />
+                    {s.date ? formatDate(s.date) : 'без даты'}
+                    {s.startTime ? `, ${s.startTime}` : ''}
+                  </span>
+                  <ExternalLink className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

@@ -125,7 +125,7 @@ export default function AdminThreadsPage() {
         <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
-          <TabsTrigger value="students">Ученики</TabsTrigger>
+          <TabsTrigger value="students">Студенты</TabsTrigger>
           <TabsTrigger value="staff">
             Штаб
             {staffUnread > 0 && (
@@ -135,7 +135,7 @@ export default function AdminThreadsPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="cohorts">
-            Чаты потоков
+            Чаты групп
             {cohortsUnread > 0 && (
               <Badge variant="destructive" className="ml-1">
                 {cohortsUnread}
@@ -283,7 +283,7 @@ export default function AdminThreadsPage() {
             <div className="min-h-0 flex-1 overflow-y-auto">
               {cohorts.length === 0 ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">
-                  Нет потоков
+                  Нет групп
                 </p>
               ) : (
                 <ul>
@@ -348,16 +348,16 @@ export default function AdminThreadsPage() {
                     key={selectedCohort}
                     source={cohortSource}
                     onRead={fetchCohorts}
-                    placeholder="Сообщение в чат потока..."
-                    emptyText="В этом чате потока пока нет сообщений"
-                    loadErrorText="Ошибка загрузки чата потока"
+                    placeholder="Сообщение в чат группы..."
+                    emptyText="В этом чате группы пока нет сообщений"
+                    loadErrorText="Ошибка загрузки чата группы"
                   />
                 </div>
               </>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
                 <MessagesSquare className="size-10 opacity-40" />
-                <p className="text-sm">Выберите поток</p>
+                <p className="text-sm">Выберите группу</p>
               </div>
             )}
           </div>

@@ -7,9 +7,9 @@ import { cn } from '@platform/ui/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 import {
-  LESSON_STATUS_LABELS,
-  STATUS_BADGE_VARIANT,
+  canJoinMeeting,
   type ScheduleLesson,
 } from '@/components/schedule/utils';
 
@@ -21,16 +21,27 @@ export function LessonItem({
   lesson,
   compact = false,
   onMarkDone,
+  lessonBasePath = '/admin/lessons',
 }: {
   lesson: ScheduleLesson;
   compact?: boolean;
   onMarkDone?: (lesson: ScheduleLesson) => void | Promise<void>;
+  /** Базовый путь страницы урока — зависит от роли (студент vs админ). */
+  lessonBasePath?: string;
 }) {
   const cancelled = lesson.status === 'cancelled';
   const [marking, setMarking] = useState(false);
   const router = useRouter();
 
   const canMarkDone = !!onMarkDone && lesson.status === 'planned';
+
+  // Путь на страницу урока. Для админа добавляем ?streamId — чтобы View Mode урока
+  // открылся в контексте конкретного занятия (статус/запись/итоги/статистика по
+  // потоку). Для студента ('/dashboard/lessons') контекст потока не нужен — не трогаем.
+  const href =
+    lessonBasePath === '/admin/lessons' && lesson.streamId
+      ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
+      : `${lessonBasePath}/${lesson.id}`;
 
   const handleMarkDone = async () => {
     if (!onMarkDone) return;
@@ -46,11 +57,11 @@ export function LessonItem({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`/admin/lessons/${lesson.id}`)}
+      onClick={() => router.push(href)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          router.push(`/admin/lessons/${lesson.id}`);
+          router.push(href);
         }
       }}
       className={cn(
@@ -76,9 +87,7 @@ export function LessonItem({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
-          {LESSON_STATUS_LABELS[lesson.status]}
-        </Badge>
+        <LessonStatusBadge status={lesson.status} />
         {lesson.streamName && (
           <Badge variant="secondary" className="w-fit max-w-full truncate">
             {lesson.streamName}
@@ -90,17 +99,18 @@ export function LessonItem({
           <RecordingStatusBadge
             status={lesson.recordingStatus}
             error={lesson.recordingError}
+            requestedAt={lesson.recordingRequestedAt}
             showReady={false}
             className="w-fit"
           />
         )}
       </div>
 
-      {((lesson.meetingUrl && !cancelled) || canMarkDone) && (
+      {(canJoinMeeting(lesson) || canMarkDone) && (
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          {lesson.meetingUrl && !cancelled && (
+          {canJoinMeeting(lesson) && (
             <a
-              href={lesson.meetingUrl}
+              href={lesson.meetingUrl ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
               className="no-underline"

@@ -24,7 +24,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const profile = await prisma.studentProfile.findUnique({
@@ -80,7 +80,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const body = request.body as {
@@ -89,9 +89,6 @@ export async function profileRoutes(app: FastifyInstance) {
       contacts?: { email?: string; telegram?: string };
       direction?: string;
     };
-
-    // Validate required fields for questionnaire completion
-    const isCompleting = body.resume && body.portfolio && body.contacts && body.direction;
 
     const data: Record<string, unknown> = {};
     if (body.resume !== undefined) data.resume = body.resume;
@@ -104,12 +101,13 @@ export async function profileRoutes(app: FastifyInstance) {
 
     const merged = {
       resume: data.resume ?? existing?.resume,
-      portfolio: data.portfolio ?? existing?.portfolio,
-      contacts: data.contacts ?? existing?.contacts,
       direction: data.direction ?? existing?.direction,
     };
 
-    const allFilled = merged.resume && merged.portfolio && merged.contacts && merged.direction;
+    // Анкета считается заполненной по обязательным полям: резюме + направление.
+    // Портфолио и контактный email из анкеты убраны (email студент уже указал при
+    // регистрации) — на завершение они не влияют.
+    const allFilled = merged.resume && merged.direction;
     if (allFilled && !existing?.questionnaireCompletedAt) {
       data.questionnaireCompletedAt = new Date();
     }
@@ -145,7 +143,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const { content } = request.body as { content: string };
@@ -176,7 +174,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const notes = await prisma.teacherNote.findMany({
@@ -189,4 +187,21 @@ export async function profileRoutes(app: FastifyInstance) {
 
     return { notes };
   });
+
+  // DELETE /profiles/:studentId/notes/:noteId — удалить заметку преподавателя (admin).
+  // Идемпотентно: deleteMany с фильтром по studentId+noteId (если заметки уже нет —
+  // вернётся success без ошибки). Любой админ может удалить любую заметку об ученике.
+  app.delete(
+    '/profiles/:studentId/notes/:noteId',
+    { onRequest: requireRole('admin') },
+    async (request) => {
+      const { studentId, noteId } = request.params as { studentId: string; noteId: string };
+
+      await prisma.teacherNote.deleteMany({
+        where: { id: noteId, studentId },
+      });
+
+      return { success: true };
+    },
+  );
 }

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getAdminStats, type AdminStats } from '@/lib/api';
+import { STATUS_LABELS, STATUS_ORDER } from '@/lib/assignment-status';
 import {
   Card,
   CardContent,
@@ -42,13 +43,6 @@ function formatRelative(date: string): string {
     month: 'short',
   });
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'На проверке',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
 
 function KpiCard({
   title,
@@ -158,8 +152,8 @@ export default function AdminPage() {
 
       <HintCallout storageKey="eduhint:intro-model" title="Как устроена платформа">
         Коротко о модели: урок — переиспользуемый блок с контентом и ДЗ (живёт в
-        копилке); поток — группа учеников; расписание — когда урок проводят
-        конкретному потоку. Один урок можно вести в нескольких потоках.
+        копилке); группа — это набор студентов; расписание — когда урок проводят
+        конкретной группе. Один урок можно вести в нескольких группах.
       </HintCallout>
 
       {error && (
@@ -175,7 +169,7 @@ export default function AdminPage() {
           {/* KPI strip */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
-              title="Активные ученики"
+              title="Активные студенты"
               value={stats.students.active}
               hint={`+${stats.students.newThisWeek} новых за неделю`}
               icon={Users}
@@ -193,7 +187,7 @@ export default function AdminPage() {
               icon={CalendarDays}
             />
             <KpiCard
-              title="Активные потоки"
+              title="Активные группы"
               value={stats.streams.active}
               hint={`${stats.streams.archived} в архиве`}
               icon={Layers}
@@ -252,7 +246,7 @@ export default function AdminPage() {
                           key={t.studentId}
                           name={t.studentName}
                           detail={`Ждёт ответа · ${formatRelative(t.lastEntryAt)}`}
-                          href={`/admin/students/${t.studentId}/thread`}
+                          href={`/admin/students/${t.studentId}?tab=thread`}
                         />
                       ))
                     )}
@@ -295,7 +289,7 @@ export default function AdminPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Ближайшие занятия</CardTitle>
-                  <CardDescription>Следующие 5 по всем потокам</CardDescription>
+                  <CardDescription>Следующие 5 по всем группам</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   {stats.schedule.upcoming.length === 0 ? (
@@ -358,17 +352,13 @@ function StatusBars({
 }: {
   byStatus: AdminStats['assignments']['byStatus'];
 }) {
-  const order: Array<keyof AdminStats['assignments']['byStatus']> = [
-    'assigned',
-    'submitted',
-    'reviewed',
-    'needs_revision',
-  ];
+  const order = STATUS_ORDER;
+  // reviewed («Принято») — акцент; остальные статусы нейтральные оттенки foreground.
   const fills: Record<string, string> = {
-    assigned: 'bg-muted-foreground/40',
-    submitted: 'bg-primary',
-    reviewed: 'bg-secondary-foreground/60',
-    needs_revision: 'bg-destructive',
+    assigned: 'bg-foreground/30',
+    submitted: 'bg-foreground/30',
+    reviewed: 'bg-primary',
+    needs_revision: 'bg-foreground/15',
   };
   const total = order.reduce((sum, key) => sum + byStatus[key], 0);
 

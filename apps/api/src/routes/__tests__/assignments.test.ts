@@ -235,4 +235,261 @@ describe('PATCH /student-assignments/:id — проверка работы (revi
     expect(res.statusCode).toBe(403);
     expect(db.studentAssignment.update).not.toHaveBeenCalled();
   });
+
+  // Задача A — причина обязательна при «На доработку».
+  it('admin ставит needs_revision БЕЗ reviewText → 400 «Укажите причину доработки»', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(adminToken),
+      payload: { status: 'needs_revision' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'Укажите причину доработки' });
+    expect(db.studentAssignment.update).not.toHaveBeenCalled();
+  });
+
+  it('admin ставит needs_revision с reviewText из пробелов → 400', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(adminToken),
+      payload: { status: 'needs_revision', reviewText: '   ' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.studentAssignment.update).not.toHaveBeenCalled();
+  });
+
+  it('admin ставит needs_revision с непустым reviewText → ок, update пишет reviewText/reviewedBy', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Преподаватель Иван' });
+    db.studentAssignment.update.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'needs_revision',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      reviewText: 'Переделай введение',
+      reviewedBy: 'Преподаватель Иван',
+      session: sessionWithLesson(),
+      student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(adminToken),
+      payload: { status: 'needs_revision', reviewText: 'Переделай введение' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.studentAssignment.update).toHaveBeenCalledTimes(1);
+    const updateArg = db.studentAssignment.update.mock.calls[0][0];
+    expect(updateArg.data.status).toBe('needs_revision');
+    expect(updateArg.data.reviewText).toBe('Переделай введение');
+    expect(updateArg.data.reviewedBy).toBe('Преподаватель Иван');
+  });
+
+  // reviewed остаётся без обязательного reviewText.
+  it('admin ставит reviewed БЕЗ reviewText → ок (причина опциональна)', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Преподаватель Иван' });
+    db.studentAssignment.update.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'reviewed',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      reviewText: null,
+      reviewedBy: 'Преподаватель Иван',
+      session: sessionWithLesson(),
+      student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(adminToken),
+      payload: { status: 'reviewed' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.studentAssignment.update).toHaveBeenCalledTimes(1);
+    expect(db.studentAssignment.update.mock.calls[0][0].data.status).toBe('reviewed');
+  });
+});
+
+describe('PATCH /student-assignments/:id — сдача студентом (submit)', () => {
+  // Задача C — повторная отправка из submitted (правка/дослать) разрешена.
+  it('студент переотправляет из submitted → ок, content/file обновлены, submittedAt свежий', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      content: 'старый ответ',
+      fileUrl: 'old-key',
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+    db.conversation.findUnique.mockResolvedValueOnce({ id: 'conv-1' });
+    db.conversationEntry.create.mockResolvedValueOnce({ id: 'ce-1' });
+    // Преподавателей у урока нет → фолбэк на админов (notifyMany).
+    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+    db.studentAssignment.update.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      content: 'новый ответ',
+      fileUrl: null,
+      session: sessionWithLesson(),
+      student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(studentToken('stu-1')),
+      payload: { status: 'submitted', answerText: 'новый ответ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.studentAssignment.update).toHaveBeenCalledTimes(1);
+    const updateArg = db.studentAssignment.update.mock.calls[0][0];
+    expect(updateArg.data.status).toBe('submitted');
+    expect(updateArg.data.content).toBe('новый ответ');
+    expect(updateArg.data.submittedAt).toBeInstanceOf(Date);
+  });
+
+  it('студент сдаёт из assigned → ок', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'assigned',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+    db.conversation.findUnique.mockResolvedValueOnce({ id: 'conv-1' });
+    db.conversationEntry.create.mockResolvedValueOnce({ id: 'ce-1' });
+    // Преподавателей у урока нет → фолбэк на админов (notifyMany).
+    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+    db.studentAssignment.update.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      content: 'ответ',
+      fileUrl: null,
+      session: sessionWithLesson(),
+      student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(studentToken('stu-1')),
+      payload: { status: 'submitted', answerText: 'ответ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.studentAssignment.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('студент НЕ может переотправить из reviewed → 400 (заморожено)', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'reviewed',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      fileUrl: null,
+      session: {
+        id: 'session-1',
+        streamId: 'stream-1',
+        lessonId: 'lesson-1',
+        lesson: { ...lessonBlock(), teachers: [] },
+      },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(studentToken('stu-1')),
+      payload: { status: 'submitted', answerText: 'хочу переделать' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.studentAssignment.update).not.toHaveBeenCalled();
+  });
 });

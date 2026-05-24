@@ -32,6 +32,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { getStatusMeta } from '@/lib/assignment-status';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -50,15 +51,6 @@ function formatBytes(size: number) {
     ? `${Math.round(size / 1024)} КБ`
     : `${(size / (1024 * 1024)).toFixed(1)} МБ`;
 }
-
-const SUBMISSION_STATUS: Record<
-  string,
-  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
-> = {
-  submitted: { label: 'Сдана', variant: 'default' },
-  reviewed: { label: 'Принята', variant: 'secondary' },
-  needs_revision: { label: 'На доработке', variant: 'destructive' },
-};
 
 /**
  * Полный тред одного ученика с inline-композером для ответа.
@@ -115,7 +107,7 @@ export function ThreadConversation({
         // Пришли новые сообщения — обновим список тредов/бейджи в инбоксе.
         if (silent && data.entries.length > prevLen) onReplied?.();
       } catch (err) {
-        if (!silent) setError(err instanceof Error ? err.message : 'Ошибка загрузки треда');
+        if (!silent) setError(err instanceof Error ? err.message : 'Ошибка загрузки переписки');
       } finally {
         if (!silent) setLoading(false);
       }
@@ -264,7 +256,7 @@ export function ThreadConversation({
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-muted-foreground">Тред пуст</p>
+            <p className="text-sm text-muted-foreground">Сообщений пока нет</p>
           </div>
         ) : (
           // mt-auto прижимает ленту к низу: при малом числе сообщений они липнут
@@ -361,7 +353,7 @@ export function ThreadConversation({
         {inputMode === 'note' && (
           <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/40 px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">
-              Приватная заметка — ученик не увидит
+              Приватная заметка — студент не увидит
             </span>
             <button onClick={() => setInputMode('comment')}>
               <X className="size-4 text-muted-foreground" />
@@ -410,7 +402,7 @@ export function ThreadConversation({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={
-              inputMode === 'comment' ? 'Комментарий для ученика...' : 'Приватная заметка...'
+              inputMode === 'comment' ? 'Комментарий для студента...' : 'Приватная заметка...'
             }
             rows={1}
             // min-h-10 совпадает с высотой кнопок (size-9 + рамка) и не клиппит
@@ -603,7 +595,7 @@ function SubmissionCard({
   showActions: boolean;
 }) {
   const date = new Date(entry.createdAt);
-  const status = SUBMISSION_STATUS[sa.status] ?? { label: sa.status, variant: 'outline' as const };
+  const status = getStatusMeta(sa.status);
 
   return (
     <div className="mt-4 mr-auto max-w-[85%] pl-10">

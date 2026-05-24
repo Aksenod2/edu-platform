@@ -352,11 +352,11 @@ export default function ApiKeysPage() {
         <h2 className="text-xl font-bold mb-4">Примеры запросов</h2>
         <div className="flex flex-col gap-4">
           {[
-            { title: 'Список учеников',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/users` },
-            { title: 'Задания ученика',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  '${proxyBase}/student-assignments?studentId=ID'` },
-            { title: 'Список потоков',   code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/streams` },
-            { title: 'Профиль ученика',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/profiles/ID` },
-            { title: 'Лента ученика',    code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/threads/ID` },
+            { title: 'Список студентов',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/users` },
+            { title: 'Задания студента',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  '${proxyBase}/student-assignments?studentId=ID'` },
+            { title: 'Список групп',     code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/streams` },
+            { title: 'Профиль студента',  code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/profiles/ID` },
+            { title: 'Лента студента',    code: `curl -H 'Authorization: Bearer sk_...' \\\n  ${proxyBase}/threads/ID` },
           ].map(({ title, code }) => (
             <Card key={title}>
               <CardHeader>

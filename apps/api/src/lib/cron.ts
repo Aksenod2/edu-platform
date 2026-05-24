@@ -1,6 +1,20 @@
 import cron from 'node-cron';
 import { prisma } from '@platform/db';
 import { createNotification } from './notifications.js';
+import { sweepFailedRecordings } from './zoom-recording.js';
+import { sweepSessionAttendance } from './zoom-attendance.js';
+import { sweepAutoDoneSessions } from './session-status.js';
+
+// Минимальный логгер (форма Fastify-логгера) для свиперов, работающих вне
+// HTTP-контекста (нет request/app в cron). Пишем в console, как остальные задачи.
+const cronLogger = {
+  log: {
+    error: (...args: unknown[]) => console.error('[cron]', ...args),
+    warn: (...args: unknown[]) => console.warn('[cron]', ...args),
+    info: (...args: unknown[]) => console.log('[cron]', ...args),
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
 
 /**
  * How many hours before deadline to send reminder (default: 24).
@@ -49,6 +63,45 @@ export function startCronJobs(): void {
       await cleanupOldZoomWebhookEvents();
     } catch (err) {
       console.error('[cron] cleanup zoom webhook events error', err);
+    }
+  });
+
+  // Свипер «недокачанных» записей Zoom — каждые 30 минут. Добирает транзиентные
+  // сбои, которые не вытянул авто-ретрай внутри обработки (файл доехал по CDN Zoom
+  // спустя минуты), и реанимирует «зависший processing». Сама выборка/повтор —
+  // в sweepFailedRecordings (zoom-recording.ts), ошибки внутри она глотает.
+  // NB: при >1 инстансе API возможны дубли проходов; сейчас инстанс ОДИН, поэтому
+  // распределённый лок не нужен (claim внутри обработки и так защищает от дублей).
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      await sweepFailedRecordings();
+    } catch (err) {
+      console.error('[cron] sweep zoom recordings error', err);
+    }
+  });
+
+  // Свипер посещаемости Zoom — каждые 15 минут. Report participants готов НЕ сразу
+  // после meeting.ended (Zoom агрегирует минуты), поэтому добираем недавно
+  // завершённые занятия с привязкой к встрече, у которых ещё нет zoom-записей
+  // посещаемости. Выборка/повтор/грейсфул — в sweepSessionAttendance
+  // (zoom-attendance.ts), ошибки внутри она глотает.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      await sweepSessionAttendance(cronLogger);
+    } catch (err) {
+      console.error('[cron] sweep zoom attendance error', err);
+    }
+  });
+
+  // Свипер авто-«Проведён» по дате — каждый час. Закрывает запланированные
+  // занятия БЕЗ Zoom (где нет вебхука meeting.ended), у которых дата уже прошла.
+  // Защита ручных откатов done→planned — внутри (эвристика updatedAt), ошибки
+  // глотает (cron не должен падать). См. sweepAutoDoneSessions (session-status.ts).
+  cron.schedule('5 * * * *', async () => {
+    try {
+      await sweepAutoDoneSessions(cronLogger);
+    } catch (err) {
+      console.error('[cron] sweep auto-done sessions error', err);
     }
   });
 

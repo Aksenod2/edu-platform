@@ -176,7 +176,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         select: { id: true, name: true },
       });
       if (!stream) {
-        return reply.status(404).send({ error: 'Поток не найден' });
+        return reply.status(404).send({ error: 'Группа не найдена' });
       }
     }
 
@@ -257,11 +257,11 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id: body.streamId } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (stream.status === 'archived') {
-      return reply.status(400).send({ error: 'Нельзя добавлять задания в архивный поток' });
+      return reply.status(400).send({ error: 'Нельзя добавлять задания в архивную группу' });
     }
 
     const lesson = await prisma.lesson.findUnique({ where: { id: body.lessonId } });
@@ -494,7 +494,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     const student = await prisma.user.findUnique({ where: { id } });
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const now = new Date();
@@ -673,9 +673,11 @@ export async function assignmentRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Студент может только отправить задание (submitted)' });
     }
 
-    // Студент может отправить из assigned или needs_revision (пересдача)
-    if (!isAdmin && sa.status !== 'assigned' && sa.status !== 'needs_revision') {
-      return reply.status(400).send({ error: 'Задание уже отправлено' });
+    // Студент может отправить/переотправить, пока работа не взята в проверку:
+    // из assigned, needs_revision (пересдача) и submitted (правка/дослать).
+    // Из reviewed запрещено — после проверки сдача заморожена.
+    if (!isAdmin && sa.status !== 'assigned' && sa.status !== 'needs_revision' && sa.status !== 'submitted') {
+      return reply.status(400).send({ error: 'Задание уже проверено и не может быть изменено' });
     }
 
     // Админ: reviewed/needs_revision только из submitted
@@ -696,6 +698,10 @@ export async function assignmentRoutes(app: FastifyInstance) {
         data.fileName = fileName;
         data.fileSize = uploaded.size;
       }
+    }
+    // На доработку: причина обязательна (баллов нет — только Принято/На доработку).
+    if (status === 'needs_revision' && (!reviewText || !reviewText.trim())) {
+      return reply.status(400).send({ error: 'Укажите причину доработки' });
     }
     // Разбор работы: вердикт (reviewed/needs_revision) + текст разбора + автор.
     // Автор — имя проверяющего админа (в будущем может быть «Claude»).
@@ -733,43 +739,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
       assignment,
     };
 
-    // Создаём ConversationEntry о сдаче, чтобы преподаватель видел её в треде.
-    if (status === 'submitted') {
-      // Авто-создание персонального канала, если ученик ещё не открывал тред.
-      let thread = await prisma.conversation.findUnique({
-        where: { studentId: sa.studentId },
-      });
-      if (!thread) {
-        thread = await prisma.conversation.create({ data: { studentId: sa.studentId, type: 'student' } });
-      }
-
-      if (thread) {
-        const entryContent = answerText || `Сдано задание «${assignment.title}»`;
-        const entryMetadata: Record<string, unknown> = {
-          submissionType: 'assignment',
-          studentAssignmentId: updatedRow.id,
-        };
-
-        if (updatedRow.fileUrl) {
-          entryMetadata.s3Key = updatedRow.fileUrl;
-          entryMetadata.fileName = updatedRow.fileName;
-          entryMetadata.mimeType = fileMimeType || null;
-          entryMetadata.size = updatedRow.fileSize;
-        }
-
-        await prisma.conversationEntry.create({
-          data: {
-            conversationId: thread.id,
-            authorId: sa.studentId,
-            type: updatedRow.fileUrl ? 'file' : 'text',
-            content: entryContent,
-            metadata: (entryMetadata as Parameters<typeof prisma.conversationEntry.create>[0]['data']['metadata']),
-            // ConversationEntry привязан к уроку (lessonId), а не к заданию.
-            lessonId: sa.session.lessonId,
-          },
-        });
-      }
-    }
+    // Сдачу задания НЕ дублируем в чат: работа (ответ + файл) живёт в самом задании,
+    // преподаватель видит её на экране проверки. Чат — только для сообщений, которые
+    // студент отправляет сам. О факте сдачи преподаватель узнаёт из уведомления (ниже).
 
     // Generate signed URL for file if present
     if (updatedRow.fileUrl) {

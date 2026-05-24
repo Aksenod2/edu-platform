@@ -4,7 +4,9 @@ import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { isPositiveInt, creditBalance } from '../lib/money.js';
+import { isPositiveInt, creditBalance, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
+import { settleOutstandingCharges } from '../lib/charges.js';
+import { notifyMany } from '../lib/notifications.js';
 
 // Эпик «Оплата и баланс», Фаза 1.
 //
@@ -26,7 +28,7 @@ const SCREENSHOT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 // защита от абсурдных значений и раздувания БД.
 const SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024;
 const NOTE_MAX_LEN = 1000;
-const MAX_AMOUNT_KOPECKS = 100_000_000; // 1 000 000 ₽
+// Потолок суммы (MAX_AMOUNT_KOPECKS) — общий, в lib/money.ts (1 000 000 ₽).
 
 function isScreenshotImage(fileName: string, mimeType: string): boolean {
   const lowerName = (fileName || '').toLowerCase();
@@ -43,6 +45,17 @@ async function fileUrlFor(key: string | null | undefined): Promise<string | null
   } catch {
     return null;
   }
+}
+
+// Форматирование суммы (копейки → рубли) для текста уведомления, напр. 500000 → «5 000 ₽».
+// Деньги хранятся в копейках; в уведомлении показываем рубли с разделителями тысяч.
+function formatRubles(kopecks: number): string {
+  const rubles = kopecks / 100;
+  // Целые рубли — без копеек; с копейками — две цифры после запятой.
+  const formatted = Number.isInteger(rubles)
+    ? rubles.toLocaleString('ru-RU')
+    : rubles.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${formatted} ₽`;
 }
 
 // Сентинел-ошибка для отката транзакции с понятным HTTP-кодом 409 («уже обработана»).
@@ -159,6 +172,29 @@ export async function paymentRoutes(app: FastifyInstance) {
         },
         select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
       });
+
+      // Best-effort: уведомляем всех админов о новой заявке на пополнение.
+      // Ошибка уведомления НЕ должна валить создание заявки (.catch как в других местах).
+      // Имя студента берём из БД (в JWT-пэйлоаде имени нет).
+      void (async () => {
+        const [student, admins] = await Promise.all([
+          prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+          prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+        ]);
+        const adminIds = admins.map((a) => a.id);
+        if (adminIds.length === 0) return;
+
+        const studentName = student?.name?.trim() || 'Студент';
+        const body =
+          claimedAmountKopecks != null
+            ? `${studentName} · ${formatRubles(claimedAmountKopecks)}`
+            : `${studentName} приложил оплату`;
+
+        await notifyMany(adminIds, 'topup_requested', 'Новая заявка на пополнение', body, {
+          studentId: userId,
+          requestId: created.id,
+        });
+      })().catch(() => {});
 
       // Ответ без screenshotKey (приватный ключ в публичные поля не отдаём).
       return reply.status(201).send(created);
@@ -295,6 +331,11 @@ export async function paymentRoutes(app: FastifyInstance) {
             data: { walletTransactionId: credit.transaction.id },
           });
 
+          // (d) Авто-дозачёт долга: пополнили баланс → гасим открытые начисления студента
+          // доступными средствами (частично, баланс не в минус). Идемпотентно: повторно
+          // approve не пройдёт (статус уже approved), второго списания не будет.
+          const settled = await settleOutstandingCharges(tx, target.userId);
+
           const finalRequest = await tx.topUpRequest.findUniqueOrThrow({
             where: { id },
             select: {
@@ -308,8 +349,19 @@ export async function paymentRoutes(app: FastifyInstance) {
             },
           });
 
+          // Баланс после авто-погашения: если что-то списали, перечитываем актуальный.
+          const balanceKopecks =
+            settled > 0
+              ? (
+                  await tx.user.findUniqueOrThrow({
+                    where: { id: target.userId },
+                    select: { balanceKopecks: true },
+                  })
+                ).balanceKopecks
+              : credit.balanceKopecks;
+
           return {
-            balanceKopecks: credit.balanceKopecks,
+            balanceKopecks,
             transaction: credit.transaction,
             request: finalRequest,
           };
@@ -364,6 +416,89 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
 
     return { request: finalRequest };
+  });
+
+  // ─── Возврат по начислению за группу (ledger «Оплата и баланс») ─────────────
+
+  // POST /admin/charges/:id/refund { amountKopecks } — ручной возврат админом.
+  // Возвращает деньги на баланс студента (creditBalance, kind=topup, note='Возврат',
+  // привязка к начислению chargeId) и уменьшает Charge.paidKopecks на сумму возврата;
+  // начисление помечается status='refunded'. Сумма — целое 0<amount<=paidKopecks.
+  //
+  // ИДЕМПОТЕНТНОСТЬ: списываем уплату условным updateMany по (id, status!='refunded',
+  // paidKopecks>=amount) — count===0 значит уже возвращено / сумма больше уплаченной → 409/400.
+  app.post('/admin/charges/:id/refund', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { amountKopecks?: unknown };
+
+    if (!isPositiveInt(body.amountKopecks) || body.amountKopecks > MAX_AMOUNT_KOPECKS) {
+      return reply.status(400).send({
+        error: 'Сумма возврата должна быть положительным целым числом копеек в разумных пределах',
+      });
+    }
+    const amount = body.amountKopecks;
+    const adminId = request.user!.userId;
+
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { name: true },
+    });
+
+    // Проверяем существование начисления и что сумма возврата не превышает уплаченное.
+    const charge = await prisma.charge.findUnique({
+      where: { id },
+      select: { id: true, userId: true, paidKopecks: true, status: true },
+    });
+    if (!charge) {
+      return reply.status(404).send({ error: 'Начисление не найдено' });
+    }
+    if (charge.status === 'refunded') {
+      return reply.status(409).send({ error: 'Возврат уже выполнен' });
+    }
+    if (amount > charge.paidKopecks) {
+      return reply.status(400).send({ error: 'Сумма возврата больше уплаченной' });
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // Атомарно уменьшаем paidKopecks и помечаем refunded — фильтр по
+        // (status!='refunded', paidKopecks>=amount) защищает от гонок/повторного возврата.
+        const updated = await tx.charge.updateMany({
+          where: { id, status: { not: 'refunded' }, paidKopecks: { gte: amount } },
+          data: { paidKopecks: { decrement: amount }, status: 'refunded' },
+        });
+        if (updated.count === 0) {
+          throw new ConflictError('Возврат уже выполнен');
+        }
+
+        // Возвращаем деньги на баланс (привязка к начислению chargeId).
+        const credit = await creditBalance(tx, {
+          userId: charge.userId,
+          amountKopecks: amount,
+          note: 'Возврат',
+          createdBy: admin?.name ?? null,
+          chargeId: id,
+        });
+
+        const finalCharge = await tx.charge.findUniqueOrThrow({
+          where: { id },
+          select: { id: true, amountKopecks: true, paidKopecks: true, status: true },
+        });
+
+        return {
+          balanceKopecks: credit.balanceKopecks,
+          transaction: credit.transaction,
+          charge: finalCharge,
+        };
+      });
+
+      return result;
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        return reply.status(409).send({ error: err.message });
+      }
+      throw err;
+    }
   });
 
   // ─── Настройки оплаты (реквизиты для перевода) ──────────────────────────────

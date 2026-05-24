@@ -20,6 +20,7 @@ enum StreamStatus {
 enum SessionStatus {
   draft
   planned
+  live
   done
   cancelled
 }
@@ -71,6 +72,14 @@ enum TopUpRequestStatus {
   rejected
 }
 
+// Статус начисления студенту за группу (ledger «Оплата и баланс», платёжный план группы).
+// open — начисление открыто (не погашено полностью); paid — погашено целиком; refunded — возвращено админом.
+enum ChargeStatus {
+  open
+  paid
+  refunded
+}
+
 enum NotificationType {
   lesson_published
   assignment_created
@@ -79,6 +88,7 @@ enum NotificationType {
   assignment_submitted
   assignment_reviewed
   schedule_entry_created
+  topup_requested
 }
 
 model User {
@@ -119,6 +129,9 @@ model User {
   zoomIntegration         ZoomIntegration?
   topUpRequests           TopUpRequest[]           @relation("TopUpAuthor")
   reviewedTopUps          TopUpRequest[]           @relation("TopUpReviewer")
+  sessionAttendance       SessionAttendance[]
+  charges                 Charge[]                 @relation("ChargeUser")
+  createdCharges          Charge[]                 @relation("ChargeCreatedBy")
 }
 
 model ApiKey {
@@ -161,6 +174,9 @@ model Stream {
   joinToken   String?      @unique
   // Когда токен сгенерирован/перевыпущен (для UI и аудита).
   joinTokenAt DateTime?
+  // Платёжный план группы: цена за участие в копейках. null = план не задан
+  // (студенты не начисляются автоматически). Эпик «Оплата и баланс».
+  priceKopecks Int?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -169,6 +185,7 @@ model Stream {
   sessions      Session[]
   enrollments   StreamEnrollment[]
   conversations Conversation[]
+  charges       Charge[]
 
   @@index([ownerId])
   @@index([programId])
@@ -300,15 +317,70 @@ model Session {
   summary         String? // итоги/конспект КОНКРЕТНОГО занятия потока (отдельно от Lesson.summary)
   summarySource   String? // источник summary: 'zoom_ai' | 'manual'
 
+  // Итоги + Транскрипт занятия (Ф1.2 + Ф2.6). Все поля nullable — фича аддитивна.
+  summaryStatus       String?   // статус итогов: none | pending | processing | ready | failed (строкой, без enum)
+  transcriptStatus    String?   // статус транскрипта: none | pending | processing | ready | failed
+  transcriptVttKey    String?   // ключ S3 для сырого .vtt транскрипта
+  transcriptTxtKey    String?   // ключ S3 для очищенного .txt транскрипта
+  transcriptError     String?   // текст ошибки забора транскрипта (для препода/админа)
+  transcriptRequestedAt DateTime? // когда запросили транскрипт (для увеличенного таймаута до failed — приходит позже записи)
+  recordingRequestedAt  DateTime? // когда запись запрошена/ожидается (ставится на meeting.ended) — для таймаута «формируется → недоступно»
+  summaryRequestedAt    DateTime? // когда итоги запрошены/ожидаются (на meeting.ended) — для таймаута состояния итогов
+
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
+  attendance         SessionAttendance[]
 
   @@unique([streamId, lessonId])
   @@index([streamId])
   @@index([lessonId])
   @@index([status, date])
   @@index([zoomMeetingId])
+}
+
+// Посещаемость занятия потока (B5, фаза 2). Две природы записей:
+//   source='zoom_report' — авто-забор из Zoom report participants API (один ряд на
+//     участника встречи; userId проставляется при сопоставлении по email со студентом потока);
+//   source='manual'      — ручная отметка админом (всегда привязана к студенту userId).
+// status и source хранятся строкой без enum — по конвенции проекта (ср. Session.recordingStatus
+// "строкой, без enum" и Session.summarySource 'zoom_ai' | 'manual').
+//   source: 'zoom_report' | 'manual'
+//   status: 'present' | 'absent'  (для zoom-участника по умолчанию 'present')
+//
+// ДЕДУП / ИДЕМПОТЕНТНОСТЬ — два непересекающихся частичных уникальных индекса (см. migration.sql):
+//   1) UNIQUE (sessionId, zoomParticipantId) WHERE zoomParticipantId IS NOT NULL
+//      — авто-забор апсёртит по (sessionId, zoomParticipantId), повторные синки не плодят дубли.
+//   2) UNIQUE (sessionId, userId) WHERE source='manual'
+//      — ручная отметка одна на (студент, занятие); upsert обновляет статус.
+// Индексы НЕ конфликтуют: zoom-гость без userId не нарушает (2), а ручная запись без
+// zoomParticipantId не нарушает (1). Один и тот же студент может иметь и zoom-ряд
+// (сопоставленный), и ручной ряд — это допустимо; финальный статус занятия выводит
+// приложение (manual имеет приоритет над zoom_report).
+model SessionAttendance {
+  id        String   @id @default(uuid())
+  sessionId String
+  // Сопоставленный студент. null = несопоставленный zoom-гость (нет userId по email).
+  userId    String?
+  source    String // 'zoom_report' | 'manual'
+  status    String   @default("present") // 'present' | 'absent'
+
+  // Данные из Zoom report participants API (все nullable).
+  zoomParticipantId String? // participant id Zoom (для дедупа авто-забора)
+  displayName       String? // имя участника из Zoom
+  email             String? // user_email из Zoom (для сопоставления со студентом потока)
+  joinedAt          DateTime? // самый ранний join_time
+  leftAt            DateTime? // самый поздний leave_time
+  durationSec       Int? // суммарная длительность по всем переподключениям, сек
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([userId])
 }
 
 model StudentAssignment {
@@ -475,13 +547,19 @@ model WalletTransaction {
   kind      WalletTxKind
   note      String?
   createdBy String? // имя администратора, сделавшего операцию
+  // Начисление за группу, которое гасится этой транзакцией (если есть). Одно начисление
+  // может гаситься НЕСКОЛЬКИМИ списаниями — поэтому связь со стороны WalletTransaction
+  // (НЕ @unique). Эпик «Оплата и баланс».
+  chargeId  String?
   createdAt DateTime     @default(now())
   user      User         @relation("WalletTxUser", fields: [userId], references: [id], onDelete: Cascade)
+  charge    Charge?      @relation(fields: [chargeId], references: [id], onDelete: SetNull)
 
   // Заявка на пополнение, по которой была проведена эта транзакция (если есть).
   topUpRequest TopUpRequest?
 
   @@index([userId])
+  @@index([chargeId])
 }
 
 // Заявка студента на пополнение баланса по скриншоту оплаты (Фаза 1 эпика «Оплата и баланс»).
@@ -508,6 +586,36 @@ model TopUpRequest {
 
   @@index([status])
   @@index([userId])
+}
+
+// Начисление студенту за участие в группе (ledger «Оплата и баланс», платёжный план группы).
+// amountKopecks — цена, зафиксированная на момент зачисления студента (даже если позже
+// Stream.priceKopecks изменится). paidKopecks — сколько уже погашено списаниями с баланса
+// (одно начисление может гаситься несколькими WalletTransaction). status: open → paid после
+// полного погашения; refunded — возврат админом. createdById — админ-создатель (для аудита/возврата).
+//
+// ИДЕМПОТЕНТНОСТЬ: ровно одно ОТКРЫТОЕ начисление на пару (streamId, userId) — гарантируется
+// PARTIAL UNIQUE INDEX "charge_active_uniq" ... WHERE status='open' (создаётся сырым SQL в миграции,
+// т.к. Prisma не умеет partial unique в schema). После полного погашения можно создать новое.
+model Charge {
+  id            String       @id @default(uuid())
+  streamId      String
+  userId        String
+  amountKopecks Int // зафиксированная цена на момент зачисления (копейки)
+  paidKopecks   Int          @default(0) // сколько уже погашено списаниями (копейки)
+  status        ChargeStatus @default(open)
+  note          String?
+  createdById   String? // админ-создатель начисления (для аудита/возврата)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user               User                @relation("ChargeUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy          User?               @relation("ChargeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  walletTransactions WalletTransaction[]
+
+  @@index([userId, status])
+  @@index([streamId])
 }
 
 // Настройки оплаты (синглтон — один ряд с id="singleton"). Куда переводить деньги:

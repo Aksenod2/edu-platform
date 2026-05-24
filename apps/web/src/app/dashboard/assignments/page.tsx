@@ -33,21 +33,9 @@ import {
   type Stream,
   type ThreadEntry,
 } from '@/lib/api';
+import { STATUS_LABELS, STATUS_VARIANT, STATUS_ORDER } from '@/lib/assignment-status';
+import { useBack } from '@/components/back-button';
 import Link from 'next/link';
-
-const STATUS_LABELS: Record<string, string> = {
-  assigned: 'Назначено',
-  submitted: 'Отправлено',
-  reviewed: 'Проверено',
-  needs_revision: 'На доработке',
-};
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  assigned: 'secondary',
-  submitted: 'secondary',
-  reviewed: 'default',
-  needs_revision: 'destructive',
-};
 
 const TYPE_LABELS: Record<string, string> = {
   short: 'Короткое',
@@ -57,6 +45,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function StudentAssignmentsPage() {
   const { user, accessToken } = useAuth();
   const router = useRouter();
+  const goBack = useBack('/dashboard');
 
   const [assignments, setAssignments] = useState<StudentAssignment[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -123,8 +112,10 @@ export default function StudentAssignmentsPage() {
   };
 
   const openSubmissionForm = (saId: string) => {
+    const target = assignments.find((s) => s.id === saId);
     setSubmissionModalSaId(saId);
-    setSubmissionText('');
+    // При правке уже отправленной (submitted) работы предзаполняем прошлый ответ.
+    setSubmissionText(target?.status === 'submitted' ? target.content ?? '' : '');
     setSubmissionFile(null);
   };
 
@@ -136,13 +127,15 @@ export default function StudentAssignmentsPage() {
 
   const handleSubmit = async () => {
     if (!accessToken || !submissionModalSaId) return;
+    const isResubmit =
+      assignments.find((s) => s.id === submissionModalSaId)?.status === 'submitted';
     setSubmitting(true);
     try {
       await submitStudentAssignment(accessToken, submissionModalSaId, {
         answerText: submissionText || undefined,
         file: submissionFile || undefined,
       });
-      toast.success('Задание отправлено на проверку');
+      toast.success(isResubmit ? 'Ответ обновлён' : 'Задание отправлено на проверку');
       closeSubmissionForm();
       await fetchData();
     } catch (err) {
@@ -157,13 +150,14 @@ export default function StudentAssignmentsPage() {
       <div className="max-w-3xl">
         {/* Page header */}
         <div className="mb-8">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3 no-underline"
+          <button
+            type="button"
+            onClick={goBack}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
           >
             <ChevronLeft className="size-3.5" />
             Назад
-          </Link>
+          </button>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Мои задания
           </h1>
@@ -187,10 +181,10 @@ export default function StudentAssignmentsPage() {
             onValueChange={(v) => setStreamFilter(v === 'all' ? '' : v)}
           >
             <SelectTrigger className="min-w-40">
-              <SelectValue placeholder="Все потоки" />
+              <SelectValue placeholder="Все группы" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Все потоки</SelectItem>
+              <SelectItem value="all">Все группы</SelectItem>
               {streams.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -208,10 +202,11 @@ export default function StudentAssignmentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы</SelectItem>
-              <SelectItem value="assigned">Назначено</SelectItem>
-              <SelectItem value="submitted">Отправлено</SelectItem>
-              <SelectItem value="reviewed">Проверено</SelectItem>
-              <SelectItem value="needs_revision">На доработке</SelectItem>
+              {STATUS_ORDER.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -465,9 +460,10 @@ export default function StudentAssignmentsPage() {
                           );
                         })()}
 
-                      {/* Actions row */}
-                      <div className="flex gap-5 items-center justify-between flex-wrap">
-                        <div className="flex gap-5 text-xs text-muted-foreground">
+                      {/* Actions row: на мобиле в столбик (мета над кнопками),
+                          на sm+ — в ряд с выравниванием по краям */}
+                      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                           {sa.submittedAt && (
                             <span>
                               Отправлено:{' '}
@@ -488,13 +484,21 @@ export default function StudentAssignmentsPage() {
                           )}
                         </div>
 
-                        <div className="flex gap-2 items-center">
-                          <Button asChild variant="outline" size="sm">
+                        {/* На мобиле кнопки в столбик во всю ширину (тап-таргет ≥44px),
+                            на sm+ — в ряд с переносом, чтобы ничего не обрезалось */}
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="w-full min-h-11 sm:w-auto sm:min-h-9"
+                          >
                             <Link href={`/dashboard/assignments/${sa.id}`}>Подробнее</Link>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            className="w-full min-h-11 sm:w-auto sm:min-h-9"
                             onClick={() =>
                               router.push(
                                 `/dashboard/messages?tab=personal&assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`,
@@ -504,12 +508,20 @@ export default function StudentAssignmentsPage() {
                             <MessageCircle className="size-3.5" />
                             Задать вопрос
                           </Button>
-                          {(sa.status === 'assigned' || sa.status === 'needs_revision') && (
+                          {(sa.status === 'assigned' ||
+                            sa.status === 'needs_revision' ||
+                            sa.status === 'submitted') && (
                             <Button
                               size="sm"
+                              variant={sa.status === 'submitted' ? 'outline' : 'default'}
+                              className="w-full min-h-11 sm:w-auto sm:min-h-9"
                               onClick={() => openSubmissionForm(sa.id)}
                             >
-                              {sa.status === 'needs_revision' ? 'Пересдать' : 'Отправить'}
+                              {sa.status === 'needs_revision'
+                                ? 'Пересдать'
+                                : sa.status === 'submitted'
+                                  ? 'Изменить'
+                                  : 'Отправить'}
                             </Button>
                           )}
                         </div>
@@ -535,11 +547,12 @@ export default function StudentAssignmentsPage() {
             const modalSa = assignments.find((s) => s.id === submissionModalSaId);
             const modalAssignment = modalSa?.assignment;
             const isShort = modalAssignment?.type === 'short';
+            const isResubmit = modalSa?.status === 'submitted';
 
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle>Сдача задания</DialogTitle>
+                  <DialogTitle>{isResubmit ? 'Изменение ответа' : 'Сдача задания'}</DialogTitle>
                 </DialogHeader>
 
                 <div className="rounded-md bg-muted border p-3 px-4">
@@ -583,6 +596,12 @@ export default function StudentAssignmentsPage() {
 
                 <div className="flex flex-col gap-2">
                   <Label>Файл</Label>
+                  {/* При правке submitted показываем уже прикреплённый файл. */}
+                  {isResubmit && !submissionFile && modalSa?.fileName && (
+                    <p className="text-xs text-muted-foreground m-0">
+                      Сейчас прикреплён: {modalSa.fileName}. Чтобы заменить — выберите новый файл ниже.
+                    </p>
+                  )}
                   {submissionFile ? (
                     <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted border">
                       <Badge variant="outline">
@@ -611,7 +630,7 @@ export default function StudentAssignmentsPage() {
                     <label className="flex items-center justify-center gap-2 p-4 rounded-md border-2 border-dashed cursor-pointer text-sm text-muted-foreground hover:border-ring transition-colors">
                       <input
                         type="file"
-                        accept=".pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
+                        accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.figma,.zip"
                         className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
@@ -624,13 +643,17 @@ export default function StudentAssignmentsPage() {
                           }
                         }}
                       />
-                      + Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)
+                      {isResubmit && modalSa?.fileName
+                        ? '+ Заменить файл (PDF, DOCX, PNG — до 20 МБ)'
+                        : '+ Прикрепить файл (PDF, DOCX, PNG — до 20 МБ)'}
                     </label>
                   )}
                 </div>
 
                 <p className="text-xs text-muted-foreground italic">
-                  После отправки потребуется подтверждение. Ответ нельзя изменить.
+                  {isResubmit
+                    ? 'Изменить ответ можно, пока работу не проверили.'
+                    : 'После отправки потребуется подтверждение. Ответ нельзя изменить.'}
                 </p>
 
                 <DialogFooter>
@@ -642,7 +665,11 @@ export default function StudentAssignmentsPage() {
                     onClick={handleSubmit}
                     disabled={submitting || (isShort && !submissionText.trim())}
                   >
-                    {submitting ? 'Отправка…' : 'Сдать задание →'}
+                    {submitting
+                      ? 'Отправка…'
+                      : isResubmit
+                        ? 'Сохранить изменения →'
+                        : 'Сдать задание →'}
                   </Button>
                 </DialogFooter>
               </>

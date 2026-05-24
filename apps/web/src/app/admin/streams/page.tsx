@@ -116,7 +116,7 @@ export default function StreamsPage() {
       setStreams(data.streams);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки групп');
     } finally {
       setLoadingStreams(false);
     }
@@ -147,7 +147,7 @@ export default function StreamsPage() {
       setShowCreateForm(false);
       await fetchStreams();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка создания потока');
+      setError(err instanceof Error ? err.message : 'Ошибка создания группы');
     } finally {
       setCreating(false);
     }
@@ -163,7 +163,7 @@ export default function StreamsPage() {
       setEditName('');
       await fetchStreams();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления потока');
+      setError(err instanceof Error ? err.message : 'Ошибка обновления группы');
     } finally {
       setSaving(false);
     }
@@ -188,7 +188,7 @@ export default function StreamsPage() {
       await archiveStream(accessToken, id);
       await fetchStreams();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка архивирования потока');
+      setError(err instanceof Error ? err.message : 'Ошибка архивирования группы');
     }
   };
 
@@ -200,7 +200,7 @@ export default function StreamsPage() {
       setStreamToDelete(null);
       await fetchStreams();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления потока');
+      setError(err instanceof Error ? err.message : 'Ошибка удаления группы');
     }
   };
 
@@ -212,7 +212,7 @@ export default function StreamsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">Потоки</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Группы</h1>
           <p className="text-sm text-muted-foreground">Учебные группы и их уроки</p>
         </div>
         <Button
@@ -225,16 +225,16 @@ export default function StreamsPage() {
           ) : (
             <>
               <Plus />
-              Создать поток
+              Создать группу
             </>
           )}
         </Button>
       </div>
 
-      <HintCallout storageKey="eduhint:streams-list" title="Поток — это учебная группа">
-        Поток — это группа учеников. В него зачисляют учеников и составляют
+      <HintCallout storageKey="eduhint:streams-list" title="Группа — это учебная группа студентов">
+        Группа — это набор студентов. В неё зачисляют студентов и составляют
         расписание из уроков копилки. Один и тот же урок может идти в нескольких
-        потоках.
+        группах.
       </HintCallout>
 
       {error && (
@@ -246,16 +246,16 @@ export default function StreamsPage() {
       {showCreateForm && (
         <Card>
           <CardHeader>
-            <CardTitle>Новый поток</CardTitle>
+            <CardTitle>Новая группа</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate}>
               <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor="new-stream-name">Название потока</FieldLabel>
+                  <FieldLabel htmlFor="new-stream-name">Название группы</FieldLabel>
                   <Input
                     id="new-stream-name"
-                    placeholder="Например: Поток #1"
+                    placeholder="Например: Группа #1"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     autoFocus
@@ -293,7 +293,7 @@ export default function StreamsPage() {
             checked={mineOnly}
             onCheckedChange={(v) => setMineOnly(v === true)}
           />
-          Только мои потоки
+          Только мои группы
         </label>
       </div>
 
@@ -304,7 +304,7 @@ export default function StreamsPage() {
               <TableHead>Название</TableHead>
               <TableHead>Ведущий</TableHead>
               <TableHead>Преподаватели</TableHead>
-              <TableHead className="text-right">Учеников</TableHead>
+              <TableHead className="text-right">Студентов</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Создан</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>
@@ -325,7 +325,7 @@ export default function StreamsPage() {
             ) : filteredStreams.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  Потоки не найдены
+                  Группы не найдены
                 </TableCell>
               </TableRow>
             ) : (
@@ -412,7 +412,7 @@ export default function StreamsPage() {
                               </Badge>
                             </TooltipTrigger>
                             <TooltipContent>
-                              Поток считается общим, если по его урокам больше одного преподавателя.
+                              Группа считается общей, если по её урокам больше одного преподавателя.
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -509,7 +509,7 @@ export default function StreamsPage() {
                             onSelect={() => setStreamToDelete(stream)}
                           >
                             <Trash2 />
-                            Удалить поток
+                            Удалить группу
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -528,9 +528,9 @@ export default function StreamsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Архивировать поток?</AlertDialogTitle>
+            <AlertDialogTitle>Архивировать группу?</AlertDialogTitle>
             <AlertDialogDescription>
-              {streamToArchive && `Поток «${streamToArchive.name}» будет перемещён в архив.`}
+              {streamToArchive && `Группа «${streamToArchive.name}» будет перемещена в архив.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -551,13 +551,13 @@ export default function StreamsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить поток?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить группу?</AlertDialogTitle>
             <AlertDialogDescription>
               {streamToDelete && (
                 <>
-                  Поток «{streamToDelete.name}» будет удалён безвозвратно. Действие
+                  Группа «{streamToDelete.name}» будет удалена безвозвратно. Действие
                   необратимо: будут удалены зачисления студентов, расписание занятий
-                  и чаты потока. Контент уроков сохранится.
+                  и чаты группы. Контент уроков сохранится.
                 </>
               )}
             </AlertDialogDescription>

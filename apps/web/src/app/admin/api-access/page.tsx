@@ -8,6 +8,7 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
+import { API_ENDPOINTS, API_ENDPOINT_GROUPS, type ApiEndpoint } from '@/lib/api-endpoints';
 import { toast } from 'sonner';
 import { Loader2, Eye, EyeOff, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { ChevronRight } from 'lucide-react';
 
 export default function ApiAccessPage() {
   const { accessToken } = useAuth();
@@ -211,7 +213,9 @@ export default function ApiAccessPage() {
                         autoFocus
                       />
                       <p className="text-xs text-muted-foreground">
-                        Ключ даёт полный админ-доступ к API и не имеет срока действия. Храните в секрете.
+                        Ключ даёт ПОЛНЫЕ права администратора и не имеет срока действия (бессрочный).
+                        Храните его в секрете и отзывайте при компрометации. Утечка ключа = доступ к
+                        кошелькам, сбросу паролей и экспорту данных студентов.
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -332,6 +336,17 @@ export default function ApiAccessPage() {
             <CardTitle>Как подключиться к API</CardTitle>
           </CardHeader>
           <CardContent>
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>
+                <span className="font-semibold">Внимание: ключ = полные права администратора, бессрочный.</span>{' '}
+                Утечка ключа даёт доступ к кошелькам студентов, сбросу паролей и экспорту персональных
+                данных. Действия по ключу <span className="font-semibold">не аудируются</span> — фиксируется
+                только дата последнего использования (<span className="font-mono text-xs">lastUsedAt</span>),
+                без журнала операций. Храните ключ в секрете, не передавайте третьим лицам и немедленно
+                отзывайте при подозрении на компрометацию.
+              </AlertDescription>
+            </Alert>
+
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-2">Аутентификация</p>
               <p className="text-sm mb-2">
@@ -340,8 +355,25 @@ export default function ApiAccessPage() {
               </p>
               <CodeBlock>{`Authorization: Bearer sk_<ваш_ключ>`}</CodeBlock>
               <p className="text-sm text-muted-foreground mt-2">
-                Ключ работает с правами своего владельца — то есть с полными правами администратора. Храните его в секрете и отзывайте при компрометации.
+                Ключ работает с правами своего владельца — то есть с полными правами администратора. Срока
+                действия нет, ключ бессрочный. Храните его в секрете и отзывайте при компрометации.
               </p>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-2">Особенности отдельных доменов</p>
+              <ul className="text-sm list-disc pl-5 flex flex-col gap-2">
+                <li>
+                  <span className="font-medium">Ленты, сообщения и чаты — append-only.</span> Записи можно только
+                  добавлять (<span className="font-mono text-xs">POST .../entries</span>) и отмечать
+                  прочитанными; правки и удаления отдельных записей нет (как и в веб-интерфейсе).
+                </li>
+                <li>
+                  <span className="font-medium">Отключение Zoom.</span> Отдельного эндпоинта удаления нет:
+                  чтобы отключить интеграцию, сохраните пустые credentials через{' '}
+                  <span className="font-mono text-xs">PUT /admin/integrations/zoom</span>.
+                </li>
+              </ul>
             </div>
 
             <div>
@@ -361,13 +393,22 @@ export default function ApiAccessPage() {
         </Card>
       </section>
 
-      {/* ─── Секция 3: Основные эндпоинты ─────────────────────────── */}
+      {/* ─── Секция 3: Полный список эндпоинтов ───────────────────── */}
       <section className="mb-8">
         <Card>
           <CardHeader>
-            <CardTitle>Основные эндпоинты</CardTitle>
+            <CardTitle>Все эндпоинты ({API_ENDPOINTS.length})</CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Полный перечень эндпоинтов, доступных по API-ключу (права администратора).
+              Параметры пути указаны в стиле <code className="font-mono text-xs">:id</code>.
+              Списочные эндпоинты принимают фильтры через query-параметры (например,{' '}
+              <code className="font-mono text-xs">/student-assignments?studentId=ID</code>).
+              У write-эндпоинтов со значком{' '}
+              <ChevronRight className="inline size-3 align-middle" /> можно раскрыть схему
+              тела запроса (body) и готовый пример <code className="font-mono text-xs">curl</code>.
+            </p>
             <div className="rounded-lg border">
               <Table>
                 <TableHeader>
@@ -378,31 +419,13 @@ export default function ApiAccessPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {([
-                    ['GET', '/users', 'Список учеников'],
-                    ['GET', '/users/:id', 'Карточка ученика'],
-                    ['POST', '/users', 'Создать ученика'],
-                    ['POST', '/users/:id/invite', 'Сгенерировать ссылку-приглашение'],
-                    ['POST', '/users/:id/reset-password', 'Сбросить пароль ученика'],
-                    ['GET', '/users/:id/export', 'Выгрузить все данные ученика (профиль, задания, лента, файлы)'],
-                    ['GET', '/streams', 'Список потоков'],
-                    ['GET', '/profiles/:studentId', 'Профиль ученика'],
-                    ['GET', '/student-assignments?studentId=:id', 'Задания ученика'],
-                    ['GET', '/threads/:studentId', 'Лента ученика'],
-                    ['POST', '/threads/:studentId/entries', 'Добавить запись в ленту'],
-                    ['GET', '/stats', 'Сводная статистика'],
-                    ['GET', '/files/*', 'Скачать файл (по подписи или админским Bearer)'],
-                  ] as const).map(([method, path, desc]) => (
-                    <TableRow key={`${method} ${path}`} className="align-top">
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-[11px]">{method}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <code className="font-mono text-xs whitespace-nowrap">{path}</code>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{desc}</TableCell>
-                    </TableRow>
-                  ))}
+                  {API_ENDPOINT_GROUPS.map((group) => {
+                    const rows = API_ENDPOINTS.filter((e) => e.group === group);
+                    if (rows.length === 0) return null;
+                    return (
+                      <GroupRows key={group} group={group} rows={rows} proxyBase={proxyBase} />
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -416,33 +439,33 @@ export default function ApiAccessPage() {
 
         <div className="flex flex-col gap-4">
           <ExampleCard
-            title="Список учеников"
+            title="Список студентов"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users`}
           />
           <ExampleCard
             title="Скачать всё по студенту"
             description="Удобная выгрузка одним запросом: профиль, задания, лента и список файлов с подписанными ссылками."
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users/ID_УЧЕНИКА/export`}
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users/ID_СТУДЕНТА/export`}
           />
           <ExampleCard
-            title="Задания ученика"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  '${proxyBase}/student-assignments?studentId=ID_УЧЕНИКА'`}
+            title="Задания студента"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  '${proxyBase}/student-assignments?studentId=ID_СТУДЕНТА'`}
           />
           <ExampleCard
-            title="Список потоков"
+            title="Список групп"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/streams`}
           />
           <ExampleCard
-            title="Профиль ученика"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/profiles/ID_УЧЕНИКА`}
+            title="Профиль студента"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/profiles/ID_СТУДЕНТА`}
           />
           <ExampleCard
-            title="Лента ученика (thread)"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/threads/ID_УЧЕНИКА`}
+            title="Лента студента (thread)"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/threads/ID_СТУДЕНТА`}
           />
           <ExampleCard
             title="Отправить комментарий в ленту"
-            code={`curl -X POST -H 'Authorization: Bearer sk_ваш_ключ' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"type": "comment", "content": "Отличная работа!"}' \\\n  ${proxyBase}/threads/ID_УЧЕНИКА/entries`}
+            code={`curl -X POST -H 'Authorization: Bearer sk_ваш_ключ' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"type": "comment", "content": "Отличная работа!"}' \\\n  ${proxyBase}/threads/ID_СТУДЕНТА/entries`}
           />
         </div>
       </section>
@@ -479,6 +502,126 @@ export default function ApiAccessPage() {
 }
 
 // ─── Вспомогательные компоненты ───────────────────────────────────────────────
+
+function GroupRows({
+  group,
+  rows,
+  proxyBase,
+}: {
+  group: string;
+  rows: typeof API_ENDPOINTS;
+  proxyBase: string;
+}) {
+  return (
+    <>
+      <TableRow className="bg-muted/50 hover:bg-muted/50">
+        <TableCell colSpan={3} className="font-semibold text-foreground">
+          {group}
+        </TableCell>
+      </TableRow>
+      {rows.map((e) => (
+        <EndpointRow key={`${e.method} ${e.path}`} endpoint={e} proxyBase={proxyBase} />
+      ))}
+    </>
+  );
+}
+
+// Строка эндпоинта. Если есть схема тела (body) или пример — клик по строке
+// раскрывает дополнительную строку с таблицей полей и готовым curl. Без них —
+// обычная строка. Radix Collapsible НЕ используем внутри <table>: его обёртки
+// ломают валидную структуру таблицы — управляем раскрытием простым состоянием.
+function EndpointRow({ endpoint, proxyBase }: { endpoint: ApiEndpoint; proxyBase: string }) {
+  const [open, setOpen] = useState(false);
+  const hasDocs = (endpoint.body && endpoint.body.length > 0) || !!endpoint.example;
+
+  if (!hasDocs) {
+    return (
+      <TableRow className="align-top">
+        <TableCell>
+          <Badge variant="outline" className="font-mono text-[11px]">{endpoint.method}</Badge>
+        </TableCell>
+        <TableCell>
+          <code className="font-mono text-xs whitespace-nowrap">{endpoint.path}</code>
+        </TableCell>
+        <TableCell className="text-muted-foreground">{endpoint.desc}</TableCell>
+      </TableRow>
+    );
+  }
+
+  // <BASE> в примерах из shared заменяем на реальный прокси-URL клиента.
+  const example = endpoint.example?.replaceAll('<BASE>', proxyBase);
+
+  return (
+    <>
+      <TableRow
+        className="align-top cursor-pointer"
+        role="button"
+        aria-expanded={open}
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+      >
+        <TableCell>
+          <Badge variant="outline" className="font-mono text-[11px]">{endpoint.method}</Badge>
+        </TableCell>
+        <TableCell>
+          <span className="flex items-start gap-1.5">
+            <ChevronRight
+              className={`size-3.5 mt-0.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+            />
+            <code className="font-mono text-xs whitespace-nowrap">{endpoint.path}</code>
+          </span>
+        </TableCell>
+        <TableCell className="text-muted-foreground">{endpoint.desc}</TableCell>
+      </TableRow>
+      {open && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={3} className="bg-muted/30">
+            <div className="flex flex-col gap-4 py-1">
+              {endpoint.body && endpoint.body.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-2">Тело запроса (JSON)</p>
+                  <div className="flex flex-col gap-2">
+                    {endpoint.body.map((f) => (
+                      <div
+                        key={f.name}
+                        className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2"
+                      >
+                        <span className="flex items-center gap-2 shrink-0">
+                          <code className="font-mono text-xs text-foreground">{f.name}</code>
+                          <span className="font-mono text-[11px] text-muted-foreground">{f.type}</span>
+                          {f.required ? (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">обязательно</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">опц.</Badge>
+                          )}
+                        </span>
+                        {f.note && (
+                          <span className="text-xs text-muted-foreground sm:flex-1">{f.note}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {example && (
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-2">Пример</p>
+                  <CodeBlock>{example}</CodeBlock>
+                </div>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
 
 function CodeBlock({ children }: { children: string }) {
   return (

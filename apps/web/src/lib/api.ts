@@ -271,6 +271,9 @@ export interface Stream {
   updatedAt: string;
   teachers?: { id: string; name: string }[];
   shared?: boolean;
+  // Платёжный план группы: стоимость участия в КОПЕЙКАХ (UI показывает рубли).
+  // null = план не задан (начисления по группе не делаются).
+  priceKopecks?: number | null;
   // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
   ownerId?: string | null;
   owner?: { id: string; name: string } | null;
@@ -292,18 +295,28 @@ export async function getStreams(
 export async function createStream(
   accessToken: string,
   name: string,
+  // Опционально: платёжный план группы в копейках (целое ≥0).
+  priceKopecks?: number | null,
 ): Promise<{ stream: Stream }> {
   return request('/streams', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(
+      priceKopecks === undefined ? { name } : { name, priceKopecks },
+    ),
   });
 }
 
 export async function updateStream(
   accessToken: string,
   id: string,
-  data: { name?: string; ownerId?: string | null; programId?: string | null },
+  data: {
+    name?: string;
+    ownerId?: string | null;
+    programId?: string | null;
+    // Платёжный план группы в копейках (целое ≥0) или null = снять план.
+    priceKopecks?: number | null;
+  },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
     method: 'PATCH',
@@ -562,6 +575,27 @@ export function fileDownloadUrl(url: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}download=1`;
 }
 
+/**
+ * Превращает абсолютный подписанный URL файла (`${API_BASE_URL}/files/...?exp&sig`)
+ * в SAME-ORIGIN путь через `/api-proxy`, чтобы файл можно было получить через
+ * `fetch()` без CORS. Бэк отдаёт файловые URL абсолютными (кросс-доменными):
+ * <a href>/<video>/<img> ходят по ним без CORS, но `fetch(...).text()` (например
+ * предпросмотр .md) требует CORS и падает с другого origin. В браузере переписываем
+ * путь на `/api-proxy/files/...` (тот же прокси, через который идут все API-вызовы —
+ * см. `API_URL` выше); на сервере (SSR) и для уже-относительных путей возвращаем как есть.
+ */
+export function toProxiedFileUrl(url: string): string {
+  if (!url || typeof window === 'undefined') return url;
+  try {
+    // Абсолютный URL → берём path+query и префиксуем same-origin прокси.
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return url; // уже same-origin
+    return `/api-proxy${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Удалить ВСЕ загруженные файлы и обнулить ссылки на них (только admin). Необратимо. */
 export async function purgeAllFiles(accessToken: string): Promise<{
   deletedFiles: number;
@@ -580,11 +614,14 @@ export async function purgeAllFiles(accessToken: string): Promise<{
 
 // Статус урока: Черновик · Запланирован · Проведён · Отменён.
 // Черновик скрыт от учеников; статус управляет видимостью.
-export type LessonStatus = 'draft' | 'planned' | 'done' | 'cancelled';
+// 'live' = «Идёт» — занятие в эфире (между Zoom meeting.started и meeting.ended).
+// Системный статус: ставится автоматически бэком, вручную не выбирается.
+export type LessonStatus = 'draft' | 'planned' | 'live' | 'done' | 'cancelled';
 
 export const LESSON_STATUS_LABELS: Record<LessonStatus, string> = {
   draft: 'Черновик',
   planned: 'Запланирован',
+  live: 'Идёт',
   done: 'Проведён',
   cancelled: 'Отменён',
 };
@@ -634,8 +671,29 @@ export interface Lesson {
   recordingStatus?: string | null;
   // Текст ошибки автозагрузки записи (для показа в UI), если recordingStatus = 'failed'.
   recordingError?: string | null;
+  // Запись Zoom-занятия — разведена с учебным видео урока (videos/videoUrl/videoFileUrl).
+  // Учебное видео грузится ДО урока (из блока), запись подтягивается ПОСЛЕ занятия (из Session).
+  // recordingVideoKey — ключ загруженной записи в хранилище;
+  // recordingVideoUrl — внешняя ссылка на запись; recordingFileUrl — подписанный URL файла записи.
+  recordingVideoKey?: string | null;
+  recordingVideoUrl?: string | null;
+  recordingFileUrl?: string | null;
   // Источник итогов занятия: 'zoom_ai' (AI Companion) | 'manual' (ввёл преподаватель).
   summarySource?: string | null;
+  // Статус формирования итогов Zoom AI: none | pending | processing | ready | failed.
+  // Виден всем; для студенческой страницы управляет состоянием блока «Итоги».
+  summaryStatus?: string | null;
+  // Статус/ошибка транскрипта — ОПЦИОНАЛЬНЫ (только в препод/админ-проекции; у студента нет).
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
+  // Отметки времени запроса данных у Zoom (ISO-строка|null). По ним отличаем
+  // «ещё формируется» (свежий запрос → дружелюбное «формируется») от
+  // «данных так и нет» (запрос давно → нейтральное «недоступно»).
+  // recordingRequestedAt / summaryRequestedAt видны всем; transcriptRequestedAt —
+  // только препод/админу (у студента поля нет, как и transcriptStatus).
+  recordingRequestedAt?: string | null;
+  summaryRequestedAt?: string | null;
+  transcriptRequestedAt?: string | null;
 }
 
 export async function getLessons(
@@ -941,6 +999,25 @@ export interface LessonSession {
   summarySource?: string | null;
   recordingStatus?: string | null;
   recordingError?: string | null;
+  // Статус формирования итогов Zoom AI: none | pending | processing | ready | failed.
+  // Виден ВСЕМ (включая студента) — управляет состоянием блока «Итоги занятия».
+  summaryStatus?: string | null;
+  // Статус и ошибка транскрипта. ОПЦИОНАЛЬНЫ: бэк отдаёт эти поля ТОЛЬКО
+  // админу/преподу урока; у студента их нет вовсе. Наличие transcriptStatus в
+  // объекте = признак того, что получатель админ/препод (по нему гейтим блок).
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
+  // Запись Zoom-занятия (разведена с учебным видео урока): внешняя ссылка
+  // (recordingVideoUrl) или подписанный URL загруженного файла (recordingFileUrl).
+  recordingFileUrl?: string | null;
+  recordingVideoUrl?: string | null;
+  // Отметки времени запроса данных у Zoom (ISO-строка|null). По ним отличаем
+  // «ещё формируется» (свежий запрос) от «данных так и нет» (запрос давно →
+  // нейтральное «недоступно»). recordingRequestedAt / summaryRequestedAt видны
+  // всем; transcriptRequestedAt — только препод/админу (у студента поля нет).
+  recordingRequestedAt?: string | null;
+  summaryRequestedAt?: string | null;
+  transcriptRequestedAt?: string | null;
 }
 
 // Сохранить ручные итоги КОНКРЕТНОГО занятия потока (Session.summary). Бэк ставит
@@ -956,6 +1033,131 @@ export async function updateLessonSummary(
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ streamId, summary }),
+  });
+}
+
+// Аналитика сдач по ЗАНЯТИЮ (Session = lessonId × streamId) для View Mode урока.
+// Все счётчики плоские. byStatus — распределение материализованных StudentAssignment
+// по статусам; total — всего материализованных назначений; enrolledCount — состав
+// потока (знаменатель). submittedCount = submitted+reviewed+needs_revision;
+// notSubmittedCount = enrolledCount − submittedCount; pendingReviewCount = submitted.
+export interface LessonAnalytics {
+  sessionId: string;
+  streamId: string;
+  enrolledCount: number;
+  total: number;
+  byStatus: {
+    assigned: number;
+    submitted: number;
+    reviewed: number;
+    needs_revision: number;
+  };
+  submittedCount: number;
+  notSubmittedCount: number;
+  pendingReviewCount: number;
+}
+
+// Получить аналитику сдач по занятию урока в конкретном потоке (только admin).
+export async function getLessonAnalytics(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<LessonAnalytics> {
+  const qs = new URLSearchParams({ streamId }).toString();
+  return request(`/lessons/${lessonId}/analytics?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// ── Посещаемость занятия (B5) ───────────────────────────────────────────────
+
+// Одна запись посещаемости. source='zoom_report' — авто-забор из Zoom (matched
+// проставлен при сопоставлении по email); source='manual' — ручная отметка
+// (всегда привязана к студенту). studentName — имя сопоставленного студента.
+export interface SessionAttendanceRecord {
+  id: string;
+  userId: string | null;
+  studentName: string | null;
+  source: 'zoom_report' | 'manual';
+  status: 'present' | 'absent';
+  displayName: string | null;
+  email: string | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  durationSec: number | null;
+  matched: boolean;
+}
+
+// Сводка посещаемости занятия. present/absent считаются по уникальным
+// сопоставленным студентам (manual приоритетнее zoom_report); несопоставленные
+// гости — в unmatchedCount и в records. lastSyncedAt — время последнего zoom-забора.
+export interface SessionAttendanceSummary {
+  sessionId: string;
+  streamId: string;
+  enrolledCount: number;
+  presentCount: number;
+  absentCount: number;
+  unmatchedCount: number;
+  lastSyncedAt: string | null;
+  records: SessionAttendanceRecord[];
+}
+
+// Мягкий отказ resync (нет scope / отчёт ещё не готов / нет встречи Zoom).
+export type AttendanceResyncResult =
+  | ({ ok: true } & SessionAttendanceSummary)
+  | { ok: false; reason: string };
+
+// Получить сводку посещаемости занятия урока в потоке (только admin).
+export async function getLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<SessionAttendanceSummary> {
+  const qs = new URLSearchParams({ streamId }).toString();
+  return request(`/lessons/${lessonId}/attendance?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Перезабрать посещаемость из Zoom. Возвращает свежую сводку (ok:true) либо
+// мягкий отказ (ok:false, reason) — UI показывает причину, без ошибки.
+export async function resyncLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<AttendanceResyncResult> {
+  return request(`/lessons/${lessonId}/attendance/resync`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ streamId }),
+  });
+}
+
+// Ручная отметка посещаемости студента. Возвращает обновлённую сводку.
+export async function markLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  params: { streamId: string; userId: string; status: 'present' | 'absent' },
+): Promise<SessionAttendanceSummary> {
+  return request(`/lessons/${lessonId}/attendance/mark`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(params),
+  });
+}
+
+// Привязать zoom-гостя к студенту потока либо СБРОСИТЬ привязку. Пустой/отсутствующий
+// userId = сброс (запись снова станет несопоставленным гостем). Возвращает сводку.
+export async function matchLessonAttendance(
+  accessToken: string,
+  lessonId: string,
+  attendanceId: string,
+  params: { streamId: string; userId?: string },
+): Promise<SessionAttendanceSummary> {
+  return request(`/lessons/${lessonId}/attendance/${attendanceId}/match`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(params),
   });
 }
 
@@ -977,6 +1179,68 @@ export async function unscheduleLesson(
 ): Promise<{ message: string }> {
   return request(`/lessons/${lessonId}/sessions/${streamId}`, {
     method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Повторить автозагрузку записи Zoom для занятия (админ): перезапускает скачивание
+// записи, когда recordingStatus = 'failed' или процесс завис. Бэк отвечает 202.
+export async function retrySessionRecording(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<{ status: string; message: string }> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}/recording/retry`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Результат одного шага единой подтяжки из Zoom: ok + причина неуспеха (если есть).
+export interface ZoomRefreshStep {
+  ok: boolean;
+  reason?: string;
+}
+
+// Частичный результат единой ручной подтяжки занятия из Zoom (запись + итоги +
+// транскрипт + посещаемость). Каждый шаг независим: какие-то могут получиться,
+// какие-то — нет (с reason). Только admin/препод урока.
+export interface ZoomRefreshResult {
+  recording: ZoomRefreshStep;
+  summary: ZoomRefreshStep;
+  transcript: ZoomRefreshStep;
+  attendance: ZoomRefreshStep;
+}
+
+// Единая ручная подтяжка занятия из Zoom: запускает и ДОЖИДАЕТСЯ всех шагов
+// (запись/итоги/транскрипт/посещаемость), возвращает частичный результат по каждому.
+export async function refreshSessionFromZoom(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<ZoomRefreshResult> {
+  return request(`/lessons/${lessonId}/sessions/${streamId}/refresh`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Транскрипт занятия в нужном формате. Возвращает подписанную ссылку на тело
+// (url) + статус. Доступно только преподу/админу урока (студенту — 403).
+export interface TranscriptResponse {
+  format: 'vtt' | 'txt';
+  url: string;
+  status: string;
+}
+
+export async function fetchTranscript(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+  format: 'vtt' | 'txt',
+): Promise<TranscriptResponse> {
+  const qs = new URLSearchParams({ format }).toString();
+  return request(`/lessons/${lessonId}/sessions/${streamId}/transcript?${qs}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
@@ -1010,11 +1274,13 @@ export interface Assignment {
   _count?: { studentAssignments: number };
 }
 
+export type StudentAssignmentStatus = 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
+
 export interface StudentAssignment {
   id: string;
   assignmentId: string;
   studentId: string;
-  status: 'assigned' | 'submitted' | 'reviewed' | 'needs_revision';
+  status: StudentAssignmentStatus;
   content: string | null;
   fileUrl: string | null;
   fileName: string | null;
@@ -1227,15 +1493,54 @@ export interface WalletTransaction {
   createdAt: string;
 }
 
+// Статус начисления по группе: open — есть долг, paid — оплачено, refunded — возвращено.
+export type ChargeStatus = 'open' | 'paid' | 'refunded';
+
+// Начисление студенту за участие в группе (для блока «По группам» в кошельке).
+export interface StudentCharge {
+  id: string;
+  streamId: string;
+  streamName: string;
+  amountKopecks: number; // сколько начислено за группу
+  paidKopecks: number; // сколько уже оплачено
+  status: ChargeStatus;
+}
+
 export interface WalletResponse {
   balanceKopecks: number;
   transactions: WalletTransaction[];
+  // Начисления по группам (платёжный план). Пустой массив — начислений нет.
+  charges: StudentCharge[];
+  // Суммарный долг по открытым начислениям (копейки). 0 — долга нет.
+  outstandingKopecks: number;
 }
 
 /** Форматирует копейки в рубли: 123456 → «1 234 ₽». */
 export function formatKopecks(kopecks: number): string {
   const rubles = Math.round(kopecks) / 100;
   return `${rubles.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+}
+
+/**
+ * Переводит введённые пользователем рубли в копейки (целое).
+ * Принимает строку или число; запятую трактует как десятичный разделитель.
+ * Возвращает null, если значение не распознано или отрицательное.
+ * Округляет к ближайшей копейке, чтобы избежать float-ошибок (например 19.99 → 1999).
+ */
+export function rublesToKopecks(input: string | number): number | null {
+  const raw = typeof input === 'number' ? input : Number(String(input).trim().replace(',', '.'));
+  if (!Number.isFinite(raw) || raw < 0) return null;
+  return Math.round(raw * 100);
+}
+
+/**
+ * Переводит копейки в строку рублей для поля ввода (без символа валюты).
+ * Целое число рублей — без дробной части (120000 → «1200»), иначе с копейками.
+ */
+export function kopecksToRublesInput(kopecks: number | null | undefined): string {
+  if (kopecks == null) return '';
+  const rubles = Math.round(kopecks) / 100;
+  return Number.isInteger(rubles) ? String(rubles) : rubles.toFixed(2);
 }
 
 export async function getWallet(
@@ -1457,6 +1762,57 @@ export async function deletePaymentQr(
   return request('/admin/payment-settings/qr', {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Charges API (платёжный план группы)
+//
+// Начисления студентам за участие в группе. priceKopecks — цена группы (план);
+// по каждому студенту видно начислено/оплачено/остаток и платёжный статус.
+// Суммы — в КОПЕЙКАХ (UI показывает рубли).
+
+// Платёжный статус студента по группе:
+// paid — оплачено полностью, partial — оплачено частично, unpaid — есть долг,
+// none — начислений нет (например, ещё не начисляли).
+export type StreamChargePaymentStatus = 'paid' | 'partial' | 'unpaid' | 'none';
+
+// Строка таблицы оплат группы: студент + его начисление по этой группе.
+export interface StreamChargeRow {
+  id: string; // id студента
+  name: string;
+  email: string;
+  amountKopecks: number; // начислено
+  paidKopecks: number; // оплачено
+  status: ChargeStatus;
+  paymentStatus: StreamChargePaymentStatus;
+}
+
+export interface StreamChargesResponse {
+  // Цена группы (план) в копейках или null = план не задан.
+  priceKopecks: number | null;
+  students: StreamChargeRow[];
+}
+
+// Таблица оплат группы (admin): цена группы + начисления по студентам.
+export async function getStreamCharges(
+  accessToken: string,
+  streamId: string,
+): Promise<StreamChargesResponse> {
+  return request(`/streams/${encodeURIComponent(streamId)}/charges`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Вернуть сумму начисления на баланс студента (admin). amountKopecks — целое >0.
+export async function refundCharge(
+  accessToken: string,
+  chargeId: string,
+  amountKopecks: number,
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction }> {
+  return request(`/admin/charges/${encodeURIComponent(chargeId)}/refund`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ amountKopecks }),
   });
 }
 
@@ -1866,7 +2222,8 @@ export type NotificationType =
   | 'thread_entry'
   | 'assignment_submitted'
   | 'assignment_reviewed'
-  | 'schedule_entry_created';
+  | 'schedule_entry_created'
+  | 'topup_requested';
 
 export interface Notification {
   id: string;
@@ -1938,19 +2295,23 @@ export function getNotificationLink(
     case 'deadline_reminder':
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'assignment_submitted':
-      if (role === 'admin' && m.studentId) return `/admin/students/${m.studentId}`;
+      // Админ должен попасть на страницу ЗАДАНИЯ (проверить сдачу), а не в профиль студента.
+      if (role === 'admin' && m.assignmentId) return `/admin/assignments/${m.assignmentId}`;
       return '/admin/assignments';
     case 'assignment_reviewed':
+      if (role === 'student' && m.assignmentId) return `/dashboard/assignments/${m.assignmentId}`;
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'thread_entry':
       if (role === 'student') return '/dashboard/messages?tab=personal';
-      if (m.studentId) return `/admin/students/${m.studentId}/thread`;
+      if (m.studentId) return `/admin/students/${m.studentId}?tab=thread`;
       // Без studentId — это сообщение из штаб-канала преподавателей.
       return '/admin/messages';
     case 'lesson_published':
       return role === 'student' ? '/dashboard/lessons' : '/admin/streams';
     case 'schedule_entry_created':
       return role === 'student' ? '/dashboard/schedule' : '/admin/lessons';
+    case 'topup_requested':
+      return '/admin/topups';
     default:
       return null;
   }

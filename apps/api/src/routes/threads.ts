@@ -8,6 +8,19 @@ const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link',
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
 const ADMIN_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 
+// Контекст «вопрос по заданию» приходит из веба как lessonId ИЛИ как синтетический
+// id задания (= sessionId, т.к. задание свёрнуто в Session). Возвращаем реальный
+// lessonId, либо null если ни Lesson, ни Session с таким id нет.
+async function resolveContextLessonId(rawId: string): Promise<string | null> {
+  const lesson = await prisma.lesson.findUnique({ where: { id: rawId }, select: { id: true } });
+  if (lesson) return lesson.id;
+  const session = await prisma.session.findUnique({
+    where: { id: rawId },
+    select: { lessonId: true },
+  });
+  return session?.lessonId ?? null;
+}
+
 // Web-facing compatibility (this wave): the model moved `assignment` onto the Lesson
 // block (entry.lessonId/lesson вместо assignmentId/assignment). Веб ещё читает
 // `entry.assignmentId` (для группировки) и `entry.assignment.title` (бейдж задания),
@@ -125,7 +138,7 @@ export async function threadRoutes(app: FastifyInstance) {
 
     // Students can only see their own thread
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const student = await prisma.user.findUnique({
@@ -134,7 +147,7 @@ export async function threadRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Find or auto-create conversation for student
@@ -207,7 +220,7 @@ export async function threadRoutes(app: FastifyInstance) {
     const user = request.user!;
 
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const entry = await prisma.conversationEntry.findUnique({
@@ -244,7 +257,7 @@ export async function threadRoutes(app: FastifyInstance) {
 
     // Students can only post to their own thread
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const student = await prisma.user.findUnique({
@@ -253,7 +266,7 @@ export async function threadRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Find or auto-create conversation
@@ -278,7 +291,7 @@ export async function threadRoutes(app: FastifyInstance) {
       lessonId?: string;
       metadata?: Record<string, unknown>;
     };
-    const lessonId = body.lessonId ?? body.assignmentId ?? null;
+    let lessonId = body.lessonId ?? body.assignmentId ?? null;
 
     if (!body.type || !body.content) {
       return reply.status(400).send({ error: 'Поля type и content обязательны' });
@@ -294,15 +307,13 @@ export async function threadRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: `Тип записи "${body.type}" недоступен для вашей роли` });
     }
 
-    // Validate lessonId if provided (assignment свёрнут в Lesson)
+    // Резолвим контекст задания (lessonId ИЛИ синтетический sessionId) в реальный lessonId.
     if (lessonId) {
-      const lesson = await prisma.lesson.findUnique({
-        where: { id: lessonId },
-        select: { id: true },
-      });
-      if (!lesson) {
+      const resolved = await resolveContextLessonId(lessonId);
+      if (!resolved) {
         return reply.status(400).send({ error: 'Задание не найдено' });
       }
+      lessonId = resolved;
     }
 
     const created = await prisma.conversationEntry.create({
@@ -325,7 +336,7 @@ export async function threadRoutes(app: FastifyInstance) {
         userId: studentId,
         type: 'thread_entry',
         title: 'Новое сообщение от преподавателя',
-        body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+        body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в переписке',
         metadata: { conversationId: thread.id, entryId: entry.id },
       }).catch(() => {});
     } else {
@@ -340,7 +351,7 @@ export async function threadRoutes(app: FastifyInstance) {
           userId: admin.id,
           type: 'thread_entry',
           title: `Новое сообщение от ${authorName}`,
-          body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+          body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в переписке',
           metadata: { conversationId: thread.id, entryId: entry.id, studentId },
         }).catch(() => {});
       }
@@ -399,13 +410,11 @@ async function handleMultipartEntry(
   }
 
   if (lessonId) {
-    const lesson = await prisma.lesson.findUnique({
-      where: { id: lessonId },
-      select: { id: true },
-    });
-    if (!lesson) {
+    const resolved = await resolveContextLessonId(lessonId);
+    if (!resolved) {
       return reply.status(400).send({ error: 'Задание не найдено' });
     }
+    lessonId = resolved;
   }
 
   const uploaded = await uploadFile(fileBuffer, fileName, fileMimeType);

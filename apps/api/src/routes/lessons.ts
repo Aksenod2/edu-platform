@@ -4,7 +4,19 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { createZoomMeeting, shouldAutoCreate, canCreateMeeting } from '../lib/zoom.js';
+import {
+  createZoomMeeting,
+  shouldAutoCreate,
+  canCreateMeeting,
+  deleteZoomMeeting,
+} from '../lib/zoom.js';
+import {
+  processRecordingForSession,
+  processSummaryForSession,
+  processTranscriptForSession,
+  type ProcessOutcome,
+} from '../lib/zoom-recording.js';
+import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -264,8 +276,19 @@ type SessionProjection = {
   // Все поля nullable — фича аддитивна; для старых данных останутся null.
   summary: string | null;
   summarySource: string | null;
+  summaryStatus: string | null;
   recordingStatus: string | null;
   recordingError: string | null;
+  // Моменты начала ожидания записи/итогов (ставятся на meeting.ended). Фронт по ним
+  // отличает «формируется» от «недоступно по таймауту». Не чувствительны — видны всем.
+  recordingRequestedAt: Date | null;
+  summaryRequestedAt: Date | null;
+  // Транскрипт занятия (Ф1.3/Ф1.4). Статус/ошибка/момент ожидания — для препода
+  // урока/админа; тело (ключи .vtt/.txt) НИКОГДА не отдаём в проекции — только через
+  // GET .../transcript.
+  transcriptStatus: string | null;
+  transcriptError: string | null;
+  transcriptRequestedAt: Date | null;
 } | null;
 
 // Преобразует пару (блок урока, его Session в контексте потока) к ПЛОСКОЙ форме
@@ -275,8 +298,10 @@ type SessionProjection = {
 //   - teachers → [{id,name}],
 //   - streamId — контекст потока (или null вне потока),
 //   - status/date/startTime/meetingUrl — из Session (если Session нет: draft / null),
-//   - видео: предпочитаем Session.videoKey/videoUrl блочным.
-// materials/videoFileUrl ре-подписываются вызывающим (они асинхронные).
+//   - видео: учебное (videoKey/videoUrl/videos[]) — СТРОГО из блока (грузится до урока);
+//     запись Zoom-занятия — в ОТДЕЛЬНЫЕ поля recordingVideoKey/recordingVideoUrl
+//     (из Session, подтягивается после). Это разные сущности, запись не перетирает учебное.
+// materials/videoFileUrl/recordingFileUrl ре-подписываются вызывающим (они асинхронные).
 // Экспортируется для unit-тестов проекции (в частности admin-only recordingError).
 export function projectLesson(
   block: LessonBlock,
@@ -286,6 +311,12 @@ export function projectLesson(
   // отдаём (раскрывает внутренности обработки), поэтому для не-админа зануляем.
   // По умолчанию true: admin-only роуты (POST/PATCH) не меняют поведение.
   isAdmin = true,
+  // canSeeTranscript — может ли получатель видеть транскрипт занятия (админ ИЛИ
+  // преподаватель урока). Студенту транскрипт НЕДОСТУПЕН: его поля (статус/ошибка)
+  // ИСКЛЮЧАЮТСЯ из объекта проекции целиком (не зануляются). Тело транскрипта в
+  // проекции не отдаётся НИКОГДА — только через GET .../transcript. По умолчанию
+  // совпадает с isAdmin (admin-only роуты сохраняют прежнее поведение).
+  canSeeTranscript = isAdmin,
 ): {
   id: string;
   streamId: string | null;
@@ -309,15 +340,35 @@ export function projectLesson(
   createdAt: Date;
   updatedAt: Date;
   teachers: { id: string; name: string }[];
+  // Запись Zoom-занятия (Session). Отдельная сущность от учебного видео урока
+  // (block.videoKey/videoUrl/videos[]): учебное грузится ДО урока, запись —
+  // подтягивается ПОСЛЕ. Аддитивно: вне потока или без записи — null.
+  recordingVideoKey: string | null;
+  recordingVideoUrl: string | null;
   // Автосбор записи/итогов Zoom (Волна 2). Аддитивно: для уроков без Session
   // или со старыми данными — null, поведение не меняется.
   recordingStatus: string | null;
   recordingError: string | null;
   summarySource: string | null;
+  // Статус итогов (none|pending|processing|ready|failed). Студенту виден (это про
+  // готовность итогов, не про доступ к транскрипту).
+  summaryStatus: string | null;
+  // Моменты начала ожидания записи/итогов — видны всем (как recording/summaryStatus).
+  // Фронт по ним отличает «формируется» (ждём недолго) от «недоступно по таймауту».
+  recordingRequestedAt: string | null;
+  summaryRequestedAt: string | null;
+  // Статус/ошибка/момент ожидания транскрипта (Ф1.4) — ТОЛЬКО для препода урока/админа.
+  // Поля ОПЦИОНАЛЬНЫ: при canSeeTranscript=false их в объекте НЕТ вовсе (см. ниже).
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
+  transcriptRequestedAt?: string | null;
 } {
-  // Видео: Session перекрывает блок (запись конкретного занятия важнее блочной).
-  const videoKey = session?.videoKey ?? block.videoKey;
-  const videoUrl = session?.videoUrl ?? block.videoUrl;
+  // Учебное видео урока (block): грузится ДО урока, не перетирается записью занятия.
+  const videoKey = block.videoKey;
+  const videoUrl = block.videoUrl;
+  // Запись Zoom-занятия (Session): отдельные поля, подтягивается ПОСЛЕ урока.
+  const recordingVideoKey = session?.videoKey ?? null;
+  const recordingVideoUrl = session?.videoUrl ?? null;
   const date = session?.date ?? null;
 
   return {
@@ -345,28 +396,91 @@ export function projectLesson(
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
     teachers: (block.teachers ?? []).map((t) => ({ id: t.user.id, name: t.user.name })),
+    // Запись Zoom-занятия — отдельно от учебного видео урока.
+    recordingVideoKey,
+    recordingVideoUrl,
     // Статус автозагрузки записи Zoom и источник итогов (для UI). Вне потока
     // (Session нет) — null, как и для занятий без созвона Zoom.
     recordingStatus: session?.recordingStatus ?? null,
     // recordingError — только админам (текст ошибки чувствителен); студенту — null.
     recordingError: isAdmin ? session?.recordingError ?? null : null,
     summarySource: session?.summarySource ?? null,
+    // Статус итогов — виден всем (про готовность, не про доступ к телу).
+    summaryStatus: session?.summaryStatus ?? null,
+    // Моменты ожидания записи/итогов — видны всем (как и их статусы). ISO-строкой
+    // (как date), чтобы фронт мог посчитать прошедшее время до таймаута.
+    recordingRequestedAt: session?.recordingRequestedAt
+      ? session.recordingRequestedAt.toISOString()
+      : null,
+    summaryRequestedAt: session?.summaryRequestedAt
+      ? session.summaryRequestedAt.toISOString()
+      : null,
+    // Транскрипт: его поля присутствуют ТОЛЬКО когда получатель вправе их видеть
+    // (админ/препод урока). Для студента ключи transcriptStatus/transcriptError/
+    // transcriptRequestedAt ОТСУТСТВУЮТ в объекте (исключены, а не занулены) — чтобы
+    // факт/статус/ошибка транскрипта не утекали (момент ожидания держим за тем же
+    // гейтом для единообразия). Тело (ключи S3) тут не отдаём вовсе.
+    ...(canSeeTranscript
+      ? {
+          transcriptStatus: session?.transcriptStatus ?? null,
+          transcriptError: session?.transcriptError ?? null,
+          transcriptRequestedAt: session?.transcriptRequestedAt
+            ? session.transcriptRequestedAt.toISOString()
+            : null,
+        }
+      : {}),
   };
 }
 
-// Достраивает спроецированный урок асинхронными полями (videoFileUrl + ре-подписанные
-// materials). videoKey уже выбран с приоритетом Session в projectLesson.
+// Достраивает спроецированный урок асинхронными полями (videoFileUrl +
+// recordingFileUrl + ре-подписанные materials). Учебное videoKey и запись
+// recordingVideoKey разведены в projectLesson — подписываем их раздельно.
 async function finalizeLesson(
   projected: ReturnType<typeof projectLesson>,
   block: LessonBlock,
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, unknown> & { recordingFileUrl: string | null }> {
+  // Учебное видео урока (block.videoKey).
   const videoFileUrl = await videoFileUrlFor(projected.videoKey);
+  // Запись Zoom-занятия (Session.videoKey) — отдельная подпись.
+  const recordingFileUrl = await videoFileUrlFor(projected.recordingVideoKey);
   const materials = await regenerateLessonMaterialUrls(
     (block.materials as unknown as LessonMaterial[]) || [],
   );
   // Аддитивно: список из нескольких видео урока (одиночные videoUrl/videoFileUrl сохранены).
   const videos = await projectVideos(block.videos);
-  return { ...projected, videoFileUrl, materials, videos };
+  return { ...projected, videoFileUrl, recordingFileUrl, materials, videos };
+}
+
+// Является ли пользователь преподавателем урока (LessonTeacher.some(userId)).
+// Используется для гейтинга транскрипта (наряду с ролью admin). Возвращает false
+// для отсутствующего userId.
+async function isLessonTeacher(lessonId: string, userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const link = await prisma.lessonTeacher.findFirst({
+    where: { lessonId, userId },
+    select: { userId: true },
+  });
+  return link !== null;
+}
+
+// Определяет teacherUserId (под чьим OAuth-токеном дёргать Zoom) каскадом фолбэков
+// для ручных операций из роута: 1) преподаватель урока с рабочей интеграцией;
+// 2) текущий пользователь (админ), если у него canCreateMeeting; 3) фолбэк на него
+// же без проверки (lib безопасно зафиксирует ошибку токена). Реальный владелец
+// встречи в БД не хранится, поэтому без каскада не обойтись (см. recording/retry).
+async function resolveTeacherForZoom(
+  lessonId: string,
+  fallbackUserId: string,
+): Promise<string> {
+  const teachers = await prisma.lessonTeacher.findMany({
+    where: { lessonId },
+    select: { userId: true },
+  });
+  for (const t of teachers) {
+    if (await canCreateMeeting(t.userId)) return t.userId;
+  }
+  if (await canCreateMeeting(fallbackUserId)) return fallbackUserId;
+  return fallbackUserId;
 }
 
 // Оставляет из переданных id только существующих не удалённых пользователей с ролью admin
@@ -391,13 +505,43 @@ const sessionSelect = {
   // Итоги занятия + автосбор записи Zoom (Волна 2).
   summary: true,
   summarySource: true,
+  summaryStatus: true,
   recordingStatus: true,
   recordingError: true,
+  // Моменты начала ожидания записи/итогов (для отличия «формируется» от «таймаут»).
+  recordingRequestedAt: true,
+  summaryRequestedAt: true,
+  // Транскрипт занятия (Ф1.3/Ф1.4) — статус/ошибка/момент ожидания. Ключи .vtt/.txt
+  // тут НЕ селектим в общую проекцию: тело отдаётся только через GET .../transcript.
+  transcriptStatus: true,
+  transcriptError: true,
+  transcriptRequestedAt: true,
 } as const;
 
 export async function lessonRoutes(app: FastifyInstance) {
   const adminOnly = requireRole('admin');
   const anyAuth = authenticate;
+
+  // onRequest-гард: пропускает админа ИЛИ преподавателя урока (LessonTeacher).
+  // lessonId берём из params.id (так названы все эти роуты). Сначала authenticate
+  // (заполняет request.user), затем проверка роли/преподавательства. Применяется к
+  // операциям над конкретным занятием (refresh, transcript, recording/retry), где
+  // право должно быть и у преподавателя урока, а не только у админа.
+  const lessonTeacherOrAdmin = async (
+    request: Parameters<typeof authenticate>[0],
+    reply: Parameters<typeof authenticate>[1],
+  ) => {
+    await authenticate(request, reply);
+    if (reply.sent) return; // authenticate уже ответил 401
+    const user = request.user;
+    if (!user) {
+      return reply.status(401).send({ error: 'Не авторизован' });
+    }
+    if (user.role === 'admin') return; // админ — всегда можно
+    const { id } = request.params as { id: string };
+    if (await isLessonTeacher(id, user.userId)) return;
+    return reply.status(403).send({ error: 'Недостаточно прав' });
+  };
 
   // GET /lessons?streamId=xxx&mine=true — список уроков (опциональная фильтрация по streamId)
   //
@@ -429,7 +573,11 @@ export async function lessonRoutes(app: FastifyInstance) {
       const visible = isAdmin ? blocks : [];
 
       const shaped = await Promise.all(
-        visible.map((block) => finalizeLesson(projectLesson(block, null, null, isAdmin), block)),
+        // Копилка блоков видна только админу (visible пуст для не-админа), поэтому
+        // canSeeTranscript=isAdmin безопасно (студент сюда не попадает).
+        visible.map((block) =>
+          finalizeLesson(projectLesson(block, null, null, isAdmin, isAdmin), block),
+        ),
       );
       return { lessons: shaped };
     }
@@ -440,12 +588,12 @@ export async function lessonRoutes(app: FastifyInstance) {
       select: { id: true, name: true, programId: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     // Студент видит уроки только своих потоков
     if (!isAdmin && !(await isEnrolled(request.user!.userId, streamId))) {
-      return reply.status(403).send({ error: 'Нет доступа к этому потоку' });
+      return reply.status(403).send({ error: 'Нет доступа к этой группе' });
     }
 
     const isMine = isAdmin && mine === 'true';
@@ -494,10 +642,23 @@ export async function lessonRoutes(app: FastifyInstance) {
           return s && s.status !== 'draft';
         });
 
+    const currentUserId = request.user?.userId;
     const shaped = await Promise.all(
       visibleBlocks.map((block) => {
         const s = sessionByLesson.get(block.id) ?? null;
-        const projected = projectLesson(block, streamId, s as SessionProjection, isAdmin);
+        // Транскрипт виден админу ИЛИ преподавателю этого урока. teachers уже
+        // подгружены в блок (teacherInclude) — проверяем без доп. запроса. Для
+        // студента это всегда false (он не числится в LessonTeacher).
+        const canSeeTranscript =
+          isAdmin ||
+          (block.teachers ?? []).some((t) => t.user.id === currentUserId);
+        const projected = projectLesson(
+          block,
+          streamId,
+          s as SessionProjection,
+          isAdmin,
+          canSeeTranscript,
+        );
         return finalizeLesson(projected, block).then((full) => ({
           ...full,
           // Контекст потока для режима «Все потоки» / бейджей.
@@ -587,7 +748,13 @@ export async function lessonRoutes(app: FastifyInstance) {
       session = visibleSession as SessionProjection;
     }
 
-    const projected = projectLesson(block, contextStreamId, session, isAdmin);
+    // Транскрипт виден админу ИЛИ преподавателю этого урока (teachers подгружены
+    // в block через teacherInclude — без доп. запроса). Для студента всегда false.
+    const canSeeTranscript =
+      isAdmin ||
+      (block.teachers ?? []).some((t) => t.user.id === request.user?.userId);
+
+    const projected = projectLesson(block, contextStreamId, session, isAdmin, canSeeTranscript);
     const full = await finalizeLesson(projected, block);
 
     // Старый ответ включал lesson.assignments (массив). В новой модели у блока —
@@ -621,6 +788,15 @@ export async function lessonRoutes(app: FastifyInstance) {
       // Сгенерировать ссылку Zoom по запросу фронта (независимо от глобального
       // тумблера autoCreateMeeting). undefined — поведение по тумблеру.
       generateMeeting?: boolean;
+      // folded assignment*-поля блока (аддитивно — те же, что у PATCH). Срабатывают
+      // только если переданы; веб-флоу «Создать урок» их не шлёт.
+      hasAssignment?: boolean;
+      assignmentTitle?: string | null;
+      assignmentDescription?: string | null;
+      assignmentCriteria?: string | null;
+      assignmentType?: 'short' | 'long' | null;
+      assignmentTags?: string[];
+      assignmentMaterials?: unknown;
     };
 
     if (!body.title || !body.title.trim()) {
@@ -635,12 +811,40 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Недопустимый статус' });
     }
 
+    if (
+      body.assignmentType !== undefined &&
+      body.assignmentType !== null &&
+      body.assignmentType !== 'short' &&
+      body.assignmentType !== 'long'
+    ) {
+      return reply.status(400).send({ error: 'Тип задания: short или long' });
+    }
+
     const status: LessonStatusValue = isLessonStatus(body.status) ? body.status : 'draft';
     const date = parseLessonDate(body.date);
 
     const teacherIds = Array.isArray(body.teacherIds)
       ? await filterAdminIds(body.teacherIds)
       : [];
+
+    // folded assignment*-поля блока: собираем только переданные (аддитивно). Нормализация
+    // как в PATCH /lessons (пустые строки → null, assignmentMaterials через JSON-копию).
+    // Пишем в data.create блока в обеих ветках (с streamId и без).
+    const assignmentData: Record<string, unknown> = {};
+    if (body.hasAssignment !== undefined) assignmentData.hasAssignment = body.hasAssignment;
+    if (body.assignmentTitle !== undefined)
+      assignmentData.assignmentTitle = body.assignmentTitle || null;
+    if (body.assignmentDescription !== undefined)
+      assignmentData.assignmentDescription = body.assignmentDescription || null;
+    if (body.assignmentCriteria !== undefined)
+      assignmentData.assignmentCriteria = body.assignmentCriteria || null;
+    if (body.assignmentType !== undefined) assignmentData.assignmentType = body.assignmentType;
+    if (body.assignmentTags !== undefined) assignmentData.assignmentTags = body.assignmentTags;
+    if (body.assignmentMaterials !== undefined) {
+      assignmentData.assignmentMaterials = JSON.parse(
+        JSON.stringify(body.assignmentMaterials ?? []),
+      );
+    }
 
     // ── Без streamId: создаём только блок-урок (копилка) ──────────────────────
     if (!body.streamId) {
@@ -652,6 +856,7 @@ export async function lessonRoutes(app: FastifyInstance) {
           notes: body.notes || null,
           sortOrder: body.sortOrder ?? 0,
           materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
+          ...assignmentData,
           ...(teacherIds.length > 0 && {
             teachers: { create: teacherIds.map((userId) => ({ userId })) },
           }),
@@ -676,11 +881,11 @@ export async function lessonRoutes(app: FastifyInstance) {
       select: { id: true, status: true, programId: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (stream.status === 'archived') {
-      return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивный поток' });
+      return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивную группу' });
     }
 
     // 1) Создаём блок урока.
@@ -692,6 +897,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         notes: body.notes || null,
         sortOrder: body.sortOrder ?? 0,
         materials: JSON.parse(JSON.stringify(sanitizeLessonMaterials(body.materials))),
+        ...assignmentData,
         ...(teacherIds.length > 0 && {
           teachers: { create: teacherIds.map((userId) => ({ userId })) },
         }),
@@ -979,6 +1185,35 @@ export async function lessonRoutes(app: FastifyInstance) {
       const wasDraft = (existingSession?.status ?? 'draft') === 'draft';
       if (body.status !== undefined && wasDraft && session && session.status !== 'draft') {
         notifyEnrolledLessonVisible(block.id, streamId, block.title).catch(() => {});
+      }
+
+      // Отмена занятия: переход в 'cancelled' из НЕ-cancelled. Делаем один раз
+      // (по факту смены статуса), чтобы не дублировать уведомления при прочих
+      // правках уже отменённого занятия.
+      const prevStatus = existingSession?.status ?? 'draft';
+      const becameCancelled =
+        body.status === 'cancelled' && prevStatus !== 'cancelled';
+      if (becameCancelled) {
+        // zoomMeetingId нет в проекционной форме (sessionSelect) — дозапрашиваем
+        // отдельно, чтобы не менять shim. Если встреча есть — удаляем её в Zoom
+        // (best-effort: ошибка Zoom НЕ валит PATCH, только логируется), затем
+        // уведомляем зачисленных студентов об отмене тем же каналом, что и
+        // уведомление о публикации (notifyMany / lesson_published).
+        const sess = await prisma.session.findUnique({
+          where: { streamId_lessonId: { streamId, lessonId: id } },
+          select: { zoomMeetingId: true },
+        });
+        if (sess?.zoomMeetingId) {
+          try {
+            await deleteZoomMeeting(request.user!.userId, sess.zoomMeetingId);
+          } catch (err) {
+            app.log.warn(
+              { err, lessonId: id, streamId, meetingId: sess.zoomMeetingId },
+              'Не удалось удалить встречу Zoom при отмене занятия — продолжаем',
+            );
+          }
+        }
+        notifyEnrolledLessonCancelled(block.id, streamId, block.title).catch(() => {});
       }
     }
 
@@ -1352,23 +1587,304 @@ export async function lessonRoutes(app: FastifyInstance) {
     });
 
     return {
-      sessions: sessions.map((s) => ({
-        streamId: s.streamId,
-        streamName: s.stream.name,
-        streamStatus: s.stream.status,
-        status: s.status,
-        date: s.date ? s.date.toISOString().slice(0, 10) : null,
-        startTime: s.startTime,
-        meetingUrl: s.meetingUrl,
-        // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
-        // итогов в блоке «Расписание». Для старых данных поля = null.
-        summary: s.summary,
-        summarySource: s.summarySource,
-        recordingStatus: s.recordingStatus,
-        recordingError: s.recordingError,
-      })),
+      // Подпись URL файла записи асинхронна — маппим через Promise.all (как в проекции).
+      sessions: await Promise.all(
+        sessions.map(async (s) => ({
+          streamId: s.streamId,
+          streamName: s.stream.name,
+          streamStatus: s.stream.status,
+          status: s.status,
+          date: s.date ? s.date.toISOString().slice(0, 10) : null,
+          startTime: s.startTime,
+          meetingUrl: s.meetingUrl,
+          // Итоги занятия + автосбор записи Zoom (Волна 2) — для бейджей/редактора
+          // итогов в блоке «Расписание». Для старых данных поля = null.
+          summary: s.summary,
+          summarySource: s.summarySource,
+          summaryStatus: s.summaryStatus,
+          recordingStatus: s.recordingStatus,
+          recordingError: s.recordingError,
+          // Моменты ожидания записи/итогов — для отличия «формируется» от «таймаут».
+          recordingRequestedAt: s.recordingRequestedAt
+            ? s.recordingRequestedAt.toISOString()
+            : null,
+          summaryRequestedAt: s.summaryRequestedAt ? s.summaryRequestedAt.toISOString() : null,
+          // Транскрипт занятия (Ф1.4): статус/ошибка/момент ожидания для бейджей. Тело
+          // отдаётся отдельным эндпоинтом GET .../transcript — сырые ключи не отдаём.
+          transcriptStatus: s.transcriptStatus,
+          transcriptError: s.transcriptError,
+          transcriptRequestedAt: s.transcriptRequestedAt
+            ? s.transcriptRequestedAt.toISOString()
+            : null,
+          // Медиа записи занятия (admin-only): внешняя ссылка как есть и подписанный
+          // временный URL загруженного файла. Сырой videoKey наружу не отдаём.
+          recordingVideoUrl: s.videoUrl ?? null,
+          recordingFileUrl: await videoFileUrlFor(s.videoKey),
+        })),
+      ),
     };
   });
+
+  // GET /lessons/:id/analytics?streamId=... — аналитика сдач по ЗАНЯТИЮ (admin).
+  // Для View Mode урока: сколько в потоке зачислено, сколько материализовано
+  // назначений (StudentAssignment) и их распределение по статусам. Считаем по
+  // конкретной Session (lessonId=:id × streamId).
+  app.get('/lessons/:id/analytics', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { streamId } = request.query as { streamId?: string };
+
+    if (!streamId || !streamId.trim()) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    // Занятие = Session(streamId × lessonId). Нет Session — нет аналитики.
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // Знаменатель — состав потока (StreamEnrollment), а не материализованные
+    // назначения: назначения могут быть ещё не созданы для всех зачисленных.
+    const enrolledCount = await prisma.streamEnrollment.count({ where: { streamId } });
+
+    // Распределение материализованных StudentAssignment этого занятия по статусам.
+    const grouped = await prisma.studentAssignment.groupBy({
+      by: ['status'],
+      where: { sessionId: session.id },
+      _count: { _all: true },
+    });
+
+    const byStatus = { assigned: 0, submitted: 0, reviewed: 0, needs_revision: 0 };
+    for (const g of grouped) {
+      // status — enum StudentAssignmentStatus, совпадает с ключами byStatus.
+      byStatus[g.status as keyof typeof byStatus] = g._count._all;
+    }
+
+    const total =
+      byStatus.assigned + byStatus.submitted + byStatus.reviewed + byStatus.needs_revision;
+    // «Сдал» = всё, кроме ещё не сданного (assigned): submitted/reviewed/needs_revision.
+    const submittedCount = byStatus.submitted + byStatus.reviewed + byStatus.needs_revision;
+    // Не сдали — относительно состава потока (а не материализованных назначений).
+    const notSubmittedCount = Math.max(0, enrolledCount - submittedCount);
+    // Ждут проверки — те, кто сдал и ещё не проверен.
+    const pendingReviewCount = byStatus.submitted;
+
+    return {
+      sessionId: session.id,
+      streamId,
+      enrolledCount,
+      total,
+      byStatus,
+      submittedCount,
+      notSubmittedCount,
+      pendingReviewCount,
+    };
+  });
+
+  // ── Посещаемость занятия (B5, фаза 2; admin) ───────────────────────────────
+  // Контекст как у analytics: занятие = Session(lessonId=:id × streamId).
+  // Записи посещаемости двух природ: source='zoom_report' (авто-забор; userId
+  // проставлен при сопоставлении по email) и source='manual' (ручная отметка).
+
+  // GET /lessons/:id/attendance?streamId= — сводка + список записей посещаемости.
+  app.get('/lessons/:id/attendance', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { streamId } = request.query as { streamId?: string };
+
+    if (!streamId || !streamId.trim()) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return summary;
+  });
+
+  // POST /lessons/:id/attendance/resync — забрать посещаемость из Zoom заново.
+  // streamId — в теле или query. Возвращает свежую сводку при успехе, либо
+  // { ok:false, reason } (понятно для UI; НЕ 500) при недоступности отчёта/scope.
+  app.post('/lessons/:id/attendance/resync', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const query = request.query as { streamId?: string };
+    const body = (request.body ?? {}) as { streamId?: string };
+    const streamId = (body.streamId ?? query.streamId ?? '').trim();
+
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true, streamId: true, zoomMeetingId: true, lessonId: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // teacherUserId — под чьим OAuth-токеном дёргать Zoom report. Каскад как у
+    // ручного ретрая записи (resolveTeacherForZoom): преподаватель урока с рабочей
+    // интеграцией → текущий пользователь (если canCreateMeeting) → он же (lib сама
+    // вернёт ok:false при невалидном токене). Передаём override, чтобы lib не
+    // определяла повторно.
+    const teacherUserId = await resolveTeacherForZoom(
+      session.lessonId,
+      request.user!.userId,
+    );
+
+    const result = await pullSessionAttendanceFromZoom(
+      app,
+      {
+        id: session.id,
+        streamId: session.streamId,
+        zoomMeetingId: session.zoomMeetingId,
+      },
+      teacherUserId,
+    );
+
+    if (!result.ok) {
+      // Мягкий отказ (нет scope / отчёт ещё не готов / нет встречи) — 200 с
+      // { ok:false, reason }, чтобы UI показал понятную причину, а не ошибку 500.
+      return { ok: false, reason: result.reason };
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return { ok: true, ...summary };
+  });
+
+  // POST /lessons/:id/attendance/mark — ручная отметка посещаемости студента.
+  // Тело: { streamId, userId, status:'present'|'absent' }. Дедуп вручную по
+  // (sessionId, userId, source='manual'): findFirst → update/create.
+  app.post('/lessons/:id/attendance/mark', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as {
+      streamId?: string;
+      userId?: string;
+      status?: string;
+    };
+    const streamId = (body.streamId ?? '').trim();
+    const userId = (body.userId ?? '').trim();
+    const status = body.status;
+
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+    if (!userId) {
+      return reply.status(400).send({ error: 'userId обязателен' });
+    }
+    if (status !== 'present' && status !== 'absent') {
+      return reply.status(400).send({ error: 'status должен быть present или absent' });
+    }
+
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // Студент должен быть зачислен в поток этого занятия.
+    const enrollment = await prisma.streamEnrollment.findUnique({
+      where: { streamId_userId: { streamId, userId } },
+      select: { id: true },
+    });
+    if (!enrollment) {
+      return reply.status(400).send({ error: 'Студент не зачислен в группу' });
+    }
+
+    // Дедуп ручного ряда вручную по (sessionId, userId, source='manual').
+    const existing = await prisma.sessionAttendance.findFirst({
+      where: { sessionId: session.id, userId, source: 'manual' },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.sessionAttendance.update({
+        where: { id: existing.id },
+        data: { status },
+      });
+    } else {
+      await prisma.sessionAttendance.create({
+        data: { sessionId: session.id, userId, source: 'manual', status },
+      });
+    }
+
+    const summary = await buildAttendanceSummary(session.id, streamId);
+    return summary;
+  });
+
+  // PATCH /lessons/:id/attendance/:attendanceId/match — привязать несопоставленного
+  // zoom-гостя к студенту потока либо СБРОСИТЬ привязку. Тело: { streamId, userId }.
+  // Пустой/непереданный userId = сброс (userId → null), запись снова станет
+  // несопоставленным гостем; переназначение = сбросить → привязать заново.
+  app.patch(
+    '/lessons/:id/attendance/:attendanceId/match',
+    { onRequest: adminOnly },
+    async (request, reply) => {
+      const { id, attendanceId } = request.params as { id: string; attendanceId: string };
+      const body = (request.body ?? {}) as { streamId?: string; userId?: string };
+      const streamId = (body.streamId ?? '').trim();
+      const userId = (body.userId ?? '').trim();
+
+      if (!streamId) {
+        return reply.status(400).send({ error: 'streamId обязателен' });
+      }
+
+      const session = await prisma.session.findUnique({
+        where: { streamId_lessonId: { streamId, lessonId: id } },
+        select: { id: true },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      // Запись должна существовать и принадлежать этому занятию.
+      const record = await prisma.sessionAttendance.findFirst({
+        where: { id: attendanceId, sessionId: session.id },
+        select: { id: true },
+      });
+      if (!record) {
+        return reply.status(404).send({ error: 'Запись посещаемости не найдена' });
+      }
+
+      // Пустой userId — сброс привязки (отвязка), без проверки зачисления.
+      if (!userId) {
+        await prisma.sessionAttendance.update({
+          where: { id: record.id },
+          data: { userId: null },
+        });
+        const summary = await buildAttendanceSummary(session.id, streamId);
+        return summary;
+      }
+
+      // Студент должен быть зачислен в поток.
+      const enrollment = await prisma.streamEnrollment.findUnique({
+        where: { streamId_userId: { streamId, userId } },
+        select: { id: true },
+      });
+      if (!enrollment) {
+        return reply.status(400).send({ error: 'Студент не зачислен в группу' });
+      }
+
+      await prisma.sessionAttendance.update({
+        where: { id: record.id },
+        data: { userId },
+      });
+
+      const summary = await buildAttendanceSummary(session.id, streamId);
+      return summary;
+    },
+  );
 
   // DELETE /lessons/:id/sessions/:streamId — снять урок с расписания потока (admin).
   // Удаляет Session (и каскадно её StudentAssignment). Сам блок-урок и его место в
@@ -1380,6 +1896,227 @@ export async function lessonRoutes(app: FastifyInstance) {
       const { id, streamId } = request.params as { id: string; streamId: string };
       await prisma.session.deleteMany({ where: { lessonId: id, streamId } });
       return { message: 'Снято с расписания' };
+    },
+  );
+
+  // POST /lessons/:id/sessions/:streamId/recording/retry — повторно запустить
+  // автозагрузку записи Zoom для занятия. Право: админ ИЛИ преподаватель урока
+  // (раньше было только admin — теперь и препод может добрать свою запись). Нужно,
+  // когда автоскачивание по вебхуку recording.completed упало (recordingStatus=
+  // 'failed') или зависло. Идемпотентность встроена в processRecordingForSession:
+  // если запись уже выгружена (videoKey есть) — пометит 'ready'; если обработка
+  // уже идёт ('processing'/'ready') — claim не пройдёт и повтор не скачает второй
+  // раз; из 'failed'/'pending'/null claim пускает повтор.
+  app.post(
+    '/lessons/:id/sessions/:streamId/recording/retry',
+    { onRequest: lessonTeacherOrAdmin },
+    async (request, reply) => {
+      const { id, streamId } = request.params as { id: string; streamId: string };
+
+      const session = await prisma.session.findFirst({
+        where: { lessonId: id, streamId },
+        select: { id: true, zoomMeetingId: true, recordingStatus: true, lessonId: true },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      // Без привязки к встрече Zoom скачивать нечего (нет meetingId для API/вебхука).
+      if (!session.zoomMeetingId) {
+        return reply.status(400).send({ error: 'Нет привязки к встрече Zoom' });
+      }
+
+      // teacherUserId — под чьим OAuth-токеном Zoom скачивается запись. Каскад
+      // фолбэков (resolveTeacherForZoom): преподаватель урока с рабочей интеграцией
+      // → текущий пользователь (если canCreateMeeting) → он же без проверки
+      // (processRecordingForSession безопасно зафиксирует ошибку токена). Реальный
+      // владелец встречи в БД не хранится — отсюда каскад.
+      const teacherUserId = await resolveTeacherForZoom(
+        session.lessonId,
+        request.user!.userId,
+      );
+
+      // Запускаем повтор fire-and-forget: тяжёлое скачивание/заливку не держим в
+      // запросе (как и в вебхуке). downloadToken НЕ передаём — при ручном ретрае его
+      // нет, processRecordingForSession сам возьмёт OAuth-токен (через ?access_token).
+      void processRecordingForSession({
+        sessionId: session.id,
+        meetingId: session.zoomMeetingId,
+        teacherUserId,
+      }).catch((err) => {
+        app.log.error(
+          { err, sessionId: session.id },
+          'Ошибка ручного ретрая записи Zoom',
+        );
+      });
+
+      // 202 Accepted: обработка запущена в фоне. Возвращаем текущий статус —
+      // claim в processRecordingForSession уже мог перевести 'failed'→'processing'.
+      return reply.status(202).send({
+        status: session.recordingStatus ?? 'processing',
+        message: 'Повторная загрузка записи запущена',
+      });
+    },
+  );
+
+  // POST /lessons/:id/sessions/:streamId/refresh — ЕДИНАЯ ручная подтяжка из Zoom
+  // («Обновить из Zoom»): запись + итоги + транскрипт + посещаемость. Право: админ
+  // ИЛИ преподаватель урока. Каждый шаг — best-effort: ошибка одного НЕ валит
+  // остальные. Возвращает ЧАСТИЧНЫЙ результат, чтобы фронт показал тост «что
+  // получилось»: { recording:{ok,reason?}, summary:{...}, transcript:{...}, attendance:{...} }.
+  //
+  // В отличие от recording/retry (fire-and-forget 202), refresh ДОЖИДАЕТСЯ шагов —
+  // пользователь жмёт кнопку и ждёт результат. Запись/итоги/транскрипт могут идти
+  // секунды-минуты (скачивание), поэтому это синхронный, но best-effort вызов.
+  app.post(
+    '/lessons/:id/sessions/:streamId/refresh',
+    { onRequest: lessonTeacherOrAdmin },
+    async (request, reply) => {
+      const { id, streamId } = request.params as { id: string; streamId: string };
+
+      const session = await prisma.session.findFirst({
+        where: { lessonId: id, streamId },
+        select: { id: true, streamId: true, zoomMeetingId: true, lessonId: true },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      if (!session.zoomMeetingId) {
+        return reply.status(400).send({ error: 'Нет привязки к встрече Zoom' });
+      }
+      const meetingId = session.zoomMeetingId;
+
+      const teacherUserId = await resolveTeacherForZoom(
+        session.lessonId,
+        request.user!.userId,
+      );
+
+      // Шаг best-effort: запускает работу, ловит ошибку и приводит к { ok, reason? }.
+      // Различаем ТРИ исхода (см. ProcessOutcome в zoom-recording):
+      //   - 'ready'      → { ok:true } (данные получены);
+      //   - 'processing' → { ok:false, reason:'ещё формируется' } — данных у Zoom ЕЩЁ
+      //                    НЕТ/не готовы; это НЕ ошибка, фронт-тост скажет «формируется»;
+      //   - throw        → { ok:false, reason:<...> } — РЕАЛЬНАЯ ошибка.
+      // При exposeError=true (summary/transcript) reason несёт ФАКТИЧЕСКИЙ текст ошибки
+      // Zoom (с кодом статуса, напр. «Zoom вернул ошибку … (403)») — это admin/teacher
+      // эндпоинт, текст безопасен (без сырых URL/токенов, см. getMeetingSummary). Иначе
+      // reason — общий failReason. «ещё формируется» (processing) НЕ ошибка — без кода.
+      const step = async (
+        fn: () => Promise<ProcessOutcome>,
+        failReason: string,
+        exposeError = false,
+      ) => {
+        try {
+          const outcome = await fn();
+          if (outcome === 'processing') {
+            return { ok: false as const, reason: 'ещё формируется' };
+          }
+          return { ok: true as const };
+        } catch (err) {
+          app.log.error({ err, sessionId: session.id }, `refresh: ${failReason}`);
+          const detail = err instanceof Error ? err.message.trim() : '';
+          const reason = exposeError && detail ? detail : failReason;
+          return { ok: false as const, reason };
+        }
+      };
+
+      // Запускаем параллельно — шаги независимы (разные поля Session/таблицы).
+      const [recording, summary, transcript, attendanceRes] = await Promise.all([
+        step(
+          () =>
+            processRecordingForSession({
+              sessionId: session.id,
+              meetingId,
+              teacherUserId,
+            }),
+          'не удалось обновить запись',
+        ),
+        step(
+          () =>
+            processSummaryForSession({
+              sessionId: session.id,
+              meetingId,
+              teacherUserId,
+            }),
+          'не удалось обновить итоги',
+          true,
+        ),
+        step(
+          () =>
+            processTranscriptForSession({
+              sessionId: session.id,
+              meetingId,
+              teacherUserId,
+            }),
+          'не удалось обновить транскрипт',
+          true,
+        ),
+        // Посещаемость возвращает { ok, reason } САМА (не бросает) — оборачиваем
+        // дополнительно на случай неожиданного исключения.
+        (async () => {
+          try {
+            const res = await pullSessionAttendanceFromZoom(
+              app,
+              {
+                id: session.id,
+                streamId: session.streamId,
+                zoomMeetingId: session.zoomMeetingId,
+              },
+              teacherUserId,
+            );
+            return res.ok
+              ? { ok: true as const }
+              : { ok: false as const, reason: res.reason };
+          } catch (err) {
+            app.log.error(
+              { err, sessionId: session.id },
+              'refresh: не удалось обновить посещаемость',
+            );
+            return { ok: false as const, reason: 'не удалось обновить посещаемость' };
+          }
+        })(),
+      ]);
+
+      return { recording, summary, transcript, attendance: attendanceRes };
+    },
+  );
+
+  // GET /lessons/:id/sessions/:streamId/transcript?format=vtt|txt — отдать тело
+  // транскрипта занятия. Право: админ ИЛИ преподаватель урока (студенту — 403,
+  // обеспечивается гардом lessonTeacherOrAdmin). Возвращает подписанный временный
+  // S3-URL на нужный формат (как у записи) — клиент скачивает напрямую через /files.
+  // По умолчанию format=txt (очищенный текст). format=vtt — сырой WebVTT.
+  app.get(
+    '/lessons/:id/sessions/:streamId/transcript',
+    { onRequest: lessonTeacherOrAdmin },
+    async (request, reply) => {
+      const { id, streamId } = request.params as { id: string; streamId: string };
+      const { format } = request.query as { format?: string };
+      const fmt = format === 'vtt' ? 'vtt' : 'txt';
+
+      const session = await prisma.session.findFirst({
+        where: { lessonId: id, streamId },
+        select: {
+          id: true,
+          transcriptStatus: true,
+          transcriptVttKey: true,
+          transcriptTxtKey: true,
+        },
+      });
+      if (!session) {
+        return reply.status(404).send({ error: 'Занятие не найдено' });
+      }
+
+      const key = fmt === 'vtt' ? session.transcriptVttKey : session.transcriptTxtKey;
+      if (!key) {
+        return reply
+          .status(404)
+          .send({ error: 'Транскрипт недоступен', status: session.transcriptStatus ?? null });
+      }
+
+      const url = await getFileUrl(key);
+      return { format: fmt, url, status: session.transcriptStatus ?? null };
     },
   );
 
@@ -1416,4 +2153,109 @@ async function notifyEnrolledLessonVisible(
     `Урок «${title}» доступен`,
     { lessonId },
   );
+}
+
+// Уведомление ученикам потока об отмене занятия. Используем тот же канал
+// (notifyMany / тип lesson_published), что и уведомление о публикации — отдельного
+// enum-типа под отмену в схеме нет, заводить его потребовало бы миграции.
+async function notifyEnrolledLessonCancelled(
+  lessonId: string,
+  streamId: string,
+  title: string,
+): Promise<void> {
+  const enrollments = await prisma.streamEnrollment.findMany({
+    where: { streamId },
+    select: { userId: true },
+  });
+  await notifyMany(
+    enrollments.map((e) => e.userId),
+    'lesson_published',
+    'Занятие отменено',
+    `Занятие «${title}» отменено`,
+    { lessonId },
+  );
+}
+
+// Строит сводку посещаемости занятия для фронта: счётчики + список записей с
+// именем сопоставленного студента (join к User). present/absent считаем по полю
+// status; matched — есть ли сопоставленный userId.
+//
+// ВАЖНО про двойной учёт: у одного студента может быть И zoom-ряд (сопоставленный),
+// И ручной ряд (manual имеет приоритет). Чтобы счётчики present/absent отражали
+// фактическое присутствие без задвоения, считаем их по УНИКАЛЬНЫМ сопоставленным
+// студентам (по userId; manual имеет приоритет над zoom_report). Несопоставленные
+// гости (userId=null) в present/absent не входят, но видны в unmatchedCount и в
+// records (их можно привязать через /match).
+async function buildAttendanceSummary(sessionId: string, streamId: string) {
+  const [enrolledCount, records] = await Promise.all([
+    prisma.streamEnrollment.count({ where: { streamId } }),
+    prisma.sessionAttendance.findMany({
+      where: { sessionId },
+      select: {
+        id: true,
+        userId: true,
+        source: true,
+        status: true,
+        displayName: true,
+        email: true,
+        joinedAt: true,
+        leftAt: true,
+        durationSec: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ]);
+
+  // Статус на студента: manual приоритетнее zoom_report.
+  const statusByUser = new Map<string, { status: string; manual: boolean }>();
+  let unmatchedCount = 0;
+  let lastSyncedAt: Date | null = null;
+
+  for (const r of records) {
+    if (r.source === 'zoom_report') {
+      if (!lastSyncedAt || r.updatedAt > lastSyncedAt) lastSyncedAt = r.updatedAt;
+    }
+    if (!r.userId) {
+      unmatchedCount += 1;
+      continue;
+    }
+    const isManual = r.source === 'manual';
+    const prev = statusByUser.get(r.userId);
+    // Записываем, если ещё нет, либо текущий manual перебивает прежний zoom-ряд.
+    if (!prev || (isManual && !prev.manual)) {
+      statusByUser.set(r.userId, { status: r.status, manual: isManual });
+    }
+  }
+
+  let presentCount = 0;
+  let absentCount = 0;
+  for (const v of statusByUser.values()) {
+    if (v.status === 'present') presentCount += 1;
+    else if (v.status === 'absent') absentCount += 1;
+  }
+
+  return {
+    sessionId,
+    streamId,
+    enrolledCount,
+    presentCount,
+    absentCount,
+    unmatchedCount,
+    lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
+    records: records.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      studentName: r.user?.name ?? null,
+      source: r.source,
+      status: r.status,
+      displayName: r.displayName,
+      email: r.email,
+      joinedAt: r.joinedAt ? r.joinedAt.toISOString() : null,
+      leftAt: r.leftAt ? r.leftAt.toISOString() : null,
+      durationSec: r.durationSec,
+      matched: r.userId !== null,
+    })),
+  };
 }

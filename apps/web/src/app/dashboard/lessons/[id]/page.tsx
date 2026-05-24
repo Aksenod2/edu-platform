@@ -3,20 +3,38 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, ArrowRight, ExternalLink, ClipboardList, Clock } from 'lucide-react';
+import {
+  Loader2,
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  ClipboardList,
+  Clock,
+  Calendar,
+  GraduationCap,
+  Video,
+} from 'lucide-react';
+import { BackButton } from '@/components/back-button';
 import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
   getLessons,
   getStudentAssignments,
-  LESSON_STATUS_LABELS,
   type Lesson,
-  type LessonStatus,
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
+import {
+  canJoinMeeting,
+  parseLocalDate,
+} from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
+import {
+  resolveProcessingKind,
+  RECORDING_STALE_AFTER_MS,
+  SUMMARY_STALE_AFTER_MS,
+} from '@/components/schedule/processing-status';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Card,
@@ -24,18 +42,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { MaterialRow } from '@/components/material-row';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
+import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
-
-const statusBadgeVariant: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
 
 export default function StudentLessonPage() {
   const { accessToken } = useAuth();
@@ -104,26 +117,57 @@ export default function StudentLessonPage() {
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
   const assignments = (lesson?.assignments ?? []).filter((a) => saByAssignment[a.id]);
 
-  const hasVideo = !!(
+  // Дата занятия как в «Расписании»: parseLocalDate (без UTC-сдвига), без года.
+  const lessonDateLabel = lesson?.date
+    ? parseLocalDate(lesson.date).toLocaleDateString('ru-RU', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })
+    : null;
+
+  // Учебное видео урока (лекция, грузится ДО урока) — строго из блока урока.
+  const hasLessonVideo = !!(
     (lesson?.videos && lesson.videos.length > 0) ||
     lesson?.videoFileUrl ||
     lesson?.videoUrl
   );
-  // Прошедшее занятие, запись Zoom ещё едет (pending/processing) и видео пока нет —
-  // показываем «запись скоро появится» вместо пустоты. На failed/none ничего не обещаем.
+
+  // Запись занятия (запись Zoom-созвона, подтягивается ПОСЛЕ занятия) — отдельные поля.
+  const hasRecordingMedia = !!(lesson?.recordingFileUrl || lesson?.recordingVideoUrl);
+  const recordingEmbedUrl = lesson?.recordingVideoUrl
+    ? parseVideoEmbed(lesson.recordingVideoUrl)
+    : null;
+  // Единый «вид» состояния записи: формируется (синий) / недоступно (серое) /
+  // ошибка (красный) / готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  // [М-2] статус 'ready', но медиа нет (URL не подписался) → resolver вернёт 'ready'
+  // (запись по факту есть) — секцию не прячем; ниже это попадёт в ветку «недоступна»
+  // без медиа, поэтому ready-без-медиа трактуем как «формируется» (URL ещё едет).
+  const recKind = resolveProcessingKind({
+    status: lesson?.recordingStatus,
+    hasData: hasRecordingMedia,
+    requestedAt: lesson?.recordingRequestedAt,
+    staleAfterMs: RECORDING_STALE_AFTER_MS,
+  });
+  // ready без медиа (временный URL не пришёл) — для студента это «формируется».
   const recordingPending =
-    lesson?.status === 'done' &&
-    !hasVideo &&
-    (lesson?.recordingStatus === 'pending' || lesson?.recordingStatus === 'processing');
+    !hasRecordingMedia && (recKind === 'processing' || recKind === 'ready');
+  const recordingStale = !hasRecordingMedia && recKind === 'stale';
+  // Запись не получилась (реальный сбой Zoom) — честно говорим «не получена».
+  // Статус 'none' у проведённого занятия НЕ считаем недоступностью: Zoom ещё может
+  // прислать запись (бэк ставит 'processing' на meeting.ended), поэтому секцию не показываем.
+  const recordingUnavailable =
+    !hasRecordingMedia && lesson?.status === 'done' && recKind === 'failed';
+  // Показываем секцию записи, только если есть что показать (медиа/ожидание/недоступность).
+  // Если занятие ещё не проведено и записи нет — секцию не показываем (не обещаем пустоту).
+  // [М-3] у отменённого занятия записи быть не может — секцию не показываем вовсе.
+  const showRecordingSection =
+    lesson?.status !== 'cancelled' &&
+    (hasRecordingMedia || recordingPending || recordingStale || recordingUnavailable);
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-        <Link href="/dashboard/lessons">
-          <ArrowLeft />
-          К урокам
-        </Link>
-      </Button>
+      <BackButton fallbackHref="/dashboard/lessons">К урокам</BackButton>
 
       {error && (
         <Alert variant="destructive">
@@ -143,106 +187,182 @@ export default function StudentLessonPage() {
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge variant={statusBadgeVariant[lesson.status] ?? 'default'}>
-                {LESSON_STATUS_LABELS[lesson.status] ?? lesson.status}
-              </Badge>
+              <LessonStatusBadge status={lesson.status} />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
+
+            {/* Дата и время занятия. Показываем только если дата назначена
+                (бэк подбирает Session потока). Время — как есть, font-mono.
+                Для прошедшего/отменённого занятия — приглушённо. */}
+            {lessonDateLabel && (
+              <div
+                className={
+                  'flex flex-wrap items-center gap-x-2 gap-y-1 text-sm ' +
+                  (lesson.status === 'planned'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground')
+                }
+              >
+                <Calendar className="size-4 shrink-0" aria-hidden="true" />
+                {lesson.status === 'done' ? (
+                  <span>Занятие прошло {lessonDateLabel}</span>
+                ) : lesson.status === 'cancelled' ? (
+                  <span className="line-through">{lessonDateLabel}</span>
+                ) : (
+                  <>
+                    <span>{lessonDateLabel}</span>
+                    {lesson.startTime && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <Clock className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="font-mono">{lesson.startTime}</span>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Присоединиться к созвону — только для запланированного занятия со
+                ссылкой (canJoinMeeting). На мобилке кнопка во всю ширину. */}
+            {canJoinMeeting(lesson) && (
+              <Button asChild className="mt-1 min-h-11 w-full sm:w-fit">
+                <a
+                  href={lesson.meetingUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Video aria-hidden="true" />
+                  Присоединиться к занятию
+                </a>
+              </Button>
+            )}
           </div>
 
-          {/* Видео урока: если есть список (несколько видео) — показываем его;
-              иначе fallback на одиночное видео (файл или внешняя ссылка). */}
-          {lesson.videos && lesson.videos.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {lesson.videos.map((video) => {
-                const videoEmbed =
-                  video.kind === 'link' ? parseVideoEmbed(video.url) : null;
-                return (
-                  <div key={video.id} className="flex flex-col gap-2">
-                    {video.title && (
-                      <div className="text-sm font-medium">{video.title}</div>
-                    )}
-                    {video.kind === 'file' ? (
-                      <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-                        <video
-                          controls
-                          preload="metadata"
-                          controlsList="nodownload"
-                          onContextMenu={(e) => e.preventDefault()}
-                          className="max-h-[70vh] w-auto max-w-full"
-                          src={video.url}
-                        />
+          {/* Учебное видео урока (лекция, грузится ДО урока). Если несколько —
+              показываем список; иначе одиночное видео (файл или внешняя ссылка).
+              Нет учебного видео — секцию не показываем (без пустого плеера). */}
+          {hasLessonVideo && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GraduationCap className="size-5 shrink-0 text-muted-foreground" />
+                  Учебное видео урока
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Посмотрите до занятия</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {lesson.videos && lesson.videos.length > 0 ? (
+                  lesson.videos.map((video) => {
+                    const videoEmbed =
+                      video.kind === 'link' ? parseVideoEmbed(video.url) : null;
+                    return (
+                      <div key={video.id} className="flex flex-col gap-2">
+                        {video.title && (
+                          <div className="text-sm font-medium">{video.title}</div>
+                        )}
+                        {video.kind === 'file' ? (
+                          <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
+                        ) : videoEmbed ? (
+                          <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
+                        ) : (
+                          <Button asChild className="w-fit">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer">
+                              Смотреть видео
+                              <ExternalLink />
+                            </a>
+                          </Button>
+                        )}
                       </div>
-                    ) : videoEmbed ? (
-                      <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                        <iframe
-                          src={videoEmbed}
-                          title={video.title ?? lesson.title}
-                          className="size-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    ) : (
-                      <Button asChild className="w-fit">
-                        <a href={video.url} target="_blank" rel="noopener noreferrer">
-                          Смотреть видео
-                          <ExternalLink />
-                        </a>
-                      </Button>
-                    )}
+                    );
+                  })
+                ) : lesson.videoFileUrl ? (
+                  <VideoFileFrame src={lesson.videoFileUrl} label={lesson.title} />
+                ) : embedUrl ? (
+                  <VideoEmbedFrame src={embedUrl} title={lesson.title} />
+                ) : (
+                  lesson.videoUrl && (
+                    <Button asChild className="w-fit">
+                      <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
+                        Смотреть видео
+                        <ExternalLink />
+                      </a>
+                    </Button>
+                  )
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Запись занятия (запись Zoom-созвона, подтягивается ПОСЛЕ занятия).
+              Показываем плеер записи / «готовится» / «недоступна» — см. showRecordingSection.
+              Если занятие ещё не проведено и записи нет — секцию не рендерим. */}
+          {showRecordingSection && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Video className="size-5 shrink-0 text-muted-foreground" />
+                  Запись занятия
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Запись прошедшего созвона</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {hasRecordingMedia ? (
+                  lesson.recordingFileUrl ? (
+                    <VideoFileFrame
+                      src={lesson.recordingFileUrl}
+                      label={`Запись занятия — ${lesson.title}`}
+                    />
+                  ) : recordingEmbedUrl ? (
+                    <VideoEmbedFrame
+                      src={recordingEmbedUrl}
+                      title={`Запись занятия — ${lesson.title}`}
+                    />
+                  ) : (
+                    <Button asChild className="w-fit">
+                      <a
+                        href={lesson.recordingVideoUrl!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Смотреть запись
+                        <ExternalLink />
+                      </a>
+                    </Button>
+                  )
+                ) : recordingPending ? (
+                  // Формируется — дружелюбный синий инфо (НЕ ошибка).
+                  <div className="flex items-center gap-3 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">
+                    <Loader2 className="size-5 shrink-0 animate-spin" />
+                    <span>
+                      Формируется запись конференции — появится здесь. Зайдите позже.
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          ) : lesson.videoFileUrl ? (
-            <div className="flex max-h-[70vh] justify-center overflow-hidden rounded-lg border bg-black">
-              <video
-                controls
-                preload="metadata"
-                controlsList="nodownload"
-                onContextMenu={(e) => e.preventDefault()}
-                className="max-h-[70vh] w-auto max-w-full"
-                src={lesson.videoFileUrl}
-              />
-            </div>
-          ) : (
-            lesson.videoUrl && (
-              embedUrl ? (
-                <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-                  <iframe
-                    src={embedUrl}
-                    title={lesson.title}
-                    className="size-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
-              ) : (
-                <Button asChild className="w-fit">
-                  <a href={lesson.videoUrl} target="_blank" rel="noopener noreferrer">
-                    Смотреть видео
-                    <ExternalLink />
-                  </a>
-                </Button>
-              )
-            )
+                ) : recordingStale ? (
+                  // Данных давно нет — нейтральное серое «недоступно».
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                    <Clock className="size-5 shrink-0" />
+                    <span>Запись занятия пока недоступна.</span>
+                  </div>
+                ) : (
+                  // Реальный сбой Zoom — единственное место с акцентом ошибки.
+                  <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                    <Video className="size-5 shrink-0" />
+                    <span>Запись занятия не получена.</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
-          {/* Запись прошедшего занятия ещё обрабатывается — обещаем студенту, что
-              она появится, чтобы не было пустого экрана. */}
-          {recordingPending && (
-            <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-              <Clock className="size-5 shrink-0" />
-              <span>Запись занятия скоро появится здесь.</span>
-            </div>
-          )}
-
-          {/* Итоги занятия: если у summary есть источник (zoom_ai/manual) — это итоги
-              конкретного занятия, показываем отдельным блоком с бейджем источника.
-              Иначе (легаси/блочное описание без источника) — прежний абзац. */}
-          {lesson.summary &&
-            (lesson.summarySource ? (
+          {/* Итоги занятия. Если есть текст summary:
+                - с источником (zoom_ai/manual) → блок-карточка с бейджем;
+                - без источника (легаси/блочное описание) → прежний абзац.
+              Если текста нет, но статус формирования итогов уже идёт
+              (pending/processing/failed) → показываем состояние (без кнопок —
+              ручную подтяжку студент не делает). status='none'/нет Zoom — ничего. */}
+          {lesson.summary ? (
+            lesson.summarySource ? (
               <Card>
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -258,7 +378,51 @@ export default function StudentLessonPage() {
               </Card>
             ) : (
               <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
-            ))}
+            )
+          ) : (
+            // Текста итогов нет — показываем состояние формирования. Единый «вид»:
+            // формируется (синий) / недоступно (серое) / ошибка (красный). Ручную
+            // подтяжку студент не делает (без кнопок). empty/ready — ничего не рендерим.
+            (() => {
+              const kind = resolveProcessingKind({
+                status: lesson.summaryStatus,
+                hasData: false,
+                requestedAt: lesson.summaryRequestedAt,
+                staleAfterMs: SUMMARY_STALE_AFTER_MS,
+              });
+              if (kind === 'empty' || kind === 'ready') return null;
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Итоги занятия</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {kind === 'processing' ? (
+                      <div className="flex flex-col gap-2">
+                        <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Формируются итоги занятия — Zoom обычно готовит их за несколько
+                          минут. Зайдите позже.
+                        </p>
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-11/12" />
+                        <Skeleton className="h-4 w-3/4" />
+                      </div>
+                    ) : kind === 'failed' ? (
+                      <p className="text-sm text-destructive">
+                        Не удалось сформировать итоги этого занятия.
+                      </p>
+                    ) : (
+                      // stale — данных давно нет.
+                      <p className="text-sm text-muted-foreground">
+                        Итоги по этому занятию пока недоступны.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()
+          )}
 
           {/* Материалы урока (PDF/MD) */}
           {lesson.materials && lesson.materials.length > 0 && (
@@ -305,8 +469,8 @@ export default function StudentLessonPage() {
             </Card>
           )}
 
-          {!hasVideo &&
-            !recordingPending &&
+          {!hasLessonVideo &&
+            !showRecordingSection &&
             !lesson.summary &&
             (!lesson.materials || lesson.materials.length === 0) &&
             assignments.length === 0 && (

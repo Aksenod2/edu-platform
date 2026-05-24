@@ -7,6 +7,7 @@ import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -36,15 +37,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus, type Stream } from '@/lib/api';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import {
   parseLocalDate,
   dateKey,
   isSameDay,
   lessonKey,
-  STATUS_BADGE_VARIANT,
-  STATUS_ORDER,
+  canJoinMeeting,
+  MANUAL_STATUS_ORDER,
   WEEKDAYS_SHORT,
 } from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
 /** Урок для отображения в календаре (с опциональным именем потока). */
 export type CalendarLesson = Lesson & { streamName?: string };
@@ -76,9 +79,13 @@ export interface ScheduleCalendarProps {
   editable?: boolean;
   /** Потоки — нужны при создании урока (выбор потока). */
   streams?: Stream[];
+  /** Базовый путь страницы урока — зависит от роли (студент vs админ). */
+  lessonBasePath?: string;
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
+  /** Ре-фетч списка после смены статуса занятия из контрола (SessionStatusControl). */
+  onChanged?: () => void;
 }
 
 const MONTHS = [
@@ -90,9 +97,11 @@ export function ScheduleCalendar({
   lessons,
   editable = false,
   streams = [],
+  lessonBasePath = '/admin/lessons',
   onCreate,
   onUpdate,
   onDelete,
+  onChanged,
 }: ScheduleCalendarProps) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -279,9 +288,11 @@ export function ScheduleCalendar({
               lessons={selectedLessons}
               editable={editable}
               streams={streams}
+              lessonBasePath={lessonBasePath}
               onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
+              onChanged={onChanged}
             />
           )}
         </SheetContent>
@@ -305,9 +316,11 @@ interface DayDetailProps {
   lessons: CalendarLesson[];
   editable: boolean;
   streams: Stream[];
+  lessonBasePath: string;
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
+  onChanged?: () => void;
 }
 
 function DayDetail({
@@ -315,9 +328,11 @@ function DayDetail({
   lessons,
   editable,
   streams,
+  lessonBasePath,
   onCreate,
   onUpdate,
   onDelete,
+  onChanged,
 }: DayDetailProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -362,9 +377,24 @@ function DayDetail({
                     {lesson.title}
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
-                      {LESSON_STATUS_LABELS[lesson.status]}
-                    </Badge>
+                    {/* В редактируемом календаре статус меняется контролом
+                        (дропдаун + «Провести»). PATCH идёт по streamId занятия,
+                        поэтому контрол только при наличии streamId; иначе и в
+                        студентском режиме — read-only бейдж. Контрол живёт внутри
+                        Sheet, поэтому клики не доходят до ячейки — stopPropagation
+                        не нужен. */}
+                    {editable && lesson.streamId ? (
+                      <SessionStatusControl
+                        lessonId={lesson.id}
+                        streamId={lesson.streamId}
+                        status={lesson.status}
+                        hasDate={!!lesson.date}
+                        onChanged={onChanged}
+                        onEditRequest={() => setEditingId(lesson.id)}
+                      />
+                    ) : (
+                      <LessonStatusBadge status={lesson.status} />
+                    )}
                     {lesson.streamName && (
                       <Badge variant="secondary" className="w-fit">
                         {lesson.streamName}
@@ -384,9 +414,9 @@ function DayDetail({
                 </p>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                {lesson.meetingUrl && lesson.status !== 'cancelled' && (
+                {canJoinMeeting(lesson) && (
                   <a
-                    href={lesson.meetingUrl}
+                    href={lesson.meetingUrl ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="no-underline"
@@ -395,7 +425,13 @@ function DayDetail({
                   </a>
                 )}
                 <Button asChild size="sm" variant="outline">
-                  <Link href={`/admin/lessons/${lesson.id}`}>
+                  <Link
+                    href={
+                      lessonBasePath === '/admin/lessons' && lesson.streamId
+                        ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
+                        : `${lessonBasePath}/${lesson.id}`
+                    }
+                  >
                     <ExternalLink />
                     Открыть урок
                   </Link>
@@ -476,14 +512,15 @@ function DeleteButton({
       <AlertDialogTrigger asChild>
         <Button variant="destructive" size="sm" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Удалить
+          Снять с расписания
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
+          <AlertDialogTitle>Снять с расписания?</AlertDialogTitle>
           <AlertDialogDescription>
-            Урок будет удалён. Действие необратимо.
+            Снять занятие с расписания этой группы? Урок-шаблон и его материалы
+            сохранятся.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -492,7 +529,7 @@ function DeleteButton({
             variant="destructive"
             onClick={handleConfirm}
           >
-            Удалить
+            Снять с расписания
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -553,11 +590,10 @@ function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
       <div className="grid grid-cols-2 gap-3">
         <Field>
           <FieldLabel htmlFor={`edit-date-${lesson.id}`}>Дата</FieldLabel>
-          <Input
+          <DatePicker
             id={`edit-date-${lesson.id}`}
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(v) => setDate(v ?? '')}
           />
         </Field>
         <Field>
@@ -577,7 +613,7 @@ function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_ORDER.map((s) => (
+            {MANUAL_STATUS_ORDER.map((s) => (
               <SelectItem key={s} value={s}>
                 {LESSON_STATUS_LABELS[s]}
               </SelectItem>
@@ -669,10 +705,10 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
       <p className="text-sm font-medium">Новый урок</p>
       {streams.length > 1 && (
         <Field>
-          <FieldLabel htmlFor="new-stream">Поток</FieldLabel>
+          <FieldLabel htmlFor="new-stream">Группа</FieldLabel>
           <Select value={streamId} onValueChange={setStreamId}>
             <SelectTrigger id="new-stream" className="w-full">
-              <SelectValue placeholder="Выберите поток" />
+              <SelectValue placeholder="Выберите группу" />
             </SelectTrigger>
             <SelectContent>
               {streams.map((s) => (
@@ -697,11 +733,10 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
       <div className="grid grid-cols-2 gap-3">
         <Field>
           <FieldLabel htmlFor="new-date">Дата</FieldLabel>
-          <Input
+          <DatePicker
             id="new-date"
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(v) => setDate(v ?? '')}
           />
         </Field>
         <Field>
@@ -721,7 +756,7 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_ORDER.map((s) => (
+            {MANUAL_STATUS_ORDER.map((s) => (
               <SelectItem key={s} value={s}>
                 {LESSON_STATUS_LABELS[s]}
               </SelectItem>

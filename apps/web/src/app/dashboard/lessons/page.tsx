@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, PlayCircle, ChevronRight } from 'lucide-react';
+import { Loader2, PlayCircle, ChevronRight, BookOpen, Layers } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -13,11 +13,31 @@ import {
 } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function isUpcoming(lesson: Lesson): boolean {
   return lesson.status === 'planned';
+}
+
+/** Аккуратное пустое состояние: иконка + заголовок + пояснение. */
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof BookOpen;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center text-muted-foreground">
+      <Icon className="size-10 opacity-50" aria-hidden />
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-xs text-sm">{description}</p>
+    </div>
+  );
 }
 
 function StudentLessonsContent() {
@@ -40,7 +60,7 @@ function StudentLessonsContent() {
         setSelectedStreamId(data.streams[0].id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки потоков');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки групп');
     }
   }, [accessToken, selectedStreamId]);
 
@@ -103,18 +123,34 @@ function StudentLessonsContent() {
       )}
 
       {streams.length === 0 && !loadingData ? (
-        <p className="text-sm text-muted-foreground">Потоков пока нет.</p>
+        <EmptyState
+          icon={Layers}
+          title="Групп пока нет"
+          description="Когда вас зачислят в группу, здесь появятся уроки."
+        />
       ) : loadingData ? (
         <div className="flex justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : lessons.length === 0 ? (
-        <p className="text-sm text-muted-foreground">В этом потоке пока нет доступных уроков.</p>
+        <EmptyState
+          icon={BookOpen}
+          title="Уроков пока нет"
+          description="В этой группе ещё нет доступных уроков."
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {lessons.map((lesson, index) => {
             const upcoming = isUpcoming(lesson);
             const cancelled = lesson.status === 'cancelled';
+            const live = lesson.status === 'live';
+            // Учебное видео урока (лекция): файл, ссылка или несколько видео.
+            // Запись Zoom-занятия — отдельная сущность, в индикатор не входит.
+            const hasVideo = !!(
+              (lesson.videos && lesson.videos.length > 0) ||
+              lesson.videoFileUrl ||
+              lesson.videoUrl
+            );
 
             return (
               <Link
@@ -136,6 +172,11 @@ function StudentLessonsContent() {
                         </span>
                         {cancelled ? (
                           <Badge variant="destructive">Отменён</Badge>
+                        ) : live ? (
+                          <Badge className="gap-1.5 font-medium">
+                            <LivePulseDot />
+                            Идёт
+                          </Badge>
                         ) : upcoming ? (
                           <Badge variant="secondary">Запланирован</Badge>
                         ) : (
@@ -149,7 +190,7 @@ function StudentLessonsContent() {
                         <p className="truncate text-sm text-muted-foreground">{lesson.summary}</p>
                       )}
                     </div>
-                    {lesson.videoUrl && (
+                    {hasVideo && (
                       <PlayCircle className="size-5 shrink-0 text-muted-foreground" />
                     )}
                     <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
