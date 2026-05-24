@@ -854,7 +854,7 @@ export async function deleteLessonMaterial(
   lessonId: string,
   s3Key: string,
 ): Promise<{ materials: LessonMaterial[] }> {
-  return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+  return request(`/lessons/${lessonId}/materials?s3Key=${encodeURIComponent(s3Key)}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });

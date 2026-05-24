@@ -8,7 +8,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // (lib zoom-recording замокана — её покрывают unit-тесты). DB-free: мокаем prisma.
 vi.mock('@platform/db', () => ({
   prisma: {
-    lesson: { findUnique: vi.fn(), findFirst: vi.fn() },
+    lesson: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     session: { findFirst: vi.fn() },
     lessonTeacher: { findMany: vi.fn(() => Promise.resolve([])), findFirst: vi.fn() },
   },
@@ -341,5 +341,55 @@ describe('GET /lessons/:id/sessions/:streamId/transcript — отдача тел
       url: '/lessons/les-1/sessions/str-1/transcript',
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('DELETE /lessons/:id/materials?s3Key= — удаление материала (ключ в query)', () => {
+  const materials = [
+    { s3Key: 'lesson-materials/1-a.md', fileName: 'a.md', mimeType: 'text/markdown', size: 1 },
+    { s3Key: 'lesson-materials/2-b.pdf', fileName: 'b.pdf', mimeType: 'application/pdf', size: 2 },
+  ];
+
+  it('админ: удаляет материал по s3Key (со слэшем) из query → остаётся остальное', async () => {
+    db.lesson.findUnique.mockResolvedValue({ id: 'les-1', materials });
+    db.lesson.update.mockResolvedValue({ id: 'les-1' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/lessons/les-1/materials?s3Key=${encodeURIComponent('lesson-materials/1-a.md')}`,
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    // В update ушёл список без удалённого ключа.
+    expect(db.lesson.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'les-1' },
+        data: { materials: [materials[1]] },
+      }),
+    );
+    expect(res.json().materials).toEqual([
+      expect.objectContaining({ s3Key: 'lesson-materials/2-b.pdf' }),
+    ]);
+  });
+
+  it('без s3Key в query → 400, ничего не удаляем', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/lessons/les-1/materials',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.lesson.update).not.toHaveBeenCalled();
+  });
+
+  it('не админ (студент) → 403', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/lessons/les-1/materials?s3Key=${encodeURIComponent('lesson-materials/1-a.md')}`,
+      headers: authHeaders(studentToken),
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

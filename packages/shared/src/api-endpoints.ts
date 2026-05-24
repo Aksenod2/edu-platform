@@ -240,7 +240,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id', desc: 'Удалить урок' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/materials', desc: 'Загрузить материал урока' },
-  { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/materials/:s3Key', desc: 'Удалить материал урока' },
+  { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/materials', desc: 'Удалить материал урока (s3Key в query)' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/video', desc: 'Загрузить видео урока (одиночное, легаси)' },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/video', desc: 'Удалить видео урока (одиночное, легаси)' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/videos', desc: 'Добавить видео в коллекцию урока' },
