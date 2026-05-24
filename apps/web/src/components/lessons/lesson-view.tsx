@@ -10,11 +10,9 @@ import {
   ClipboardCheck,
   Clock,
   ExternalLink,
-  Eye,
   FileText,
   GraduationCap,
   Loader2,
-  Pencil,
   Tag,
   Users,
   Video,
@@ -93,12 +91,9 @@ function hasLessonVideo(lesson: Lesson): boolean {
 export function LessonView({
   lessonId,
   streamId,
-  editHref,
 }: {
   lessonId: string;
   streamId?: string;
-  /** Куда ведёт кнопка «Редактировать» (страница задаёт ?mode=edit). */
-  editHref: string;
 }) {
   const { accessToken } = useAuth();
   const [lesson, setLesson] = useState<LessonWithAssignments | null>(null);
@@ -202,26 +197,9 @@ export function LessonView({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Заголовок + действия. «Смотреть как студент» открывает студенческий
-          экран урока; «Редактировать» — режим редактора. */}
-      <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild size="sm">
-            <Link href={editHref}>
-              <Pencil className="size-4" />
-              Редактировать
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/dashboard/lessons/${lessonId}`} target="_blank" rel="noopener noreferrer">
-              <Eye className="size-4" />
-              Смотреть как студент
-              <ExternalLink className="size-4" />
-            </Link>
-          </Button>
-        </div>
-      </div>
+      {/* Заголовок урока. Переключение Просмотр/Редактирование — в табах на
+          странице урока (page.tsx), отдельные кнопки под заголовком не нужны. */}
+      <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
 
       {/* ── Контекст занятия (есть только при ?streamId) ───────────────────── */}
       {streamId && <SessionContextCard session={session} />}

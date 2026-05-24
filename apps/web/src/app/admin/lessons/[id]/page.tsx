@@ -86,7 +86,7 @@ export default function AdminLessonPage() {
           </AlertDescription>
         </Alert>
       ) : (
-        <LessonView lessonId={lessonId} streamId={streamId} editHref={editHref} />
+        <LessonView lessonId={lessonId} streamId={streamId} />
       )}
     </div>
   );
