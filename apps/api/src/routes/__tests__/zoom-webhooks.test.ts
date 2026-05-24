@@ -491,6 +491,44 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     expect(mockProcessRecording).not.toHaveBeenCalled();
   });
 
+  it('uuid в payload → идемпотентно фиксируется в Session (updateMany WHERE zoomMeetingUuid IS NULL)', async () => {
+    db.session.findFirst.mockResolvedValue({
+      id: 'sess-uuid',
+      streamId: 'stream-1',
+      zoomMeetingId: '555',
+    });
+
+    const ts = nowTs();
+    const body = JSON.stringify({
+      event: 'meeting.summary_completed',
+      payload: {
+        object: { id: 555, uuid: '/abc==', summary_overview: 'Обзор' },
+      },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    // UUID пишется один раз — только если поле ещё пусто (не перетираем).
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-uuid', zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: '/abc==' },
+    });
+    // И UUID из payload прокидывается в обработку резюме.
+    expect(mockProcessSummary.mock.calls[0][0].meetingUuid).toBe('/abc==');
+  });
+
   it('meeting.ended → помечает запись pending и запускает забор посещаемости', async () => {
     db.session.findFirst.mockResolvedValue({
       id: 'sess-99',

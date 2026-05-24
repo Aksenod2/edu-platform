@@ -91,6 +91,7 @@ describe('POST /lessons/:id/sessions/:streamId/refresh — единая подт
       id: 'sess-1',
       streamId: 'str-1',
       zoomMeetingId: 'mtg-1',
+      zoomMeetingUuid: '/abc==',
       lessonId: 'les-1',
     };
   }
@@ -116,6 +117,11 @@ describe('POST /lessons/:id/sessions/:streamId/refresh — единая подт
     expect(mockSummary).toHaveBeenCalledTimes(1);
     expect(mockTranscript).toHaveBeenCalledTimes(1);
     expect(mockAttendance).toHaveBeenCalledTimes(1);
+    // UUID встречи из сессии прокидывается в подтяжку итогов (meeting_summary
+    // не принимает числовой id — нужен UUID).
+    expect(mockSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingUuid: '/abc==' }),
+    );
   });
 
   it('«ещё не готово» (processing) → reason «ещё формируется», а НЕ «не удалось»', async () => {

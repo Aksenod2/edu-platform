@@ -312,6 +312,7 @@ model Session {
 
   // Zoom-созвоны (Волна 2). Все поля nullable — фича аддитивна.
   zoomMeetingId   String? // id встречи Zoom для сопоставления входящего вебхука с занятием
+  zoomMeetingUuid String? // UUID встречи Zoom — нужен для meeting_summary API (числовой id он не принимает)
   recordingStatus String? // статус записи: none | pending | processing | ready | failed (строкой, без enum)
   recordingError  String? // текст ошибки автозагрузки записи (для UI)
   summary         String? // итоги/конспект КОНКРЕТНОГО занятия потока (отдельно от Lesson.summary)

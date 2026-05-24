@@ -1976,7 +1976,13 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       const session = await prisma.session.findFirst({
         where: { lessonId: id, streamId },
-        select: { id: true, streamId: true, zoomMeetingId: true, lessonId: true },
+        select: {
+          id: true,
+          streamId: true,
+          zoomMeetingId: true,
+          zoomMeetingUuid: true,
+          lessonId: true,
+        },
       });
       if (!session) {
         return reply.status(404).send({ error: 'Занятие не найдено' });
@@ -2038,6 +2044,7 @@ export async function lessonRoutes(app: FastifyInstance) {
               sessionId: session.id,
               meetingId,
               teacherUserId,
+              meetingUuid: session.zoomMeetingUuid,
             }),
           'не удалось обновить итоги',
           true,

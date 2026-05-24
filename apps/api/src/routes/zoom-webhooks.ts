@@ -99,6 +99,18 @@ async function processEventAsync(
       });
 
       if (session) {
+        // Идемпотентно фиксируем UUID встречи (нужен для meeting_summary API —
+        // числовой id он не принимает). UUID есть в payload почти любого события
+        // (meeting.started/ended/recording.*/summary). Пишем только если поле ещё
+        // пусто — чтобы не перетирать ранее захваченный UUID. Срабатывает на любом
+        // из событий и фиксирует UUID один раз.
+        if (obj?.uuid) {
+          await prisma.session.updateMany({
+            where: { id: session.id, zoomMeetingUuid: null },
+            data: { zoomMeetingUuid: obj.uuid },
+          });
+        }
+
         if (event === 'meeting.started') {
           // Созвон начался → занятие «Идёт» (live). Переводим ТОЛЬКО из 'planned':
           // не трогаем уже завершённые ('done'), отменённые ('cancelled') и
@@ -198,6 +210,7 @@ async function processEventAsync(
             meetingId,
             teacherUserId,
             payloadSummary: obj ? extractSummaryFromPayload(obj) : null,
+            meetingUuid: obj?.uuid ?? null,
           });
         }
       }
