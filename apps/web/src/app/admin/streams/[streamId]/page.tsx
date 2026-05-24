@@ -101,6 +101,7 @@ import {
   type Assignment,
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
+import { InviteLinkDialog } from '@/components/invite-link-dialog';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
 const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
@@ -200,7 +201,11 @@ export default function StreamDetailPage() {
         </TabsContent>
 
         <TabsContent value="students" className="mt-4">
-          <StudentsTab streamId={streamId} onRosterChange={fetchStream} />
+          <StudentsTab
+            streamId={streamId}
+            streamName={stream.name}
+            onRosterChange={fetchStream}
+          />
         </TabsContent>
 
         <TabsContent value="lessons" className="mt-4">
@@ -922,9 +927,11 @@ function OverviewTab({
 
 function StudentsTab({
   streamId,
+  streamName,
   onRosterChange,
 }: {
   streamId: string;
+  streamName: string;
   onRosterChange: () => void;
 }) {
   const { accessToken } = useAuth();
@@ -1034,10 +1041,19 @@ function StudentsTab({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Ученики группы</h2>
-        <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
-          <UserPlus />
-          Добавить учеников
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          {accessToken && (
+            <InviteLinkDialog
+              streamId={streamId}
+              streamName={streamName}
+              accessToken={accessToken}
+            />
+          )}
+          <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
+            <UserPlus />
+            Добавить учеников
+          </Button>
+        </div>
       </div>
 
       {error && (
