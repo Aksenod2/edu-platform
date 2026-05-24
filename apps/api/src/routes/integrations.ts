@@ -188,6 +188,23 @@ export async function integrationRoutes(app: FastifyInstance) {
         if (res.ok) {
           ok = true;
           message = 'Соединение с Zoom успешно';
+          // Захватываем идентичность хоста сразу при проверке подключения: для
+          // S2S OAuth `me` — это владелец, под которым создаются встречи. Нужно,
+          // чтобы исключить хоста из «гостей» посещаемости. Best-effort: ошибка
+          // парсинга/сохранения не должна валить тест.
+          try {
+            const me = (await res.json()) as { id?: string; email?: string };
+            const hostEmail = me.email && me.email.trim() ? me.email.trim() : null;
+            const hostZoomUserId = me.id && me.id.trim() ? me.id.trim() : null;
+            if (hostEmail || hostZoomUserId) {
+              await prisma.zoomIntegration.update({
+                where: { userId },
+                data: { hostEmail, hostZoomUserId },
+              });
+            }
+          } catch {
+            // Тело может быть не JSON либо записи ещё нет — не ошибка теста.
+          }
         } else {
           let detail = '';
           try {

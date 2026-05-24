@@ -1307,4 +1307,24 @@ describe('processSummaryForSession — статус итогов (summaryStatus)
     });
     expect(db.session.update).not.toHaveBeenCalled();
   });
+
+  it('при наличии meetingUuid именно UUID (а не числовой id) уходит в getMeetingSummary', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    await processSummaryForSession({
+      ...params,
+      payloadSummary: null,
+      meetingUuid: '/abc==',
+    });
+    expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', '/abc==');
+  });
+
+  it('без meetingUuid (старые занятия) → фолбэк на числовой meetingId', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    await processSummaryForSession({
+      ...params,
+      payloadSummary: null,
+      meetingUuid: null,
+    });
+    expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+  });
 });

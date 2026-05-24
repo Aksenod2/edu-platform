@@ -304,6 +304,13 @@ export async function getMeetingRecordings(
   return data.recording_files ?? [];
 }
 
+// UUID, начинающийся с '/' или содержащий '//', по требованию Zoom кодируется
+// ДВАЖДЫ; иначе (в т.ч. числовой id) — один раз. Безопасно и для числового id.
+export function encodeMeetingPathParam(id: string): string {
+  const once = encodeURIComponent(id);
+  return (id.startsWith('/') || id.includes('//')) ? encodeURIComponent(once) : once;
+}
+
 // Минимально необходимое описание AI-резюме встречи Zoom.
 export interface ZoomMeetingSummary {
   summary_title?: string;
@@ -315,6 +322,9 @@ export interface ZoomMeetingSummary {
 // GET https://api.zoom.us/v2/meetings/{meetingId}/meeting_summary (Bearer).
 // AI Companion может быть не включён → на 404/недоступность возвращаем null,
 // не бросая. На прочие ошибки бросаем Error.
+// meetingId здесь — UUID встречи (предпочтительно) либо числовой id (фолбэк):
+// meeting_summary не принимает числовой id, а кодирование UUID берёт на себя
+// encodeMeetingPathParam (двойное кодирование для UUID со слэшами).
 export async function getMeetingSummary(
   userId: string,
   meetingId: string,
@@ -322,7 +332,7 @@ export async function getMeetingSummary(
   const token = await getZoomAccessToken(userId);
 
   const res = await fetch(
-    `${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}/meeting_summary`,
+    `${ZOOM_API_URL}/meetings/${encodeMeetingPathParam(meetingId)}/meeting_summary`,
     {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },

@@ -22,6 +22,7 @@ vi.mock('@platform/db', () => ({
     lessonVideo: { findMany: vi.fn() },
     programLesson: { findMany: vi.fn() },
     lessonTeacher: { findMany: vi.fn() },
+    zoomIntegration: { findUnique: vi.fn(), update: vi.fn() },
   },
   Prisma: {},
 }));
@@ -165,6 +166,63 @@ describe('GET /lessons/:id/attendance — сводка посещаемости'
     expect(db.session.findUnique.mock.calls[0][0].where).toEqual({
       streamId_lessonId: { streamId: 'stream-1', lessonId: 'lesson-1' },
     });
+  });
+
+  it('admin: ряд хоста отдаётся с isHost=true и исключён из счётчика гостей', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    db.streamEnrollment.count.mockResolvedValueOnce(2);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([
+      {
+        // Ряд хоста (преподаватель): не студент, не гость.
+        id: 'host',
+        userId: null,
+        source: 'zoom_report',
+        status: 'present',
+        isHost: true,
+        displayName: 'Преподаватель',
+        email: 'aksenod@gmail.com',
+        joinedAt: null,
+        leftAt: null,
+        durationSec: 4200,
+        updatedAt: new Date('2026-05-24T12:00:00Z'),
+        user: null,
+      },
+      {
+        // Несопоставленный студент-гость.
+        id: 'g1',
+        userId: null,
+        source: 'zoom_report',
+        status: 'present',
+        isHost: false,
+        displayName: 'Гость',
+        email: 'guest@x.ru',
+        joinedAt: null,
+        leftAt: null,
+        durationSec: 100,
+        updatedAt: new Date('2026-05-24T11:30:00Z'),
+        user: null,
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/lessons/lesson-1/attendance?streamId=stream-1',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Хост НЕ попадает в гостей: только один несопоставленный гость.
+    expect(body.unmatchedCount).toBe(1);
+    expect(body.presentCount).toBe(0);
+    expect(body.absentCount).toBe(0);
+    // isHost проброшен в records.
+    const hostRecord = body.records.find((r: { id: string }) => r.id === 'host');
+    expect(hostRecord.isHost).toBe(true);
+    expect(hostRecord.matched).toBe(false);
+    const guestRecord = body.records.find((r: { id: string }) => r.id === 'g1');
+    expect(guestRecord.isHost).toBe(false);
   });
 
   it('admin: 404 если занятия (Session) нет', async () => {
@@ -327,6 +385,12 @@ describe('POST /lessons/:id/attendance/resync — забор из Zoom', () => {
     });
     // Преподавателей у урока нет → роут падает на фолбэк-админа (canCreateMeeting=true).
     db.lessonTeacher.findMany.mockResolvedValue([]);
+    // Идентичность хоста уже закэширована и не совпадает ни с одним участником —
+    // ленивый запрос /users/me не сработает (не съедает мок отчёта).
+    db.zoomIntegration.findUnique.mockResolvedValue({
+      hostEmail: 'host@zoom.example',
+      hostZoomUserId: 'host-zoom-id',
+    });
     // Состав потока для сопоставления по email (case-insensitive).
     db.streamEnrollment.findMany.mockResolvedValueOnce([
       { user: { id: 'u1', email: 'Ivan@X.ru' } },
@@ -397,6 +461,11 @@ describe('POST /lessons/:id/attendance/resync — забор из Zoom', () => {
       lessonId: 'lesson-1',
     });
     db.lessonTeacher.findMany.mockResolvedValue([]);
+    // Идентичность хоста закэширована (не совпадает с гостем) → без /users/me.
+    db.zoomIntegration.findUnique.mockResolvedValue({
+      hostEmail: 'host@zoom.example',
+      hostZoomUserId: 'host-zoom-id',
+    });
     // В составе нет совпадения по email гостя — авто-сопоставление дало бы null.
     db.streamEnrollment.findMany.mockResolvedValueOnce([]);
     // Зум-ряд гостя УЖЕ есть и сопоставлен вручную (userId='manual-student').
@@ -441,6 +510,144 @@ describe('POST /lessons/:id/attendance/resync — забор из Zoom', () => {
     );
     // А прочие поля из Zoom обновились.
     expect(db.sessionAttendance.update.mock.calls[0][0].data.displayName).toBe('Гость');
+  });
+
+  it('admin: участник с email хоста помечается isHost=true, userId=null, не считается гостем', async () => {
+    db.session.findUnique.mockResolvedValueOnce({
+      id: 'session-1',
+      streamId: 'stream-1',
+      zoomMeetingId: '999',
+      lessonId: 'lesson-1',
+    });
+    db.lessonTeacher.findMany.mockResolvedValue([]);
+    // Хост закэширован: aksenod@gmail.com. В составе потока он зачислен НЕ как
+    // студент — но даже если бы совпал по email, ряд хоста не сопоставляем.
+    db.zoomIntegration.findUnique.mockResolvedValue({
+      hostEmail: 'aksenod@gmail.com',
+      hostZoomUserId: 'host-zoom-id',
+    });
+    db.streamEnrollment.findMany.mockResolvedValueOnce([
+      { user: { id: 'u1', email: 'ivan@x.ru' } },
+      // Намеренно «студент» с email хоста — проверяем, что хост НЕ сопоставится.
+      { user: { id: 'host-user', email: 'aksenod@gmail.com' } },
+    ]);
+    db.sessionAttendance.findFirst.mockResolvedValue(null);
+    db.sessionAttendance.create.mockResolvedValue({ id: 'created' });
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      zoomReportResponse([
+        {
+          id: 'host-1',
+          name: 'Преподаватель',
+          user_email: 'Aksenod@Gmail.com', // другой регистр — должно совпасть
+          join_time: '2026-05-24T09:55:00Z',
+          leave_time: '2026-05-24T11:05:00Z',
+          duration: 4200,
+        },
+        {
+          id: 'p1',
+          name: 'Иван',
+          user_email: 'ivan@x.ru',
+          join_time: '2026-05-24T10:00:00Z',
+          leave_time: '2026-05-24T11:00:00Z',
+          duration: 3600,
+        },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    db.streamEnrollment.count.mockResolvedValueOnce(1);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/lesson-1/attendance/resync',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+
+    // Создано два ряда (хост + студент).
+    expect(db.sessionAttendance.create).toHaveBeenCalledTimes(2);
+    const hostCreate = db.sessionAttendance.create.mock.calls[0][0].data;
+    expect(hostCreate.isHost).toBe(true);
+    // Ряд хоста НЕ сопоставлен со студентом, хотя email совпал бы.
+    expect(hostCreate.userId).toBeNull();
+    const studentCreate = db.sessionAttendance.create.mock.calls[1][0].data;
+    expect(studentCreate.isHost).toBe(false);
+    expect(studentCreate.userId).toBe('u1');
+    // Ленивый /users/me не вызывался (хост из кэша): только запрос отчёта.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/report/meetings/999/participants');
+  });
+
+  it('admin: ленивый захват хоста через /users/me и кэширование в ZoomIntegration', async () => {
+    db.session.findUnique.mockResolvedValueOnce({
+      id: 'session-1',
+      streamId: 'stream-1',
+      zoomMeetingId: '999',
+      lessonId: 'lesson-1',
+    });
+    db.lessonTeacher.findMany.mockResolvedValue([]);
+    // Кэша хоста ещё нет → должен сработать ленивый /users/me.
+    db.zoomIntegration.findUnique.mockResolvedValue({ hostEmail: null, hostZoomUserId: null });
+    db.zoomIntegration.update.mockResolvedValue({});
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    db.sessionAttendance.findFirst.mockResolvedValue(null);
+    db.sessionAttendance.create.mockResolvedValue({ id: 'created' });
+
+    // Первый fetch — /users/me (опознаём хоста), второй — отчёт участников.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'host-zoom-id', email: 'host@zoom.example' }),
+      } as unknown as Response)
+      .mockResolvedValueOnce(
+        zoomReportResponse([
+          {
+            id: 'host-zoom-id', // совпадение по participantKey (id Zoom)
+            name: 'Преподаватель',
+            user_email: '', // email скрыт в отчёте — ловим по id
+            join_time: '2026-05-24T09:55:00Z',
+            leave_time: '2026-05-24T11:05:00Z',
+            duration: 4200,
+          },
+        ]),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    db.streamEnrollment.count.mockResolvedValueOnce(0);
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/lesson-1/attendance/resync',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    // Идентичность хоста сохранена в ZoomIntegration.
+    expect(db.zoomIntegration.update).toHaveBeenCalledTimes(1);
+    expect(db.zoomIntegration.update.mock.calls[0][0].data).toEqual({
+      hostEmail: 'host@zoom.example',
+      hostZoomUserId: 'host-zoom-id',
+    });
+    // Участник опознан как хост по id (email пуст в отчёте).
+    expect(db.sessionAttendance.create).toHaveBeenCalledTimes(1);
+    expect(db.sessionAttendance.create.mock.calls[0][0].data.isHost).toBe(true);
+    // Два запроса: /users/me и отчёт.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/users/me');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/report/meetings/999/participants');
   });
 
   it('admin: Zoom 403 (scope не выдан) → ok:false без падения', async () => {
@@ -551,6 +758,21 @@ describe('PATCH /lessons/:id/attendance/:attendanceId/match — привязка
       payload: { streamId: 'stream-1', userId: 'u1' },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('admin: 400 при попытке привязать ряд хоста (преподавателя)', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-1' });
+    db.sessionAttendance.findFirst.mockResolvedValueOnce({ id: 'host', isHost: true });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/lessons/lesson-1/attendance/host/match',
+      headers: authHeaders(adminToken),
+      payload: { streamId: 'stream-1', userId: 'u1' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'Нельзя привязать преподавателя (хост встречи)' });
+    expect(db.sessionAttendance.update).not.toHaveBeenCalled();
   });
 
   it('admin: пустой userId → СБРОС привязки (userId=null), без проверки зачисления', async () => {

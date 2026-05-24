@@ -9,6 +9,7 @@ import {
   Info,
   LogIn,
   Minus,
+  Presentation,
   RefreshCw,
   Unlink,
   UserPlus,
@@ -322,9 +323,16 @@ export function LessonAttendanceSection({
     return map;
   }, [summary]);
 
-  // Несопоставленные гости: zoom-записи без привязки к студенту.
+  // Несопоставленные гости: zoom-записи без привязки к студенту, кроме хоста
+  // (хост — это аккаунт преподавателя, его показываем отдельной секцией).
   const guests = useMemo(
-    () => (summary?.records ?? []).filter((r) => !r.userId),
+    () => (summary?.records ?? []).filter((r) => !r.userId && !r.isHost),
+    [summary],
+  );
+
+  // Хост встречи (преподаватель) — показываем отдельно, без привязки к студенту.
+  const hosts = useMemo(
+    () => (summary?.records ?? []).filter((r) => r.isHost),
     [summary],
   );
 
@@ -524,6 +532,44 @@ export function LessonAttendanceSection({
                 </ul>
               )}
             </div>
+
+            {/* Преподаватель (хост Zoom-встречи) — отдельной секцией, без привязки. */}
+            {hosts.length > 0 && (
+              <>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Преподаватель</span>
+                  <ul className="flex flex-col divide-y rounded-md border">
+                    {hosts.map((host) => {
+                      const duration = formatDuration(host.durationSec);
+                      const joinTime = formatJoinTime(host.joinedAt);
+                      const name = host.displayName || host.email || 'Преподаватель';
+                      return (
+                        <li
+                          key={host.id}
+                          className="flex flex-wrap items-center justify-between gap-3 p-3"
+                        >
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <span className="truncate text-sm font-medium">{name}</span>
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                              {host.email && host.displayName && (
+                                <span className="truncate">{host.email}</span>
+                              )}
+                              {duration && <span>· {duration}</span>}
+                              {joinTime && <span>· вход {joinTime}</span>}
+                            </span>
+                          </div>
+                          <Badge variant="outline" className="shrink-0 text-muted-foreground">
+                            <Presentation className="size-3" />
+                            преподаватель
+                          </Badge>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </>
+            )}
 
             {/* Несопоставленные гости из Zoom. */}
             {guests.length > 0 && (

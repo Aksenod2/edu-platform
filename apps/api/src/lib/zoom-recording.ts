@@ -451,8 +451,11 @@ export async function processSummaryForSession(params: {
   meetingId: string;
   teacherUserId: string;
   payloadSummary?: ZoomMeetingSummary | null;
+  // UUID встречи Zoom — meeting_summary не принимает числовой id, поэтому при
+  // наличии UUID используем его; иначе фолбэк на числовой meetingId.
+  meetingUuid?: string | null;
 }): Promise<ProcessOutcome> {
-  const { sessionId, meetingId, teacherUserId, payloadSummary } = params;
+  const { sessionId, meetingId, teacherUserId, payloadSummary, meetingUuid } = params;
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
@@ -472,7 +475,10 @@ export async function processSummaryForSession(params: {
   let finalText = text;
   if (!finalText) {
     try {
-      summary = await getMeetingSummary(teacherUserId, meetingId);
+      // UUID предпочтительнее: meeting_summary не принимает числовой id. Если
+      // UUID нет (старые занятия) — пробуем числовой meetingId как фолбэк.
+      const summaryId = meetingUuid ?? meetingId;
+      summary = await getMeetingSummary(teacherUserId, summaryId);
     } catch (err) {
       await prisma.session.update({
         where: { id: sessionId },
