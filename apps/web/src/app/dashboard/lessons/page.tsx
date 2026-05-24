@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, PlayCircle, ChevronRight } from 'lucide-react';
+import { Loader2, PlayCircle, ChevronRight, BookOpen, Layers } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getStreams,
@@ -18,6 +18,25 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function isUpcoming(lesson: Lesson): boolean {
   return lesson.status === 'planned';
+}
+
+/** Аккуратное пустое состояние: иконка + заголовок + пояснение. */
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof BookOpen;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center text-muted-foreground">
+      <Icon className="size-10 opacity-50" aria-hidden />
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-xs text-sm">{description}</p>
+    </div>
+  );
 }
 
 function StudentLessonsContent() {
@@ -103,13 +122,21 @@ function StudentLessonsContent() {
       )}
 
       {streams.length === 0 && !loadingData ? (
-        <p className="text-sm text-muted-foreground">Групп пока нет.</p>
+        <EmptyState
+          icon={Layers}
+          title="Групп пока нет"
+          description="Когда вас зачислят в группу, здесь появятся уроки."
+        />
       ) : loadingData ? (
         <div className="flex justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : lessons.length === 0 ? (
-        <p className="text-sm text-muted-foreground">В этой группе пока нет доступных уроков.</p>
+        <EmptyState
+          icon={BookOpen}
+          title="Уроков пока нет"
+          description="В этой группе ещё нет доступных уроков."
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {lessons.map((lesson, index) => {
