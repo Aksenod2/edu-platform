@@ -36,6 +36,14 @@ export function LessonItem({
 
   const canMarkDone = !!onMarkDone && lesson.status === 'planned';
 
+  // Путь на страницу урока. Для админа добавляем ?streamId — чтобы View Mode урока
+  // открылся в контексте конкретного занятия (статус/запись/итоги/статистика по
+  // потоку). Для студента ('/dashboard/lessons') контекст потока не нужен — не трогаем.
+  const href =
+    lessonBasePath === '/admin/lessons' && lesson.streamId
+      ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
+      : `${lessonBasePath}/${lesson.id}`;
+
   const handleMarkDone = async () => {
     if (!onMarkDone) return;
     setMarking(true);
@@ -50,11 +58,11 @@ export function LessonItem({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`${lessonBasePath}/${lesson.id}`)}
+      onClick={() => router.push(href)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          router.push(`${lessonBasePath}/${lesson.id}`);
+          router.push(href);
         }
       }}
       className={cn(

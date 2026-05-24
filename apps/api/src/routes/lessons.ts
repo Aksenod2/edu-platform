@@ -1395,6 +1395,65 @@ export async function lessonRoutes(app: FastifyInstance) {
     };
   });
 
+  // GET /lessons/:id/analytics?streamId=... — аналитика сдач по ЗАНЯТИЮ (admin).
+  // Для View Mode урока: сколько в потоке зачислено, сколько материализовано
+  // назначений (StudentAssignment) и их распределение по статусам. Считаем по
+  // конкретной Session (lessonId=:id × streamId).
+  app.get('/lessons/:id/analytics', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { streamId } = request.query as { streamId?: string };
+
+    if (!streamId || !streamId.trim()) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+
+    // Занятие = Session(streamId × lessonId). Нет Session — нет аналитики.
+    const session = await prisma.session.findUnique({
+      where: { streamId_lessonId: { streamId, lessonId: id } },
+      select: { id: true },
+    });
+    if (!session) {
+      return reply.status(404).send({ error: 'Занятие не найдено' });
+    }
+
+    // Знаменатель — состав потока (StreamEnrollment), а не материализованные
+    // назначения: назначения могут быть ещё не созданы для всех зачисленных.
+    const enrolledCount = await prisma.streamEnrollment.count({ where: { streamId } });
+
+    // Распределение материализованных StudentAssignment этого занятия по статусам.
+    const grouped = await prisma.studentAssignment.groupBy({
+      by: ['status'],
+      where: { sessionId: session.id },
+      _count: { _all: true },
+    });
+
+    const byStatus = { assigned: 0, submitted: 0, reviewed: 0, needs_revision: 0 };
+    for (const g of grouped) {
+      // status — enum StudentAssignmentStatus, совпадает с ключами byStatus.
+      byStatus[g.status as keyof typeof byStatus] = g._count._all;
+    }
+
+    const total =
+      byStatus.assigned + byStatus.submitted + byStatus.reviewed + byStatus.needs_revision;
+    // «Сдал» = всё, кроме ещё не сданного (assigned): submitted/reviewed/needs_revision.
+    const submittedCount = byStatus.submitted + byStatus.reviewed + byStatus.needs_revision;
+    // Не сдали — относительно состава потока (а не материализованных назначений).
+    const notSubmittedCount = Math.max(0, enrolledCount - submittedCount);
+    // Ждут проверки — те, кто сдал и ещё не проверен.
+    const pendingReviewCount = byStatus.submitted;
+
+    return {
+      sessionId: session.id,
+      streamId,
+      enrolledCount,
+      total,
+      byStatus,
+      submittedCount,
+      notSubmittedCount,
+      pendingReviewCount,
+    };
+  });
+
   // DELETE /lessons/:id/sessions/:streamId — снять урок с расписания потока (admin).
   // Удаляет Session (и каскадно её StudentAssignment). Сам блок-урок и его место в
   // программе при этом не трогаются.

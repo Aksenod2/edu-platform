@@ -15,7 +15,6 @@ import {
   ClipboardList,
   ClipboardCheck,
   MessagesSquare,
-  FolderOpen,
   Wallet,
   Banknote,
   User,
@@ -110,7 +109,6 @@ const STUDENT_NAV: NavGroup[] = [
       { label: 'Расписание', href: '/dashboard/schedule', icon: Calendar },
       { label: 'Уроки', href: '/dashboard/lessons', icon: BookOpen },
       { label: 'Задания', href: '/dashboard/assignments', icon: ClipboardList },
-      { label: 'Материалы', href: '/dashboard/materials', icon: FolderOpen },
     ],
   },
   {

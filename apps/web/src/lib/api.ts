@@ -991,6 +991,39 @@ export async function updateLessonSummary(
   });
 }
 
+// Аналитика сдач по ЗАНЯТИЮ (Session = lessonId × streamId) для View Mode урока.
+// Все счётчики плоские. byStatus — распределение материализованных StudentAssignment
+// по статусам; total — всего материализованных назначений; enrolledCount — состав
+// потока (знаменатель). submittedCount = submitted+reviewed+needs_revision;
+// notSubmittedCount = enrolledCount − submittedCount; pendingReviewCount = submitted.
+export interface LessonAnalytics {
+  sessionId: string;
+  streamId: string;
+  enrolledCount: number;
+  total: number;
+  byStatus: {
+    assigned: number;
+    submitted: number;
+    reviewed: number;
+    needs_revision: number;
+  };
+  submittedCount: number;
+  notSubmittedCount: number;
+  pendingReviewCount: number;
+}
+
+// Получить аналитику сдач по занятию урока в конкретном потоке (только admin).
+export async function getLessonAnalytics(
+  accessToken: string,
+  lessonId: string,
+  streamId: string,
+): Promise<LessonAnalytics> {
+  const qs = new URLSearchParams({ streamId }).toString();
+  return request(`/lessons/${lessonId}/analytics?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Список занятий урока по всем потокам (где и когда он запланирован).
 export async function getLessonSessions(
   accessToken: string,

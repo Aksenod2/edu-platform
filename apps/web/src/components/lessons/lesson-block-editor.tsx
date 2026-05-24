@@ -91,7 +91,15 @@ function lessonToForm(lesson: LessonBlock): FormState {
 
 // Полноценный редактор урока-БЛОКА (копилка): видео, материалы, преподаватели,
 // свёрнутое задание. Расписание (Session потока) здесь НЕ показываем.
-export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
+export function LessonBlockEditor({
+  lessonId,
+  // Куда вернуться после «Сохранить» — обычно View Mode того же урока.
+  // По умолчанию — список уроков (на случай standalone-использования).
+  backHref = '/admin/lessons',
+}: {
+  lessonId: string;
+  backHref?: string;
+}) {
   const { accessToken } = useAuth();
   const router = useRouter();
 
@@ -181,10 +189,10 @@ export function LessonBlockEditor({ lessonId }: { lessonId: string }) {
         assignmentTags: form.assignmentTags,
         assignmentMaterials: form.assignmentMaterials,
       });
-      // После сохранения закрываем страницу — возврат к списку уроков. Видео,
+      // После сохранения возвращаемся во View Mode того же урока (backHref). Видео,
       // материалы, расписание и выдача ДЗ сохраняются отдельными действиями.
       toast.success('Урок сохранён');
-      router.push('/admin/lessons');
+      router.push(backHref);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
