@@ -21,6 +21,7 @@ import {
   User,
   Settings,
   Video,
+  FlaskConical,
   LogOut,
   ChevronsUpDown,
   type LucideIcon,
@@ -95,6 +96,7 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
       { label: 'Интеграция Zoom', href: '/admin/system/zoom', icon: Video },
+      { label: 'Эксперимент', href: '/admin/experiment', icon: FlaskConical },
     ],
   },
 ];
