@@ -26,15 +26,26 @@ vi.mock('../zoom.js', () => ({
 
 import {
   pickMainRecording,
+  pickTranscriptFile,
+  parseVttToText,
   buildSummaryText,
   processRecordingForSession,
+  processSummaryForSession,
+  processTranscriptForSession,
   markRecordingPending,
+  markSummaryPending,
+  markTranscriptPending,
   sweepFailedRecordings,
 } from '../zoom-recording.js';
 import type { ZoomRecordingFile } from '../zoom.js';
 import { prisma } from '@platform/db';
 import { uploadStream } from '../s3.js';
-import { canCreateMeeting, getMeetingRecordings, getZoomAccessToken } from '../zoom.js';
+import {
+  canCreateMeeting,
+  getMeetingRecordings,
+  getMeetingSummary,
+  getZoomAccessToken,
+} from '../zoom.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
@@ -739,5 +750,382 @@ describe('sweepFailedRecordings — фоновый свипер недокача
 
     // Первое глотнули, второе обработали.
     expect(started).toBe(1);
+  });
+});
+
+describe('pickTranscriptFile — выбор файла транскрипта', () => {
+  it('пустой/отсутствующий список → null', () => {
+    expect(pickTranscriptFile(null)).toBeNull();
+    expect(pickTranscriptFile(undefined)).toBeNull();
+    expect(pickTranscriptFile([])).toBeNull();
+  });
+
+  it('предпочитает recording_type=audio_transcript с download_url', () => {
+    const files: ZoomRecordingFile[] = [
+      { file_type: 'MP4', recording_type: 'shared_screen_with_speaker_view', download_url: 'v' },
+      { file_type: 'TRANSCRIPT', recording_type: 'audio_transcript', download_url: 't' },
+    ];
+    expect(pickTranscriptFile(files)?.download_url).toBe('t');
+  });
+
+  it('фолбэк на file_type=TRANSCRIPT, если recording_type не помечен', () => {
+    const files: ZoomRecordingFile[] = [
+      { file_type: 'TRANSCRIPT', recording_type: 'chat_file', download_url: 'tt' },
+    ];
+    expect(pickTranscriptFile(files)?.download_url).toBe('tt');
+  });
+
+  it('транскрипт без download_url не выбирается', () => {
+    const files: ZoomRecordingFile[] = [
+      { file_type: 'TRANSCRIPT', recording_type: 'audio_transcript' },
+    ];
+    expect(pickTranscriptFile(files)).toBeNull();
+  });
+
+  it('нет транскрипта среди файлов → null', () => {
+    const files: ZoomRecordingFile[] = [
+      { file_type: 'MP4', recording_type: 'shared_screen_with_speaker_view', download_url: 'v' },
+    ];
+    expect(pickTranscriptFile(files)).toBeNull();
+  });
+});
+
+describe('parseVttToText — очистка WebVTT в чистый текст', () => {
+  it('убирает заголовок WEBVTT, номера-кью и таймкоды, склеивает реплики', () => {
+    const vtt = [
+      'WEBVTT',
+      '',
+      '1',
+      '00:00:01.000 --> 00:00:03.000',
+      'Привет, начнём урок.',
+      '',
+      '2',
+      '00:00:03.500 --> 00:00:06.000',
+      'Сегодня тема — дроби.',
+      '',
+    ].join('\n');
+    expect(parseVttToText(vtt)).toBe('Привет, начнём урок.\nСегодня тема — дроби.');
+  });
+
+  it('режет BOM и заголовок WEBVTT с суффиксом', () => {
+    const vtt = '\uFEFFWEBVTT - Some Title\n\n00:00:00.000 --> 00:00:01.000\nТекст\n';
+    expect(parseVttToText(vtt)).toBe('Текст');
+  });
+
+  it('пропускает NOTE/STYLE-блоки', () => {
+    const vtt = [
+      'WEBVTT',
+      '',
+      'NOTE это комментарий',
+      '',
+      '00:00:00.000 --> 00:00:01.000',
+      'Реплика',
+    ].join('\n');
+    expect(parseVttToText(vtt)).toBe('Реплика');
+  });
+
+  it('схлопывает повтор подряд одинаковых реплик', () => {
+    const vtt = [
+      'WEBVTT',
+      '',
+      '00:00:00.000 --> 00:00:01.000',
+      'Эхо',
+      '',
+      '00:00:01.000 --> 00:00:02.000',
+      'Эхо',
+    ].join('\n');
+    expect(parseVttToText(vtt)).toBe('Эхо');
+  });
+
+  it('CRLF-переводы строк обрабатываются как LF', () => {
+    const vtt = 'WEBVTT\r\n\r\n00:00:00.000 --> 00:00:01.000\r\nСтрока\r\n';
+    expect(parseVttToText(vtt)).toBe('Строка');
+  });
+
+  it('нет значимого текста → пустая строка', () => {
+    expect(parseVttToText('WEBVTT\n\n')).toBe('');
+  });
+});
+
+describe('processTranscriptForSession — забор транскрипта (Ф1.3)', () => {
+  const params = {
+    sessionId: 'sess-1',
+    meetingId: 'mtg-1',
+    teacherUserId: 'teacher-1',
+    retryDelaysMs: [0, 0],
+    sleep: () => Promise.resolve(),
+  };
+
+  const transcriptFiles: ZoomRecordingFile[] = [
+    {
+      file_type: 'TRANSCRIPT',
+      recording_type: 'audio_transcript',
+      download_url: 'https://zoom.us/rec/transcript.vtt',
+    },
+  ];
+
+  const VTT = 'WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\nЗдравствуйте\n';
+
+  // Успешный fetch с телом-потоком из строки VTT (web ReadableStream).
+  function stubFetchVtt(): () => void {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(VTT));
+            controller.close();
+          },
+        }),
+      }),
+    ) as never;
+    return () => {
+      globalThis.fetch = original;
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetToken.mockResolvedValue('access-token');
+    mockGetRecordings.mockResolvedValue([]);
+    mockUpload.mockImplementation((_body, key) => Promise.resolve({ key } as never));
+  });
+
+  it('нет Session → выход без изменений', async () => {
+    db.session.findUnique.mockResolvedValue(null);
+    await processTranscriptForSession(params);
+    expect(db.session.updateMany).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('транскрипт уже выгружен (transcriptVttKey есть) → идемпотентный ready, без скачивания', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: 'transcript/old.vtt' });
+    await processTranscriptForSession(params);
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { transcriptStatus: 'ready', transcriptError: null },
+    });
+    expect(db.session.updateMany).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('нет файла транскрипта → выход БЕЗ застолбления (статус не ломаем)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    mockGetRecordings.mockResolvedValue([]);
+    await processTranscriptForSession({ ...params, payloadFiles: [] });
+    // Статус не трогали (claim не делали), ничего не качали.
+    expect(db.session.updateMany).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('застолбление не удалось (count===0) → выход без скачивания', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 0 });
+    await processTranscriptForSession({ ...params, payloadFiles: transcriptFiles });
+    // Условие claim именно по transcript-полям.
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'sess-1',
+        transcriptVttKey: null,
+        OR: [
+          { transcriptStatus: null },
+          { transcriptStatus: { notIn: ['processing', 'ready'] } },
+        ],
+      },
+      data: { transcriptStatus: 'processing', transcriptError: null },
+    });
+    expect(mockGetToken).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('успех: качает .vtt, заливает .vtt + .txt в S3, ставит ready с ключами', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    const restore = stubFetchVtt();
+    try {
+      await processTranscriptForSession({ ...params, payloadFiles: transcriptFiles });
+    } finally {
+      restore();
+    }
+
+    // Залили оба файла: .vtt (сырой) и .txt (очищенный).
+    expect(mockUpload).toHaveBeenCalledTimes(2);
+    const keys = mockUpload.mock.calls.map((c) => c[1] as string);
+    const vttKey = keys.find((k) => k.endsWith('.vtt'));
+    const txtKey = keys.find((k) => k.endsWith('.txt'));
+    expect(vttKey).toMatch(/^transcript\/sess-1-.+\.vtt$/);
+    expect(txtKey).toMatch(/^transcript\/sess-1-.+\.txt$/);
+
+    // Финальный апдейт: ключи + ready.
+    const readyCall = db.session.update.mock.calls.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (c: any) => c[0]?.data?.transcriptStatus === 'ready',
+    );
+    expect(readyCall).toBeTruthy();
+    expect(readyCall[0].data.transcriptVttKey).toBe(vttKey);
+    expect(readyCall[0].data.transcriptTxtKey).toBe(txtKey);
+    expect(readyCall[0].data.transcriptError).toBeNull();
+  });
+
+  it('сырой .vtt и очищенный .txt: .txt не содержит таймкодов и заголовка', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    const captured: Record<string, string> = {};
+    mockUpload.mockImplementation((body, key) => {
+      // body — Readable из одного Buffer; считаем синхронно через on('data') не нужно —
+      // в реализации это Readable.from([Buffer]); прочитаем через events.
+      return new Promise((resolve) => {
+        const chunks: Buffer[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = body as any;
+        r.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+        r.on('end', () => {
+          captured[key as string] = Buffer.concat(chunks).toString('utf8');
+          resolve({ key } as never);
+        });
+      });
+    });
+    const restore = stubFetchVtt();
+    try {
+      await processTranscriptForSession({ ...params, payloadFiles: transcriptFiles });
+    } finally {
+      restore();
+    }
+
+    const vttKey = Object.keys(captured).find((k) => k.endsWith('.vtt'))!;
+    const txtKey = Object.keys(captured).find((k) => k.endsWith('.txt'))!;
+    // Сырой .vtt сохранён как есть (с заголовком WEBVTT).
+    expect(captured[vttKey]).toContain('WEBVTT');
+    // Очищенный .txt — только реплика, без заголовка/таймкодов/номера.
+    expect(captured[txtKey]).toBe('Здравствуйте');
+  });
+
+  it('ошибка скачивания → failed с безопасным текстом (без сырых деталей)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    const original = globalThis.fetch;
+    // Всегда 500 → исчерпали ретраи → SafeRecordingError (HTTP-код), без URL.
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 500 })) as never;
+    try {
+      await expect(
+        processTranscriptForSession({ ...params, payloadFiles: transcriptFiles }),
+      ).rejects.toThrow();
+    } finally {
+      globalThis.fetch = original;
+    }
+    const failCall = db.session.update.mock.calls.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (c: any) => c[0]?.data?.transcriptStatus === 'failed',
+    );
+    expect(failCall).toBeTruthy();
+    expect(failCall[0].data.transcriptError).toBe('Не удалось скачать запись Zoom (HTTP 500)');
+    expect(failCall[0].data.transcriptError).not.toContain('zoom.us');
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('две параллельные доставки: только одна качает (вторая видит count===0)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.update.mockResolvedValue({});
+    db.session.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const restore = stubFetchVtt();
+    try {
+      await Promise.all([
+        processTranscriptForSession({ ...params, payloadFiles: transcriptFiles }),
+        processTranscriptForSession({ ...params, payloadFiles: transcriptFiles }),
+      ]);
+    } finally {
+      restore();
+    }
+    // Обе застолбили, но залили транскрипт ровно один раз (2 файла = одна обработка).
+    expect(db.session.updateMany).toHaveBeenCalledTimes(2);
+    expect(mockUpload).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('markSummaryPending / markTranscriptPending — пометка «готовится» на meeting.ended', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it('markSummaryPending: атомарный updateMany, не трогает ручной ввод (summarySource=manual)', async () => {
+    await markSummaryPending({ sessionId: 'sess-1' });
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'sess-1',
+        NOT: { summarySource: 'manual' },
+        OR: [
+          { summaryStatus: null },
+          { summaryStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+        ],
+      },
+      data: { summaryStatus: 'pending' },
+    });
+    expect(db.session.update).not.toHaveBeenCalled();
+  });
+
+  it('markTranscriptPending: ставит pending + transcriptRequestedAt, claim по transcriptVttKey IS NULL', async () => {
+    const now = new Date('2026-05-24T10:00:00Z');
+    await markTranscriptPending({ sessionId: 'sess-1', now });
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'sess-1',
+        transcriptVttKey: null,
+        OR: [
+          { transcriptStatus: null },
+          { transcriptStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+        ],
+      },
+      data: { transcriptStatus: 'pending', transcriptRequestedAt: now },
+    });
+    expect(db.session.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('processSummaryForSession — статус итогов (summaryStatus)', () => {
+  const mockGetSummary = vi.mocked(getMeetingSummary);
+  const params = { sessionId: 'sess-1', meetingId: 'mtg-1', teacherUserId: 'teacher-1' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.update.mockResolvedValue({});
+    mockGetSummary.mockResolvedValue(null);
+  });
+
+  it('успех с текстом → summary + summarySource=zoom_ai + summaryStatus=ready', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    await processSummaryForSession({
+      ...params,
+      payloadSummary: { summary_overview: 'Итог урока' },
+    });
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { summary: 'Итог урока', summarySource: 'zoom_ai', summaryStatus: 'ready' },
+    });
+  });
+
+  it('резюме недоступно (пусто и API=null) → summaryStatus=failed (без перетирания summary)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    await processSummaryForSession({ ...params, payloadSummary: null });
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { summaryStatus: 'failed' },
+    });
+  });
+
+  it('ручной ввод (summarySource=manual) → не трогаем (ни summary, ни статус)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: 'manual' });
+    await processSummaryForSession({
+      ...params,
+      payloadSummary: { summary_overview: 'Авто' },
+    });
+    expect(db.session.update).not.toHaveBeenCalled();
   });
 });

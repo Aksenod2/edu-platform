@@ -54,8 +54,11 @@ function failedSession() {
     videoKey: null,
     summary: null,
     summarySource: null,
+    summaryStatus: 'failed',
     recordingStatus: 'failed',
     recordingError: 'Не удалось скачать запись Zoom (HTTP 401)',
+    transcriptStatus: 'failed',
+    transcriptError: 'Не удалось обработать транскрипт Zoom',
   };
 }
 
@@ -89,6 +92,61 @@ describe('projectLesson — recordingError только админам (M4)', ()
     expect(pAdmin.recordingError).toBeNull();
     expect(pStudent.recordingStatus).toBeNull();
     expect(pStudent.recordingError).toBeNull();
+  });
+});
+
+describe('projectLesson — гейтинг транскрипта (Ф1.4): студенту transcript* ИСКЛЮЧЕНЫ', () => {
+  it('canSeeTranscript=true (препод/админ): поля transcriptStatus/transcriptError присутствуют', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      failedSession() as any,
+      true, // isAdmin
+      true, // canSeeTranscript
+    );
+    expect('transcriptStatus' in p).toBe(true);
+    expect('transcriptError' in p).toBe(true);
+    expect(p.transcriptStatus).toBe('failed');
+    expect(p.transcriptError).toBe('Не удалось обработать транскрипт Zoom');
+  });
+
+  it('canSeeTranscript=false (студент): ключей transcriptStatus/transcriptError НЕТ в объекте (исключены, не занулены)', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      failedSession() as any,
+      false, // isAdmin (студент)
+      false, // canSeeTranscript
+    );
+    // КЛЮЧЕВОЕ требование безопасности: поля отсутствуют целиком.
+    expect('transcriptStatus' in p).toBe(false);
+    expect('transcriptError' in p).toBe(false);
+    // Сырых ключей S3 транскрипта в проекции нет НИКОГДА (ни для кого).
+    expect('transcriptVttKey' in p).toBe(false);
+    expect('transcriptTxtKey' in p).toBe(false);
+  });
+
+  it('summaryStatus виден всем (это про готовность итогов, не про доступ к транскрипту)', () => {
+    const pStudent = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      failedSession() as any,
+      false,
+      false,
+    );
+    expect(pStudent.summaryStatus).toBe('failed');
+  });
+
+  it('по умолчанию canSeeTranscript наследует isAdmin: admin-only роуты видят транскрипт', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = projectLesson(block() as any, 'stream-1', failedSession() as any);
+    expect('transcriptStatus' in p).toBe(true);
   });
 });
 

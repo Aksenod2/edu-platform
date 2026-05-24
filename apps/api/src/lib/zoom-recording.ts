@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { prisma } from '@platform/db';
 import {
   canCreateMeeting,
@@ -276,6 +277,58 @@ export async function markRecordingPending(params: { sessionId: string }): Promi
   });
 }
 
+// Помечает итоги занятия ОЖИДАЕМЫМИ (summaryStatus='pending') на meeting.ended.
+// Смысл тот же, что у markRecordingPending: между концом созвона и приходом
+// meeting.summary_completed AI Companion обрабатывает резюме минуты — без пометки
+// UI показывал бы ложное «итогов нет».
+//
+// БЕЗОПАСНОСТЬ/ИДЕМПОТЕНТНОСТЬ (атомарно через WHERE updateMany):
+//   - НЕ трогаем ручной ввод итогов (summarySource='manual') — там свой источник;
+//   - переводим в pending только если статус не входит в
+//     ['processing','ready','pending','failed'] (не перетираем идущую/готовую/
+//     упавшую/уже помеченную обработку).
+export async function markSummaryPending(params: { sessionId: string }): Promise<void> {
+  const { sessionId } = params;
+  await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      NOT: { summarySource: 'manual' },
+      OR: [
+        { summaryStatus: null },
+        { summaryStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+      ],
+    },
+    data: { summaryStatus: 'pending' },
+  });
+}
+
+// Помечает транскрипт занятия ОЖИДАЕМЫМ (transcriptStatus='pending') на meeting.ended
+// и фиксирует transcriptRequestedAt=now() — момент запроса, от которого считается
+// увеличенный таймаут до 'failed' (транскрипт у Zoom готовится ДОЛЬШЕ записи, и
+// событие recording.transcript_completed приходит заметно позже).
+//
+// Атомарно через WHERE updateMany: переводим в pending только когда ключа .vtt ещё
+// нет (transcriptVttKey IS NULL) и статус не входит в
+// ['processing','ready','pending','failed'] (не перетираем идущую/готовую/упавшую/
+// уже помеченную обработку).
+export async function markTranscriptPending(params: {
+  sessionId: string;
+  now?: Date;
+}): Promise<void> {
+  const { sessionId, now = new Date() } = params;
+  await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      transcriptVttKey: null,
+      OR: [
+        { transcriptStatus: null },
+        { transcriptStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
+      ],
+    },
+    data: { transcriptStatus: 'pending', transcriptRequestedAt: now },
+  });
+}
+
 // Собирает текст резюме из объекта Zoom (overview + details). details может быть
 // массивом секций { label?, summary? } или строкой — приводим к читаемому тексту.
 export function buildSummaryText(summary: ZoomMeetingSummary | null): string | null {
@@ -311,6 +364,9 @@ export function buildSummaryText(summary: ZoomMeetingSummary | null): string | n
 // Обрабатывает событие meeting.summary_completed: пишет Session.summary из AI-резюме.
 // Идемпотентность/приоритет ручного ввода: если summarySource === 'manual' — НЕ
 // перезатираем (учитель сам ввёл итоги). payloadSummary — резюме из вебхука, если есть.
+// Статусы (summaryStatus): успех с текстом → 'ready'; недоступно/пусто → 'failed'
+// (чтобы UI показал «итоги не получены», а не вечный pending). Ручной ввод итогов
+// статус НЕ трогаем (там свой источник истины — summarySource='manual').
 export async function processSummaryForSession(params: {
   sessionId: string;
   meetingId: string;
@@ -325,7 +381,7 @@ export async function processSummaryForSession(params: {
   });
   if (!session) return;
 
-  // Ручной ввод приоритетнее автособранного — не перетираем.
+  // Ручной ввод приоритетнее автособранного — не перетираем (и статус не трогаем).
   if (session.summarySource === 'manual') return;
 
   let summary = payloadSummary ?? null;
@@ -338,12 +394,244 @@ export async function processSummaryForSession(params: {
     finalText = buildSummaryText(summary);
   }
 
-  if (!finalText) return; // резюме недоступно — нечего писать
+  if (!finalText) {
+    // Резюме недоступно/пусто — фиксируем 'failed', чтобы UI не висел в pending.
+    // Текст summary не трогаем (могло быть проставлено ранее иным путём).
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { summaryStatus: 'failed' },
+    });
+    return;
+  }
 
   await prisma.session.update({
     where: { id: sessionId },
-    data: { summary: finalText, summarySource: 'zoom_ai' },
+    data: { summary: finalText, summarySource: 'zoom_ai', summaryStatus: 'ready' },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Транскрипт занятия (.VTT → .TXT). Дословная расшифровка созвона из Zoom Cloud
+// Recording. В отличие от записи (видео) и итогов (AI-резюме) — это отдельный
+// файл-транскрипт (recording_type='audio_transcript' / file_type='TRANSCRIPT').
+// ---------------------------------------------------------------------------
+
+// Выбирает файл транскрипта из списка файлов записи Zoom: предпочитаем
+// recording_type==='audio_transcript', иначе file_type==='TRANSCRIPT', и в любом
+// случае требуем download_url (без ссылки скачивать нечего). null, если нет.
+export function pickTranscriptFile(
+  files: ZoomRecordingFile[] | undefined | null,
+): ZoomRecordingFile | null {
+  if (!files || files.length === 0) return null;
+
+  const byRecordingType = files.find(
+    (f) => f.recording_type === 'audio_transcript' && f.download_url,
+  );
+  if (byRecordingType) return byRecordingType;
+
+  const byFileType = files.find(
+    (f) => (f.file_type ?? '').toUpperCase() === 'TRANSCRIPT' && f.download_url,
+  );
+  return byFileType ?? null;
+}
+
+// Парсит WebVTT в чистый текст реплик: убирает заголовок WEBVTT (и NOTE/STYLE/
+// REGION-блоки), номера-«кью» и строки таймкодов (вида 00:00:01.000 --> 00:00:03.000),
+// схлопывает дубли подряд (Zoom иногда повторяет реплику). Склеивает реплики через
+// перевод строки. Возвращает пустую строку, если значимого текста нет.
+export function parseVttToText(vtt: string): string {
+  // Нормализуем переводы строк; режем BOM в начале (Zoom иногда отдаёт UTF-8 BOM).
+  const normalized = vtt.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+
+  // Строка таймкода кью: "00:00:01.000 --> 00:00:03.000" (опц. позиционные настройки).
+  const timecodeRe = /-->/;
+  // Строка-номер кью (целое число, иногда с пробелами).
+  const cueNumberRe = /^\d+$/;
+
+  const out: string[] = [];
+  let prev: string | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    // Заголовок WEBVTT (возможно с суффиксом после пробела).
+    if (/^WEBVTT\b/.test(line)) continue;
+    // Метаданные/служебные блоки.
+    if (/^(NOTE|STYLE|REGION)\b/.test(line)) continue;
+    if (timecodeRe.test(line)) continue;
+    if (cueNumberRe.test(line)) continue;
+
+    // Дедуп идущих подряд одинаковых реплик.
+    if (line === prev) continue;
+    out.push(line);
+    prev = line;
+  }
+
+  return out.join('\n').trim();
+}
+
+// Заливает текстовый контент в S3 по заданному ключу через стримовую загрузку
+// (uploadStream принимает Readable — оборачиваем строку в поток). Возвращает ключ.
+async function uploadTextToS3(
+  content: string,
+  key: string,
+  contentType: string,
+): Promise<string> {
+  const stream = Readable.from([Buffer.from(content, 'utf8')]);
+  const uploaded = await uploadStream(stream, key, contentType);
+  return uploaded.key;
+}
+
+// Обрабатывает событие recording.transcript_completed (а также фолбэк-попытку на
+// recording.completed, если транскрипт уже есть в recording_files): скачивает .vtt,
+// заливает сырой .vtt и очищенный .txt в S3, проставляет ключи и transcriptStatus.
+//
+// ПОВЕДЕНИЕ:
+//   - Если подходящего файла транскрипта нет (часто на recording.completed —
+//     транскрипт приходит позже) — выходим БЕЗ изменения статуса (нечего тянуть).
+//   - Claim атомарно (анти-дабл-даунлоад): updateMany WHERE transcriptVttKey IS NULL
+//     и transcriptStatus NOT IN ('processing','ready') → set 'processing'. Идемпотентно:
+//     повторная доставка увидит count===0 и выйдет.
+//   - Скачивание тем же fetchRecordingStream (анти-SSRF, ?access_token, ретраи).
+//   - Успех → transcriptVttKey/transcriptTxtKey + transcriptStatus='ready'.
+//   - Ошибка → transcriptStatus='failed' + безопасный transcriptError (без сырых
+//     URL/тел), как в записи. Бросаем наружу (вызывающий fire-and-forget ловит/логирует).
+export async function processTranscriptForSession(params: {
+  sessionId: string;
+  meetingId: string;
+  teacherUserId: string;
+  payloadFiles?: ZoomRecordingFile[] | null;
+  // download_token из вебхука (короткоживущий токен для скачивания файлов события).
+  downloadToken?: string | null;
+  retryDelaysMs?: number[];
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const {
+    sessionId,
+    meetingId,
+    teacherUserId,
+    payloadFiles,
+    downloadToken,
+    retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
+    sleep = defaultSleep,
+  } = params;
+
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { id: true, transcriptVttKey: true },
+  });
+  if (!session) return;
+
+  // Транскрипт уже выгружен ранее — повторно не качаем (идемпотентность).
+  if (session.transcriptVttKey) {
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { transcriptStatus: 'ready', transcriptError: null },
+    });
+    return;
+  }
+
+  // Сначала ищем файл транскрипта в payload; если его там нет — спросим API Zoom.
+  // ВАЖНО: проверку наличия файла делаем ДО claim, чтобы на recording.completed
+  // (где транскрипта обычно ещё нет) не «застолбить» статус впустую и не сломать
+  // последующую обработку recording.transcript_completed.
+  let files = payloadFiles ?? [];
+  let transcriptFile = pickTranscriptFile(files);
+  if (!transcriptFile) {
+    files = await getMeetingRecordings(teacherUserId, meetingId);
+    transcriptFile = pickTranscriptFile(files);
+  }
+  if (!transcriptFile || !transcriptFile.download_url) {
+    // Нечего тянуть (транскрипт ещё не готов / не включён) — статус НЕ ломаем.
+    return;
+  }
+
+  // Атомарное застолбление обработки (анти-дабл-даунлоад) — как у записи.
+  const claimed = await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      transcriptVttKey: null,
+      OR: [
+        { transcriptStatus: null },
+        { transcriptStatus: { notIn: ['processing', 'ready'] } },
+      ],
+    },
+    data: { transcriptStatus: 'processing', transcriptError: null },
+  });
+  if (claimed.count === 0) {
+    // Другая доставка уже взяла транскрипт в работу (или успела выгрузить) — выходим.
+    return;
+  }
+
+  try {
+    const token = downloadToken ?? (await getZoomAccessToken(teacherUserId));
+
+    // Скачиваем .vtt с авто-ретраем транзиентного сбоя (файл может «доезжать» по CDN).
+    let body: ReadableStream | null = null;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        body = await fetchRecordingStream(transcriptFile.download_url, token);
+        break;
+      } catch (err) {
+        if (isTransientDownloadError(err) && attempt < retryDelaysMs.length) {
+          await sleep(retryDelaysMs[attempt]);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    // Транскрипт небольшой — буферизуем целиком, чтобы и залить сырой .vtt, и
+    // распарсить в .txt. (Записи Zoom стримятся, а текст расшифровки умещается в память.)
+    const vttText = await streamToString(body as ReadableStream);
+    const txtText = parseVttToText(vttText);
+
+    const uuid = randomUUID();
+    const vttKey = `transcript/${sessionId}-${uuid}.vtt`;
+    const txtKey = `transcript/${sessionId}-${uuid}.txt`;
+
+    const savedVttKey = await uploadTextToS3(vttText, vttKey, 'text/vtt; charset=utf-8');
+    const savedTxtKey = await uploadTextToS3(txtText, txtKey, 'text/plain; charset=utf-8');
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        transcriptVttKey: savedVttKey,
+        transcriptTxtKey: savedTxtKey,
+        transcriptStatus: 'ready',
+        transcriptError: null,
+      },
+    });
+  } catch (err) {
+    // В transcriptError пишем ТОЛЬКО обобщённый текст (без сырых URL/тел/хостов).
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { transcriptStatus: 'failed', transcriptError: safeTranscriptErrorMessage(err) },
+    });
+    throw err;
+  }
+}
+
+// Текст для transcriptError: для «безопасных» ошибок (SafeRecordingError, в т.ч.
+// HTTP-код скачивания) — как есть; иначе обобщённо (системную ошибку с сырыми
+// деталями наружу не пускаем).
+function safeTranscriptErrorMessage(err: unknown): string {
+  if (err instanceof SafeRecordingError) return err.message;
+  return 'Не удалось обработать транскрипт Zoom';
+}
+
+// Считывает web ReadableStream целиком в строку (UTF-8). Используется для
+// транскрипта (небольшой текстовый файл — буферизация в память приемлема).
+async function streamToString(stream: ReadableStream): Promise<string> {
+  const nodeStream = Readable.fromWeb(stream as never);
+  const chunks: Buffer[] = [];
+  for await (const chunk of nodeStream) {
+    // chunk из Node Readable — Buffer (или string при объектном режиме, чего тут
+    // нет). Нормализуем к Buffer для корректной склейки UTF-8.
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8'));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 // Определяет teacherUserId (под чьим OAuth-токеном качать запись) тем же каскадом,

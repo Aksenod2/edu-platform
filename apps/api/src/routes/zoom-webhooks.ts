@@ -13,7 +13,10 @@ import { decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
+  processTranscriptForSession,
   markRecordingPending,
+  markSummaryPending,
+  markTranscriptPending,
 } from '../lib/zoom-recording.js';
 import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 
@@ -116,6 +119,11 @@ async function processEventAsync(
           // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
           // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
           await markRecordingPending({ sessionId: session.id });
+          // Итоги (AI Companion) и транскрипт тоже готовятся минуты после конца
+          // созвона — помечаем «готовится», чтобы UI не показывал ложное «нет данных».
+          // transcriptRequestedAt фиксируется внутри markTranscriptPending (для таймаута).
+          await markSummaryPending({ sessionId: session.id });
+          await markTranscriptPending({ sessionId: session.id });
 
           // Забор посещаемости из Zoom Report API. Отчёт участников готов НЕ сразу
           // после meeting.ended (Zoom агрегирует минуты), поэтому здесь это
@@ -152,6 +160,32 @@ async function processEventAsync(
           });
         } else if (event === 'recording.completed') {
           await processRecordingForSession({
+            sessionId: session.id,
+            meetingId,
+            teacherUserId,
+            payloadFiles: obj?.recording_files ?? null,
+            downloadToken,
+          });
+          // Фолбэк: транскрипт нередко уже лежит в recording_files того же события
+          // (или подъедет к моменту запроса API) — пробуем забрать. Если его ещё
+          // нет, processTranscriptForSession просто выйдет без изменения статуса.
+          // best-effort: ошибка транскрипта не должна валить обработку записи.
+          try {
+            await processTranscriptForSession({
+              sessionId: session.id,
+              meetingId,
+              teacherUserId,
+              payloadFiles: obj?.recording_files ?? null,
+              downloadToken,
+            });
+          } catch (err) {
+            app.log.error(
+              { err, sessionId: session.id },
+              'recording.completed: ошибка фолбэк-забора транскрипта (добёрёт transcript_completed)',
+            );
+          }
+        } else if (event === 'recording.transcript_completed') {
+          await processTranscriptForSession({
             sessionId: session.id,
             meetingId,
             teacherUserId,
@@ -307,6 +341,7 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
       event === 'meeting.started' ||
       event === 'meeting.ended' ||
       event === 'recording.completed' ||
+      event === 'recording.transcript_completed' ||
       event === 'meeting.summary_completed'
     ) {
       void processEventAsync(
