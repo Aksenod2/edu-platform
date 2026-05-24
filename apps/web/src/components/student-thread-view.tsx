@@ -276,8 +276,8 @@ export function StudentThreadView() {
                 <div key={entry.id}>
                   {showGroupHeader && (
                     <div className="mb-2 mt-3 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
-                      <HelpCircle className="size-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">
+                      <HelpCircle className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 truncate text-xs text-muted-foreground">
                         Вопросы по заданию: {entry.assignment?.title}
                       </span>
                     </div>
@@ -299,10 +299,10 @@ export function StudentThreadView() {
       <div className="border-t bg-card px-4 py-3">
         {/* Context banner */}
         {activeContext && (
-          <div className="mb-2 flex items-center justify-between rounded-md border bg-muted px-3 py-2">
-            <div className="flex items-center gap-2">
-              <HelpCircle className="size-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">
+          <div className="mb-2 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <HelpCircle className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
                 Вопрос по заданию: {activeContext.title}
               </span>
             </div>
@@ -310,7 +310,7 @@ export function StudentThreadView() {
               variant="ghost"
               size="icon-xs"
               onClick={clearActiveContext}
-              className="text-muted-foreground"
+              className="shrink-0 text-muted-foreground"
             >
               <X className="size-4" />
             </Button>
@@ -464,7 +464,7 @@ function MessageBubble({
   return (
     <div
       className={cn(
-        'flex max-w-[85%] items-end gap-2',
+        'flex min-w-0 max-w-[85%] items-end gap-2',
         showAuthor ? 'mt-4' : 'mt-1',
         isOwn ? 'flex-row-reverse self-end' : 'flex-row self-start',
       )}
@@ -558,9 +558,11 @@ function MessageBubble({
         </div>
 
         {entry.assignment && (
-          <Badge variant="secondary" className="mt-1 gap-1 font-normal">
-            <HelpCircle className="size-2.5" />
-            {entry.assignment.title.length > 30 ? entry.assignment.title.slice(0, 30) + '...' : entry.assignment.title}
+          <Badge variant="secondary" className="mt-1 max-w-full gap-1 font-normal">
+            <HelpCircle className="size-2.5 shrink-0" />
+            <span className="truncate">
+              {entry.assignment.title.length > 30 ? entry.assignment.title.slice(0, 30) + '...' : entry.assignment.title}
+            </span>
           </Badge>
         )}
       </div>
