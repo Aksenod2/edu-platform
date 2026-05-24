@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma, type Prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { requireRole, authenticate } from '../middleware/auth.js';
@@ -162,16 +162,27 @@ export async function paymentRoutes(app: FastifyInstance) {
           .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
       }
 
-      const created = await prisma.topUpRequest.create({
-        data: {
-          userId,
-          screenshotKey: uploaded.key,
-          claimedAmountKopecks,
-          note,
-          status: 'pending',
-        },
-        select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
-      });
+      let created;
+      try {
+        created = await prisma.topUpRequest.create({
+          data: {
+            userId,
+            screenshotKey: uploaded.key,
+            claimedAmountKopecks,
+            note,
+            status: 'pending',
+          },
+          select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
+        });
+      } catch (err) {
+        // Гонка проскочила findFirst-чек выше: частичный уникальный индекс
+        // "TopUpRequest_userId_pending_key" (WHERE status='pending') не дал создать
+        // вторую pending-заявку → P2002. Отдаём тот же 409, что и быстрый путь.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          return reply.status(409).send({ error: 'У вас уже есть заявка на рассмотрении' });
+        }
+        throw err;
+      }
 
       // Best-effort: уведомляем всех админов о новой заявке на пополнение.
       // Ошибка уведомления НЕ должна валить создание заявки (.catch как в других местах).

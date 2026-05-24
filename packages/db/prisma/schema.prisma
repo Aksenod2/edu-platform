@@ -569,6 +569,12 @@ model WalletTransaction {
 // Студент прикладывает скрин (screenshotKey в S3) и заявленную сумму; админ проверяет и
 // одобряет/отклоняет. ИДЕМПОТЕНТНОСТЬ: walletTransactionId @unique гарантирует, что по одной
 // заявке проводится НЕ БОЛЕЕ одной транзакции пополнения.
+//
+// АНТИ-СПАМ (M1): ровно одна заявка в статусе pending на пользователя — гарантируется
+// PARTIAL UNIQUE INDEX "TopUpRequest_userId_pending_key" ... WHERE status = 'pending'
+// (создаётся сырым SQL в миграции 20260704_topup_pending_unique, т.к. Prisma не умеет
+// partial unique в schema). Это страховка БД от TOCTOU-гонки двух параллельных запросов;
+// приложение дополнительно делает быстрый findFirst-чек и ловит P2002.
 model TopUpRequest {
   id                    String             @id @default(uuid())
   userId                String // студент-автор заявки

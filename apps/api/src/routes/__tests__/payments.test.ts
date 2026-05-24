@@ -4,35 +4,40 @@ import Fastify, { type FastifyInstance } from 'fastify';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
 
 // Мокаем prisma: только методы, которые вызывает paymentRoutes (DB-free).
-vi.mock('@platform/db', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
+// Prisma реэкспортируем настоящий — нужен для `err instanceof Prisma.PrismaClientKnownRequestError`.
+vi.mock('@platform/db', async () => {
+  const actual = await vi.importActual<typeof import('@platform/db')>('@platform/db');
+  return {
+    prisma: {
+      user: {
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      topUpRequest: {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      charge: {
+        findUnique: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      paymentSettings: { upsert: vi.fn(), findUnique: vi.fn() },
+      walletTransaction: { create: vi.fn() },
+      $transaction: vi.fn(),
     },
-    topUpRequest: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    charge: {
-      findUnique: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      findMany: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    paymentSettings: { upsert: vi.fn(), findUnique: vi.fn() },
-    walletTransaction: { create: vi.fn() },
-    $transaction: vi.fn(),
-  },
-}));
+    Prisma: actual.Prisma,
+  };
+});
 
 // Мокаем уведомления: проверяем факт fan-out админам, без реальной БД/почты/пуша.
 vi.mock('../../lib/notifications.js', () => ({
@@ -54,7 +59,7 @@ vi.mock('../../lib/s3.js', () => ({
 
 import multipart from '@fastify/multipart';
 import { paymentRoutes } from '../payments.js';
-import { prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { notifyMany } from '../../lib/notifications.js';
 import { deleteFile } from '../../lib/s3.js';
 import { signAccessToken } from '../../lib/jwt.js';
@@ -188,6 +193,31 @@ describe('POST /topup-requests', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('У вас уже есть заявка на рассмотрении');
     expect(db.topUpRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('409 — гонка: findFirst пуст, но create падает с P2002 (частичный уникальный индекс)', async () => {
+    // Быстрый findFirst-чек прошёл (нет pending), но параллельный запрос успел создать
+    // pending-заявку первым → БД-индекс TopUpRequest_userId_pending_key даёт P2002 на create.
+    db.topUpRequest.findFirst.mockResolvedValueOnce(null);
+    db.topUpRequest.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('У вас уже есть заявка на рассмотрении');
+    expect(db.topUpRequest.create).toHaveBeenCalledTimes(1);
   });
 
   it('400 — неверный mime файла (не изображение)', async () => {
