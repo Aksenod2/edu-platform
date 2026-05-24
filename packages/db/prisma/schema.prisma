@@ -302,6 +302,14 @@ model Session {
   summary         String? // итоги/конспект КОНКРЕТНОГО занятия потока (отдельно от Lesson.summary)
   summarySource   String? // источник summary: 'zoom_ai' | 'manual'
 
+  // Итоги + Транскрипт занятия (Ф1.2 + Ф2.6). Все поля nullable — фича аддитивна.
+  summaryStatus       String?   // статус итогов: none | pending | processing | ready | failed (строкой, без enum)
+  transcriptStatus    String?   // статус транскрипта: none | pending | processing | ready | failed
+  transcriptVttKey    String?   // ключ S3 для сырого .vtt транскрипта
+  transcriptTxtKey    String?   // ключ S3 для очищенного .txt транскрипта
+  transcriptError     String?   // текст ошибки забора транскрипта (для препода/админа)
+  transcriptRequestedAt DateTime? // когда запросили транскрипт (для увеличенного таймаута до failed — приходит позже записи)
+
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
