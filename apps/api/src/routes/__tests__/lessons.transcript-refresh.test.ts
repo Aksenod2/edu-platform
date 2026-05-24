@@ -157,9 +157,50 @@ describe('POST /lessons/:id/sessions/:streamId/refresh — единая подт
     expect(body.recording).toEqual({ ok: true });
     expect(body.summary).toEqual({ ok: true });
     expect(body.transcript.ok).toBe(false);
-    expect(body.transcript.reason).toBe('не удалось обновить транскрипт');
+    // Итоги/транскрипт: при реальной ошибке reason несёт ФАКТИЧЕСКИЙ текст (диагностика).
+    expect(body.transcript.reason).toBe('boom');
     // Посещаемость вернула мягкий отказ — пробрасываем её reason как есть.
     expect(body.attendance).toEqual({ ok: false, reason: 'отчёт ещё не готов' });
+  });
+
+  it('итоги/транскрипт: реальная ошибка Zoom (403) → reason несёт код статуса', async () => {
+    db.session.findFirst.mockResolvedValue(sessionOk());
+    // getMeetingSummary бросает Error с текстом, уже содержащим код статуса.
+    mockSummary.mockRejectedValueOnce(
+      new Error('Zoom вернул ошибку при получении резюме (403): scope missing'),
+    );
+    mockTranscript.mockRejectedValueOnce(
+      new Error('Zoom вернул ошибку при получении записей (403)'),
+    );
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/les-1/sessions/str-1/refresh',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.summary.ok).toBe(false);
+    expect(body.summary.reason).toContain('(403)');
+    expect(body.summary.reason).toBe('Zoom вернул ошибку при получении резюме (403): scope missing');
+    expect(body.transcript.ok).toBe(false);
+    expect(body.transcript.reason).toContain('(403)');
+  });
+
+  it('итоги/транскрипт: ошибка без текста → фолбэк на общий reason', async () => {
+    db.session.findFirst.mockResolvedValue(sessionOk());
+    // Error с пустым message — exposeError даёт пустую строку → фолбэк failReason.
+    mockSummary.mockRejectedValueOnce(new Error(''));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/les-1/sessions/str-1/refresh',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().summary).toEqual({ ok: false, reason: 'не удалось обновить итоги' });
   });
 
   it('преподаватель урока (НЕ админ) тоже может обновлять (право — препод урока ИЛИ админ)', async () => {

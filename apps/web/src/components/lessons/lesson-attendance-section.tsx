@@ -10,6 +10,7 @@ import {
   LogIn,
   Minus,
   RefreshCw,
+  Unlink,
   UserPlus,
   Users,
   Video,
@@ -278,6 +279,25 @@ export function LessonAttendanceSection({
     }
   }
 
+  // Сбросить привязку zoom-гостя (userId → null): запись снова станет
+  // несопоставленным гостем и её можно привязать заново. Переназначение =
+  // сбросить → привязать к другому студенту.
+  async function handleUnmatch(attendanceId: string) {
+    if (matchingId) return;
+    setMatchingId(attendanceId);
+    try {
+      const next = await matchLessonAttendance(accessToken, lessonId, attendanceId, {
+        streamId,
+      });
+      setSummary(next);
+      toast.success('Привязка сброшена');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось сбросить привязку');
+    } finally {
+      setMatchingId(null);
+    }
+  }
+
   // Карта userId → актуальная запись посещаемости (для статуса и zoom-данных).
   // Приоритет ручной записи над zoom (бэк так же считает сводку).
   const recordByUserId = useMemo(() => {
@@ -469,8 +489,27 @@ export function LessonAttendanceSection({
                           )}
                         </div>
                         {hasZoomData ? (
-                          // АВТО: статус определён Zoom, read-only.
-                          <StatusBadge present={presentInZoom} />
+                          // АВТО: статус определён Zoom, read-only. Если студент
+                          // сопоставлен с zoom-гостём — даём сбросить привязку
+                          // (например, привязали не к тому студенту). Сброс →
+                          // гость снова в списке несопоставленных, можно привязать
+                          // заново к нужному студенту.
+                          <div className="flex shrink-0 items-center gap-2">
+                            <StatusBadge present={presentInZoom} />
+                            {zoom && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground"
+                                disabled={matchingId === zoom.id}
+                                onClick={() => handleUnmatch(zoom.id)}
+                                title="Отвязать zoom-гостя от этого студента"
+                              >
+                                <Unlink className="size-4" />
+                                Сбросить привязку
+                              </Button>
+                            )}
+                          </div>
                         ) : (
                           // РУЧНОЙ фолбэк: нет данных Zoom — отмечаем вручную.
                           <StatusToggle

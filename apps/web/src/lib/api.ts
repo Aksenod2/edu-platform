@@ -1146,12 +1146,13 @@ export async function markLessonAttendance(
   });
 }
 
-// Привязать несопоставленного zoom-гостя к студенту потока. Возвращает сводку.
+// Привязать zoom-гостя к студенту потока либо СБРОСИТЬ привязку. Пустой/отсутствующий
+// userId = сброс (запись снова станет несопоставленным гостем). Возвращает сводку.
 export async function matchLessonAttendance(
   accessToken: string,
   lessonId: string,
   attendanceId: string,
-  params: { streamId: string; userId: string },
+  params: { streamId: string; userId?: string },
 ): Promise<SessionAttendanceSummary> {
   return request(`/lessons/${lessonId}/attendance/${attendanceId}/match`, {
     method: 'PATCH',
