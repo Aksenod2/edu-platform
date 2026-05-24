@@ -187,4 +187,21 @@ export async function profileRoutes(app: FastifyInstance) {
 
     return { notes };
   });
+
+  // DELETE /profiles/:studentId/notes/:noteId — удалить заметку преподавателя (admin).
+  // Идемпотентно: deleteMany с фильтром по studentId+noteId (если заметки уже нет —
+  // вернётся success без ошибки). Любой админ может удалить любую заметку об ученике.
+  app.delete(
+    '/profiles/:studentId/notes/:noteId',
+    { onRequest: requireRole('admin') },
+    async (request) => {
+      const { studentId, noteId } = request.params as { studentId: string; noteId: string };
+
+      await prisma.teacherNote.deleteMany({
+        where: { id: noteId, studentId },
+      });
+
+      return { success: true };
+    },
+  );
 }

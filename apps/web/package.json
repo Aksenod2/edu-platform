@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@platform/shared": "workspace:*",
     "@platform/ui": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "class-variance-authority": "^0.7.1",

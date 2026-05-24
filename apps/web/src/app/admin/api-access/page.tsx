@@ -8,6 +8,7 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '@/lib/api';
+import { API_ENDPOINTS, API_ENDPOINT_GROUPS } from '@/lib/api-endpoints';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -191,7 +192,9 @@ export default function ApiAccessPage() {
                         autoFocus
                       />
                       <p className="text-xs text-muted-foreground">
-                        Ключ даёт полный админ-доступ к API и не имеет срока действия. Храните в секрете.
+                        Ключ даёт ПОЛНЫЕ права администратора и не имеет срока действия (бессрочный).
+                        Храните его в секрете и отзывайте при компрометации. Утечка ключа = доступ к
+                        кошелькам, сбросу паролей и экспорту данных учеников.
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -312,6 +315,17 @@ export default function ApiAccessPage() {
             <CardTitle>Как подключиться к API</CardTitle>
           </CardHeader>
           <CardContent>
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>
+                <span className="font-semibold">Внимание: ключ = полные права администратора, бессрочный.</span>{' '}
+                Утечка ключа даёт доступ к кошелькам учеников, сбросу паролей и экспорту персональных
+                данных. Действия по ключу <span className="font-semibold">не аудируются</span> — фиксируется
+                только дата последнего использования (<span className="font-mono text-xs">lastUsedAt</span>),
+                без журнала операций. Храните ключ в секрете, не передавайте третьим лицам и немедленно
+                отзывайте при подозрении на компрометацию.
+              </AlertDescription>
+            </Alert>
+
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-2">Аутентификация</p>
               <p className="text-sm mb-2">
@@ -320,8 +334,25 @@ export default function ApiAccessPage() {
               </p>
               <CodeBlock>{`Authorization: Bearer sk_<ваш_ключ>`}</CodeBlock>
               <p className="text-sm text-muted-foreground mt-2">
-                Ключ работает с правами своего владельца — то есть с полными правами администратора. Храните его в секрете и отзывайте при компрометации.
+                Ключ работает с правами своего владельца — то есть с полными правами администратора. Срока
+                действия нет, ключ бессрочный. Храните его в секрете и отзывайте при компрометации.
               </p>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-2">Особенности отдельных доменов</p>
+              <ul className="text-sm list-disc pl-5 flex flex-col gap-2">
+                <li>
+                  <span className="font-medium">Ленты, треды и чаты — append-only.</span> Записи можно только
+                  добавлять (<span className="font-mono text-xs">POST .../entries</span>) и отмечать
+                  прочитанными; правки и удаления отдельных записей нет (как и в веб-интерфейсе).
+                </li>
+                <li>
+                  <span className="font-medium">Отключение Zoom.</span> Отдельного эндпоинта удаления нет:
+                  чтобы отключить интеграцию, сохраните пустые credentials через{' '}
+                  <span className="font-mono text-xs">PUT /admin/integrations/zoom</span>.
+                </li>
+              </ul>
             </div>
 
             <div>
@@ -341,13 +372,19 @@ export default function ApiAccessPage() {
         </Card>
       </section>
 
-      {/* ─── Секция 3: Основные эндпоинты ─────────────────────────── */}
+      {/* ─── Секция 3: Полный список эндпоинтов ───────────────────── */}
       <section className="mb-8">
         <Card>
           <CardHeader>
-            <CardTitle>Основные эндпоинты</CardTitle>
+            <CardTitle>Все эндпоинты ({API_ENDPOINTS.length})</CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Полный перечень эндпоинтов, доступных по API-ключу (права администратора).
+              Параметры пути указаны в стиле <code className="font-mono text-xs">:id</code>.
+              Списочные эндпоинты принимают фильтры через query-параметры (например,{' '}
+              <code className="font-mono text-xs">/student-assignments?studentId=ID</code>).
+            </p>
             <div className="rounded-lg border">
               <Table>
                 <TableHeader>
@@ -358,31 +395,13 @@ export default function ApiAccessPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {([
-                    ['GET', '/users', 'Список учеников'],
-                    ['GET', '/users/:id', 'Карточка ученика'],
-                    ['POST', '/users', 'Создать ученика'],
-                    ['POST', '/users/:id/invite', 'Сгенерировать ссылку-приглашение'],
-                    ['POST', '/users/:id/reset-password', 'Сбросить пароль ученика'],
-                    ['GET', '/users/:id/export', 'Выгрузить все данные ученика (профиль, задания, лента, файлы)'],
-                    ['GET', '/streams', 'Список групп'],
-                    ['GET', '/profiles/:studentId', 'Профиль ученика'],
-                    ['GET', '/student-assignments?studentId=:id', 'Задания ученика'],
-                    ['GET', '/threads/:studentId', 'Лента ученика'],
-                    ['POST', '/threads/:studentId/entries', 'Добавить запись в ленту'],
-                    ['GET', '/stats', 'Сводная статистика'],
-                    ['GET', '/files/*', 'Скачать файл (по подписи или админским Bearer)'],
-                  ] as const).map(([method, path, desc]) => (
-                    <TableRow key={`${method} ${path}`} className="align-top">
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-[11px]">{method}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <code className="font-mono text-xs whitespace-nowrap">{path}</code>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{desc}</TableCell>
-                    </TableRow>
-                  ))}
+                  {API_ENDPOINT_GROUPS.map((group) => {
+                    const rows = API_ENDPOINTS.filter((e) => e.group === group);
+                    if (rows.length === 0) return null;
+                    return (
+                      <GroupRows key={group} group={group} rows={rows} />
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -459,6 +478,35 @@ export default function ApiAccessPage() {
 }
 
 // ─── Вспомогательные компоненты ───────────────────────────────────────────────
+
+function GroupRows({
+  group,
+  rows,
+}: {
+  group: string;
+  rows: typeof API_ENDPOINTS;
+}) {
+  return (
+    <>
+      <TableRow className="bg-muted/50 hover:bg-muted/50">
+        <TableCell colSpan={3} className="font-semibold text-foreground">
+          {group}
+        </TableCell>
+      </TableRow>
+      {rows.map((e) => (
+        <TableRow key={`${e.method} ${e.path}`} className="align-top">
+          <TableCell>
+            <Badge variant="outline" className="font-mono text-[11px]">{e.method}</Badge>
+          </TableCell>
+          <TableCell>
+            <code className="font-mono text-xs whitespace-nowrap">{e.path}</code>
+          </TableCell>
+          <TableCell className="text-muted-foreground">{e.desc}</TableCell>
+        </TableRow>
+      ))}
+    </>
+  );
+}
 
 function CodeBlock({ children }: { children: string }) {
   return (

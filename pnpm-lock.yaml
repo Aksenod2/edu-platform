@@ -44,6 +44,9 @@ importers:
       '@platform/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       bcryptjs:
         specifier: ^3.0.0
         version: 3.0.3
@@ -102,6 +105,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.76.0(react@19.2.6))
+      '@platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@platform/ui':
         specifier: workspace:*
         version: link:../../packages/ui
