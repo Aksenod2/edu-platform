@@ -60,10 +60,22 @@ describe('assertJwtSecret (fail-fast на проде)', () => {
     expect(() => assertJwtSecret()).toThrow(/JWT_SECRET/);
   });
 
-  it('production + заданный JWT_SECRET → не бросает', () => {
+  it('production + заданный стойкий JWT_SECRET → не бросает', () => {
     process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'real-prod-secret';
+    process.env.JWT_SECRET = 'real-prod-secret-which-is-long-enough';
     expect(() => assertJwtSecret()).not.toThrow();
+  });
+
+  it('production + дефолтная заглушка change-me-in-production → бросает', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.JWT_SECRET = 'change-me-in-production';
+    expect(() => assertJwtSecret()).toThrow(/JWT_SECRET/);
+  });
+
+  it('production + слишком короткий JWT_SECRET (< 16) → бросает', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.JWT_SECRET = 'short';
+    expect(() => assertJwtSecret()).toThrow(/JWT_SECRET/);
   });
 
   it('dev без JWT_SECRET → не бросает (допускается дефолт)', () => {

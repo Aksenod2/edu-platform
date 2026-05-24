@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
-import { isPositiveInt, debitBalance, InsufficientFundsError } from '../lib/money.js';
+import {
+  isPositiveInt,
+  debitBalance,
+  InsufficientFundsError,
+  MAX_AMOUNT_KOPECKS,
+} from '../lib/money.js';
 
 // Кошелёк студента: ручной баланс в копейках + история операций.
 // Пополнение/списание делает администратор вручную (после скриншота перевода в чате).
@@ -23,8 +28,10 @@ export async function walletRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = request.body as { amountKopecks?: unknown; note?: unknown };
 
-    if (!isPositiveInt(body.amountKopecks)) {
-      return reply.status(400).send({ error: 'Сумма должна быть положительным целым числом копеек' });
+    if (!isPositiveInt(body.amountKopecks) || body.amountKopecks > MAX_AMOUNT_KOPECKS) {
+      return reply.status(400).send({
+        error: 'Сумма должна быть положительным целым числом копеек в разумных пределах',
+      });
     }
     const amount = body.amountKopecks;
     const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
@@ -66,8 +73,10 @@ export async function walletRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = request.body as { amountKopecks?: unknown; note?: unknown };
 
-    if (!isPositiveInt(body.amountKopecks)) {
-      return reply.status(400).send({ error: 'Сумма должна быть положительным целым числом копеек' });
+    if (!isPositiveInt(body.amountKopecks) || body.amountKopecks > MAX_AMOUNT_KOPECKS) {
+      return reply.status(400).send({
+        error: 'Сумма должна быть положительным целым числом копеек в разумных пределах',
+      });
     }
     const amount = body.amountKopecks;
     const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
