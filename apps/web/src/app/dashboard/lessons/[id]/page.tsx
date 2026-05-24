@@ -29,6 +29,11 @@ import {
   parseLocalDate,
 } from '@/components/schedule/utils';
 import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
+import {
+  resolveProcessingKind,
+  RECORDING_STALE_AFTER_MS,
+  SUMMARY_STALE_AFTER_MS,
+} from '@/components/schedule/processing-status';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -133,26 +138,32 @@ export default function StudentLessonPage() {
   const recordingEmbedUrl = lesson?.recordingVideoUrl
     ? parseVideoEmbed(lesson.recordingVideoUrl)
     : null;
-  // Запись ещё обрабатывается (Zoom едет) — обещаем студенту, что появится.
-  // [М-2] статус 'ready', но медиа нет (URL не подписался) — тоже «готовится»,
-  // секцию не прячем: запись по факту есть, просто временный URL не пришёл.
+  // Единый «вид» состояния записи: формируется (синий) / недоступно (серое) /
+  // ошибка (красный) / готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  // [М-2] статус 'ready', но медиа нет (URL не подписался) → resolver вернёт 'ready'
+  // (запись по факту есть) — секцию не прячем; ниже это попадёт в ветку «недоступна»
+  // без медиа, поэтому ready-без-медиа трактуем как «формируется» (URL ещё едет).
+  const recKind = resolveProcessingKind({
+    status: lesson?.recordingStatus,
+    hasData: hasRecordingMedia,
+    requestedAt: lesson?.recordingRequestedAt,
+    staleAfterMs: RECORDING_STALE_AFTER_MS,
+  });
+  // ready без медиа (временный URL не пришёл) — для студента это «формируется».
   const recordingPending =
-    !hasRecordingMedia &&
-    ['pending', 'processing', 'ready'].includes(lesson?.recordingStatus ?? '');
-  // Запись не получилась (Zoom вернул ошибку) — честно говорим «недоступна».
+    !hasRecordingMedia && (recKind === 'processing' || recKind === 'ready');
+  const recordingStale = !hasRecordingMedia && recKind === 'stale';
+  // Запись не получилась (реальный сбой Zoom) — честно говорим «не получена».
   // Статус 'none' у проведённого занятия НЕ считаем недоступностью: Zoom ещё может
-  // прислать запись (бэк ставит 'pending' на meeting.ended), поэтому секцию не показываем.
+  // прислать запись (бэк ставит 'processing' на meeting.ended), поэтому секцию не показываем.
   const recordingUnavailable =
-    !hasRecordingMedia &&
-    !recordingPending &&
-    lesson?.status === 'done' &&
-    lesson?.recordingStatus === 'failed';
+    !hasRecordingMedia && lesson?.status === 'done' && recKind === 'failed';
   // Показываем секцию записи, только если есть что показать (медиа/ожидание/недоступность).
   // Если занятие ещё не проведено и записи нет — секцию не показываем (не обещаем пустоту).
   // [М-3] у отменённого занятия записи быть не может — секцию не показываем вовсе.
   const showRecordingSection =
     lesson?.status !== 'cancelled' &&
-    (hasRecordingMedia || recordingPending || recordingUnavailable);
+    (hasRecordingMedia || recordingPending || recordingStale || recordingUnavailable);
 
   return (
     <div className="flex flex-col gap-6">
@@ -320,14 +331,24 @@ export default function StudentLessonPage() {
                     </Button>
                   )
                 ) : recordingPending ? (
+                  // Формируется — дружелюбный синий инфо (НЕ ошибка).
+                  <div className="flex items-center gap-3 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">
+                    <Loader2 className="size-5 shrink-0 animate-spin" />
+                    <span>
+                      Формируется запись конференции — появится здесь. Зайдите позже.
+                    </span>
+                  </div>
+                ) : recordingStale ? (
+                  // Данных давно нет — нейтральное серое «недоступно».
                   <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
                     <Clock className="size-5 shrink-0" />
-                    <span>Запись занятия готовится, появится здесь.</span>
+                    <span>Запись занятия пока недоступна.</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                  // Реальный сбой Zoom — единственное место с акцентом ошибки.
+                  <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
                     <Video className="size-5 shrink-0" />
-                    <span>Запись занятия недоступна.</span>
+                    <span>Запись занятия не получена.</span>
                   </div>
                 )}
               </CardContent>
@@ -359,35 +380,48 @@ export default function StudentLessonPage() {
               <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
             )
           ) : (
-            (lesson.summaryStatus === 'pending' ||
-              lesson.summaryStatus === 'processing' ||
-              lesson.summaryStatus === 'failed') && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Итоги занятия</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {lesson.summaryStatus === 'processing' ? (
-                    <div className="flex flex-col gap-2">
-                      <p className="text-sm text-muted-foreground">
-                        Zoom формирует итоги занятия — обычно это занимает несколько минут.
+            // Текста итогов нет — показываем состояние формирования. Единый «вид»:
+            // формируется (синий) / недоступно (серое) / ошибка (красный). Ручную
+            // подтяжку студент не делает (без кнопок). empty/ready — ничего не рендерим.
+            (() => {
+              const kind = resolveProcessingKind({
+                status: lesson.summaryStatus,
+                hasData: false,
+                requestedAt: lesson.summaryRequestedAt,
+                staleAfterMs: SUMMARY_STALE_AFTER_MS,
+              });
+              if (kind === 'empty' || kind === 'ready') return null;
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Итоги занятия</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {kind === 'processing' ? (
+                      <div className="flex flex-col gap-2">
+                        <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Формируются итоги занятия — Zoom обычно готовит их за несколько
+                          минут. Зайдите позже.
+                        </p>
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-11/12" />
+                        <Skeleton className="h-4 w-3/4" />
+                      </div>
+                    ) : kind === 'failed' ? (
+                      <p className="text-sm text-destructive">
+                        Не удалось сформировать итоги этого занятия.
                       </p>
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-11/12" />
-                      <Skeleton className="h-4 w-3/4" />
-                    </div>
-                  ) : lesson.summaryStatus === 'failed' ? (
-                    <p className="text-sm text-muted-foreground">
-                      Итоги по этому занятию пока недоступны.
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Занятие завершилось — итоги появятся здесь, как только Zoom их сформирует.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )
+                    ) : (
+                      // stale — данных давно нет.
+                      <p className="text-sm text-muted-foreground">
+                        Итоги по этому занятию пока недоступны.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()
           )}
 
           {/* Материалы урока (PDF/MD) */}

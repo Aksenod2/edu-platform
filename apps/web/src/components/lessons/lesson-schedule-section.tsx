@@ -419,6 +419,7 @@ export function LessonScheduleSection({
                     <RecordingStatusBadge
                       status={s.recordingStatus}
                       error={s.recordingError}
+                      requestedAt={s.recordingRequestedAt}
                     />
                   )}
                   {hasAssignment && issued && (

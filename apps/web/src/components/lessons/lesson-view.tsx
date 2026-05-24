@@ -47,6 +47,12 @@ import { MaterialRow } from '@/components/material-row';
 import { useAuth } from '@/lib/auth-context';
 import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import {
+  resolveProcessingKind,
+  RECORDING_STALE_AFTER_MS,
+  SUMMARY_STALE_AFTER_MS,
+  TRANSCRIPT_STALE_AFTER_MS,
+} from '@/components/schedule/processing-status';
 import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
@@ -501,20 +507,26 @@ function SessionContextCard({
     setRefreshing(true);
     try {
       const result = await refreshSessionFromZoom(accessToken, lessonId, streamId);
-      const parts = (Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[]).map(
-        (key) => {
-          const step = result[key];
-          const label = ZOOM_REFRESH_LABELS[key];
-          if (step?.ok) return `${label} ✓`;
-          return `${label} — ${step?.reason?.trim() || 'не получено'}`;
-        },
-      );
-      const allOk = (Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[]).every(
-        (key) => result[key]?.ok,
+      // «Ещё формируется» — НЕ ошибка: бэк присылает reason про формирование.
+      // Такой шаг показываем нейтрально (…), а реальные сбои — с причиной.
+      const isPending = (reason?: string | null) =>
+        !!reason && /формир|ещё формируется|готов/i.test(reason);
+      const keys = Object.keys(ZOOM_REFRESH_LABELS) as (keyof ZoomRefreshResult)[];
+      const parts = keys.map((key) => {
+        const step = result[key];
+        const label = ZOOM_REFRESH_LABELS[key];
+        if (step?.ok) return `${label} ✓`;
+        if (isPending(step?.reason)) return `${label} — формируется…`;
+        return `${label} — ${step?.reason?.trim() || 'не получено'}`;
+      });
+      // Реальная ошибка = шаг не ok и причина НЕ про формирование.
+      const hasRealError = keys.some(
+        (key) => !result[key]?.ok && !isPending(result[key]?.reason),
       );
       const message = parts.join(', ');
-      if (allOk) toast.success(message);
-      else toast.warning(message);
+      // Всё ok или «формируется» — это не ошибка (success/info), а не warning.
+      if (hasRealError) toast.warning(message);
+      else toast.success(message);
       onChanged();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
@@ -552,8 +564,16 @@ function SessionContextCard({
   // (не дожидаясь done и не дожидаясь готового файла) — чтобы сразу после занятия
   // было видно «ждём видео». Инфоблок не нужен, когда плеер записи уже есть.
   const recState = session.recordingStatus;
+  // Единый «вид» состояния записи: формируется (синий) / недоступно (серое) /
+  // ошибка (красный) / готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  const recKind = resolveProcessingKind({
+    status: recState,
+    hasData: hasRecording,
+    requestedAt: session.recordingRequestedAt,
+    staleAfterMs: RECORDING_STALE_AFTER_MS,
+  });
   const showRecordingStatus =
-    !hasRecording && !!recState && recState !== 'none' && recState !== 'ready';
+    !hasRecording && recKind !== 'ready' && recKind !== 'empty';
 
   return (
     <Card>
@@ -615,17 +635,36 @@ function SessionContextCard({
             (раньше done): после проведения сразу видно «занятие завершилось,
             ждём видео от Zoom». При готовой записи блок скрыт — ниже сам плеер. */}
         {showRecordingStatus && (
-          <div className="flex flex-col gap-1 rounded-md border bg-muted/50 p-3">
+          <div
+            className={cn(
+              'flex flex-col gap-1 rounded-md border p-3',
+              // Формируется — синий инфо; ошибка — красный; недоступно — нейтральный muted.
+              recKind === 'processing' &&
+                'border-blue-500/30 bg-blue-500/10',
+              recKind === 'failed' && 'border-destructive/40 bg-destructive/5',
+              recKind === 'stale' && 'bg-muted/50',
+            )}
+          >
             <RecordingStatusBadge
               status={recState}
               error={session.recordingError}
+              requestedAt={session.recordingRequestedAt}
               className="w-fit"
             />
-            <p className="text-xs text-muted-foreground">
-              {recState === 'failed'
+            <p
+              className={cn(
+                'text-xs',
+                recKind === 'processing'
+                  ? 'text-blue-700 dark:text-blue-300'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {recKind === 'failed'
                 ? session.recordingError?.trim() ||
                   'Запись с Zoom не получена — обновите позже или перезапустите загрузку в режиме редактирования.'
-                : 'Занятие завершилось. Запись подтянется автоматически из Zoom — обычно в течение нескольких минут.'}
+                : recKind === 'stale'
+                  ? 'Запись от Zoom пока не пришла. Загляните позже или обновите вручную.'
+                  : 'Формируется запись конференции. Занятие завершилось — запись подтянется автоматически из Zoom. Зайдите позже.'}
             </p>
           </div>
         )}
@@ -711,8 +750,15 @@ function SessionSummaryBlock({
   refreshing: boolean;
   onRefresh: () => void;
 }) {
-  const status = session.summaryStatus ?? 'none';
   const hasSummary = !!session.summary;
+  // Единый «вид»: формируется (синий) / недоступно (серое) / ошибка (красный) /
+  // готово / нет. КРАСНОЕ — только при реальном сбое (failed).
+  const kind = resolveProcessingKind({
+    status: session.summaryStatus,
+    hasData: hasSummary,
+    requestedAt: session.summaryRequestedAt,
+    staleAfterMs: SUMMARY_STALE_AFTER_MS,
+  });
 
   return (
     <div className="flex flex-col gap-2">
@@ -726,27 +772,31 @@ function SessionSummaryBlock({
         )}
       </div>
 
-      {hasSummary ? (
+      {kind === 'ready' ? (
         // ready (или ручные итоги): показываем текст с бейджем источника.
         <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
           {session.summary}
         </p>
-      ) : status === 'processing' ? (
+      ) : kind === 'processing' ? (
+        // Дружелюбное «формируется» — синий инфо + скелетоны.
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">
-            Zoom формирует итоги занятия — обычно это занимает несколько минут.
+          <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+            <Loader2 className="size-3.5 animate-spin" />
+            Формируются итоги занятия — Zoom обычно готовит их за несколько минут. Зайдите позже.
           </p>
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-11/12" />
           <Skeleton className="h-4 w-3/4" />
         </div>
-      ) : status === 'pending' ? (
+      ) : kind === 'stale' ? (
+        // Данных давно нет — нейтральное серое «недоступно».
         <p className="text-sm text-muted-foreground">
-          Занятие завершилось — итоги подтянутся автоматически из Zoom, как только будут готовы.
+          Итоги занятия пока недоступны. Загляните позже или обновите вручную.
         </p>
-      ) : status === 'failed' ? (
+      ) : kind === 'failed' ? (
+        // Реальная ошибка — единственное место с акцентом ошибки.
         <div className="flex flex-col items-start gap-2">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-destructive">
             Не удалось получить итоги занятия из Zoom.
           </p>
           {canRefresh && (
@@ -767,7 +817,7 @@ function SessionSummaryBlock({
           )}
         </div>
       ) : (
-        // none / нет интеграции Zoom.
+        // empty — none / нет интеграции Zoom.
         <p className="text-sm text-muted-foreground">
           Итоги по этому занятию не формировались.
         </p>
@@ -796,7 +846,14 @@ function SessionTranscriptBlock({
   const [open, setOpen] = useState(false);
   // Какое действие сейчас грузит подписанный URL ('open' | 'vtt' | 'txt' | null).
   const [busy, setBusy] = useState<'open' | 'vtt' | 'txt' | null>(null);
-  const status = session.transcriptStatus ?? 'none';
+  // Единый «вид»: формируется (синий) / недоступно (серое) / ошибка (красный) /
+  // готово / нет. Транскрипт приходит позже остального → больший порог давности.
+  // hasData=false: тело не тянем заранее, ready определяем по статусу.
+  const kind = resolveProcessingKind({
+    status: session.transcriptStatus,
+    requestedAt: session.transcriptRequestedAt,
+    staleAfterMs: TRANSCRIPT_STALE_AFTER_MS,
+  });
 
   // Ленивая загрузка тела: тянем подписанную ссылку только по клику на действие.
   const openTranscript = useCallback(
@@ -839,19 +896,25 @@ function SessionTranscriptBlock({
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="flex flex-col gap-2">
-        {status === 'processing' ? (
+        {kind === 'processing' ? (
+          // Дружелюбное «формируется» — синий инфо. Транскрипт приходит позже записи.
           <div className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">Zoom формирует транскрипт занятия…</p>
+            <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
+              <Loader2 className="size-3.5 animate-spin" />
+              Формируется транскрипт занятия — он приходит из Zoom позже записи. Загляните позже.
+            </p>
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-2/3" />
           </div>
-        ) : status === 'pending' ? (
+        ) : kind === 'stale' ? (
+          // Данных давно нет — нейтральное серое «недоступно».
           <p className="text-sm text-muted-foreground">
-            Транскрипт готовится — он приходит из Zoom позже записи. Загляните чуть позже.
+            Транскрипт по этому занятию пока недоступен. Загляните позже или обновите вручную.
           </p>
-        ) : status === 'failed' ? (
+        ) : kind === 'failed' ? (
+          // Реальная ошибка — единственное место с акцентом ошибки.
           <div className="flex flex-col items-start gap-2">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-destructive">
               {session.transcriptError?.trim() ||
                 'Не удалось получить транскрипт занятия из Zoom.'}
             </p>
@@ -870,7 +933,7 @@ function SessionTranscriptBlock({
               Подтянуть транскрипт
             </Button>
           </div>
-        ) : status === 'ready' ? (
+        ) : kind === 'ready' ? (
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"

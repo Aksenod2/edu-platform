@@ -686,6 +686,14 @@ export interface Lesson {
   // Статус/ошибка транскрипта — ОПЦИОНАЛЬНЫ (только в препод/админ-проекции; у студента нет).
   transcriptStatus?: string | null;
   transcriptError?: string | null;
+  // Отметки времени запроса данных у Zoom (ISO-строка|null). По ним отличаем
+  // «ещё формируется» (свежий запрос → дружелюбное «формируется») от
+  // «данных так и нет» (запрос давно → нейтральное «недоступно»).
+  // recordingRequestedAt / summaryRequestedAt видны всем; transcriptRequestedAt —
+  // только препод/админу (у студента поля нет, как и transcriptStatus).
+  recordingRequestedAt?: string | null;
+  summaryRequestedAt?: string | null;
+  transcriptRequestedAt?: string | null;
 }
 
 export async function getLessons(
@@ -1003,6 +1011,13 @@ export interface LessonSession {
   // (recordingVideoUrl) или подписанный URL загруженного файла (recordingFileUrl).
   recordingFileUrl?: string | null;
   recordingVideoUrl?: string | null;
+  // Отметки времени запроса данных у Zoom (ISO-строка|null). По ним отличаем
+  // «ещё формируется» (свежий запрос) от «данных так и нет» (запрос давно →
+  // нейтральное «недоступно»). recordingRequestedAt / summaryRequestedAt видны
+  // всем; transcriptRequestedAt — только препод/админу (у студента поля нет).
+  recordingRequestedAt?: string | null;
+  summaryRequestedAt?: string | null;
+  transcriptRequestedAt?: string | null;
 }
 
 // Сохранить ручные итоги КОНКРЕТНОГО занятия потока (Session.summary). Бэк ставит
