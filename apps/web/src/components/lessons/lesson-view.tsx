@@ -39,6 +39,7 @@ import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-fram
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
+import { LessonAttendanceSection } from '@/components/lessons/lesson-attendance-section';
 import { parseVideoEmbed } from '@/lib/video-embed';
 import {
   LESSON_STATUS_LABELS,
@@ -223,6 +224,15 @@ export function LessonView({
           lessonId={lessonId}
           streamId={streamId}
           assignmentId={issued?.id ?? null}
+        />
+      )}
+
+      {/* Посещаемость занятия (только в контексте потока). */}
+      {streamId && (
+        <LessonAttendanceSection
+          accessToken={accessToken!}
+          lessonId={lessonId}
+          streamId={streamId}
         />
       )}
 
