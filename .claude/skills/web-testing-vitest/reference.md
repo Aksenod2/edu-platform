@@ -1,0 +1,204 @@
+# Testing Reference
+
+> Decision frameworks and Vitest v3/v4 migration notes. See [SKILL.md](SKILL.md) for core patterns.
+
+---
+
+## Vitest v3/v4 Notes
+
+> **Current Stable:** Vitest 4.x (released October 2025, latest 4.1.0). Requires Vite >= 6.0.0 and Node.js >= 20.0.0. v4 marks Browser Mode as stable and includes visual regression testing.
+
+**Test Options Syntax (v3+ breaking change):**
+
+```typescript
+// CORRECT (v3+): Options as second argument
+test("example", { retry: 2 }, () => {
+  /* ... */
+});
+
+// Include timeout in options object (NOT as third argument)
+test("heavy test", { retry: 2, timeout: 10_000 }, () => {
+  /* ... */
+});
+
+// DEPRECATED (v2): Options as third argument - NO LONGER WORKS in v4
+test("example", () => {}, { retry: 2 }); // INVALID
+```
+
+**CRITICAL:** When using options object, you cannot also pass timeout as third argument:
+
+```typescript
+// WRONG: Cannot combine options object with third argument
+test("test", { skip: true }, () => {}, 10_000); // INVALID
+
+// CORRECT: Include timeout in options object
+test("test", { skip: true, timeout: 10_000 }, () => {}); // VALID
+```
+
+**Workspace Migration (v3.2+ - workspace deprecated):**
+
+```typescript
+// OLD: vitest.workspace.js file (DEPRECATED in v3.2)
+// OLD: test: { workspace: './vitest.workspace.js' } (DEPRECATED)
+
+// NEW: use `projects` directly in vitest.config.ts
+export default defineConfig({
+  test: {
+    projects: ["./packages/*"],
+  },
+});
+
+// With inline configuration
+export default defineConfig({
+  test: {
+    projects: [
+      "packages/*",
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["tests/**/*.unit.test.ts"],
+        },
+      },
+    ],
+  },
+});
+```
+
+**Pool Configuration (v4 breaking change - poolOptions removed entirely):**
+
+```typescript
+// OLD (v3): nested poolOptions
+export default defineConfig({
+  test: {
+    poolOptions: {
+      threads: { maxThreads: 4 },
+    },
+  },
+});
+
+// NEW (v4): poolOptions removed, all options are top-level
+export default defineConfig({
+  test: {
+    maxWorkers: 4, // replaces maxThreads/maxForks
+    // For single-worker mode (replaces singleThread/singleFork):
+    // maxWorkers: 1, isolate: false
+  },
+});
+```
+
+**Coverage Changes (v4):**
+
+```typescript
+// REMOVED in v4: coverage.all option
+// V8 provider now uses AST-based analysis (more accurate)
+
+export default defineConfig({
+  test: {
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"], // REQUIRED: Must explicitly define
+      // REMOVED: all, ignoreEmptyLines, experimentalAstAwareRemapping
+    },
+  },
+});
+```
+
+**Schema Validation Matcher (v4 - asymmetric matcher):**
+
+```typescript
+import { expect, test } from "vitest";
+import { z } from "zod";
+
+// expect.schemaMatching() is an asymmetric matcher (NOT toMatchSchema)
+// Works with any Standard Schema v1 library: Zod, Valibot, ArkType
+const userSchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+});
+
+test("validates user schema fields", () => {
+  const user = { name: "John", email: "john@example.com" };
+
+  // Use inside equality matchers
+  expect(user).toEqual({
+    name: expect.schemaMatching(z.string()),
+    email: expect.schemaMatching(z.string().email()),
+  });
+
+  // Negation
+  expect({ email: "not-an-email" }).toEqual({
+    email: expect.not.schemaMatching(z.string().email()),
+  });
+});
+```
+
+**vi.mockObject (v3.2+):**
+
+```typescript
+import { vi } from "vitest";
+
+// Deep mock an object with all methods as spies
+const mockService = vi.mockObject({
+  getUser: () => ({ id: 1, name: "Test" }),
+  saveUser: (user: User) => user,
+});
+
+// With spy option to preserve implementations while tracking calls
+const trackedService = vi.mockObject(realService, { spy: true });
+```
+
+**vi.mock Factory with importOriginal:**
+
+```typescript
+import { vi } from "vitest";
+
+// Access original module in factory
+vi.mock("./module.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./module.js")>();
+  return {
+    ...mod,
+    namedExport: vi.fn(), // Override specific export
+  };
+});
+
+// For default exports, must use `default` key
+vi.mock("./module.js", () => ({
+  default: vi.fn(),
+  namedExport: vi.fn(),
+}));
+```
+
+**Other v4 Breaking Changes:**
+
+- `vi.fn().getMockName()` returns `"vi.fn()"` instead of `"spy"` - update snapshot assertions
+- `vi.restoreAllMocks()` only affects manual spies, not automocks - use `vi.resetAllMocks()` for full reset
+- Automocked getters return `undefined` by default instead of calling originals
+- `basic` reporter removed - use `['default', { summary: false }]`
+- `verbose` reporter is now flat - use `tree` for hierarchical output
+- Default excludes simplified to only `node_modules` and `.git` - use `test.dir` for scoping
+- Shadow root now printed in snapshots - set `printShadowRoot: false` to restore old behavior
+- `vi.fn().mock.invocationCallOrder` starts at `1` instead of `0`
+- `deps.optimizer.web` renamed to `deps.optimizer.client`
+
+---
+
+## Decision Framework
+
+```
+What are you testing?
+├─ Pure function (no side effects)?
+│   └─ YES → Write unit test with Vitest (describe/it/expect)
+├─ Component behavior with API integration?
+│   └─ YES → Write integration test with Vitest + network-level mocking
+├─ User-facing workflow?
+│   └─ YES → Use your E2E testing tool (not Vitest's scope)
+└─ Third-party library behavior?
+    └─ NO → Don't test it (library already has tests)
+
+Test organization decision:
+├─ Is it a unit or integration test?
+│   └─ YES → Co-locate with code (direct or __tests__ subdirectory)
+└─ Is it an E2E test?
+    └─ YES → Separate directory (not Vitest's concern)
+```

@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/src/schemas/metadata.schema.json
+category: api-api
+slug: fastify
+domain: api
+author: "@vince"
+displayName: Fastify
+cliDescription: Fastify API framework
+usageGuidance: Use when building Fastify APIs, using JSON Schema validation, or plugin architecture.

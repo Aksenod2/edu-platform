@@ -311,8 +311,14 @@ export default function ZoomIntegrationPage() {
                   </ul>
                 </li>
                 <li>
-                  Нажмите <span className="font-medium">Activate</span>, чтобы активировать
-                  приложение.
+                  Нажмите <span className="font-medium">Activate App</span>, чтобы активировать
+                  приложение.{' '}
+                  <span className="font-medium">
+                    Важно: после ЛЮБОГО изменения состава Scopes (или событий ниже) нажмите
+                    Activate ещё раз
+                  </span>{' '}
+                  — иначе новые права не применятся к ключу, и записи/транскрипт/итоги будут
+                  возвращать ошибку доступа.
                 </li>
                 <li>
                   Вставьте значения в форму ниже, нажмите{' '}
@@ -574,6 +580,61 @@ export default function ZoomIntegrationPage() {
                   <span className="font-medium">«Webhook Secret Token»</span> выше, затем сохраните.
                 </li>
               </ol>
+            </CardContent>
+          </Card>
+
+          {/* ─── Если что-то не работает (troubleshooting) ───────────── */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Если что-то не работает</CardTitle>
+              <CardDescription>Частые причины и что проверить.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="flex list-disc flex-col gap-3 pl-5 text-sm text-foreground marker:text-muted-foreground">
+                <li>
+                  <span className="font-medium">
+                    Ошибка про scope при записи или транскрипте
+                  </span>{' '}
+                  («does not contain scopes…»): на вкладке{' '}
+                  <span className="font-medium">Scopes</span> добавьте{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    cloud_recording:read:list_recording_files:admin
+                  </code>{' '}
+                  и обязательно снова нажмите{' '}
+                  <span className="font-medium">Activate App</span>.
+                </li>
+                <li>
+                  <span className="font-medium">Итоги не приходят:</span> в настройках аккаунта
+                  Zoom включите <span className="font-medium">AI Companion → Meeting Summary</span>{' '}
+                  и подпишитесь на событие{' '}
+                  <span className="font-medium">«Meeting Summary Completed»</span>. Итоги
+                  формируются несколько минут после конца созвона.
+                </li>
+                <li>
+                  <span className="font-medium">Транскрипт не приходит:</span> включите{' '}
+                  <span className="font-medium">Cloud recording → Audio transcript</span> и язык
+                  транскрибации (русский), подпишитесь на{' '}
+                  <span className="font-medium">«Recording Transcript Completed»</span>.
+                </li>
+                <li>
+                  <span className="font-medium">Запись / итоги / транскрипт долго «формируются»</span>{' '}
+                  — это нормально: Zoom отдаёт их через минуты после завершения встречи. Статус
+                  обновится сам или по кнопке <span className="font-medium">«Обновить из Zoom»</span>{' '}
+                  на занятии.
+                </li>
+                <li>
+                  <span className="font-medium">Данные по старым занятиям не подтянулись:</span>{' '}
+                  по занятиям, прошедшим ДО настройки интеграции и событий, данные могут не
+                  прийти — проверяйте на новом созвоне.
+                </li>
+                <li>
+                  <span className="font-medium">Главное правило:</span> после любого изменения{' '}
+                  <span className="font-medium">Scopes</span> или{' '}
+                  <span className="font-medium">событий</span> снова нажмите{' '}
+                  <span className="font-medium">Activate App</span> — без этого изменения не
+                  применяются.
+                </li>
+              </ul>
             </CardContent>
           </Card>
         </div>
