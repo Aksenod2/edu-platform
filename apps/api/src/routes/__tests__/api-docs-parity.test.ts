@@ -59,6 +59,7 @@ import { authRoutes } from '../auth.js';
 import { streamRoutes } from '../streams.js';
 import { streamsPublicRoutes } from '../streams-public.js';
 import { userRoutes } from '../users.js';
+import { studentDynamicRoutes } from '../student-dynamic.js';
 import { lessonRoutes } from '../lessons.js';
 import { programRoutes } from '../programs.js';
 import { assignmentRoutes } from '../assignments.js';
@@ -130,6 +131,7 @@ async function collectActualRoutes(): Promise<Set<string>> {
   await app.register(streamRoutes);
   await app.register(streamsPublicRoutes);
   await app.register(userRoutes);
+  await app.register(studentDynamicRoutes);
   await app.register(lessonRoutes);
   await app.register(programRoutes);
   await app.register(assignmentRoutes);

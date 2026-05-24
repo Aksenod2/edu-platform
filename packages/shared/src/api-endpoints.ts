@@ -324,6 +324,50 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Ученики', method: 'POST', path: '/users/:id/invite', desc: 'Сгенерировать ссылку-приглашение' },
   { group: 'Ученики', method: 'POST', path: '/users/:id/reset-password', desc: 'Сбросить пароль ученика' },
   { group: 'Ученики', method: 'GET', path: '/users/:id/export', desc: 'Выгрузить все данные ученика (профиль, задания, лента, файлы)' },
+  {
+    group: 'Ученики',
+    method: 'GET',
+    path: '/students/:id/dynamic',
+    desc: 'Динамика ученика: roadmap-шапка + лента записей (приватно, admin)',
+  },
+  {
+    group: 'Ученики',
+    method: 'PUT',
+    path: '/students/:id/dynamic/roadmap',
+    desc: 'Сохранить roadmap-шапку динамики ученика (приватно, admin)',
+    body: [
+      {
+        name: 'roadmap',
+        type: 'string',
+        required: true,
+        note: 'Markdown «с чем пришёл / в процессе / с чем ушёл». Один ряд на ученика (upsert).',
+      },
+    ],
+  },
+  {
+    group: 'Ученики',
+    method: 'POST',
+    path: '/students/:id/dynamic/entries',
+    desc: 'Добавить запись в ленту динамики ученика (приватно, admin)',
+    body: [
+      { name: 'content', type: 'string', required: true, note: 'Markdown-текст записи (непустой).' },
+      { name: 'lessonId', type: 'string', required: false, note: 'Необязательная привязка к уроку.' },
+      { name: 'sessionId', type: 'string', required: false, note: 'Необязательная привязка к проведению.' },
+    ],
+  },
+  {
+    group: 'Ученики',
+    method: 'PATCH',
+    path: '/students/:id/dynamic/entries/:entryId',
+    desc: 'Изменить запись ленты динамики ученика (приватно, admin)',
+    body: [{ name: 'content', type: 'string', required: true, note: 'Новый markdown-текст (непустой).' }],
+  },
+  {
+    group: 'Ученики',
+    method: 'DELETE',
+    path: '/students/:id/dynamic/entries/:entryId',
+    desc: 'Удалить запись ленты динамики ученика (приватно, admin)',
+  },
 
   // ─── Программы ───────────────────────────────────────────────────────────
   { group: 'Программы', method: 'GET', path: '/programs', desc: 'Список программ' },

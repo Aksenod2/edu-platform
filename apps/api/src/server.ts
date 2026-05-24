@@ -13,6 +13,7 @@ import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
 import { streamsPublicRoutes } from './routes/streams-public.js';
 import { userRoutes } from './routes/users.js';
+import { studentDynamicRoutes } from './routes/student-dynamic.js';
 import { lessonRoutes } from './routes/lessons.js';
 import { programRoutes } from './routes/programs.js';
 import { assignmentRoutes } from './routes/assignments.js';
@@ -78,6 +79,7 @@ await app.register(streamRoutes);
 // rate-limit НЕ затрагивает остальные роуты.
 await app.register(streamsPublicRoutes);
 await app.register(userRoutes);
+await app.register(studentDynamicRoutes);
 await app.register(lessonRoutes);
 await app.register(programRoutes);
 await app.register(assignmentRoutes);
