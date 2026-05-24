@@ -6,12 +6,19 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // Мокаем prisma: только методы, которые вызывает paymentRoutes (DB-free).
 vi.mock('@platform/db', () => ({
   prisma: {
-    user: { findUnique: vi.fn(), update: vi.fn() },
+    user: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     topUpRequest: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    charge: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -325,6 +332,7 @@ function mockTxCallback() {
       topUpRequest: db.topUpRequest,
       user: db.user,
       walletTransaction: db.walletTransaction,
+      charge: db.charge,
     };
     return cb(tx);
   });
@@ -374,6 +382,8 @@ describe('POST /admin/topup-requests/:id/approve', () => {
     db.user.update.mockResolvedValueOnce({ balanceKopecks: 5000 });
     db.walletTransaction.create.mockResolvedValueOnce({ id: 'tx-1', kind: 'topup', amount: 5000 });
     db.topUpRequest.update.mockResolvedValueOnce({});
+    // settleOutstandingCharges: нет открытых начислений → ничего не списываем.
+    db.charge.findMany.mockResolvedValueOnce([]);
 
     const app = await buildApp();
     const res = await app.inject({
@@ -461,6 +471,217 @@ describe('POST /admin/topup-requests/:id/reject', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('Заявка уже обработана');
     expect(db.topUpRequest.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+});
+
+// ─── POST /admin/charges/:id/refund (возврат по начислению) ───────────────────
+
+describe('POST /admin/charges/:id/refund', () => {
+  it('403 — студент не может делать возврат', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(studentToken('s-1')),
+      payload: { amountKopecks: 1000 },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('400 — невалидная сумма (0)', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 0 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.charge.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('404 — начисление не найдено', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    db.charge.findUnique.mockResolvedValueOnce(null);
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/missing/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 1000 },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('400 — сумма возврата больше уплаченной', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    db.charge.findUnique.mockResolvedValueOnce({
+      id: 'c-1',
+      userId: 's-1',
+      paidKopecks: 3000,
+      status: 'paid',
+    });
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 5000 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Сумма возврата больше уплаченной');
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('409 — начисление уже возвращено', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    db.charge.findUnique.mockResolvedValueOnce({
+      id: 'c-1',
+      userId: 's-1',
+      paidKopecks: 3000,
+      status: 'refunded',
+    });
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 1000 },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('200 — возврат уменьшает paidKopecks, помечает refunded и кредитует баланс', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    db.charge.findUnique.mockResolvedValueOnce({
+      id: 'c-1',
+      userId: 's-1',
+      paidKopecks: 3000,
+      status: 'paid',
+    });
+    mockTxCallback();
+    db.charge.updateMany.mockResolvedValueOnce({ count: 1 });
+    // creditBalance: user.update + walletTransaction.create
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 1000 });
+    db.walletTransaction.create.mockResolvedValueOnce({ id: 'wt-1', kind: 'topup', amount: 1000 });
+    db.charge.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'c-1',
+      amountKopecks: 3000,
+      paidKopecks: 2000,
+      status: 'refunded',
+    });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 1000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.balanceKopecks).toBe(1000);
+    expect(body.transaction.id).toBe('wt-1');
+    expect(body.charge.status).toBe('refunded');
+    // Уменьшили уплату ровно на сумму возврата, с фильтром-гардом идемпотентности.
+    expect(db.charge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c-1', status: { not: 'refunded' }, paidKopecks: { gte: 1000 } },
+        data: { paidKopecks: { decrement: 1000 }, status: 'refunded' },
+      }),
+    );
+    // Пополнение баланса с note='Возврат' и привязкой к начислению.
+    expect(db.walletTransaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ kind: 'topup', note: 'Возврат', chargeId: 'c-1' }),
+      }),
+    );
+  });
+
+  it('409 — гонка: updateMany не затронул строк (уже возвращено)', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    db.charge.findUnique.mockResolvedValueOnce({
+      id: 'c-1',
+      userId: 's-1',
+      paidKopecks: 3000,
+      status: 'paid',
+    });
+    mockTxCallback();
+    db.charge.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/charges/c-1/refund',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 1000 },
+    });
+
+    expect(res.statusCode).toBe(409);
+    // Баланс не трогали.
+    expect(db.walletTransaction.create).not.toHaveBeenCalled();
+  });
+});
+
+// ─── approve: авто-погашение долга при пополнении ─────────────────────────────
+
+describe('POST /admin/topup-requests/:id/approve — авто-погашение долга', () => {
+  it('200 — пополнение гасит открытое начисление (settleOutstandingCharges)', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    db.topUpRequest.updateMany.mockResolvedValueOnce({ count: 1 });
+    db.topUpRequest.findUniqueOrThrow
+      .mockResolvedValueOnce({ userId: 's-1' })
+      .mockResolvedValueOnce({
+        id: 'req-1',
+        status: 'approved',
+        claimedAmountKopecks: 5000,
+        creditedAmountKopecks: 5000,
+        note: null,
+        reviewedAt: new Date(),
+        createdAt: new Date(),
+      });
+    // creditBalance (пополнение 5000 → баланс 5000)
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 5000 });
+    db.walletTransaction.create.mockResolvedValueOnce({ id: 'tx-1', kind: 'topup', amount: 5000 });
+    db.topUpRequest.update.mockResolvedValueOnce({});
+    // settleOutstandingCharges: одно открытое начисление 5000, баланс 5000 → гасим целиком
+    db.charge.findMany.mockResolvedValueOnce([
+      { id: 'c-1', amountKopecks: 5000, paidKopecks: 0, createdAt: new Date('2026-01-01') },
+    ]);
+    db.user.findUniqueOrThrow
+      .mockResolvedValueOnce({ balanceKopecks: 5000 }) // стартовый баланс в settle
+      .mockResolvedValueOnce({ balanceKopecks: 0 }) // после debitBalance внутри settle
+      .mockResolvedValueOnce({ balanceKopecks: 0 }); // финальное чтение баланса в approve
+    db.user.updateMany.mockResolvedValueOnce({ count: 1 }); // списание в debitBalance
+    db.walletTransaction.create.mockResolvedValueOnce({ id: 'tx-2', kind: 'debit', amount: 5000 });
+    // increment вернул строку с paidKopecks=5000 (полное погашение) → перевод в paid.
+    db.charge.update.mockResolvedValueOnce({ id: 'c-1', amountKopecks: 5000, paidKopecks: 5000 });
+    db.charge.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/topup-requests/req-1/approve',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 5000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Долг погашен → итоговый баланс 0.
+    expect(body.balanceKopecks).toBe(0);
+    // paidKopecks увеличен АТОМАРНО через increment.
+    expect(db.charge.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { paidKopecks: { increment: 5000 } } }),
+    );
+    // Полное погашение → начисление закрыто (status='paid') условным updateMany.
+    expect(db.charge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'c-1', status: 'open' }, data: { status: 'paid' } }),
+    );
   });
 });
 

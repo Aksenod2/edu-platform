@@ -6,8 +6,9 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // Мокаем prisma: только методы, которые вызывает walletRoutes (DB-free).
 vi.mock('@platform/db', () => ({
   prisma: {
-    user: { findUnique: vi.fn(), update: vi.fn() },
+    user: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     walletTransaction: { create: vi.fn(), findMany: vi.fn() },
+    charge: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -35,6 +36,19 @@ function authHeaders(token: string) {
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+// Мок callback-формы $transaction: вызывает колбэк с tx-объектом из методов prisma-мока
+// (как ведёт себя реальный интерактивный $transaction).
+function mockTxCallback() {
+  db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+    const tx = {
+      user: db.user,
+      walletTransaction: db.walletTransaction,
+      charge: db.charge,
+    };
+    return cb(tx);
+  });
+}
 
 describe('POST /students/:id/wallet/topup', () => {
   it('400 — amountKopecks отсутствует', async () => {
@@ -150,12 +164,16 @@ describe('POST /students/:id/wallet/debit', () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it('успех — списание при достаточном балансе', async () => {
+  it('успех — списание при достаточном балансе (через debitBalance)', async () => {
     db.user.findUnique
       .mockResolvedValueOnce({ role: 'student', balanceKopecks: 5000, name: 'Студент' })
       .mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    // debitBalance: условное updateMany (count 1) + walletTransaction.create + чтение баланса
+    db.user.updateMany.mockResolvedValueOnce({ count: 1 });
     const tx = { id: 'tx-2', kind: 'debit', amount: 1000 };
-    db.$transaction.mockResolvedValueOnce([{ balanceKopecks: 4000 }, tx]);
+    db.walletTransaction.create.mockResolvedValueOnce(tx);
+    db.user.findUniqueOrThrow.mockResolvedValueOnce({ balanceKopecks: 4000 });
 
     const app = buildApp();
     const res = await app.inject({
@@ -167,6 +185,13 @@ describe('POST /students/:id/wallet/debit', () => {
 
     expect(res.statusCode).toBe(200);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    // Списание условным updateMany с фильтром по балансу (не уводит в минус).
+    expect(db.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 's-1', balanceKopecks: { gte: 1000 } },
+        data: { balanceKopecks: { decrement: 1000 } },
+      }),
+    );
     const body = res.json();
     expect(body.balanceKopecks).toBe(4000);
     expect(body.transaction).toEqual(tx);
@@ -197,9 +222,27 @@ describe('GET /students/:id/wallet', () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it('200 — админ', async () => {
+  it('200 — админ: баланс, история, charges и outstandingKopecks', async () => {
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 3000, role: 'student' });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([
+      {
+        id: 'c-1',
+        streamId: 'st-1',
+        amountKopecks: 10000,
+        paidKopecks: 3000,
+        status: 'open',
+        stream: { name: 'Поток А' },
+      },
+      {
+        id: 'c-2',
+        streamId: 'st-2',
+        amountKopecks: 5000,
+        paidKopecks: 5000,
+        status: 'paid',
+        stream: { name: 'Поток Б' },
+      },
+    ]);
     const app = buildApp();
     const res = await app.inject({
       method: 'GET',
@@ -210,11 +253,22 @@ describe('GET /students/:id/wallet', () => {
     const body = res.json();
     expect(body.balanceKopecks).toBe(3000);
     expect(body.transactions).toEqual([]);
+    expect(body.charges).toHaveLength(2);
+    expect(body.charges[0]).toMatchObject({
+      streamId: 'st-1',
+      streamName: 'Поток А',
+      amountKopecks: 10000,
+      paidKopecks: 3000,
+      status: 'open',
+    });
+    // outstanding = только по open: 10000 - 3000 = 7000 (paid не учитывается).
+    expect(body.outstandingKopecks).toBe(7000);
   });
 
   it('200 — сам студент (token userId === :id)', async () => {
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 1500, role: 'student' });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([]);
     const app = buildApp();
     const res = await app.inject({
       method: 'GET',
@@ -223,5 +277,6 @@ describe('GET /students/:id/wallet', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().balanceKopecks).toBe(1500);
+    expect(res.json().outstandingKopecks).toBe(0);
   });
 });

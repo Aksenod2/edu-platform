@@ -6,7 +6,8 @@ import {
   deriveStreamTeachers,
   streamTeacherSourcesInclude,
 } from '../lib/stream-teachers.js';
-import { enrollStudentInStream } from '../lib/stream-enroll.js';
+import { enrollStudentInStreamTx } from '../lib/stream-enroll.js';
+import { isNonNegativeInt, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 
 // Публичный токен инвайт-ссылки: 32 случайных байта в base64url (URL-safe).
 function generateJoinToken(): string {
@@ -69,10 +70,27 @@ export async function streamRoutes(app: FastifyInstance) {
   // programId опционален: с ним поток привязан к программе, без него —
   // менторский поток (уроки набираются через сессии).
   app.post('/streams', { onRequest: adminOnly }, async (request, reply) => {
-    const { name, programId } = request.body as { name: string; programId?: string | null };
+    const { name, programId, priceKopecks } = request.body as {
+      name: string;
+      programId?: string | null;
+      priceKopecks?: number | null;
+    };
 
     if (!name || !name.trim()) {
       return reply.status(400).send({ error: 'Название группы обязательно' });
+    }
+
+    // Цена группы (платёжный план): null/undefined = план не задан; иначе целое ≥ 0.
+    if (priceKopecks !== undefined && priceKopecks !== null) {
+      if (!isNonNegativeInt(priceKopecks)) {
+        return reply
+          .status(400)
+          .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+      }
+      // Верхняя граница: защита от переполнения колонки Int4 и абсурдных значений.
+      if (priceKopecks > MAX_AMOUNT_KOPECKS) {
+        return reply.status(400).send({ error: 'Цена слишком большая' });
+      }
     }
 
     // Если задана программа — проверяем, что она существует.
@@ -92,6 +110,7 @@ export async function streamRoutes(app: FastifyInstance) {
         name: name.trim(),
         ownerId: request.user!.userId,
         ...(programId !== undefined && programId !== null && { programId }),
+        ...(priceKopecks !== undefined && { priceKopecks }),
       },
     });
 
@@ -101,10 +120,11 @@ export async function streamRoutes(app: FastifyInstance) {
   // PATCH /streams/:id — обновление потока (название и/или ведущий)
   app.patch('/streams/:id', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { name, ownerId, programId } = request.body as {
+    const { name, ownerId, programId, priceKopecks } = request.body as {
       name?: string;
       ownerId?: string | null;
       programId?: string | null;
+      priceKopecks?: number | null;
     };
 
     const existing = await prisma.stream.findUnique({ where: { id } });
@@ -114,6 +134,21 @@ export async function streamRoutes(app: FastifyInstance) {
 
     if (name !== undefined && !name.trim()) {
       return reply.status(400).send({ error: 'Название группы не может быть пустым' });
+    }
+
+    // Меняем ТОЛЬКО цену группы (платёжный план) на будущее; уже созданные Charge
+    // не пересчитываем (цена в начислении зафиксирована на момент зачисления).
+    // null = снять план; иначе целое ≥ 0.
+    if (priceKopecks !== undefined && priceKopecks !== null) {
+      if (!isNonNegativeInt(priceKopecks)) {
+        return reply
+          .status(400)
+          .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+      }
+      // Верхняя граница: защита от переполнения колонки Int4 и абсурдных значений.
+      if (priceKopecks > MAX_AMOUNT_KOPECKS) {
+        return reply.status(400).send({ error: 'Цена слишком большая' });
+      }
     }
 
     // Если задаётся ведущий — проверяем, что это существующий администратор.
@@ -145,6 +180,7 @@ export async function streamRoutes(app: FastifyInstance) {
         ...(name !== undefined && { name: name.trim() }),
         ...(ownerId !== undefined && { ownerId }),
         ...(programId !== undefined && { programId }),
+        ...(priceKopecks !== undefined && { priceKopecks }),
       },
     });
 
@@ -221,6 +257,74 @@ export async function streamRoutes(app: FastifyInstance) {
     return { students };
   });
 
+  // GET /streams/:id/charges — статус оплаты по студентам группы (admin).
+  // Для каждого зачисленного студента: его начисление за эту группу (если есть) и
+  // статус оплаты — paid (оплачено) / partial (частично) / unpaid (должен) / none (нет
+  // начисления). Только админ (финансы группы видит админ).
+  app.get('/streams/:id/charges', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const stream = await prisma.stream.findUnique({
+      where: { id },
+      select: { id: true, priceKopecks: true },
+    });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Группа не найдена' });
+    }
+
+    // Зачисленные студенты (без soft-deleted) + их начисления именно за эту группу.
+    const enrollments = await prisma.streamEnrollment.findMany({
+      where: { streamId: id, user: { deletedAt: null } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            charges: {
+              where: { streamId: id },
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                amountKopecks: true,
+                paidKopecks: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const students = enrollments.map((e) => {
+      // Берём самое свежее начисление по группе (обычно одно открытое или одно paid).
+      const charge = e.user.charges[0] ?? null;
+      let paymentStatus: 'paid' | 'partial' | 'unpaid' | 'none';
+      if (!charge) {
+        paymentStatus = 'none';
+      } else if (charge.status === 'paid') {
+        paymentStatus = 'paid';
+      } else if (charge.paidKopecks > 0) {
+        paymentStatus = 'partial';
+      } else {
+        paymentStatus = 'unpaid';
+      }
+
+      return {
+        id: e.user.id,
+        name: e.user.name,
+        email: e.user.email,
+        amountKopecks: charge?.amountKopecks ?? null,
+        paidKopecks: charge?.paidKopecks ?? null,
+        status: charge?.status ?? null,
+        paymentStatus,
+      };
+    });
+
+    return { priceKopecks: stream.priceKopecks, students };
+  });
+
   // POST /streams/:id/students — зачисление студентов (admin)
   app.post('/streams/:id/students', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -245,10 +349,12 @@ export async function streamRoutes(app: FastifyInstance) {
       select: { id: true },
     });
 
-    // Зачисление + бэкфилл заданий — в общем хелпере (паритет с регистрацией по
-    // инвайт-ссылке). Идемпотентно для каждого студента.
+    // Зачисление + бэкфилл заданий + (если задана цена) начисление и авто-списание —
+    // в общем хелпере (паритет с регистрацией по инвайт-ссылке). Каждое зачисление в
+    // своей транзакции (enrollStudentInStreamTx): идемпотентно, баланс не в минус.
+    const adminId = request.user!.userId;
     for (const s of validStudents) {
-      await enrollStudentInStream(id, s.id);
+      await enrollStudentInStreamTx(id, s.id, adminId);
     }
 
     const enrollments = await prisma.streamEnrollment.findMany({
