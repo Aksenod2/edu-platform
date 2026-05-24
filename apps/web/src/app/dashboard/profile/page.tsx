@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -105,6 +105,26 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Приветствие новичку — показываем, пока анкета не заполнена */}
+      {!isCompleted && (
+        <Card className="mt-4 border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Рады видеть вас на потоке!</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
+            <p>
+              Вы в личном кабинете школы «Основа»: здесь вы будете проходить уроки,
+              выполнять задания и получать обратную связь преподавателя — всё в одном месте.
+            </p>
+            <p>
+              Первый шаг — знакомство. Заполните короткую анкету ниже: расскажите о себе
+              и выберите направление. Так преподаватель сразу поймёт, с чего вам начать.
+              Обязательны два поля — «Резюме» и «Направление». Поехали!
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Avatar + status strip */}
       <Card className="mb-8 mt-4">
         <CardContent className="flex items-center gap-4">
@@ -120,16 +140,6 @@ export default function ProfilePage() {
           {isCompleted && <Badge variant="secondary" className="flex-shrink-0">Анкета заполнена</Badge>}
         </CardContent>
       </Card>
-
-      {/* Warning */}
-      {!isCompleted && (
-        <Alert className="mb-6">
-          <TriangleAlert />
-          <AlertDescription>
-            Заполните анкету, чтобы преподаватель знал ваш профессиональный бэкграунд.
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Validation error */}
       {error && (
