@@ -18,6 +18,18 @@
 // Пути параметризованы в стиле Fastify (`:id`, `:studentId`). Метод — в верхнем
 // регистре.
 
+/** Описание одного поля тела запроса (body) для документации. */
+export type ApiBodyField = {
+  /** Имя поля в JSON. */
+  name: string;
+  /** Тип значения (string / boolean / string[] / object[] и т.п.). */
+  type: string;
+  /** Обязательно ли поле. */
+  required: boolean;
+  /** Пояснение на русском (необязательно). */
+  note?: string;
+};
+
 export type ApiEndpoint = {
   /** Домен/группа для подзаголовка в таблице доки. */
   group: string;
@@ -27,6 +39,13 @@ export type ApiEndpoint = {
   path: string;
   /** Краткое описание на русском. */
   desc: string;
+  /**
+   * Опциональная схема тела запроса (body) — для write-эндпоинтов. Тест-страж
+   * паритета сверяет только method+path, поэтому это поле его не затрагивает.
+   */
+  body?: ApiBodyField[];
+  /** Опциональный готовый пример curl с телом запроса. */
+  example?: string;
 };
 
 // Порядок групп задаёт порядок секций в таблице доки.
@@ -51,12 +70,64 @@ export const API_ENDPOINT_GROUPS = [
 export const API_ENDPOINTS: ApiEndpoint[] = [
   // ─── Группы/потоки ───────────────────────────────────────────────────────
   { group: 'Группы/потоки', method: 'GET', path: '/streams', desc: 'Список групп/потоков' },
-  { group: 'Группы/потоки', method: 'POST', path: '/streams', desc: 'Создать группу' },
+  {
+    group: 'Группы/потоки',
+    method: 'POST',
+    path: '/streams',
+    desc: 'Создать группу',
+    body: [
+      { name: 'name', type: 'string', required: true, note: 'Название потока.' },
+      {
+        name: 'programId',
+        type: 'string',
+        required: false,
+        note: 'Привязка к программе. Без неё поток менторский (уроки задаются напрямую). Создатель становится ведущим.',
+      },
+    ],
+    example:
+      `curl -X POST <BASE>/streams \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"name": "Поток сентябрь", "programId": "ID_ПРОГРАММЫ"}'`,
+  },
   { group: 'Группы/потоки', method: 'GET', path: '/streams/:id', desc: 'Карточка группы' },
-  { group: 'Группы/потоки', method: 'PATCH', path: '/streams/:id', desc: 'Изменить группу' },
+  {
+    group: 'Группы/потоки',
+    method: 'PATCH',
+    path: '/streams/:id',
+    desc: 'Изменить группу',
+    body: [
+      { name: 'name', type: 'string', required: false, note: 'Новое название (непустое).' },
+      { name: 'ownerId', type: 'string', required: false, note: 'Новый ведущий (существующий admin).' },
+      { name: 'programId', type: 'string', required: false, note: 'Программа; null делает поток менторским.' },
+    ],
+    example:
+      `curl -X PATCH <BASE>/streams/ID_ГРУППЫ \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"name": "Поток октябрь"}'`,
+  },
   { group: 'Группы/потоки', method: 'DELETE', path: '/streams/:id', desc: 'Удалить группу' },
   { group: 'Группы/потоки', method: 'GET', path: '/streams/:id/students', desc: 'Ученики группы' },
-  { group: 'Группы/потоки', method: 'POST', path: '/streams/:id/students', desc: 'Зачислить ученика в группу' },
+  {
+    group: 'Группы/потоки',
+    method: 'POST',
+    path: '/streams/:id/students',
+    desc: 'Зачислить ученика в группу',
+    body: [
+      {
+        name: 'studentIds',
+        type: 'string[]',
+        required: true,
+        note: 'Непустой массив id учеников (роль student). Невалидные/чужие id игнорируются. Зачисление идемпотентно, заданиями добивается автоматически.',
+      },
+    ],
+    example:
+      `curl -X POST <BASE>/streams/ID_ГРУППЫ/students \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"studentIds": ["ID_УЧЕНИКА_1", "ID_УЧЕНИКА_2"]}'`,
+  },
   { group: 'Группы/потоки', method: 'DELETE', path: '/streams/:id/students/:studentId', desc: 'Отчислить ученика из группы' },
   { group: 'Группы/потоки', method: 'POST', path: '/streams/:id/join-link', desc: 'Получить инвайт-ссылку вступления' },
   { group: 'Группы/потоки', method: 'DELETE', path: '/streams/:id/join-link', desc: 'Отозвать инвайт-ссылку' },
@@ -64,9 +135,108 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
 
   // ─── Уроки (блок/материалы/видео/сессии) ─────────────────────────────────
   { group: 'Уроки', method: 'GET', path: '/lessons', desc: 'Список уроков (блоков)' },
-  { group: 'Уроки', method: 'POST', path: '/lessons', desc: 'Создать урок' },
+  {
+    group: 'Уроки',
+    method: 'POST',
+    path: '/lessons',
+    desc: 'Создать урок',
+    body: [
+      { name: 'title', type: 'string', required: true, note: 'Название урока.' },
+      {
+        name: 'streamId',
+        type: 'string',
+        required: false,
+        note: 'Без streamId создаётся только переиспользуемый БЛОК-копилка (без расписания). С streamId блок привязывается к программе потока и заводится Session.',
+      },
+      { name: 'videoUrl', type: 'string', required: false, note: 'Внешняя ссылка на видео.' },
+      { name: 'summary', type: 'string', required: false, note: 'Описание/итоги (без streamId — описание блока).' },
+      { name: 'notes', type: 'string', required: false, note: 'Заметки преподавателя.' },
+      { name: 'sortOrder', type: 'number', required: false },
+      {
+        name: 'materials',
+        type: 'object[]',
+        required: false,
+        note: 'Дескрипторы материалов {s3Key, fileName, mimeType, size}. Сначала загрузите файл и подставьте его ключ.',
+      },
+      {
+        name: 'teacherIds',
+        type: 'string[]',
+        required: false,
+        note: 'id преподавателей (роль admin). В ответе читаются как teachers[].',
+      },
+      {
+        name: 'status',
+        type: 'string',
+        required: false,
+        note: "draft | planned | done | cancelled. РАСПИСАНИЕ сохраняется только при streamId (живёт в Session). planned требует date.",
+      },
+      { name: 'date', type: 'string', required: false, note: "YYYY-MM-DD. Только при streamId (Session)." },
+      { name: 'startTime', type: 'string', required: false, note: "HH:MM. Только при streamId (Session)." },
+      { name: 'meetingUrl', type: 'string', required: false, note: 'Ссылка на встречу (Session, при streamId).' },
+      {
+        name: 'generateMeeting',
+        type: 'boolean',
+        required: false,
+        note: 'Сгенерировать ссылку Zoom по запросу (даже при выключенном автотумблере). Нужна date.',
+      },
+      { name: 'hasAssignment', type: 'boolean', required: false, note: 'Свёрнутое ДЗ в блоке урока (аддитивно, как у PATCH).' },
+      { name: 'assignmentTitle', type: 'string', required: false },
+      { name: 'assignmentDescription', type: 'string', required: false },
+      { name: 'assignmentCriteria', type: 'string', required: false },
+      { name: 'assignmentType', type: 'string', required: false, note: "short | long." },
+      { name: 'assignmentTags', type: 'string[]', required: false },
+      { name: 'assignmentMaterials', type: 'object[]', required: false },
+    ],
+    example:
+      `curl -X POST <BASE>/lessons \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"title": "Вводный урок", "streamId": "ID_ГРУППЫ", "status": "planned", "date": "2026-06-01", "startTime": "18:00", "teacherIds": ["ID_ПРЕПОДА"]}'`,
+  },
   { group: 'Уроки', method: 'GET', path: '/lessons/:id', desc: 'Карточка урока' },
-  { group: 'Уроки', method: 'PATCH', path: '/lessons/:id', desc: 'Изменить урок' },
+  {
+    group: 'Уроки',
+    method: 'PATCH',
+    path: '/lessons/:id',
+    desc: 'Изменить урок',
+    body: [
+      { name: 'title', type: 'string', required: false },
+      {
+        name: 'streamId',
+        type: 'string',
+        required: false,
+        note: 'Контекст потока: без него поля расписания (date/startTime/status/meetingUrl) и summary-как-итоги ИГНОРИРУЮТСЯ (правится только блок).',
+      },
+      { name: 'videoUrl', type: 'string', required: false },
+      {
+        name: 'summary',
+        type: 'string',
+        required: false,
+        note: 'Со streamId — итоги конкретного занятия (Session.summary, источник manual). Без streamId — описание блока.',
+      },
+      { name: 'notes', type: 'string', required: false },
+      { name: 'sortOrder', type: 'number', required: false },
+      { name: 'materials', type: 'object[]', required: false, note: 'Полная замена списка материалов блока.' },
+      { name: 'teacherIds', type: 'string[]', required: false, note: 'Полная замена набора преподавателей.' },
+      { name: 'status', type: 'string', required: false, note: "draft | planned | done | cancelled. Только при streamId (Session)." },
+      { name: 'date', type: 'string', required: false, note: "YYYY-MM-DD. Только при streamId." },
+      { name: 'startTime', type: 'string', required: false, note: "HH:MM. Только при streamId." },
+      { name: 'meetingUrl', type: 'string', required: false, note: 'Только при streamId.' },
+      { name: 'generateMeeting', type: 'boolean', required: false },
+      { name: 'hasAssignment', type: 'boolean', required: false, note: 'Свёрнутое ДЗ блока урока.' },
+      { name: 'assignmentTitle', type: 'string', required: false },
+      { name: 'assignmentDescription', type: 'string', required: false },
+      { name: 'assignmentCriteria', type: 'string', required: false },
+      { name: 'assignmentType', type: 'string', required: false, note: "short | long." },
+      { name: 'assignmentTags', type: 'string[]', required: false },
+      { name: 'assignmentMaterials', type: 'object[]', required: false },
+    ],
+    example:
+      `curl -X PATCH <BASE>/lessons/ID_УРОКА \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"streamId": "ID_ГРУППЫ", "status": "done", "summary": "Итоги занятия"}'`,
+  },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id', desc: 'Удалить урок' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/materials', desc: 'Загрузить материал урока' },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/materials/:s3Key', desc: 'Удалить материал урока' },
@@ -83,7 +253,38 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
 
   // ─── Задания/сдачи ───────────────────────────────────────────────────────
   { group: 'Задания/сдачи', method: 'GET', path: '/assignments', desc: 'Список заданий' },
-  { group: 'Задания/сдачи', method: 'POST', path: '/assignments', desc: 'Выдать задание группе (автовыдача ученикам)' },
+  {
+    group: 'Задания/сдачи',
+    method: 'POST',
+    path: '/assignments',
+    desc: 'Выдать задание группе (автовыдача ученикам)',
+    body: [
+      { name: 'streamId', type: 'string', required: true, note: 'Поток, которому выдаётся задание.' },
+      {
+        name: 'lessonId',
+        type: 'string',
+        required: true,
+        note: 'Урок-блок, в который пишется ДЗ (hasAssignment=true). Обязателен.',
+      },
+      { name: 'title', type: 'string', required: true, note: 'Название задания.' },
+      { name: 'description', type: 'string', required: false },
+      { name: 'criteria', type: 'string', required: false, note: 'Критерии проверки.' },
+      { name: 'type', type: 'string', required: false, note: "short | long (по умолчанию short)." },
+      { name: 'tags', type: 'string[]', required: false },
+      { name: 'dueDate', type: 'string', required: false, note: 'ISO-дата дедлайна (пишется в Session).' },
+      {
+        name: 'materials',
+        type: 'object[]',
+        required: false,
+        note: 'Материалы {type, name, url, s3Key?, size?} (загрузка через POST /assignments/upload-material).',
+      },
+    ],
+    example:
+      `curl -X POST <BASE>/assignments \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"streamId": "ID_ГРУППЫ", "lessonId": "ID_УРОКА", "title": "Эссе", "type": "long", "dueDate": "2026-06-10"}'`,
+  },
   { group: 'Задания/сдачи', method: 'GET', path: '/assignments/:id', desc: 'Карточка задания' },
   { group: 'Задания/сдачи', method: 'PATCH', path: '/assignments/:id', desc: 'Изменить задание' },
   { group: 'Задания/сдачи', method: 'DELETE', path: '/assignments/:id', desc: 'Удалить задание' },
@@ -94,7 +295,21 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
 
   // ─── Ученики ─────────────────────────────────────────────────────────────
   { group: 'Ученики', method: 'GET', path: '/users', desc: 'Список учеников' },
-  { group: 'Ученики', method: 'POST', path: '/users', desc: 'Создать ученика' },
+  {
+    group: 'Ученики',
+    method: 'POST',
+    path: '/users',
+    desc: 'Создать ученика',
+    body: [
+      { name: 'email', type: 'string', required: true, note: 'Уникальный email (409 при дубле).' },
+      { name: 'name', type: 'string', required: true, note: 'Имя ученика.' },
+    ],
+    example:
+      `curl -X POST <BASE>/users \\\n` +
+      `  -H 'Authorization: Bearer sk_ваш_ключ' \\\n` +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"email": "ivan@example.com", "name": "Иван Иванов"}'`,
+  },
   { group: 'Ученики', method: 'GET', path: '/teachers', desc: 'Список преподавателей (admin)' },
   { group: 'Ученики', method: 'GET', path: '/users/:id', desc: 'Карточка ученика' },
   { group: 'Ученики', method: 'PATCH', path: '/users/:id', desc: 'Изменить ученика' },
