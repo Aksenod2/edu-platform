@@ -323,6 +323,8 @@ model Session {
   transcriptTxtKey    String?   // ключ S3 для очищенного .txt транскрипта
   transcriptError     String?   // текст ошибки забора транскрипта (для препода/админа)
   transcriptRequestedAt DateTime? // когда запросили транскрипт (для увеличенного таймаута до failed — приходит позже записи)
+  recordingRequestedAt  DateTime? // когда запись запрошена/ожидается (ставится на meeting.ended) — для таймаута «формируется → недоступно»
+  summaryRequestedAt    DateTime? // когда итоги запрошены/ожидаются (на meeting.ended) — для таймаута состояния итогов
 
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
