@@ -19,6 +19,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -61,6 +63,10 @@
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --success: oklch(0.72 0.19 150);
+  /* Предупреждение (нехватка средств и т.п.): тёплый янтарный, темнее фона для
+     читаемого текста на светлой теме; foreground — для текста на сплошной заливке. */
+  --warning: oklch(0.62 0.16 70);
+  --warning-foreground: oklch(0.99 0.01 90);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -97,6 +103,9 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --success: oklch(0.8 0.18 152);
+  /* Янтарный, осветлённый для тёмной темы (читаемый текст/бордюр на тёмном фоне). */
+  --warning: oklch(0.82 0.16 80);
+  --warning-foreground: oklch(0.24 0.05 80);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

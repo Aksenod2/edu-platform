@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog,
@@ -49,6 +50,8 @@ import {
   getWallet,
   topupWallet,
   debitWallet,
+  getStudents,
+  updateStudent,
   formatKopecks,
   fileDownloadUrl,
   type ProfileResponse,
@@ -115,6 +118,12 @@ export default function StudentProfilePage() {
   const [debitNote, setDebitNote] = useState('');
   const [walletSubmitting, setWalletSubmitting] = useState(false);
 
+  // Демо/служебный аккаунт. Профиль (getProfile) этот флаг не отдаёт, поэтому
+  // начальное значение берём из списка студентов (getStudents отдаёт isDemo).
+  // null = ещё не загружено (тумблер disabled до получения значения).
+  const [isDemo, setIsDemo] = useState<boolean | null>(null);
+  const [togglingDemo, setTogglingDemo] = useState(false);
+
   // Thread state
   const [threadEntries, setThreadEntries] = useState<ThreadEntry[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -164,6 +173,32 @@ export default function StudentProfilePage() {
     }
   }, [accessToken, studentId]);
 
+  // Начальное значение демо-флага (профиль его не отдаёт — берём из /users).
+  const fetchDemoFlag = useCallback(async () => {
+    if (!accessToken || !studentId) return;
+    try {
+      const { users } = await getStudents(accessToken);
+      const me = users.find((u) => u.id === studentId);
+      setIsDemo(me?.isDemo ?? false);
+    } catch {
+      // Некритично: при сбое оставим тумблер недоступным (isDemo=null).
+    }
+  }, [accessToken, studentId]);
+
+  const handleToggleDemo = async (next: boolean) => {
+    if (!accessToken) return;
+    setTogglingDemo(true);
+    try {
+      const { user } = await updateStudent(accessToken, studentId, { isDemo: next });
+      setIsDemo(user.isDemo ?? next);
+      toast.success(next ? 'Аккаунт помечен как демо' : 'Демо-метка снята');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось изменить демо-флаг');
+    } finally {
+      setTogglingDemo(false);
+    }
+  };
+
   const fetchAssignments = useCallback(async () => {
     if (!accessToken || !studentId) return;
     setLoadingAssignments(true);
@@ -207,8 +242,9 @@ export default function StudentProfilePage() {
     if (accessToken && studentId) {
       fetchProfile();
       fetchWallet();
+      fetchDemoFlag();
     }
-  }, [accessToken, studentId, fetchProfile, fetchWallet]);
+  }, [accessToken, studentId, fetchProfile, fetchWallet, fetchDemoFlag]);
 
   // При смене ученика сбрасываем «уже загружено» и устаревшие данные вкладок,
   // чтобы они перезагрузились для нового ученика.
@@ -217,6 +253,7 @@ export default function StudentProfilePage() {
     setThreadEntries([]);
     setAssignments([]);
     setAssignmentsSummary(null);
+    setIsDemo(null);
   }, [studentId]);
 
   useEffect(() => {
@@ -476,7 +513,10 @@ export default function StudentProfilePage() {
           </BackButton>
 
           <div className="mt-2 mb-1 min-w-0">
-            <h1 className="m-0 mb-1 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
+              {isDemo && <Badge variant="secondary">Демо</Badge>}
+            </div>
             <p className="text-muted-foreground m-0 text-sm">
               {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
             </p>
@@ -508,6 +548,31 @@ export default function StudentProfilePage() {
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
             <div className="grid items-stretch gap-6 py-4 lg:grid-cols-2">
+
+              {/* Тип аккаунта: демо/служебный флаг (admin) */}
+              <Card className="lg:col-span-2">
+                <CardContent>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <Label htmlFor="demo-toggle" className="text-sm font-medium text-foreground">
+                        Демо/служебный аккаунт (не платит, не в статистике)
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Включите для тестовых и служебных аккаунтов: им не начисляются
+                        и не списываются платежи (включая ежемесячные), и они исключены
+                        из метрик дашборда и состава групп.
+                      </p>
+                    </div>
+                    <Switch
+                      id="demo-toggle"
+                      checked={isDemo === true}
+                      disabled={isDemo === null || togglingDemo}
+                      onCheckedChange={handleToggleDemo}
+                      aria-label="Демо/служебный аккаунт"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Баланс кошелька */}
               <section className="lg:col-span-2">

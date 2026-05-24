@@ -101,6 +101,7 @@ import {
   formatKopecks,
   rublesToKopecks,
   kopecksToRublesInput,
+  BILLING_TYPE_LABELS,
   type StreamWithCounts,
   type Student,
   type Teacher,
@@ -108,6 +109,7 @@ import {
   type Assignment,
   type StreamChargeRow,
   type StreamChargePaymentStatus,
+  type StreamBillingType,
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
 import { InviteLinkDialog } from '@/components/invite-link-dialog';
@@ -182,13 +184,14 @@ export default function StreamDetailPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <BackButton fallbackHref="/admin/streams" />
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{stream.name}</h1>
           {stream.status === 'active' ? (
             <Badge>Активный</Badge>
           ) : (
             <Badge variant="outline">Архивный</Badge>
           )}
+          <BillingTypeBadge billingType={stream.billingType ?? 'one_time'} />
         </div>
       </div>
 
@@ -787,6 +790,18 @@ function initials(name: string): string {
     .join('');
 }
 
+// Допустимые дни списания для менторских групп (бэк: 1..28).
+const BILLING_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
+
+// Маленький бейдж типа оплаты группы: «Ежемесячная» (secondary) / «Разовая» (outline).
+function BillingTypeBadge({ billingType }: { billingType: StreamBillingType }) {
+  return (
+    <Badge variant={billingType === 'monthly' ? 'secondary' : 'outline'}>
+      {BILLING_TYPE_LABELS[billingType]}
+    </Badge>
+  );
+}
+
 // Бейдж платёжного статуса студента по группе.
 const PAYMENT_STATUS_META: Record<
   StreamChargePaymentStatus,
@@ -798,8 +813,10 @@ const PAYMENT_STATUS_META: Record<
   none: { label: 'Нет начислений', variant: 'outline' },
 };
 
-// Карточка платёжного плана группы: ввод цены (рубли ↔ копейки) + сохранение.
-// Пустое значение = «план не задан» (priceKopecks: null).
+// Карточка платёжного плана группы: выбор типа оплаты (разовая/ежемесячная) + поля.
+// Разовая: цена группы (priceKopecks). Ежемесячная (менторская): сумма в месяц
+// (monthlyPriceKopecks) + день списания (billingDayOfMonth, 1..28). Суммы в рублях
+// конвертируются в копейки. Правило бэка: для monthly сумма и день обязательны.
 function PaymentPlanCard({
   stream,
   onChanged,
@@ -808,30 +825,76 @@ function PaymentPlanCard({
   onChanged: () => void;
 }) {
   const { accessToken } = useAuth();
-  const [value, setValue] = useState(kopecksToRublesInput(stream.priceKopecks));
+
+  const savedType: StreamBillingType = stream.billingType ?? 'one_time';
+  const [type, setType] = useState<StreamBillingType>(savedType);
+  // Разовая цена и месячная сумма ведём раздельно, чтобы переключение типа не
+  // затирало введённое и показывало сохранённые значения каждого режима.
+  const [onceValue, setOnceValue] = useState(kopecksToRublesInput(stream.priceKopecks));
+  const [monthlyValue, setMonthlyValue] = useState(
+    kopecksToRublesInput(stream.monthlyPriceKopecks),
+  );
+  const [day, setDay] = useState<string>(
+    stream.billingDayOfMonth != null ? String(stream.billingDayOfMonth) : '',
+  );
   const [saving, setSaving] = useState(false);
 
-  // Синхронизируем поле, если цена изменилась извне (после рефетча группы).
+  // Синхронизируем поля, если план изменился извне (после рефетча группы).
   useEffect(() => {
-    setValue(kopecksToRublesInput(stream.priceKopecks));
-  }, [stream.priceKopecks]);
+    setType(stream.billingType ?? 'one_time');
+    setOnceValue(kopecksToRublesInput(stream.priceKopecks));
+    setMonthlyValue(kopecksToRublesInput(stream.monthlyPriceKopecks));
+    setDay(stream.billingDayOfMonth != null ? String(stream.billingDayOfMonth) : '');
+  }, [stream.billingType, stream.priceKopecks, stream.monthlyPriceKopecks, stream.billingDayOfMonth]);
 
-  const currentKopecks = stream.priceKopecks ?? null;
-  // «Грязное» состояние: введённое отличается от сохранённого.
-  const trimmed = value.trim();
-  const parsed = trimmed === '' ? null : rublesToKopecks(trimmed);
-  const invalid = trimmed !== '' && parsed === null;
-  const dirty = (parsed ?? null) !== currentKopecks;
+  // --- Разбор и валидация по выбранному типу ---
+  const onceTrimmed = onceValue.trim();
+  const onceParsed = onceTrimmed === '' ? null : rublesToKopecks(onceTrimmed);
+  const onceInvalid = onceTrimmed !== '' && onceParsed === null;
+
+  const monthlyTrimmed = monthlyValue.trim();
+  const monthlyParsed = monthlyTrimmed === '' ? null : rublesToKopecks(monthlyTrimmed);
+  const monthlyAmountInvalid = monthlyTrimmed !== '' && monthlyParsed === null;
+  const dayNum = day === '' ? null : Number(day);
+  // Для месячной: сумма (≥0) и день (1..28) обязательны.
+  const monthlyAmountMissing = type === 'monthly' && monthlyParsed === null;
+  const monthlyDayMissing = type === 'monthly' && dayNum === null;
+
+  const invalid =
+    type === 'one_time'
+      ? onceInvalid
+      : monthlyAmountInvalid || monthlyAmountMissing || monthlyDayMissing;
+
+  // «Грязное» состояние: изменился тип или значимые поля выбранного типа.
+  const dirty =
+    type !== savedType ||
+    (type === 'one_time'
+      ? (onceParsed ?? null) !== (stream.priceKopecks ?? null)
+      : (monthlyParsed ?? null) !== (stream.monthlyPriceKopecks ?? null) ||
+        (dayNum ?? null) !== (stream.billingDayOfMonth ?? null));
 
   const handleSave = async () => {
     if (!accessToken || invalid) return;
     setSaving(true);
     try {
-      await updateStream(accessToken, stream.id, { priceKopecks: parsed });
-      toast.success(parsed === null ? 'Платёжный план снят' : 'Цена группы сохранена');
+      if (type === 'one_time') {
+        // Разовая: пустая цена = снять план (priceKopecks: null).
+        await updateStream(accessToken, stream.id, {
+          billingType: 'one_time',
+          priceKopecks: onceParsed,
+        });
+        toast.success(onceParsed === null ? 'Платёжный план снят' : 'Цена группы сохранена');
+      } else {
+        await updateStream(accessToken, stream.id, {
+          billingType: 'monthly',
+          monthlyPriceKopecks: monthlyParsed,
+          billingDayOfMonth: dayNum,
+        });
+        toast.success('Ежемесячный план сохранён');
+      }
       onChanged();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения цены');
+      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения плана');
     } finally {
       setSaving(false);
     }
@@ -840,11 +903,35 @@ function PaymentPlanCard({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-        <Wallet className="size-4 text-muted-foreground" />
+        <Wallet className="size-4 text-muted-foreground" aria-hidden="true" />
         <CardTitle className="text-base">Платёжный план</CardTitle>
+        <BillingTypeBadge billingType={savedType} />
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <CardContent className="flex flex-col gap-4">
+        {/* Выбор типа оплаты */}
+        <div className="flex flex-col gap-2">
+          <Label>Тип оплаты</Label>
+          <div className="grid grid-cols-2 gap-2 sm:max-w-sm">
+            <Button
+              type="button"
+              variant={type === 'one_time' ? 'default' : 'outline'}
+              aria-pressed={type === 'one_time'}
+              onClick={() => setType('one_time')}
+            >
+              Разовая
+            </Button>
+            <Button
+              type="button"
+              variant={type === 'monthly' ? 'default' : 'outline'}
+              aria-pressed={type === 'monthly'}
+              onClick={() => setType('monthly')}
+            >
+              Ежемесячная
+            </Button>
+          </div>
+        </div>
+
+        {type === 'one_time' ? (
           <div className="flex w-full flex-col gap-2 sm:max-w-xs">
             <Label htmlFor="stream-price">Цена группы, ₽</Label>
             <Input
@@ -853,32 +940,92 @@ function PaymentPlanCard({
               inputMode="decimal"
               min="0"
               step="1"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
+              value={onceValue}
+              onChange={(e) => setOnceValue(e.target.value)}
               placeholder="Например, 30000"
-              aria-invalid={invalid}
+              aria-invalid={onceInvalid}
             />
           </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+              <Label htmlFor="stream-monthly-price">Сумма в месяц, ₽</Label>
+              <Input
+                id="stream-monthly-price"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="1"
+                value={monthlyValue}
+                onChange={(e) => setMonthlyValue(e.target.value)}
+                placeholder="Например, 10000"
+                aria-invalid={monthlyAmountInvalid || monthlyAmountMissing}
+              />
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-40">
+              <Label htmlFor="stream-billing-day">День списания</Label>
+              <Select value={day} onValueChange={setDay}>
+                <SelectTrigger
+                  id="stream-billing-day"
+                  className="w-full"
+                  aria-invalid={monthlyDayMissing}
+                >
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BILLING_DAYS.map((d) => (
+                    <SelectItem key={d} value={String(d)}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        <div>
           <Button
             onClick={handleSave}
             disabled={saving || invalid || !dirty}
             className="w-full sm:w-auto"
           >
-            {saving && <Loader2 className="animate-spin" />}
+            {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
             Сохранить
           </Button>
         </div>
-        {invalid ? (
+
+        {/* Подсказки/валидация по выбранному типу */}
+        {type === 'one_time' ? (
+          onceInvalid ? (
+            <p className="text-sm text-destructive">Укажите неотрицательную сумму в рублях.</p>
+          ) : (stream.priceKopecks ?? null) === null ? (
+            <p className="text-sm text-muted-foreground">
+              План не задан — начисления по группе не делаются. Укажите цену, чтобы включить
+              разовое начисление при зачислении студента.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Текущая цена:{' '}
+              <span className="font-medium text-foreground">
+                {formatKopecks(stream.priceKopecks ?? 0)}
+              </span>
+              . Очистите поле и сохраните, чтобы снять план.
+            </p>
+          )
+        ) : monthlyAmountInvalid ? (
           <p className="text-sm text-destructive">Укажите неотрицательную сумму в рублях.</p>
-        ) : currentKopecks === null ? (
+        ) : monthlyAmountMissing || monthlyDayMissing ? (
           <p className="text-sm text-muted-foreground">
-            План не задан — начисления по группе не делаются. Укажите цену, чтобы включить
-            платёжный план.
+            Для ежемесячного плана укажите сумму и день списания (1–28).
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Текущая цена: <span className="font-medium text-foreground">{formatKopecks(currentKopecks)}</span>.
-            Очистите поле и сохраните, чтобы снять план.
+            Списываем{' '}
+            <span className="font-medium text-foreground">
+              {formatKopecks(monthlyParsed ?? 0)}
+            </span>{' '}
+            с баланса каждый месяц, {dayNum}-го числа. Демо-аккаунты не списываются.
           </p>
         )}
       </CardContent>
@@ -892,6 +1039,8 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
   const { accessToken } = useAuth();
 
   const [priceKopecks, setPriceKopecks] = useState<number | null>(null);
+  const [billingType, setBillingType] = useState<StreamBillingType>('one_time');
+  const [monthlyPriceKopecks, setMonthlyPriceKopecks] = useState<number | null>(null);
   const [rows, setRows] = useState<StreamChargeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -908,6 +1057,8 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
     try {
       const data = await getStreamCharges(accessToken, stream.id);
       setPriceKopecks(data.priceKopecks);
+      setBillingType(data.billingType ?? 'one_time');
+      setMonthlyPriceKopecks(data.monthlyPriceKopecks ?? null);
       setRows(data.students);
       setError('');
       setForbidden(false);
@@ -937,7 +1088,7 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
       toast.error('Укажите корректную сумму возврата');
       return;
     }
-    if (kopecks > refundRow.paidKopecks) {
+    if (kopecks > (refundRow.paidKopecks ?? 0)) {
       toast.error('Сумма возврата больше оплаченной');
       return;
     }
@@ -954,14 +1105,18 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
     }
   };
 
-  // Остаток долга по строке (только для open-начислений).
-  const outstanding = (row: StreamChargeRow) => Math.max(row.amountKopecks - row.paidKopecks, 0);
+  // Остаток долга по строке — агрегат с бэка (Σ по open-начислениям, в т.ч. месячным).
+  const outstanding = (row: StreamChargeRow) => Math.max(row.outstandingKopecks, 0);
+  // Платёжный план настроен: для разовой — задана цена; для месячной — сумма.
+  const planConfigured =
+    billingType === 'monthly' ? monthlyPriceKopecks != null : priceKopecks !== null;
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-        <Wallet className="size-4 text-muted-foreground" />
+        <Wallet className="size-4 text-muted-foreground" aria-hidden="true" />
         <CardTitle className="text-base">Оплаты</CardTitle>
+        {!loading && !forbidden && <BillingTypeBadge billingType={billingType} />}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {forbidden ? (
@@ -976,12 +1131,13 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
           <div className="flex justify-center py-6">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
-        ) : priceKopecks === null ? (
+        ) : !planConfigured ? (
           <div className="flex items-start gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            <Info className="mt-0.5 size-4 shrink-0" />
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>
-              Цена группы не задана. Укажите её в блоке «Платёжный план» выше — тогда здесь
-              появятся начисления и оплаты студентов.
+              {billingType === 'monthly'
+                ? 'Ежемесячная сумма не задана. Укажите её в блоке «Платёжный план» выше — тогда пойдут ежемесячные списания.'
+                : 'Цена группы не задана. Укажите её в блоке «Платёжный план» выше — тогда здесь появятся начисления и оплаты студентов.'}
             </span>
           </div>
         ) : rows.length === 0 ? (
@@ -1014,10 +1170,10 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                           </div>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                          {row.amountKopecks ? formatKopecks(row.amountKopecks) : '—'}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatKopecks(row.paidKopecks)}
+                          {formatKopecks(row.paidKopecks ?? 0)}
                         </TableCell>
                         <TableCell
                           className={`text-right tabular-nums font-medium ${
@@ -1030,13 +1186,13 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                           <Badge variant={meta.variant}>{meta.label}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {row.paidKopecks > 0 ? (
+                          {(row.paidKopecks ?? 0) > 0 ? (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => openRefund(row)}
                             >
-                              <Undo2 />
+                              <Undo2 aria-hidden="true" />
                               Вернуть
                             </Button>
                           ) : (
@@ -1070,12 +1226,12 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                       <div className="flex flex-col">
                         <dt className="text-xs text-muted-foreground">Начислено</dt>
                         <dd className="tabular-nums">
-                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                          {row.amountKopecks ? formatKopecks(row.amountKopecks) : '—'}
                         </dd>
                       </div>
                       <div className="flex flex-col">
                         <dt className="text-xs text-muted-foreground">Оплачено</dt>
-                        <dd className="tabular-nums">{formatKopecks(row.paidKopecks)}</dd>
+                        <dd className="tabular-nums">{formatKopecks(row.paidKopecks ?? 0)}</dd>
                       </div>
                       <div className="flex flex-col">
                         <dt className="text-xs text-muted-foreground">Остаток</dt>
@@ -1088,14 +1244,14 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                         </dd>
                       </div>
                     </dl>
-                    {row.paidKopecks > 0 && (
+                    {(row.paidKopecks ?? 0) > 0 && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="mt-3 w-full"
                         onClick={() => openRefund(row)}
                       >
-                        <Undo2 />
+                        <Undo2 aria-hidden="true" />
                         Вернуть
                       </Button>
                     )}
@@ -1114,7 +1270,7 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
             <DialogTitle>Вернуть оплату</DialogTitle>
             <DialogDescription>
               {refundRow &&
-                `Сумма вернётся на баланс студента «${refundRow.name}». Оплачено по группе: ${formatKopecks(refundRow.paidKopecks)}.`}
+                `Сумма вернётся на баланс студента «${refundRow.name}». Оплачено по группе: ${formatKopecks(refundRow.paidKopecks ?? 0)}.`}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
@@ -1476,7 +1632,12 @@ function StudentsTab({
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => router.push(`/admin/students/${student.id}`)}
                 >
-                  <TableCell className="font-medium">{student.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      {student.name}
+                      {student.isDemo && <Badge variant="outline">Демо</Badge>}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {student.email}
                   </TableCell>
@@ -1551,8 +1712,9 @@ function StudentsTab({
                         onCheckedChange={() => toggle(student.id)}
                       />
                       <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm font-medium">
+                        <span className="inline-flex items-center gap-2 truncate text-sm font-medium">
                           {student.name}
+                          {student.isDemo && <Badge variant="outline">Демо</Badge>}
                         </span>
                         <span className="truncate text-xs text-muted-foreground">
                           {student.email}

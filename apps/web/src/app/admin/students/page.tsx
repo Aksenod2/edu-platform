@@ -387,8 +387,9 @@ export default function StudentsPage() {
                       <Avatar className="size-8">
                         <AvatarFallback className="text-xs">{initials(s.name)}</AvatarFallback>
                       </Avatar>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{s.name}</span>
+                        {s.isDemo && <Badge variant="outline">Демо</Badge>}
                         {!!s.submittedCount && s.submittedCount > 0 && (
                           <Badge variant="secondary">{s.submittedCount} ждут проверки</Badge>
                         )}

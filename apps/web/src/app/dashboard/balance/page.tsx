@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2 } from 'lucide-react';
+import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -17,6 +17,7 @@ import {
   type TopUpRequestStatus,
   type StudentCharge,
   type ChargeStatus,
+  type NextMentorshipCharge,
 } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +49,20 @@ const STATUS_VARIANT: Record<
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
+// Дата ISO → «5 июня 2026» (день числом + месяц словами), для блока «Следующее списание».
+// День списания на бэке задаётся по московскому времени, поэтому и форматируем в
+// Europe/Moscow — иначе в браузере западнее МСК дата уезжала бы на сутки назад.
+function formatChargeDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Moscow',
+  });
+}
+
 // Бейдж статуса начисления по группе.
 const CHARGE_STATUS_META: Record<
   ChargeStatus,
@@ -65,6 +80,7 @@ export default function StudentBalancePage() {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [charges, setCharges] = useState<StudentCharge[]>([]);
   const [outstandingKopecks, setOutstandingKopecks] = useState(0);
+  const [nextCharges, setNextCharges] = useState<NextMentorshipCharge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -90,9 +106,11 @@ export default function StudentBalancePage() {
       const data = await getWallet(accessToken, user.id);
       setBalanceKopecks(data.balanceKopecks);
       setTransactions(data.transactions);
-      // charges/outstandingKopecks могут отсутствовать у старого бэка — страхуемся.
+      // charges/outstandingKopecks/nextMentorshipCharges могут отсутствовать у старого
+      // бэка — страхуемся значениями по умолчанию.
       setCharges(data.charges ?? []);
       setOutstandingKopecks(data.outstandingKopecks ?? 0);
+      setNextCharges(data.nextMentorshipCharges ?? []);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки баланса');
@@ -274,6 +292,79 @@ export default function StudentBalancePage() {
             )}
           </div>
 
+          {/* Следующее списание (менторские группы). Скрыт, если месячных групп нет.
+              Акцент один: при долге («К оплате») блок мягкий/нейтральный, иначе при
+              нехватке баланса — тон warning. */}
+          {nextCharges.length > 0 && (() => {
+            const hasDebt = outstandingKopecks > 0;
+            // Предупреждаем о нехватке только когда долга нет (долг важнее).
+            const warn = !hasDebt && nextCharges.some((c) => c.willGoIntoDebt);
+            // Самая ранняя дата, до которой стоит пополнить.
+            const earliest = nextCharges
+              .map((c) => c.nextChargeDate)
+              .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0];
+            const multiple = nextCharges.length > 1;
+            return (
+              <Card
+                className={
+                  warn ? 'border-warning/40 bg-warning/10' : undefined
+                }
+              >
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarClock
+                      aria-hidden="true"
+                      className={`size-4 ${warn ? 'text-warning' : 'text-muted-foreground'}`}
+                    />
+                    <span
+                      className={`font-mono text-xs uppercase tracking-wider ${
+                        warn ? 'text-warning' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {multiple ? 'Следующие списания' : 'Следующее списание'}
+                    </span>
+                  </div>
+
+                  <ul className="flex flex-col gap-2">
+                    {nextCharges.map((c) => (
+                      <li
+                        key={c.streamId}
+                        className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
+                      >
+                        <span className="text-sm text-foreground">
+                          {formatChargeDate(c.nextChargeDate)}
+                          {multiple && (
+                            <span className="text-muted-foreground"> · {c.streamName}</span>
+                          )}
+                        </span>
+                        <span className="text-sm">
+                          <span className="font-semibold tabular-nums text-foreground">
+                            {formatKopecks(c.amountKopecks)}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {' '}
+                            · за менторскую группу, ежемесячно
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {warn && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-warning">
+                        На балансе может не хватить — пополните до {formatChargeDate(earliest)}.
+                      </p>
+                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+                        <a href="#topup">Пополнить</a>
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Начисления по группам (платёжный план). Показываем только если есть. */}
           {charges.length > 0 && (
             <section className="flex flex-col gap-3">
@@ -371,7 +462,7 @@ export default function StudentBalancePage() {
           )}
 
           {/* Как пополнить + форма «Я оплатил» */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div id="topup" className="grid scroll-mt-20 grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Реквизиты */}
             <Card>
               <CardHeader>

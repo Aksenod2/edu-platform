@@ -263,6 +263,15 @@ export async function verifyEmail(token: string): Promise<{ message: string }> {
 
 // Streams API
 
+// Тип оплаты группы: разовая (priceKopecks) или ежемесячная менторская
+// (monthlyPriceKopecks + billingDayOfMonth). По умолчанию на бэке — one_time.
+export type StreamBillingType = 'one_time' | 'monthly';
+
+export const BILLING_TYPE_LABELS: Record<StreamBillingType, string> = {
+  one_time: 'Разовая',
+  monthly: 'Ежемесячная',
+};
+
 export interface Stream {
   id: string;
   name: string;
@@ -274,6 +283,12 @@ export interface Stream {
   // Платёжный план группы: стоимость участия в КОПЕЙКАХ (UI показывает рубли).
   // null = план не задан (начисления по группе не делаются).
   priceKopecks?: number | null;
+  // Тип оплаты группы. Для 'monthly' значимы monthlyPriceKopecks и billingDayOfMonth.
+  billingType?: StreamBillingType;
+  // Ежемесячная сумма списания (КОПЕЙКИ, целое ≥0) для менторских групп или null.
+  monthlyPriceKopecks?: number | null;
+  // День месяца списания (1..28) для менторских групп или null.
+  billingDayOfMonth?: number | null;
   // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
   ownerId?: string | null;
   owner?: { id: string; name: string } | null;
@@ -295,15 +310,19 @@ export async function getStreams(
 export async function createStream(
   accessToken: string,
   name: string,
-  // Опционально: платёжный план группы в копейках (целое ≥0).
-  priceKopecks?: number | null,
+  // Опционально: платёжный план группы. Разовая — priceKopecks; ежемесячная —
+  // billingType: 'monthly' + monthlyPriceKopecks + billingDayOfMonth (1..28).
+  billing?: {
+    priceKopecks?: number | null;
+    billingType?: StreamBillingType;
+    monthlyPriceKopecks?: number | null;
+    billingDayOfMonth?: number | null;
+  },
 ): Promise<{ stream: Stream }> {
   return request('/streams', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify(
-      priceKopecks === undefined ? { name } : { name, priceKopecks },
-    ),
+    body: JSON.stringify({ name, ...billing }),
   });
 }
 
@@ -314,8 +333,14 @@ export async function updateStream(
     name?: string;
     ownerId?: string | null;
     programId?: string | null;
-    // Платёжный план группы в копейках (целое ≥0) или null = снять план.
+    // Платёжный план группы в копейках (целое ≥0) или null = снять план (разовая).
     priceKopecks?: number | null;
+    // Тип оплаты группы: разовая или ежемесячная (менторская).
+    billingType?: StreamBillingType;
+    // Ежемесячная сумма списания (КОПЕЙКИ, целое ≥0) или null = снять.
+    monthlyPriceKopecks?: number | null;
+    // День месяца списания (1..28) или null = снять.
+    billingDayOfMonth?: number | null;
   },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
@@ -465,6 +490,9 @@ export interface Student {
   submittedCount?: number;
   // Баланс кошелька в копейках (UI отображает в рублях).
   balanceKopecks?: number;
+  // Демо/служебный аккаунт: не платит и не учитывается в статистике.
+  // Приходит в /users и ростере группы (/streams/:id/students).
+  isDemo?: boolean;
 }
 
 export async function getStudents(
@@ -492,7 +520,8 @@ export async function createStudent(
 export async function updateStudent(
   accessToken: string,
   id: string,
-  data: { name?: string; email?: string; isActive?: boolean },
+  // isDemo (admin): помечает аккаунт демо/служебным — он не платит и не в статистике.
+  data: { name?: string; email?: string; isActive?: boolean; isDemo?: boolean },
 ): Promise<{ user: Student }> {
   return request(`/users/${id}`, {
     method: 'PATCH',
@@ -1499,6 +1528,9 @@ export interface WalletTransaction {
 // Статус начисления по группе: open — есть долг, paid — оплачено, refunded — возвращено.
 export type ChargeStatus = 'open' | 'paid' | 'refunded';
 
+// Природа начисления: разовое (за участие) или ежемесячное (менторская группа).
+export type ChargeKind = 'one_time' | 'monthly';
+
 // Начисление студенту за участие в группе (для блока «По группам» в кошельке).
 export interface StudentCharge {
   id: string;
@@ -1507,6 +1539,18 @@ export interface StudentCharge {
   amountKopecks: number; // сколько начислено за группу
   paidKopecks: number; // сколько уже оплачено
   status: ChargeStatus;
+  // Природа начисления (разовое/ежемесячное). Опционально — старый бэк поле не отдаёт.
+  kind?: ChargeKind;
+}
+
+// Предстоящее ежемесячное списание за менторскую группу (блок «Следующее списание»).
+// nextChargeDate — ISO-строка; willGoIntoDebt=true, если баланса может не хватить.
+export interface NextMentorshipCharge {
+  streamId: string;
+  streamName: string;
+  nextChargeDate: string;
+  amountKopecks: number;
+  willGoIntoDebt: boolean;
 }
 
 export interface WalletResponse {
@@ -1516,6 +1560,8 @@ export interface WalletResponse {
   charges: StudentCharge[];
   // Суммарный долг по открытым начислениям (копейки). 0 — долга нет.
   outstandingKopecks: number;
+  // Предстоящие ежемесячные списания за менторские группы. [] — таких групп нет.
+  nextMentorshipCharges: NextMentorshipCharge[];
 }
 
 /** Форматирует копейки в рубли: 123456 → «1 234 ₽». */
@@ -1779,20 +1825,42 @@ export async function deletePaymentQr(
 // none — начислений нет (например, ещё не начисляли).
 export type StreamChargePaymentStatus = 'paid' | 'partial' | 'unpaid' | 'none';
 
-// Строка таблицы оплат группы: студент + его начисление по этой группе.
+// Один период начисления студента по группе (детализация для месячных групп).
+export interface StreamChargePeriod {
+  id: string;
+  amountKopecks: number;
+  paidKopecks: number;
+  status: ChargeStatus;
+  kind: ChargeKind;
+  // Ключ периода 'YYYY-MM' (для месячных) или null (для разового начисления).
+  periodKey: string | null;
+}
+
+// Строка таблицы оплат группы: студент + АГРЕГАТ его начислений по этой группе.
+// Для месячных групп у студента несколько начислений (по периодам) — суммы
+// агрегатные, долг = outstandingKopecks (Σ по open), детализация — в periods.
 export interface StreamChargeRow {
   id: string; // id студента
   name: string;
   email: string;
-  amountKopecks: number; // начислено
-  paidKopecks: number; // оплачено
-  status: ChargeStatus;
+  // Агрегатные суммы; null — начислений по группе ещё нет.
+  amountKopecks: number | null; // Σ начислено
+  paidKopecks: number | null; // Σ оплачено
+  // Суммарный долг по открытым начислениям (копейки). 0 — долга нет.
+  outstandingKopecks: number;
+  // Статус свежайшего начисления (совместимость с разовыми) или null.
+  status: ChargeStatus | null;
   paymentStatus: StreamChargePaymentStatus;
+  // Детализация по периодам (для месячных групп).
+  periods: StreamChargePeriod[];
 }
 
 export interface StreamChargesResponse {
-  // Цена группы (план) в копейках или null = план не задан.
+  // Цена группы (разовая, план) в копейках или null = план не задан.
   priceKopecks: number | null;
+  // Тип оплаты группы и ежемесячная сумма (для месячных групп).
+  billingType: StreamBillingType;
+  monthlyPriceKopecks: number | null;
   students: StreamChargeRow[];
 }
 
