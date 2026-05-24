@@ -2006,6 +2006,16 @@ export async function getStaffUnread(
   });
 }
 
+// Суммарно непрочитанные сообщения текущего пользователя (роль-зависимо на бэке:
+// admin — треды + штаб + cohort; student — личный тред + его cohort). Для бейджа в сайдбаре.
+export async function getMessagesUnreadCount(
+  accessToken: string,
+): Promise<{ unreadCount: number }> {
+  return request('/messages/unread-count', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export async function addStaffEntry(
   accessToken: string,
   data: { type: ThreadEntryType; content: string; metadata?: Record<string, unknown> },
