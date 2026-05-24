@@ -365,6 +365,8 @@ model SessionAttendance {
   userId    String?
   source    String // 'zoom_report' | 'manual'
   status    String   @default("present") // 'present' | 'absent'
+  // ряд хоста встречи (преподаватель), не студент-гость — не сопоставляется и не считается гостем
+  isHost    Boolean  @default(false)
 
   // Данные из Zoom report participants API (все nullable).
   zoomParticipantId String? // participant id Zoom (для дедупа авто-забора)
@@ -648,6 +650,10 @@ model ZoomIntegration {
   // Заполняется приложением позже; здесь — просто nullable unique.
   webhookId         String?   @unique
   autoCreateMeeting Boolean   @default(false)
+  // email хоста (Zoom-аккаунт, под которым создаются встречи) — для исключения хоста из гостей посещаемости
+  hostEmail         String?
+  // id пользователя Zoom (из /users/me) — запасной признак хоста, если email скрыт в отчёте
+  hostZoomUserId    String?
   lastTestedAt      DateTime?
   lastTestOk        Boolean?
   createdAt         DateTime  @default(now())

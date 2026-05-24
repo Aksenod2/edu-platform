@@ -1851,10 +1851,17 @@ export async function lessonRoutes(app: FastifyInstance) {
       // Запись должна существовать и принадлежать этому занятию.
       const record = await prisma.sessionAttendance.findFirst({
         where: { id: attendanceId, sessionId: session.id },
-        select: { id: true },
+        select: { id: true, isHost: true },
       });
       if (!record) {
         return reply.status(404).send({ error: 'Запись посещаемости не найдена' });
+      }
+
+      // Ряд хоста встречи (преподаватель) нельзя привязывать к студенту.
+      if (record.isHost === true) {
+        return reply
+          .status(400)
+          .send({ error: 'Нельзя привязать преподавателя (хост встречи)' });
       }
 
       // Пустой userId — сброс привязки (отвязка), без проверки зачисления.
@@ -2203,6 +2210,7 @@ async function buildAttendanceSummary(sessionId: string, streamId: string) {
         userId: true,
         source: true,
         status: true,
+        isHost: true,
         displayName: true,
         email: true,
         joinedAt: true,
@@ -2223,6 +2231,11 @@ async function buildAttendanceSummary(sessionId: string, streamId: string) {
   for (const r of records) {
     if (r.source === 'zoom_report') {
       if (!lastSyncedAt || r.updatedAt > lastSyncedAt) lastSyncedAt = r.updatedAt;
+    }
+    // Ряд хоста встречи (преподаватель) не студент-гость: не считаем его в гостях
+    // и не учитываем в статусах студентов. На фронте он показывается отдельно.
+    if (r.isHost) {
+      continue;
     }
     if (!r.userId) {
       unmatchedCount += 1;
@@ -2263,6 +2276,7 @@ async function buildAttendanceSummary(sessionId: string, streamId: string) {
       leftAt: r.leftAt ? r.leftAt.toISOString() : null,
       durationSec: r.durationSec,
       matched: r.userId !== null,
+      isHost: r.isHost,
     })),
   };
 }

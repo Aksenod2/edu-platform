@@ -174,6 +174,85 @@ function reasonForHttpStatus(status: number): string {
   return `Zoom вернул ошибку отчёта посещаемости (${status})`;
 }
 
+// Идентичность хоста встречи (Zoom-аккаунт, под которым создаются встречи).
+// Используется, чтобы пометить ряд хоста в посещаемости и исключить его из
+// студентов-гостей. Оба поля могут быть null, если хоста опознать не удалось.
+interface HostIdentity {
+  hostEmail: string | null;
+  hostZoomUserId: string | null;
+}
+
+// Ответ Zoom GET /users/me (минимально нужные поля).
+interface ZoomMeResponse {
+  id?: string;
+  email?: string;
+}
+
+// Возвращает идентичность хоста для teacherUserId. Берёт из кэша в
+// ZoomIntegration; если оба поля пусты — лениво дёргает GET /users/me тем же
+// Bearer-токеном, что и забор отчёта, и СОХРАНЯЕТ результат в ZoomIntegration.
+// Ошибку /users/me не валим: при неуспехе возвращаем { null, null } (хоста не
+// опознаём — поведение как раньше).
+async function resolveHostIdentity(
+  app: Pick<FastifyInstance, 'log'>,
+  teacherUserId: string,
+  token: string,
+): Promise<HostIdentity> {
+  const integration = await prisma.zoomIntegration.findUnique({
+    where: { userId: teacherUserId },
+    select: { hostEmail: true, hostZoomUserId: true },
+  });
+
+  // Уже знаем хоста — отдаём из кэша, без сетевого запроса.
+  if (integration && (integration.hostEmail || integration.hostZoomUserId)) {
+    return {
+      hostEmail: integration.hostEmail ?? null,
+      hostZoomUserId: integration.hostZoomUserId ?? null,
+    };
+  }
+
+  // Лениво опознаём владельца аккаунта (для S2S OAuth `me` — это хост встреч).
+  try {
+    const res = await fetch(`${ZOOM_API_URL}/users/me`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      app.log.warn(
+        { status: res.status, teacherUserId },
+        'Zoom /users/me: не удалось опознать хоста для посещаемости',
+      );
+      return { hostEmail: null, hostZoomUserId: null };
+    }
+    const me = (await res.json()) as ZoomMeResponse;
+    const hostEmail = me.email && me.email.trim() ? me.email.trim() : null;
+    const hostZoomUserId = me.id && me.id.trim() ? me.id.trim() : null;
+
+    // Кэшируем идентичность (best-effort: ошибка записи не должна валить синк).
+    if (hostEmail || hostZoomUserId) {
+      try {
+        await prisma.zoomIntegration.update({
+          where: { userId: teacherUserId },
+          data: { hostEmail, hostZoomUserId },
+        });
+      } catch (err) {
+        app.log.warn(
+          { err, teacherUserId },
+          'Не удалось сохранить идентичность хоста Zoom в ZoomIntegration',
+        );
+      }
+    }
+
+    return { hostEmail, hostZoomUserId };
+  } catch (err) {
+    app.log.warn(
+      { err, teacherUserId },
+      'Ошибка запроса Zoom /users/me при определении хоста посещаемости',
+    );
+    return { hostEmail: null, hostZoomUserId: null };
+  }
+}
+
 // Минимальное описание Session, нужное для синка.
 export interface SessionForAttendance {
   id: string;
@@ -242,6 +321,13 @@ export async function pullSessionAttendanceFromZoom(
     return { ok: false, reason: 'Не удалось авторизоваться в Zoom' };
   }
 
+  // Идентичность хоста встречи (для исключения его из студентов-гостей).
+  const { hostEmail, hostZoomUserId } = await resolveHostIdentity(
+    app,
+    teacherUserId,
+    token,
+  );
+
   let participants: AggregatedParticipant[];
   try {
     participants = await fetchAllParticipants(token, session.zoomMeetingId);
@@ -277,6 +363,13 @@ export async function pullSessionAttendanceFromZoom(
   let unmatchedCount = 0;
 
   for (const p of participants) {
+    // Признак ряда хоста встречи (преподаватель): совпадение по email хоста ЛИБО
+    // по id пользователя Zoom (запасной признак, если email скрыт в отчёте).
+    const emailLc = p.email?.toLowerCase() ?? null;
+    const isHost =
+      (!!hostEmail && !!emailLc && emailLc === hostEmail.toLowerCase()) ||
+      (!!hostZoomUserId && p.participantKey === hostZoomUserId);
+
     const emailUserId = p.email
       ? emailToUserId.get(p.email.toLowerCase()) ?? null
       : null;
@@ -292,17 +385,23 @@ export async function pullSessionAttendanceFromZoom(
       select: { id: true, userId: true },
     });
 
-    // Сохраняем ручную привязку: если у ряда уже есть сопоставленный студент
-    // (привязан вручную через /match или ранее по email) — пересинк его НЕ
-    // перезатирает. Сопоставление по email применяем только к ещё не привязанным.
-    const finalUserId = existing?.userId ?? emailUserId;
-    if (finalUserId) matchedCount += 1;
-    else unmatchedCount += 1;
+    // Ряд хоста НЕ сопоставляем со студентом (даже если email вдруг совпал бы со
+    // студентом) — это преподаватель, а не гость. Для обычных участников сохраняем
+    // ручную привязку: если у ряда уже есть сопоставленный студент (через /match
+    // или ранее по email) — пересинк его НЕ перезатирает; авто-сопоставление по
+    // email применяем только к ещё не привязанным.
+    const finalUserId = isHost ? null : existing?.userId ?? emailUserId;
+    // Счётчики студентов-гостей: хоста не считаем ни в matched, ни в unmatched.
+    if (!isHost) {
+      if (finalUserId) matchedCount += 1;
+      else unmatchedCount += 1;
+    }
 
     const data = {
       userId: finalUserId,
       source: 'zoom_report',
       status: 'present',
+      isHost,
       displayName: p.displayName,
       email: p.email,
       joinedAt: p.joinedAt,

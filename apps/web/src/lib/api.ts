@@ -1086,6 +1086,9 @@ export interface SessionAttendanceRecord {
   leftAt: string | null;
   durationSec: number | null;
   matched: boolean;
+  // Хост встречи (Zoom-аккаунт преподавателя). Приходит с userId=null,
+  // показывается отдельно как преподаватель и не считается гостем.
+  isHost: boolean;
 }
 
 // Сводка посещаемости занятия. present/absent считаются по уникальным
