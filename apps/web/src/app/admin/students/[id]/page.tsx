@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
 import { ChevronLeft, Download, FileText, Loader2, Wallet } from 'lucide-react';
@@ -66,9 +66,24 @@ type Tab = 'profile' | 'assignments' | 'thread';
 export default function StudentProfilePage() {
   const { accessToken } = useAuth();
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const studentId = params.id as string;
 
-  const [activeTab, setActiveTab] = useState<Tab>('profile');
+  // Активная вкладка синхронизирована с ?tab= — это позволяет вести на чат ученика
+  // прямой ссылкой /admin/students/:id?tab=thread (раньше для этого была отдельная
+  // страница /thread).
+  const tabParam = searchParams.get('tab');
+  const initialTab: Tab =
+    tabParam === 'assignments' || tabParam === 'thread' ? tabParam : 'profile';
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  const handleTabChange = (value: Tab) => {
+    setActiveTab(value);
+    const query = new URLSearchParams(searchParams.toString());
+    query.set('tab', value);
+    router.replace(`/admin/students/${studentId}?${query.toString()}`, { scroll: false });
+  };
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [error, setError] = useState('');
@@ -468,7 +483,7 @@ export default function StudentProfilePage() {
           </div>
 
           {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="mt-4">
+          <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as Tab)} className="mt-4">
             <div className="-m-1.5 overflow-x-auto p-1.5">
               <TabsList>
                 <TabsTrigger value="profile">Профиль</TabsTrigger>

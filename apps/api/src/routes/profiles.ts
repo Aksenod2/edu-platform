@@ -90,9 +90,6 @@ export async function profileRoutes(app: FastifyInstance) {
       direction?: string;
     };
 
-    // Validate required fields for questionnaire completion
-    const isCompleting = body.resume && body.portfolio && body.contacts && body.direction;
-
     const data: Record<string, unknown> = {};
     if (body.resume !== undefined) data.resume = body.resume;
     if (body.portfolio !== undefined) data.portfolio = body.portfolio;
@@ -104,12 +101,13 @@ export async function profileRoutes(app: FastifyInstance) {
 
     const merged = {
       resume: data.resume ?? existing?.resume,
-      portfolio: data.portfolio ?? existing?.portfolio,
-      contacts: data.contacts ?? existing?.contacts,
       direction: data.direction ?? existing?.direction,
     };
 
-    const allFilled = merged.resume && merged.portfolio && merged.contacts && merged.direction;
+    // Анкета считается заполненной по обязательным полям: резюме + направление.
+    // Портфолио и контактный email из анкеты убраны (email студент уже указал при
+    // регистрации) — на завершение они не влияют.
+    const allFilled = merged.resume && merged.direction;
     if (allFilled && !existing?.questionnaireCompletedAt) {
       data.questionnaireCompletedAt = new Date();
     }

@@ -432,7 +432,7 @@ export default function StudentsPage() {
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/students/${s.id}/thread`}>
+                            <Link href={`/admin/students/${s.id}?tab=thread`}>
                               <MessageSquare />
                               Сообщения
                             </Link>

@@ -246,7 +246,7 @@ export default function AdminPage() {
                           key={t.studentId}
                           name={t.studentName}
                           detail={`Ждёт ответа · ${formatRelative(t.lastEntryAt)}`}
-                          href={`/admin/students/${t.studentId}/thread`}
+                          href={`/admin/students/${t.studentId}?tab=thread`}
                         />
                       ))
                     )}
