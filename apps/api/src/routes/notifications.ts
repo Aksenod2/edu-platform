@@ -78,6 +78,20 @@ export async function notificationRoutes(app: FastifyInstance) {
     return { notification: updated };
   });
 
+  // DELETE /notifications/:id — удалить уведомление текущего пользователя.
+  // Идемпотентно: deleteMany с фильтром { id, userId } (нельзя удалить чужое —
+  // фильтр по userId; если уже удалено — вернётся success без ошибки).
+  app.delete('/notifications/:id', async (request) => {
+    const userId = request.user!.userId;
+    const { id } = request.params as { id: string };
+
+    await prisma.notification.deleteMany({
+      where: { id, userId },
+    });
+
+    return { success: true };
+  });
+
   // GET /notification-preferences — get user preferences (all types)
   app.get('/notification-preferences', async (request, reply) => {
     const userId = request.user!.userId;
