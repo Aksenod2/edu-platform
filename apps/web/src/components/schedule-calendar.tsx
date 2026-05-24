@@ -43,10 +43,10 @@ import {
   isSameDay,
   lessonKey,
   canJoinMeeting,
-  STATUS_BADGE_VARIANT,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
   WEEKDAYS_SHORT,
 } from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
 /** Урок для отображения в календаре (с опциональным именем потока). */
 export type CalendarLesson = Lesson & { streamName?: string };
@@ -392,9 +392,7 @@ function DayDetail({
                         onEditRequest={() => setEditingId(lesson.id)}
                       />
                     ) : (
-                      <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
-                        {LESSON_STATUS_LABELS[lesson.status]}
-                      </Badge>
+                      <LessonStatusBadge status={lesson.status} />
                     )}
                     {lesson.streamName && (
                       <Badge variant="secondary" className="w-fit">
@@ -615,7 +613,7 @@ function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_ORDER.map((s) => (
+            {MANUAL_STATUS_ORDER.map((s) => (
               <SelectItem key={s} value={s}>
                 {LESSON_STATUS_LABELS[s]}
               </SelectItem>
@@ -759,7 +757,7 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_ORDER.map((s) => (
+            {MANUAL_STATUS_ORDER.map((s) => (
               <SelectItem key={s} value={s}>
                 {LESSON_STATUS_LABELS[s]}
               </SelectItem>

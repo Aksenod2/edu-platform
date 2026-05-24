@@ -29,8 +29,9 @@ import { updateLesson, type LessonStatus } from '@/lib/api';
 import {
   LESSON_STATUS_LABELS,
   STATUS_BADGE_VARIANT,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
 } from '@/components/schedule/utils';
+import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
 
 /**
  * Контрол смены статуса занятия (только админ — экраны и так админские).
@@ -38,6 +39,11 @@ import {
  * Бейдж текущего статуса = триггер дропдауна (ChevronDown + cursor-pointer,
  * это <button>), пункты — статусы из STATUS_ORDER (текущий помечен галочкой).
  * Рядом — заметная primary-кнопка «Провести» для частого перехода planned→done.
+ *
+ * Статус 'live' («Идёт») — СИСТЕМНЫЙ (ставит Zoom между meeting.started/ended),
+ * поэтому вручную его не предлагаем: в меню ручных опций его нет. При status==='live'
+ * бейдж-триггер рисуем «живым» (пульсирующая точка), а из 'live' разрешены ручные
+ * переходы только в done/cancelled (как и откаты для прочих статусов).
  *
  * Особые случаи:
  *  - переход в 'cancelled' — через AlertDialog с предупреждением (студенты
@@ -130,6 +136,11 @@ export function SessionStatusControl({
 
   const badgeHeight = size === 'sm' ? 'min-h-8' : 'min-h-9';
 
+  // 'live' — системный статус (ставит Zoom), руками его не выбирают: меню берёт
+  // только ручные статусы (MANUAL_STATUS_ORDER, без 'live').
+  const menuStatuses = MANUAL_STATUS_ORDER;
+  const isLive = current === 'live';
+
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
       <DropdownMenu>
@@ -138,15 +149,18 @@ export function SessionStatusControl({
               cursor-pointer и ChevronDown как аффорданс кликабельности. */}
           <Badge
             asChild
-            variant={STATUS_BADGE_VARIANT[current]}
+            variant={isLive ? 'default' : STATUS_BADGE_VARIANT[current]}
             className={cn(
               'cursor-pointer gap-1 px-2.5 py-1 text-sm transition-opacity hover:opacity-90 focus-visible:outline-none',
+              isLive && 'font-medium',
               badgeHeight,
             )}
           >
             <button type="button" aria-label="Сменить статус занятия">
               {pending ? (
                 <Loader2 className="size-3.5 animate-spin" />
+              ) : isLive ? (
+                <LivePulseDot />
               ) : null}
               {LESSON_STATUS_LABELS[current]}
               <ChevronDown className="size-3.5 opacity-70" />
@@ -156,7 +170,7 @@ export function SessionStatusControl({
         <DropdownMenuContent align="start" className="min-w-44">
           <DropdownMenuLabel>Статус занятия</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {STATUS_ORDER.map((s) => (
+          {menuStatuses.map((s) => (
             <DropdownMenuItem
               key={s}
               onSelect={() => handleSelect(s)}
@@ -176,8 +190,9 @@ export function SessionStatusControl({
       </DropdownMenu>
 
       {/* Частый переход planned→done: отдельная заметная primary-кнопка.
-          Для занятия без даты «Провести» разрешено (в отличие от «Запланирован»). */}
-      {current === 'planned' && (
+          Для занятия без даты «Провести» разрешено (в отличие от «Запланирован»).
+          Для 'live' это «завершить занятие вручную» (live→done). */}
+      {(current === 'planned' || current === 'live') && (
         <Button
           type="button"
           size={size === 'sm' ? 'sm' : 'default'}

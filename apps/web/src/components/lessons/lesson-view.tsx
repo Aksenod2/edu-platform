@@ -43,10 +43,7 @@ import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
 import { LessonAttendanceSection } from '@/components/lessons/lesson-attendance-section';
 import { parseVideoEmbed } from '@/lib/video-embed';
-import {
-  LESSON_STATUS_LABELS,
-  STATUS_BADGE_VARIANT,
-} from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 import {
   createAssignment,
   getAssignments,
@@ -700,9 +697,7 @@ function SessionsListCard({
               >
                 <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 transition-colors hover:bg-accent/50">
                   <span className="font-medium">{s.streamName}</span>
-                  <Badge variant={STATUS_BADGE_VARIANT[s.status]} className="font-normal">
-                    {LESSON_STATUS_LABELS[s.status]}
-                  </Badge>
+                  <LessonStatusBadge status={s.status} className="font-normal" />
                   <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Clock className="size-3.5" />
                     {s.date ? formatDate(s.date) : 'без даты'}

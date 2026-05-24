@@ -13,6 +13,7 @@ import {
 } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -142,6 +143,7 @@ function StudentLessonsContent() {
           {lessons.map((lesson, index) => {
             const upcoming = isUpcoming(lesson);
             const cancelled = lesson.status === 'cancelled';
+            const live = lesson.status === 'live';
             // Учебное видео урока (лекция): файл, ссылка или несколько видео.
             // Запись Zoom-занятия — отдельная сущность, в индикатор не входит.
             const hasVideo = !!(
@@ -170,6 +172,11 @@ function StudentLessonsContent() {
                         </span>
                         {cancelled ? (
                           <Badge variant="destructive">Отменён</Badge>
+                        ) : live ? (
+                          <Badge className="gap-1.5 font-medium">
+                            <LivePulseDot />
+                            Идёт
+                          </Badge>
                         ) : upcoming ? (
                           <Badge variant="secondary">Запланирован</Badge>
                         ) : (

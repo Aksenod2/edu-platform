@@ -34,7 +34,7 @@ import {
 } from '@/lib/api';
 import {
   LESSON_STATUS_LABELS,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
   dateKey,
 } from '@/components/schedule/utils';
 
@@ -263,7 +263,7 @@ export function PlanLessonDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {STATUS_ORDER.map((s) => (
+                {MANUAL_STATUS_ORDER.map((s) => (
                   <SelectItem key={s} value={s}>
                     {LESSON_STATUS_LABELS[s]}
                   </SelectItem>

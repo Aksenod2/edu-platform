@@ -601,11 +601,14 @@ export async function purgeAllFiles(accessToken: string): Promise<{
 
 // Статус урока: Черновик · Запланирован · Проведён · Отменён.
 // Черновик скрыт от учеников; статус управляет видимостью.
-export type LessonStatus = 'draft' | 'planned' | 'done' | 'cancelled';
+// 'live' = «Идёт» — занятие в эфире (между Zoom meeting.started и meeting.ended).
+// Системный статус: ставится автоматически бэком, вручную не выбирается.
+export type LessonStatus = 'draft' | 'planned' | 'live' | 'done' | 'cancelled';
 
 export const LESSON_STATUS_LABELS: Record<LessonStatus, string> = {
   draft: 'Черновик',
   planned: 'Запланирован',
+  live: 'Идёт',
   done: 'Проведён',
   cancelled: 'Отменён',
 };
