@@ -72,6 +72,14 @@ enum TopUpRequestStatus {
   rejected
 }
 
+// Статус начисления студенту за группу (ledger «Оплата и баланс», платёжный план группы).
+// open — начисление открыто (не погашено полностью); paid — погашено целиком; refunded — возвращено админом.
+enum ChargeStatus {
+  open
+  paid
+  refunded
+}
+
 enum NotificationType {
   lesson_published
   assignment_created
@@ -121,6 +129,8 @@ model User {
   topUpRequests           TopUpRequest[]           @relation("TopUpAuthor")
   reviewedTopUps          TopUpRequest[]           @relation("TopUpReviewer")
   sessionAttendance       SessionAttendance[]
+  charges                 Charge[]                 @relation("ChargeUser")
+  createdCharges          Charge[]                 @relation("ChargeCreatedBy")
 }
 
 model ApiKey {
@@ -163,6 +173,9 @@ model Stream {
   joinToken   String?      @unique
   // Когда токен сгенерирован/перевыпущен (для UI и аудита).
   joinTokenAt DateTime?
+  // Платёжный план группы: цена за участие в копейках. null = план не задан
+  // (студенты не начисляются автоматически). Эпик «Оплата и баланс».
+  priceKopecks Int?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -171,6 +184,7 @@ model Stream {
   sessions      Session[]
   enrollments   StreamEnrollment[]
   conversations Conversation[]
+  charges       Charge[]
 
   @@index([ownerId])
   @@index([programId])
@@ -530,13 +544,19 @@ model WalletTransaction {
   kind      WalletTxKind
   note      String?
   createdBy String? // имя администратора, сделавшего операцию
+  // Начисление за группу, которое гасится этой транзакцией (если есть). Одно начисление
+  // может гаситься НЕСКОЛЬКИМИ списаниями — поэтому связь со стороны WalletTransaction
+  // (НЕ @unique). Эпик «Оплата и баланс».
+  chargeId  String?
   createdAt DateTime     @default(now())
   user      User         @relation("WalletTxUser", fields: [userId], references: [id], onDelete: Cascade)
+  charge    Charge?      @relation(fields: [chargeId], references: [id], onDelete: SetNull)
 
   // Заявка на пополнение, по которой была проведена эта транзакция (если есть).
   topUpRequest TopUpRequest?
 
   @@index([userId])
+  @@index([chargeId])
 }
 
 // Заявка студента на пополнение баланса по скриншоту оплаты (Фаза 1 эпика «Оплата и баланс»).
@@ -563,6 +583,36 @@ model TopUpRequest {
 
   @@index([status])
   @@index([userId])
+}
+
+// Начисление студенту за участие в группе (ledger «Оплата и баланс», платёжный план группы).
+// amountKopecks — цена, зафиксированная на момент зачисления студента (даже если позже
+// Stream.priceKopecks изменится). paidKopecks — сколько уже погашено списаниями с баланса
+// (одно начисление может гаситься несколькими WalletTransaction). status: open → paid после
+// полного погашения; refunded — возврат админом. createdById — админ-создатель (для аудита/возврата).
+//
+// ИДЕМПОТЕНТНОСТЬ: ровно одно ОТКРЫТОЕ начисление на пару (streamId, userId) — гарантируется
+// PARTIAL UNIQUE INDEX "charge_active_uniq" ... WHERE status='open' (создаётся сырым SQL в миграции,
+// т.к. Prisma не умеет partial unique в schema). После полного погашения можно создать новое.
+model Charge {
+  id            String       @id @default(uuid())
+  streamId      String
+  userId        String
+  amountKopecks Int // зафиксированная цена на момент зачисления (копейки)
+  paidKopecks   Int          @default(0) // сколько уже погашено списаниями (копейки)
+  status        ChargeStatus @default(open)
+  note          String?
+  createdById   String? // админ-создатель начисления (для аудита/возврата)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user               User                @relation("ChargeUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy          User?               @relation("ChargeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  walletTransactions WalletTransaction[]
+
+  @@index([userId, status])
+  @@index([streamId])
 }
 
 // Настройки оплаты (синглтон — один ряд с id="singleton"). Куда переводить деньги:
