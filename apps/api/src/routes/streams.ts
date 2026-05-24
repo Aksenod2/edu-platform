@@ -154,7 +154,13 @@ export async function streamRoutes(app: FastifyInstance) {
         : mine
           ? { ownerId: request.user!.userId }
           : {},
-      include: { ...streamTeachersInclude, _count: { select: { enrollments: true } } },
+      include: {
+        ...streamTeachersInclude,
+        // studentsCount — без демо/служебных аккаунтов (User.isDemo): они портят
+        // счётчик количества учеников. Сами демо-зачисления остаются в группе и
+        // видны в ростере GET /streams/:id/students.
+        _count: { select: { enrollments: { where: { user: { isDemo: false } } } } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     return {
@@ -322,7 +328,12 @@ export async function streamRoutes(app: FastifyInstance) {
       include: {
         _count: {
           // Stream больше не владеет уроками — считаем сессии (фолбэк для менторских).
-          select: { enrollments: true, sessions: true },
+          // enrollments — без демо/служебных (User.isDemo): демо не учитывается в
+          // счётчике учеников группы (но остаётся в ростере).
+          select: {
+            enrollments: { where: { user: { isDemo: false } } },
+            sessions: true,
+          },
         },
         owner: { select: { id: true, name: true } },
         sessions: streamTeacherSourcesInclude.sessions,
@@ -373,7 +384,10 @@ export async function streamRoutes(app: FastifyInstance) {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+          // isDemo отдаём в ростере, чтобы фронт пометил демо/служебные аккаунты
+          // бейджем «Демо». Демо-студентов из СПИСКА НЕ скрываем (админ управляет ими),
+          // исключаются они только из ЧИСЛОВЫХ счётчиков (studentsCount и т.п.).
+          select: { id: true, name: true, email: true, isActive: true, isDemo: true, createdAt: true },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -527,7 +541,10 @@ export async function streamRoutes(app: FastifyInstance) {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+          // isDemo отдаём в ростере, чтобы фронт пометил демо/служебные аккаунты
+          // бейджем «Демо». Демо-студентов из СПИСКА НЕ скрываем (админ управляет ими),
+          // исключаются они только из ЧИСЛОВЫХ счётчиков (studentsCount и т.п.).
+          select: { id: true, name: true, email: true, isActive: true, isDemo: true, createdAt: true },
         },
       },
       orderBy: { createdAt: 'asc' },

@@ -40,6 +40,10 @@ export async function userRoutes(app: FastifyInstance) {
         name: true,
         role: true,
         isActive: true,
+        // isDemo отдаём в списке студентов, чтобы фронт пометил демо/служебные аккаунты
+        // бейджем «Демо». Из списка их НЕ скрываем (админ ими управляет) — демо
+        // исключается только из числовых метрик (см. stats.ts, studentsCount и т.п.).
+        isDemo: true,
         balanceKopecks: true,
         createdAt: true,
         inviteToken: true,

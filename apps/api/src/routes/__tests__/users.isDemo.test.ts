@@ -7,7 +7,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // здесь не тестируем — только сохранение флага isDemo (демо/служебный аккаунт).
 vi.mock('@platform/db', () => ({
   prisma: {
-    user: { findUnique: vi.fn(), update: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     refreshToken: { deleteMany: vi.fn() },
   },
 }));
@@ -120,5 +120,56 @@ describe('PATCH /users/:id — isDemo (admin)', () => {
     expect(res.statusCode).toBe(200);
     const dataArg = db.user.update.mock.calls[0][0].data;
     expect('isDemo' in dataArg).toBe(false);
+  });
+});
+
+describe('GET /users — список студентов содержит демо с флагом isDemo', () => {
+  it('200 — демо-студент НЕ скрыт из списка и помечен isDemo=true', async () => {
+    db.user.findMany.mockResolvedValueOnce([
+      {
+        id: 'u-1',
+        email: 'a@x',
+        name: 'Обычный',
+        role: 'student',
+        isActive: true,
+        isDemo: false,
+        balanceKopecks: 0,
+        createdAt: new Date('2026-05-01T00:00:00Z'),
+        inviteToken: null,
+        inviteExpiresAt: null,
+        deletedAt: null,
+        _count: { studentAssignments: 0 },
+      },
+      {
+        id: 'u-demo',
+        email: 'demo@x',
+        name: 'Демо',
+        role: 'student',
+        isActive: true,
+        isDemo: true,
+        balanceKopecks: 0,
+        createdAt: new Date('2026-05-02T00:00:00Z'),
+        inviteToken: null,
+        inviteExpiresAt: null,
+        deletedAt: null,
+        _count: { studentAssignments: 0 },
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Демо-студент остаётся в списке (админ им управляет).
+    expect(body.users).toHaveLength(2);
+    expect(body.users[1]).toMatchObject({ id: 'u-demo', isDemo: true });
+    expect(body.users[0]).toMatchObject({ id: 'u-1', isDemo: false });
+    // isDemo запрошен в select.
+    expect(db.user.findMany.mock.calls[0][0].select.isDemo).toBe(true);
   });
 });

@@ -106,6 +106,38 @@ describe('GET /lessons/:id/analytics — аналитика сдач по зан
     expect(db.studentAssignment.groupBy.mock.calls[0][0].where).toEqual({
       sessionId: 'session-1',
     });
+    // Знаменатель (состав потока) считается БЕЗ демо/служебных аккаунтов (User.isDemo).
+    expect(db.streamEnrollment.count.mock.calls[0][0].where).toEqual({
+      streamId: 'stream-1',
+      user: { isDemo: false },
+    });
+  });
+
+  it('admin: enrolledCount без демо/служебных — знаменатель и notSubmittedCount не завышаются', async () => {
+    db.session.findUnique.mockResolvedValueOnce({ id: 'session-3' });
+    // В потоке 5 зачислений, из них 2 демо → не-демо знаменатель = 3 (мок count уже
+    // отфильтрован фильтром user.isDemo=false, который мы и проверяем).
+    db.streamEnrollment.count.mockResolvedValueOnce(3);
+    db.studentAssignment.groupBy.mockResolvedValueOnce([
+      { status: 'reviewed', _count: { _all: 1 } },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/lessons/lesson-3/analytics?streamId=stream-3',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.enrolledCount).toBe(3);
+    // submittedCount=1 (reviewed); не сдали = 3-1 = 2 (а не 5-1).
+    expect(body.notSubmittedCount).toBe(2);
+    // count вызван с relation-фильтром на не-демо студентов.
+    expect(db.streamEnrollment.count).toHaveBeenCalledWith({
+      where: { streamId: 'stream-3', user: { isDemo: false } },
+    });
   });
 
   it('admin: отсутствующие статусы дают 0, notSubmittedCount не уходит в минус', async () => {

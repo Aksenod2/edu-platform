@@ -13,6 +13,7 @@ vi.mock('@platform/db', async () => {
       stream: {
         delete: vi.fn(),
         findUnique: vi.fn(),
+        findMany: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
       },
@@ -549,5 +550,147 @@ describe('PATCH /streams/:id — валидация плана биллинга 
     expect(db.stream.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ billingDayOfMonth: 20 }) }),
     );
+  });
+});
+
+// ─── Счётчик учеников без демо/служебных аккаунтов (User.isDemo) ───────────────
+
+describe('GET /streams — studentsCount без демо', () => {
+  it('200 — studentsCount берётся из filtered _count (enrollments where user.isDemo=false)', async () => {
+    // Prisma уже вернёт _count.enrollments отфильтрованным; мы проверяем, что роут
+    // (а) пробрасывает это число в studentsCount и (б) просит фильтр по не-демо.
+    db.stream.findMany.mockResolvedValueOnce([
+      {
+        id: 's-1',
+        name: 'Группа',
+        status: 'active',
+        ownerId: null,
+        programId: null,
+        priceKopecks: null,
+        billingType: 'one_time',
+        monthlyPriceKopecks: null,
+        billingDayOfMonth: null,
+        createdAt: new Date('2026-05-01T00:00:00Z'),
+        updatedAt: new Date('2026-05-01T00:00:00Z'),
+        joinToken: 'secret-token',
+        joinTokenAt: new Date('2026-05-01T00:00:00Z'),
+        owner: null,
+        program: null,
+        sessions: [],
+        // 3 не-демо ученика (демо-зачисления Prisma уже отфильтровала).
+        _count: { enrollments: 3 },
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.streams[0].studentsCount).toBe(3);
+    // joinToken/joinTokenAt не светим в общем списке.
+    expect(body.streams[0].joinToken).toBeUndefined();
+    expect(body.streams[0].joinTokenAt).toBeUndefined();
+    // Запрошен filtered relation-count по не-демо студентам.
+    const includeArg = db.stream.findMany.mock.calls[0][0].include;
+    expect(includeArg._count.select.enrollments).toEqual({
+      where: { user: { isDemo: false } },
+    });
+  });
+});
+
+describe('GET /streams/:id — studentsCount без демо', () => {
+  it('200 — детали группы считают учеников без демо/служебных', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({
+      id: 's-1',
+      name: 'Группа',
+      status: 'active',
+      ownerId: null,
+      programId: null,
+      priceKopecks: null,
+      billingType: 'one_time',
+      monthlyPriceKopecks: null,
+      billingDayOfMonth: null,
+      createdAt: new Date('2026-05-01T00:00:00Z'),
+      updatedAt: new Date('2026-05-01T00:00:00Z'),
+      joinToken: 'secret-token',
+      joinTokenAt: new Date('2026-05-01T00:00:00Z'),
+      owner: null,
+      program: null,
+      sessions: [],
+      _count: { enrollments: 2, sessions: 0 },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.stream.studentsCount).toBe(2);
+    // filtered relation-count по не-демо студентам.
+    const includeArg = db.stream.findUnique.mock.calls[0][0].include;
+    expect(includeArg._count.select.enrollments).toEqual({
+      where: { user: { isDemo: false } },
+    });
+  });
+});
+
+describe('GET /streams/:id/students — ростер содержит демо с флагом isDemo', () => {
+  it('200 — демо-ученик НЕ скрыт из списка и помечен isDemo=true', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1' });
+    db.streamEnrollment.findMany.mockResolvedValueOnce([
+      {
+        user: {
+          id: 'u-1',
+          name: 'Обычный',
+          email: 'a@x.ru',
+          isActive: true,
+          isDemo: false,
+          createdAt: new Date('2026-05-01T00:00:00Z'),
+        },
+      },
+      {
+        user: {
+          id: 'u-demo',
+          name: 'Демо',
+          email: 'demo@x.ru',
+          isActive: true,
+          isDemo: true,
+          createdAt: new Date('2026-05-02T00:00:00Z'),
+        },
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/streams/s-1/students',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Демо-ученик присутствует в ростере (НЕ скрыт): оба ученика на месте.
+    expect(body.students).toHaveLength(2);
+    expect(body.students.map((s: { id: string }) => s.id)).toEqual(['u-1', 'u-demo']);
+    // Поле isDemo отдано для бейджа «Демо».
+    expect(body.students[0].isDemo).toBe(false);
+    expect(body.students[1].isDemo).toBe(true);
+    // Ростер не фильтрует по isDemo (берёт всех не-удалённых).
+    expect(db.streamEnrollment.findMany.mock.calls[0][0].where).toEqual({
+      streamId: 's-1',
+      user: { deletedAt: null },
+    });
+    // isDemo запрошен в select user.
+    const selectArg = db.streamEnrollment.findMany.mock.calls[0][0].include.user.select;
+    expect(selectArg.isDemo).toBe(true);
   });
 });
