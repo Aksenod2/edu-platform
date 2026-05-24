@@ -99,6 +99,18 @@ describe('POST /students/:id/wallet/topup', () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
+  it('400 — amountKopecks превышает потолок MAX_AMOUNT_KOPECKS', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/students/s-1/wallet/topup',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 100_000_001 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it('404 — целевой пользователь не студент', async () => {
     db.user.findUnique.mockResolvedValueOnce({ role: 'admin', balanceKopecks: 0, name: 'Не студент' });
     const app = buildApp();
@@ -204,6 +216,18 @@ describe('POST /students/:id/wallet/debit', () => {
       url: '/students/s-1/wallet/debit',
       headers: authHeaders(adminToken),
       payload: { amountKopecks: 0 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('400 — amountKopecks превышает потолок MAX_AMOUNT_KOPECKS', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/students/s-1/wallet/debit',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 100_000_001 },
     });
     expect(res.statusCode).toBe(400);
     expect(db.$transaction).not.toHaveBeenCalled();

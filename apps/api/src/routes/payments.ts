@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma, type Prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { requireRole, authenticate } from '../middleware/auth.js';
-import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { uploadFile, getFileUrl, deleteFile } from '../lib/s3.js';
 import { isPositiveInt, creditBalance, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 import { settleOutstandingCharges } from '../lib/charges.js';
 import { notifyMany } from '../lib/notifications.js';
@@ -162,16 +162,27 @@ export async function paymentRoutes(app: FastifyInstance) {
           .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
       }
 
-      const created = await prisma.topUpRequest.create({
-        data: {
-          userId,
-          screenshotKey: uploaded.key,
-          claimedAmountKopecks,
-          note,
-          status: 'pending',
-        },
-        select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
-      });
+      let created;
+      try {
+        created = await prisma.topUpRequest.create({
+          data: {
+            userId,
+            screenshotKey: uploaded.key,
+            claimedAmountKopecks,
+            note,
+            status: 'pending',
+          },
+          select: { id: true, status: true, claimedAmountKopecks: true, createdAt: true },
+        });
+      } catch (err) {
+        // Гонка проскочила findFirst-чек выше: частичный уникальный индекс
+        // "TopUpRequest_userId_pending_key" (WHERE status='pending') не дал создать
+        // вторую pending-заявку → P2002. Отдаём тот же 409, что и быстрый путь.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          return reply.status(409).send({ error: 'У вас уже есть заявка на рассмотрении' });
+        }
+        throw err;
+      }
 
       // Best-effort: уведомляем всех админов о новой заявке на пополнение.
       // Ошибка уведомления НЕ должна валить создание заявки (.catch как в других местах).
@@ -624,11 +635,23 @@ export async function paymentRoutes(app: FastifyInstance) {
         .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
     }
 
+    // Запоминаем прежний ключ ДО upsert, чтобы после замены удалить осиротевший файл.
+    const prev = await prisma.paymentSettings.findUnique({
+      where: { id: SINGLETON_ID },
+      select: { qrFileKey: true },
+    });
+
     await prisma.paymentSettings.upsert({
       where: { id: SINGLETON_ID },
       create: { id: SINGLETON_ID, qrFileKey: uploaded.key, updatedById: adminId },
       update: { qrFileKey: uploaded.key, updatedById: adminId },
     });
+
+    // Best-effort уборка прежнего QR (если был и отличается от нового).
+    // Ошибка удаления не должна валить ответ — QR уже заменён.
+    if (prev?.qrFileKey && prev.qrFileKey !== uploaded.key) {
+      await deleteFile(prev.qrFileKey).catch(() => {});
+    }
 
     return reply.status(201).send({ qrUrl: await getFileUrl(uploaded.key) });
   });
@@ -637,11 +660,22 @@ export async function paymentRoutes(app: FastifyInstance) {
   app.delete('/admin/payment-settings/qr', { onRequest: adminOnly }, async (request) => {
     const adminId = request.user!.userId;
 
+    // Запоминаем прежний ключ ДО обнуления, чтобы убрать осиротевший файл.
+    const prev = await prisma.paymentSettings.findUnique({
+      where: { id: SINGLETON_ID },
+      select: { qrFileKey: true },
+    });
+
     await prisma.paymentSettings.upsert({
       where: { id: SINGLETON_ID },
       create: { id: SINGLETON_ID, updatedById: adminId },
       update: { qrFileKey: null, updatedById: adminId },
     });
+
+    // Best-effort уборка прежнего QR из хранилища.
+    if (prev?.qrFileKey) {
+      await deleteFile(prev.qrFileKey).catch(() => {});
+    }
 
     return { qrUrl: null };
   });

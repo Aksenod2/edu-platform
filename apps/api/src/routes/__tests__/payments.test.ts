@@ -4,35 +4,40 @@ import Fastify, { type FastifyInstance } from 'fastify';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
 
 // Мокаем prisma: только методы, которые вызывает paymentRoutes (DB-free).
-vi.mock('@platform/db', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
+// Prisma реэкспортируем настоящий — нужен для `err instanceof Prisma.PrismaClientKnownRequestError`.
+vi.mock('@platform/db', async () => {
+  const actual = await vi.importActual<typeof import('@platform/db')>('@platform/db');
+  return {
+    prisma: {
+      user: {
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      topUpRequest: {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      charge: {
+        findUnique: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      paymentSettings: { upsert: vi.fn(), findUnique: vi.fn() },
+      walletTransaction: { create: vi.fn() },
+      $transaction: vi.fn(),
     },
-    topUpRequest: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    charge: {
-      findUnique: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      findMany: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    paymentSettings: { upsert: vi.fn() },
-    walletTransaction: { create: vi.fn() },
-    $transaction: vi.fn(),
-  },
-}));
+    Prisma: actual.Prisma,
+  };
+});
 
 // Мокаем уведомления: проверяем факт fan-out админам, без реальной БД/почты/пуша.
 vi.mock('../../lib/notifications.js', () => ({
@@ -48,18 +53,21 @@ vi.mock('../../lib/s3.js', () => ({
     size: 1,
   })),
   getFileUrl: vi.fn(async (key: string) => `https://signed.example/${encodeURIComponent(key)}`),
+  deleteFile: vi.fn(async () => {}),
   MAX_FILE_SIZE: 50 * 1024 * 1024,
 }));
 
 import multipart from '@fastify/multipart';
 import { paymentRoutes } from '../payments.js';
-import { prisma } from '@platform/db';
+import { prisma, Prisma } from '@platform/db';
 import { notifyMany } from '../../lib/notifications.js';
+import { deleteFile } from '../../lib/s3.js';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
 const notifyManyMock = vi.mocked(notifyMany);
+const deleteFileMock = vi.mocked(deleteFile);
 
 // Заявка на пополнение создаётся успешно с заданным id (общий стаб для тестов уведомления).
 function stubCreatedRequest(id = 'req-1', claimedAmountKopecks: number | null = 100000) {
@@ -185,6 +193,31 @@ describe('POST /topup-requests', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('У вас уже есть заявка на рассмотрении');
     expect(db.topUpRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('409 — гонка: findFirst пуст, но create падает с P2002 (частичный уникальный индекс)', async () => {
+    // Быстрый findFirst-чек прошёл (нет pending), но параллельный запрос успел создать
+    // pending-заявку первым → БД-индекс TopUpRequest_userId_pending_key даёт P2002 на create.
+    db.topUpRequest.findFirst.mockResolvedValueOnce(null);
+    db.topUpRequest.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('У вас уже есть заявка на рассмотрении');
+    expect(db.topUpRequest.create).toHaveBeenCalledTimes(1);
   });
 
   it('400 — неверный mime файла (не изображение)', async () => {
@@ -869,6 +902,7 @@ describe('payment-settings', () => {
   });
 
   it('DELETE /admin/payment-settings/qr — обнуляет qrFileKey', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: null });
     db.paymentSettings.upsert.mockResolvedValueOnce({});
     const app = await buildApp();
     const res = await app.inject({
@@ -881,9 +915,44 @@ describe('payment-settings', () => {
     expect(res.json().qrUrl).toBeNull();
     const call = db.paymentSettings.upsert.mock.calls[0][0];
     expect(call.update).toMatchObject({ qrFileKey: null, updatedById: 'admin-1' });
+    // QR не было — удалять нечего.
+    expect(deleteFileMock).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/payment-settings/qr — удаляет прежний файл QR из S3', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/admin/payment-settings/qr',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().qrUrl).toBeNull();
+    // Прежний ключ best-effort удаляется из хранилища.
+    expect(deleteFileMock).toHaveBeenCalledWith('payment/old-qr.png');
+  });
+
+  it('DELETE /admin/payment-settings/qr — сбой удаления файла не валит ответ', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    deleteFileMock.mockRejectedValueOnce(new Error('S3 недоступен'));
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/admin/payment-settings/qr',
+      headers: authHeaders(adminToken),
+    });
+
+    // Несмотря на ошибку удаления, QR обнулён и ответ успешен.
+    expect(res.statusCode).toBe(200);
+    expect(res.json().qrUrl).toBeNull();
   });
 
   it('POST /admin/payment-settings/qr — загрузка QR (image) → qrUrl', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: null });
     db.paymentSettings.upsert.mockResolvedValueOnce({});
     const app = await buildApp();
     const mp = buildMultipart({ fileName: 'qr.png', contentType: 'image/png' });
@@ -897,6 +966,43 @@ describe('payment-settings', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json().qrUrl).toContain('signed.example');
     expect(db.paymentSettings.upsert).toHaveBeenCalled();
+    // Прежнего QR не было — удалять нечего.
+    expect(deleteFileMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /admin/payment-settings/qr — замена удаляет прежний файл QR', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'new.png', contentType: 'image/png' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    // Новый ключ из мока uploadFile: `payment/uploaded-new.png` — он отличается от прежнего.
+    expect(deleteFileMock).toHaveBeenCalledWith('payment/old-qr.png');
+  });
+
+  it('POST /admin/payment-settings/qr — сбой удаления прежнего файла не валит ответ', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    deleteFileMock.mockRejectedValueOnce(new Error('S3 недоступен'));
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'new.png', contentType: 'image/png' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    // QR заменён, ответ успешен несмотря на сбой удаления старого файла.
+    expect(res.statusCode).toBe(201);
+    expect(res.json().qrUrl).toContain('signed.example');
   });
 
   it('POST /admin/payment-settings/qr — 400 на не-изображении', async () => {
