@@ -562,6 +562,27 @@ export function fileDownloadUrl(url: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}download=1`;
 }
 
+/**
+ * Превращает абсолютный подписанный URL файла (`${API_BASE_URL}/files/...?exp&sig`)
+ * в SAME-ORIGIN путь через `/api-proxy`, чтобы файл можно было получить через
+ * `fetch()` без CORS. Бэк отдаёт файловые URL абсолютными (кросс-доменными):
+ * <a href>/<video>/<img> ходят по ним без CORS, но `fetch(...).text()` (например
+ * предпросмотр .md) требует CORS и падает с другого origin. В браузере переписываем
+ * путь на `/api-proxy/files/...` (тот же прокси, через который идут все API-вызовы —
+ * см. `API_URL` выше); на сервере (SSR) и для уже-относительных путей возвращаем как есть.
+ */
+export function toProxiedFileUrl(url: string): string {
+  if (!url || typeof window === 'undefined') return url;
+  try {
+    // Абсолютный URL → берём path+query и префиксуем same-origin прокси.
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return url; // уже same-origin
+    return `/api-proxy${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Удалить ВСЕ загруженные файлы и обнулить ссылки на них (только admin). Необратимо. */
 export async function purgeAllFiles(accessToken: string): Promise<{
   deletedFiles: number;
