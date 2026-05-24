@@ -2117,7 +2117,7 @@ export function getNotificationLink(
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'thread_entry':
       if (role === 'student') return '/dashboard/messages?tab=personal';
-      if (m.studentId) return `/admin/students/${m.studentId}/thread`;
+      if (m.studentId) return `/admin/students/${m.studentId}?tab=thread`;
       // Без studentId — это сообщение из штаб-канала преподавателей.
       return '/admin/messages';
     case 'lesson_published':
