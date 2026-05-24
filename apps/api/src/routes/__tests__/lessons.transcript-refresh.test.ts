@@ -118,6 +118,29 @@ describe('POST /lessons/:id/sessions/:streamId/refresh — единая подт
     expect(mockAttendance).toHaveBeenCalledTimes(1);
   });
 
+  it('«ещё не готово» (processing) → reason «ещё формируется», а НЕ «не удалось»', async () => {
+    db.session.findFirst.mockResolvedValue(sessionOk());
+    // Запись/итоги/транскрипт у Zoom ещё формируются (данных нет) → 'processing'.
+    mockRecording.mockResolvedValueOnce('processing' as never);
+    mockSummary.mockResolvedValueOnce('processing' as never);
+    mockTranscript.mockResolvedValueOnce('processing' as never);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons/les-1/sessions/str-1/refresh',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Мягкий сигнал «формируется» (ok:false, но reason НЕ про ошибку).
+    expect(body.recording).toEqual({ ok: false, reason: 'ещё формируется' });
+    expect(body.summary).toEqual({ ok: false, reason: 'ещё формируется' });
+    expect(body.transcript).toEqual({ ok: false, reason: 'ещё формируется' });
+    // Реальной ошибки нет — формулировка «не удалось …» не должна появляться.
+    expect(body.recording.reason).not.toContain('не удалось');
+  });
+
   it('частичный результат: ошибка одного шага НЕ валит остальные', async () => {
     db.session.findFirst.mockResolvedValue(sessionOk());
     mockTranscript.mockRejectedValueOnce(new Error('boom'));

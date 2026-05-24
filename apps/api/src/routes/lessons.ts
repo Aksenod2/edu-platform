@@ -14,6 +14,7 @@ import {
   processRecordingForSession,
   processSummaryForSession,
   processTranscriptForSession,
+  type ProcessOutcome,
 } from '../lib/zoom-recording.js';
 import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 import { pipeline } from 'node:stream/promises';
@@ -278,10 +279,16 @@ type SessionProjection = {
   summaryStatus: string | null;
   recordingStatus: string | null;
   recordingError: string | null;
-  // Транскрипт занятия (Ф1.3/Ф1.4). Статус/ошибка — для препода урока/админа; тело
-  // (ключи .vtt/.txt) НИКОГДА не отдаём в проекции — только через GET .../transcript.
+  // Моменты начала ожидания записи/итогов (ставятся на meeting.ended). Фронт по ним
+  // отличает «формируется» от «недоступно по таймауту». Не чувствительны — видны всем.
+  recordingRequestedAt: Date | null;
+  summaryRequestedAt: Date | null;
+  // Транскрипт занятия (Ф1.3/Ф1.4). Статус/ошибка/момент ожидания — для препода
+  // урока/админа; тело (ключи .vtt/.txt) НИКОГДА не отдаём в проекции — только через
+  // GET .../transcript.
   transcriptStatus: string | null;
   transcriptError: string | null;
+  transcriptRequestedAt: Date | null;
 } | null;
 
 // Преобразует пару (блок урока, его Session в контексте потока) к ПЛОСКОЙ форме
@@ -346,10 +353,15 @@ export function projectLesson(
   // Статус итогов (none|pending|processing|ready|failed). Студенту виден (это про
   // готовность итогов, не про доступ к транскрипту).
   summaryStatus: string | null;
-  // Статус/ошибка транскрипта (Ф1.4) — ТОЛЬКО для препода урока/админа. Поля
-  // ОПЦИОНАЛЬНЫ: при canSeeTranscript=false их в объекте НЕТ вовсе (см. ниже).
+  // Моменты начала ожидания записи/итогов — видны всем (как recording/summaryStatus).
+  // Фронт по ним отличает «формируется» (ждём недолго) от «недоступно по таймауту».
+  recordingRequestedAt: string | null;
+  summaryRequestedAt: string | null;
+  // Статус/ошибка/момент ожидания транскрипта (Ф1.4) — ТОЛЬКО для препода урока/админа.
+  // Поля ОПЦИОНАЛЬНЫ: при canSeeTranscript=false их в объекте НЕТ вовсе (см. ниже).
   transcriptStatus?: string | null;
   transcriptError?: string | null;
+  transcriptRequestedAt?: string | null;
 } {
   // Учебное видео урока (block): грузится ДО урока, не перетирается записью занятия.
   const videoKey = block.videoKey;
@@ -395,14 +407,26 @@ export function projectLesson(
     summarySource: session?.summarySource ?? null,
     // Статус итогов — виден всем (про готовность, не про доступ к телу).
     summaryStatus: session?.summaryStatus ?? null,
+    // Моменты ожидания записи/итогов — видны всем (как и их статусы). ISO-строкой
+    // (как date), чтобы фронт мог посчитать прошедшее время до таймаута.
+    recordingRequestedAt: session?.recordingRequestedAt
+      ? session.recordingRequestedAt.toISOString()
+      : null,
+    summaryRequestedAt: session?.summaryRequestedAt
+      ? session.summaryRequestedAt.toISOString()
+      : null,
     // Транскрипт: его поля присутствуют ТОЛЬКО когда получатель вправе их видеть
-    // (админ/препод урока). Для студента ключи transcriptStatus/transcriptError
-    // ОТСУТСТВУЮТ в объекте (исключены, а не занулены) — чтобы факт/статус/ошибка
-    // транскрипта не утекали. Тело (ключи S3) тут не отдаём вовсе.
+    // (админ/препод урока). Для студента ключи transcriptStatus/transcriptError/
+    // transcriptRequestedAt ОТСУТСТВУЮТ в объекте (исключены, а не занулены) — чтобы
+    // факт/статус/ошибка транскрипта не утекали (момент ожидания держим за тем же
+    // гейтом для единообразия). Тело (ключи S3) тут не отдаём вовсе.
     ...(canSeeTranscript
       ? {
           transcriptStatus: session?.transcriptStatus ?? null,
           transcriptError: session?.transcriptError ?? null,
+          transcriptRequestedAt: session?.transcriptRequestedAt
+            ? session.transcriptRequestedAt.toISOString()
+            : null,
         }
       : {}),
   };
@@ -484,10 +508,14 @@ const sessionSelect = {
   summaryStatus: true,
   recordingStatus: true,
   recordingError: true,
-  // Транскрипт занятия (Ф1.3/Ф1.4) — статус/ошибка. Ключи .vtt/.txt тут НЕ
-  // селектим в общую проекцию: тело отдаётся только через GET .../transcript.
+  // Моменты начала ожидания записи/итогов (для отличия «формируется» от «таймаут»).
+  recordingRequestedAt: true,
+  summaryRequestedAt: true,
+  // Транскрипт занятия (Ф1.3/Ф1.4) — статус/ошибка/момент ожидания. Ключи .vtt/.txt
+  // тут НЕ селектим в общую проекцию: тело отдаётся только через GET .../transcript.
   transcriptStatus: true,
   transcriptError: true,
+  transcriptRequestedAt: true,
 } as const;
 
 export async function lessonRoutes(app: FastifyInstance) {
@@ -1576,10 +1604,18 @@ export async function lessonRoutes(app: FastifyInstance) {
           summaryStatus: s.summaryStatus,
           recordingStatus: s.recordingStatus,
           recordingError: s.recordingError,
-          // Транскрипт занятия (Ф1.4): статус/ошибка для бейджей. Тело отдаётся
-          // отдельным эндпоинтом GET .../transcript — сырые ключи наружу не отдаём.
+          // Моменты ожидания записи/итогов — для отличия «формируется» от «таймаут».
+          recordingRequestedAt: s.recordingRequestedAt
+            ? s.recordingRequestedAt.toISOString()
+            : null,
+          summaryRequestedAt: s.summaryRequestedAt ? s.summaryRequestedAt.toISOString() : null,
+          // Транскрипт занятия (Ф1.4): статус/ошибка/момент ожидания для бейджей. Тело
+          // отдаётся отдельным эндпоинтом GET .../transcript — сырые ключи не отдаём.
           transcriptStatus: s.transcriptStatus,
           transcriptError: s.transcriptError,
+          transcriptRequestedAt: s.transcriptRequestedAt
+            ? s.transcriptRequestedAt.toISOString()
+            : null,
           // Медиа записи занятия (admin-only): внешняя ссылка как есть и подписанный
           // временный URL загруженного файла. Сырой videoKey наружу не отдаём.
           recordingVideoUrl: s.videoUrl ?? null,
@@ -1948,10 +1984,19 @@ export async function lessonRoutes(app: FastifyInstance) {
       );
 
       // Шаг best-effort: запускает работу, ловит ошибку и приводит к { ok, reason? }.
-      // reason всегда безопасный (общая фраза), без сырых деталей Zoom/сети.
-      const step = async (fn: () => Promise<void>, failReason: string) => {
+      // Различаем ТРИ исхода (см. ProcessOutcome в zoom-recording):
+      //   - 'ready'      → { ok:true } (данные получены);
+      //   - 'processing' → { ok:false, reason:'ещё формируется' } — данных у Zoom ЕЩЁ
+      //                    НЕТ/не готовы; это НЕ ошибка, фронт-тост скажет «формируется»;
+      //   - throw        → { ok:false, reason:<failReason> } — РЕАЛЬНАЯ ошибка («не
+      //                    удалось обновить …»). reason всегда безопасный (без сырых
+      //                    деталей Zoom/сети).
+      const step = async (fn: () => Promise<ProcessOutcome>, failReason: string) => {
         try {
-          await fn();
+          const outcome = await fn();
+          if (outcome === 'processing') {
+            return { ok: false as const, reason: 'ещё формируется' };
+          }
           return { ok: true as const };
         } catch (err) {
           app.log.error({ err, sessionId: session.id }, `refresh: ${failReason}`);

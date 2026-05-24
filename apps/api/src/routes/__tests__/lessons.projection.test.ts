@@ -57,8 +57,33 @@ function failedSession() {
     summaryStatus: 'failed',
     recordingStatus: 'failed',
     recordingError: 'Не удалось скачать запись Zoom (HTTP 401)',
+    recordingRequestedAt: null,
+    summaryRequestedAt: null,
     transcriptStatus: 'failed',
     transcriptError: 'Не удалось обработать транскрипт Zoom',
+    transcriptRequestedAt: null,
+  };
+}
+
+// Session «формируется»: данные ещё готовятся, отметки времени проставлены.
+function formingSession() {
+  return {
+    status: 'done' as const,
+    date: null,
+    startTime: null,
+    meetingUrl: null,
+    videoUrl: null,
+    videoKey: null,
+    summary: null,
+    summarySource: null,
+    summaryStatus: 'pending',
+    recordingStatus: 'processing',
+    recordingError: null,
+    recordingRequestedAt: new Date('2026-05-24T10:00:00.000Z'),
+    summaryRequestedAt: new Date('2026-05-24T10:00:00.000Z'),
+    transcriptStatus: 'pending',
+    transcriptError: null,
+    transcriptRequestedAt: new Date('2026-05-24T10:05:00.000Z'),
   };
 }
 
@@ -147,6 +172,63 @@ describe('projectLesson — гейтинг транскрипта (Ф1.4): ст�
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = projectLesson(block() as any, 'stream-1', failedSession() as any);
     expect('transcriptStatus' in p).toBe(true);
+  });
+});
+
+describe('projectLesson — отметки времени *RequestedAt («формируется» vs «таймаут»)', () => {
+  it('recordingRequestedAt/summaryRequestedAt отдаются всем (ISO-строкой)', () => {
+    // Студент (isAdmin=false, canSeeTranscript=false) тоже видит record/summary-отметки.
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      formingSession() as any,
+      false,
+      false,
+    );
+    expect(p.recordingRequestedAt).toBe('2026-05-24T10:00:00.000Z');
+    expect(p.summaryRequestedAt).toBe('2026-05-24T10:00:00.000Z');
+  });
+
+  it('transcriptRequestedAt виден преподу/админу (canSeeTranscript=true)', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      formingSession() as any,
+      true,
+      true,
+    );
+    expect('transcriptRequestedAt' in p).toBe(true);
+    expect(p.transcriptRequestedAt).toBe('2026-05-24T10:05:00.000Z');
+  });
+
+  it('transcriptRequestedAt ИСКЛЮЧЁН для студента (гейт как у остальных transcript*)', () => {
+    const p = projectLesson(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      block() as any,
+      'stream-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      formingSession() as any,
+      false,
+      false,
+    );
+    expect('transcriptRequestedAt' in p).toBe(false);
+  });
+
+  it('нет Session → *RequestedAt = null (record/summary), transcript-отметка отсутствует у студента', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pAdmin = projectLesson(block() as any, null, null, true, true);
+    expect(pAdmin.recordingRequestedAt).toBeNull();
+    expect(pAdmin.summaryRequestedAt).toBeNull();
+    expect(pAdmin.transcriptRequestedAt).toBeNull();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pStudent = projectLesson(block() as any, null, null, false, false);
+    expect(pStudent.recordingRequestedAt).toBeNull();
+    expect(pStudent.summaryRequestedAt).toBeNull();
+    expect('transcriptRequestedAt' in pStudent).toBe(false);
   });
 });
 

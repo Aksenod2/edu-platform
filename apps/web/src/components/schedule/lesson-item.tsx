@@ -99,6 +99,7 @@ export function LessonItem({
           <RecordingStatusBadge
             status={lesson.recordingStatus}
             error={lesson.recordingError}
+            requestedAt={lesson.recordingRequestedAt}
             showReady={false}
             className="w-fit"
           />

@@ -6,10 +6,20 @@ import {
   getMeetingRecordings,
   getMeetingSummary,
   getZoomAccessToken,
+  ZoomApiHttpError,
   type ZoomRecordingFile,
   type ZoomMeetingSummary,
 } from './zoom.js';
 import { uploadStream } from './s3.js';
+
+// Исход обработки записи/итогов/транскрипта. Различаем «формируется» (данных у
+// Zoom ещё нет / не готовы — это НЕ ошибка) и «ошибка» (реальный сбой). Нужен
+// вызывающему refresh, чтобы показать пользователю «ещё формируется», а не «не
+// удалось». Вебхук/свипер исход игнорируют (им важен лишь записанный в БД статус).
+//   - 'ready'      — данные получены и сохранены;
+//   - 'processing' — у Zoom ещё нет/не готовы (формируется), статус в БД=processing;
+//   - 'failed'     — реальная ошибка, статус в БД=failed (функция при этом бросает).
+export type ProcessOutcome = 'ready' | 'processing' | 'failed';
 
 // Фоновая (асинхронная) обработка вебхуков Zoom: выгрузка записи занятия в S3 и
 // сбор AI-резюме. Вызывается роутом вебхука fire-and-forget — функции сами
@@ -41,6 +51,17 @@ function isTransientDownloadError(err: unknown): boolean {
   if (!(err instanceof RecordingDownloadHttpError)) return false;
   const s = err.status;
   return s === 401 || s === 404 || s >= 500;
+}
+
+// «Записи у Zoom ещё нет / не готова» — НЕ ошибка, а состояние «формируется».
+// Признаём таким ТОЛЬКО 404 на ЛИСТИНГЕ recordings (GET .../recordings вернул
+// «нет облачной записи»): Zoom отдаёт 404, пока рендер записи не завершён или
+// записи не было вовсе. Прочие коды (403/нет scope/5xx и т.п.) — реальные ошибки
+// доступа/системы, их в «формируется» НЕ переводим. Важно: это про листинг
+// recordings, а не про СКАЧИВАНИЕ файла (там свой RecordingDownloadHttpError с
+// ретраями — его транзиентность тут не трогаем).
+function isRecordingsNotReady(err: unknown): boolean {
+  return err instanceof ZoomApiHttpError && err.status === 404;
 }
 
 // Паузы между авто-ретраями скачивания (мс). Дефолт — реальный backoff (20с, 60с):
@@ -135,6 +156,17 @@ async function fetchRecordingStream(
 // Обрабатывает событие recording.completed: скачивает основной MP4 и заливает в S3.
 // `payloadFiles` — recording_files из вебхука (если есть); иначе тянем через API.
 // Идемпотентность: если у Session уже стоит videoKey — выходим, не перезаписывая.
+//
+// СТАТУСЫ (recordingStatus):
+//   - успех (скачали+залили) → 'ready';
+//   - записи у Zoom ЕЩЁ НЕТ / не готова (пустой листинг, нет MP4 при незавершённом
+//     рендере, 404 на GET .../recordings) → 'processing' (ФОРМИРУЕТСЯ), без ошибки
+//     и БЕЗ throw — это не сбой, данные ещё готовятся;
+//   - РЕАЛЬНАЯ ошибка (403/нет scope, недопустимый хост, повторные сбои СКАЧИВАНИЯ
+//     файла после ретраев, системные) → 'failed' + safeRecordingError, и throw.
+// Возвращает ProcessOutcome ('ready'|'processing'|'failed'-через-throw), чтобы
+// вызывающий refresh показал «ещё формируется» вместо «не удалось». Вебхук/свипер
+// возврат игнорируют (им важен записанный в БД статус).
 export async function processRecordingForSession(params: {
   sessionId: string;
   meetingId: string;
@@ -149,7 +181,7 @@ export async function processRecordingForSession(params: {
   retryDelaysMs?: number[];
   // Функция паузы (для тестов — мгновенная). По умолчанию setTimeout.
   sleep?: (ms: number) => Promise<void>;
-}): Promise<void> {
+}): Promise<ProcessOutcome> {
   const {
     sessionId,
     meetingId,
@@ -164,7 +196,7 @@ export async function processRecordingForSession(params: {
     where: { id: sessionId },
     select: { id: true, videoKey: true },
   });
-  if (!session) return;
+  if (!session) return 'processing';
 
   // Запись уже выгружена ранее — повторно не качаем (идемпотентность).
   if (session.videoKey) {
@@ -172,7 +204,7 @@ export async function processRecordingForSession(params: {
       where: { id: sessionId },
       data: { recordingStatus: 'ready', recordingError: null },
     });
-    return;
+    return 'ready';
   }
 
   // Атомарное «застолбление» обработки (анти-дабл-даунлоад). Две параллельные
@@ -190,21 +222,42 @@ export async function processRecordingForSession(params: {
   });
   if (claimed.count === 0) {
     // Другая доставка уже взяла запись в работу (или успела скачать) — выходим.
-    return;
+    // Для refresh это «идёт обработка» → 'processing' (не успех и не ошибка).
+    return 'processing';
   }
 
   try {
     let files = payloadFiles ?? [];
     let main = pickMainRecording(files);
 
-    // Если в payload нет файлов или нет подходящего — спросим API Zoom.
+    // Если в payload нет файлов или нет подходящего — спросим API Zoom. 404 на
+    // листинге recordings = облачной записи ЕЩЁ НЕТ (рендер не завершён / не было):
+    // это «формируется», а не ошибка — статус оставляем 'processing' и выходим.
     if (!main) {
-      files = await getMeetingRecordings(teacherUserId, meetingId);
+      try {
+        files = await getMeetingRecordings(teacherUserId, meetingId);
+      } catch (err) {
+        if (isRecordingsNotReady(err)) {
+          // Записи у Zoom ещё нет — данные формируются, не failed.
+          await prisma.session.update({
+            where: { id: sessionId },
+            data: { recordingStatus: 'processing', recordingError: null },
+          });
+          return 'processing';
+        }
+        throw err;
+      }
       main = pickMainRecording(files);
     }
 
+    // Записи нет вовсе (пустой листинг) или MP4 ещё не отрендерился (есть другие
+    // файлы, но нет подходящего видео) — рендер не завершён → ФОРМИРУЕТСЯ, не сбой.
     if (!main || !main.download_url) {
-      throw new SafeRecordingError('В записи Zoom нет подходящего видеофайла (MP4)');
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { recordingStatus: 'processing', recordingError: null },
+      });
+      return 'processing';
     }
 
     // Скачиваем под download_token из вебхука, если он есть; иначе — OAuth-токен.
@@ -213,10 +266,10 @@ export async function processRecordingForSession(params: {
     // Авто-ретрай транзиентного сбоя скачивания. Файл записи у Zoom может
     // «доезжать» по CDN секунды-минуты после recording.completed → первые
     // попытки дают 401/404/5xx. Повторяем по retryDelaysMs (по умолчанию 20с,
-    // 60с) ПЕРЕД пометкой failed. Нетранзиентные ошибки («нет MP4»,
-    // «недопустимый хост») не ретраим — они бросятся сразу. Скачивание целиком
-    // внутри внешнего try: при финальном провале по-прежнему пишем
-    // failed + SafeRecordingError в catch ниже.
+    // 60с) ПЕРЕД пометкой failed. Нетранзиентные ошибки («недопустимый хост»,
+    // 403) не ретраим — они бросятся сразу. Скачивание целиком внутри внешнего
+    // try: при финальном провале СКАЧИВАНИЯ пишем failed + SafeRecordingError в
+    // catch ниже (повторный сбой скачивания файла — это уже реальная ошибка).
     let body: ReadableStream | null = null;
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -239,8 +292,12 @@ export async function processRecordingForSession(params: {
       where: { id: sessionId },
       data: { videoKey: uploaded.key, recordingStatus: 'ready', recordingError: null },
     });
+    return 'ready';
   } catch (err) {
-    // В recordingError пишем ТОЛЬКО обобщённый текст (без сырых URL/тел/хостов).
+    // Сюда попадают РЕАЛЬНЫЕ ошибки: повторный сбой скачивания файла после ретраев
+    // (RecordingDownloadHttpError), недопустимый хост, 403/нет scope на листинге,
+    // системные сбои. В recordingError — ТОЛЬКО обобщённый текст (без сырых
+    // URL/тел/хостов).
     await prisma.session.update({
       where: { id: sessionId },
       data: { recordingStatus: 'failed', recordingError: safeRecordingErrorMessage(err) },
@@ -262,8 +319,16 @@ export async function processRecordingForSession(params: {
 // ВАЖНО: если у занятия не было облачной записи, recording.completed может не прийти
 // никогда → статус так и останется 'pending'. Это приемлемо (лучше «готовится», чем
 // ложное «недоступна»); таймаут намеренно НЕ городим.
-export async function markRecordingPending(params: { sessionId: string }): Promise<void> {
-  const { sessionId } = params;
+//
+// recordingRequestedAt=now(): фиксируем МОМЕНТ ожидания записи. Фронт по нему
+// отличит «формируется» (ждём недолго) от «недоступно по таймауту» (ждём слишком
+// долго). Ставится здесь же атомарно: WHERE не пускает повторный meeting.ended
+// (статус уже 'pending'/иной) → отметка фиксируется один раз и не перетирается.
+export async function markRecordingPending(params: {
+  sessionId: string;
+  now?: Date;
+}): Promise<void> {
+  const { sessionId, now = new Date() } = params;
   await prisma.session.updateMany({
     where: {
       id: sessionId,
@@ -273,7 +338,7 @@ export async function markRecordingPending(params: { sessionId: string }): Promi
         { recordingStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
       ],
     },
-    data: { recordingStatus: 'pending' },
+    data: { recordingStatus: 'pending', recordingRequestedAt: now },
   });
 }
 
@@ -287,8 +352,15 @@ export async function markRecordingPending(params: { sessionId: string }): Promi
 //   - переводим в pending только если статус не входит в
 //     ['processing','ready','pending','failed'] (не перетираем идущую/готовую/
 //     упавшую/уже помеченную обработку).
-export async function markSummaryPending(params: { sessionId: string }): Promise<void> {
-  const { sessionId } = params;
+//
+// summaryRequestedAt=now(): фиксируем момент ожидания итогов (как у записи) — фронт
+// отличит «формируется» от «недоступно по таймауту». WHERE не пускает повторный
+// meeting.ended → отметка фиксируется один раз.
+export async function markSummaryPending(params: {
+  sessionId: string;
+  now?: Date;
+}): Promise<void> {
+  const { sessionId, now = new Date() } = params;
   await prisma.session.updateMany({
     where: {
       id: sessionId,
@@ -298,7 +370,7 @@ export async function markSummaryPending(params: { sessionId: string }): Promise
         { summaryStatus: { notIn: ['processing', 'ready', 'pending', 'failed'] } },
       ],
     },
-    data: { summaryStatus: 'pending' },
+    data: { summaryStatus: 'pending', summaryRequestedAt: now },
   });
 }
 
@@ -364,50 +436,68 @@ export function buildSummaryText(summary: ZoomMeetingSummary | null): string | n
 // Обрабатывает событие meeting.summary_completed: пишет Session.summary из AI-резюме.
 // Идемпотентность/приоритет ручного ввода: если summarySource === 'manual' — НЕ
 // перезатираем (учитель сам ввёл итоги). payloadSummary — резюме из вебхука, если есть.
-// Статусы (summaryStatus): успех с текстом → 'ready'; недоступно/пусто → 'failed'
-// (чтобы UI показал «итоги не получены», а не вечный pending). Ручной ввод итогов
-// статус НЕ трогаем (там свой источник истины — summarySource='manual').
+//
+// СТАТУСЫ (summaryStatus):
+//   - успех с текстом → 'ready';
+//   - резюме ЕЩЁ НЕТ / не готово (пустой ответ, 404/недоступно от API — getMeetingSummary
+//     вернул null) → 'processing' (ФОРМИРУЕТСЯ), БЕЗ throw. Это не сбой: AI Companion
+//     готовит резюме минуты, и при ручной подтяжке до готовности было бы ложное «итоги
+//     не получены»;
+//   - РЕАЛЬНАЯ ошибка (403/нет scope, 5xx — getMeetingSummary бросает) → 'failed' + throw.
+// Ручной ввод итогов статус НЕ трогаем (там свой источник — summarySource='manual').
+// Возврат ProcessOutcome — для refresh («формируется» vs «не удалось»).
 export async function processSummaryForSession(params: {
   sessionId: string;
   meetingId: string;
   teacherUserId: string;
   payloadSummary?: ZoomMeetingSummary | null;
-}): Promise<void> {
+}): Promise<ProcessOutcome> {
   const { sessionId, meetingId, teacherUserId, payloadSummary } = params;
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: { id: true, summarySource: true },
   });
-  if (!session) return;
+  if (!session) return 'processing';
 
   // Ручной ввод приоритетнее автособранного — не перетираем (и статус не трогаем).
-  if (session.summarySource === 'manual') return;
+  if (session.summarySource === 'manual') return 'ready';
 
   let summary = payloadSummary ?? null;
   const text = buildSummaryText(summary);
 
   // Если из payload текста не вышло — попробуем API (резюме могло прийти пустым).
+  // getMeetingSummary: null = ещё не готово/недоступно (404) → формируется;
+  // throw = реальная ошибка (403/5xx) → failed.
   let finalText = text;
   if (!finalText) {
-    summary = await getMeetingSummary(teacherUserId, meetingId);
+    try {
+      summary = await getMeetingSummary(teacherUserId, meetingId);
+    } catch (err) {
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { summaryStatus: 'failed' },
+      });
+      throw err;
+    }
     finalText = buildSummaryText(summary);
   }
 
   if (!finalText) {
-    // Резюме недоступно/пусто — фиксируем 'failed', чтобы UI не висел в pending.
+    // Резюме ещё нет / не готово — ФОРМИРУЕТСЯ, статус 'processing' (НЕ failed).
     // Текст summary не трогаем (могло быть проставлено ранее иным путём).
     await prisma.session.update({
       where: { id: sessionId },
-      data: { summaryStatus: 'failed' },
+      data: { summaryStatus: 'processing' },
     });
-    return;
+    return 'processing';
   }
 
   await prisma.session.update({
     where: { id: sessionId },
     data: { summary: finalText, summarySource: 'zoom_ai', summaryStatus: 'ready' },
   });
+  return 'ready';
 }
 
 // ---------------------------------------------------------------------------
@@ -487,16 +577,19 @@ async function uploadTextToS3(
 // recording.completed, если транскрипт уже есть в recording_files): скачивает .vtt,
 // заливает сырой .vtt и очищенный .txt в S3, проставляет ключи и transcriptStatus.
 //
-// ПОВЕДЕНИЕ:
-//   - Если подходящего файла транскрипта нет (часто на recording.completed —
-//     транскрипт приходит позже) — выходим БЕЗ изменения статуса (нечего тянуть).
+// ПОВЕДЕНИЕ (transcriptStatus):
+//   - Файла транскрипта ещё нет (часто на recording.completed — транскрипт приходит
+//     позже; или 404 на листинге recordings) — выходим БЕЗ пометки failed: это
+//     ФОРМИРУЕТСЯ. Статус не ломаем (остаётся 'pending' от markTranscriptPending),
+//     возвращаем 'processing' (для refresh — «ещё формируется»).
 //   - Claim атомарно (анти-дабл-даунлоад): updateMany WHERE transcriptVttKey IS NULL
 //     и transcriptStatus NOT IN ('processing','ready') → set 'processing'. Идемпотентно:
 //     повторная доставка увидит count===0 и выйдет.
 //   - Скачивание тем же fetchRecordingStream (анти-SSRF, ?access_token, ретраи).
 //   - Успех → transcriptVttKey/transcriptTxtKey + transcriptStatus='ready'.
-//   - Ошибка → transcriptStatus='failed' + безопасный transcriptError (без сырых
-//     URL/тел), как в записи. Бросаем наружу (вызывающий fire-and-forget ловит/логирует).
+//   - РЕАЛЬНАЯ ошибка (повторный сбой СКАЧИВАНИЯ после ретраев, недопустимый хост,
+//     403/5xx на листинге) → transcriptStatus='failed' + безопасный transcriptError
+//     (без сырых URL/тел) + throw. Вызывающий fire-and-forget ловит/логирует.
 export async function processTranscriptForSession(params: {
   sessionId: string;
   meetingId: string;
@@ -506,7 +599,7 @@ export async function processTranscriptForSession(params: {
   downloadToken?: string | null;
   retryDelaysMs?: number[];
   sleep?: (ms: number) => Promise<void>;
-}): Promise<void> {
+}): Promise<ProcessOutcome> {
   const {
     sessionId,
     meetingId,
@@ -521,7 +614,7 @@ export async function processTranscriptForSession(params: {
     where: { id: sessionId },
     select: { id: true, transcriptVttKey: true },
   });
-  if (!session) return;
+  if (!session) return 'processing';
 
   // Транскрипт уже выгружен ранее — повторно не качаем (идемпотентность).
   if (session.transcriptVttKey) {
@@ -529,22 +622,32 @@ export async function processTranscriptForSession(params: {
       where: { id: sessionId },
       data: { transcriptStatus: 'ready', transcriptError: null },
     });
-    return;
+    return 'ready';
   }
 
   // Сначала ищем файл транскрипта в payload; если его там нет — спросим API Zoom.
   // ВАЖНО: проверку наличия файла делаем ДО claim, чтобы на recording.completed
   // (где транскрипта обычно ещё нет) не «застолбить» статус впустую и не сломать
-  // последующую обработку recording.transcript_completed.
+  // последующую обработку recording.transcript_completed. 404 на листинге = записи
+  // ещё нет → транскрипт тоже ФОРМИРУЕТСЯ (не ошибка).
   let files = payloadFiles ?? [];
   let transcriptFile = pickTranscriptFile(files);
   if (!transcriptFile) {
-    files = await getMeetingRecordings(teacherUserId, meetingId);
+    try {
+      files = await getMeetingRecordings(teacherUserId, meetingId);
+    } catch (err) {
+      if (isRecordingsNotReady(err)) {
+        // Записи/транскрипта у Zoom ещё нет — формируется, статус НЕ ломаем.
+        return 'processing';
+      }
+      throw err;
+    }
     transcriptFile = pickTranscriptFile(files);
   }
   if (!transcriptFile || !transcriptFile.download_url) {
-    // Нечего тянуть (транскрипт ещё не готов / не включён) — статус НЕ ломаем.
-    return;
+    // Нечего тянуть (транскрипт ещё не готов / не включён) — статус НЕ ломаем,
+    // это ФОРМИРУЕТСЯ (не failed). Окончательно добёрет recording.transcript_completed.
+    return 'processing';
   }
 
   // Атомарное застолбление обработки (анти-дабл-даунлоад) — как у записи.
@@ -561,7 +664,7 @@ export async function processTranscriptForSession(params: {
   });
   if (claimed.count === 0) {
     // Другая доставка уже взяла транскрипт в работу (или успела выгрузить) — выходим.
-    return;
+    return 'processing';
   }
 
   try {
@@ -603,8 +706,10 @@ export async function processTranscriptForSession(params: {
         transcriptError: null,
       },
     });
+    return 'ready';
   } catch (err) {
-    // В transcriptError пишем ТОЛЬКО обобщённый текст (без сырых URL/тел/хостов).
+    // Сюда — РЕАЛЬНЫЕ ошибки (повторный сбой скачивания после ретраев, недопустимый
+    // хост, системные). В transcriptError — ТОЛЬКО обобщённый текст (без URL/тел/хостов).
     await prisma.session.update({
       where: { id: sessionId },
       data: { transcriptStatus: 'failed', transcriptError: safeTranscriptErrorMessage(err) },

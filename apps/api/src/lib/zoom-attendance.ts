@@ -277,22 +277,9 @@ export async function pullSessionAttendanceFromZoom(
   let unmatchedCount = 0;
 
   for (const p of participants) {
-    const matchedUserId = p.email
+    const emailUserId = p.email
       ? emailToUserId.get(p.email.toLowerCase()) ?? null
       : null;
-    if (matchedUserId) matchedCount += 1;
-    else unmatchedCount += 1;
-
-    const data = {
-      userId: matchedUserId,
-      source: 'zoom_report',
-      status: 'present',
-      displayName: p.displayName,
-      email: p.email,
-      joinedAt: p.joinedAt,
-      leftAt: p.leftAt,
-      durationSec: p.durationSec > 0 ? p.durationSec : null,
-    };
 
     // Дедуп вручную по (sessionId, zoomParticipantId). Ищем СТРОГО zoom-ряд
     // (source 'zoom_report') — ручные ряды (source 'manual') синк не перезатирает.
@@ -302,8 +289,26 @@ export async function pullSessionAttendanceFromZoom(
         zoomParticipantId: p.participantKey,
         source: 'zoom_report',
       },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
+
+    // Сохраняем ручную привязку: если у ряда уже есть сопоставленный студент
+    // (привязан вручную через /match или ранее по email) — пересинк его НЕ
+    // перезатирает. Сопоставление по email применяем только к ещё не привязанным.
+    const finalUserId = existing?.userId ?? emailUserId;
+    if (finalUserId) matchedCount += 1;
+    else unmatchedCount += 1;
+
+    const data = {
+      userId: finalUserId,
+      source: 'zoom_report',
+      status: 'present',
+      displayName: p.displayName,
+      email: p.email,
+      joinedAt: p.joinedAt,
+      leftAt: p.leftAt,
+      durationSec: p.durationSec > 0 ? p.durationSec : null,
+    };
 
     if (existing) {
       await prisma.sessionAttendance.update({
