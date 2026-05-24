@@ -66,7 +66,13 @@ export async function createCharge(
  * Гасит ОТКРЫТЫЕ начисления студента доступными средствами с баланса (авто-списание).
  * Старые начисления — первыми (orderBy createdAt asc). Для каждого начисления списываем
  * `payable = min(остаток_начисления, текущий_баланс)`; если payable>0 — debitBalance(chargeId)
- * + увеличиваем paidKopecks, переводя в 'paid' при полном погашении.
+ * + АТОМАРНО увеличиваем paidKopecks через increment, переводя в 'paid' при полном погашении.
+ *
+ * АТОМАРНОСТЬ ledger: и баланс (debitBalance условным updateMany), и paidKopecks
+ * (charge.update increment) меняются на стороне БД, без перезаписи прочитанным значением,
+ * поэтому одновременные settle (например approve top-up и зачисление студента) не теряют
+ * обновлений paidKopecks. Статус 'paid' выставляется по ФАКТИЧЕСКОМУ значению из вернувшейся
+ * записи update (а не по локальной арифметике).
  *
  * ЧАСТИЧНОЕ ПОГАШЕНИЕ разрешено: если средств меньше остатка — гасим сколько есть, начисление
  * остаётся открытым. БАЛАНС НЕ УВОДИМ В МИНУС: списываем не больше доступного. ИДЕМПОТЕНТНО:
@@ -108,14 +114,24 @@ export async function settleOutstandingCharges(tx: Tx, userId: string): Promise<
       chargeId: charge.id,
     });
 
-    const newPaid = charge.paidKopecks + payable;
-    await tx.charge.update({
+    // АТОМАРНО увеличиваем paidKopecks через increment (а НЕ перезаписью прочитанным
+    // значением): при одновременных settle (approve top-up + зачисление студента)
+    // read-then-write по stale-значению терял бы обновление. increment складывается
+    // на стороне БД, потеря обновления исключена. update возвращает обновлённую строку —
+    // статус выставляем по ФАКТИЧЕСКОМУ новому paidKopecks, а не по локальной арифметике.
+    const updated = await tx.charge.update({
       where: { id: charge.id },
-      data: {
-        paidKopecks: newPaid,
-        status: newPaid >= charge.amountKopecks ? 'paid' : 'open',
-      },
+      data: { paidKopecks: { increment: payable } },
     });
+
+    if (updated.paidKopecks >= updated.amountKopecks) {
+      // Полностью погашено по факту — переводим в 'paid'. Условие на 'open' делает
+      // повторный перевод безвредным (идемпотентность) при гонке двух settle.
+      await tx.charge.updateMany({
+        where: { id: charge.id, status: 'open' },
+        data: { status: 'paid' },
+      });
+    }
 
     available -= payable;
     totalPaid += payable;

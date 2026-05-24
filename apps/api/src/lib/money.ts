@@ -4,6 +4,12 @@ import type { Prisma, WalletTransaction } from '@platform/db';
 // Здесь — общие хелперы для денежных операций, переиспользуемые между роутами
 // (wallet.ts — ручное пополнение/списание админом; payments.ts — заявки студентов).
 
+// Верхняя граница любой денежной величины (копейки). 100 000 000 коп. = 1 000 000 ₽.
+// Защита от абсурдных значений И от переполнения колонок Int4 в PostgreSQL
+// (макс. 2_147_483_647): и сумма заявки/операции, и цена группы должны быть ≤ этого
+// потолка. Единый источник правды для всех денежных полей (payments.ts, streams.ts).
+export const MAX_AMOUNT_KOPECKS = 100_000_000;
+
 // Проверка: положительное целое число копеек (защита от NaN/дробей/отрицательных).
 export function isPositiveInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;

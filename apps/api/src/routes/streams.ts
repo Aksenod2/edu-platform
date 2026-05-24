@@ -7,7 +7,7 @@ import {
   streamTeacherSourcesInclude,
 } from '../lib/stream-teachers.js';
 import { enrollStudentInStreamTx } from '../lib/stream-enroll.js';
-import { isNonNegativeInt } from '../lib/money.js';
+import { isNonNegativeInt, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 
 // Публичный токен инвайт-ссылки: 32 случайных байта в base64url (URL-safe).
 function generateJoinToken(): string {
@@ -81,10 +81,16 @@ export async function streamRoutes(app: FastifyInstance) {
     }
 
     // Цена группы (платёжный план): null/undefined = план не задан; иначе целое ≥ 0.
-    if (priceKopecks !== undefined && priceKopecks !== null && !isNonNegativeInt(priceKopecks)) {
-      return reply
-        .status(400)
-        .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+    if (priceKopecks !== undefined && priceKopecks !== null) {
+      if (!isNonNegativeInt(priceKopecks)) {
+        return reply
+          .status(400)
+          .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+      }
+      // Верхняя граница: защита от переполнения колонки Int4 и абсурдных значений.
+      if (priceKopecks > MAX_AMOUNT_KOPECKS) {
+        return reply.status(400).send({ error: 'Цена слишком большая' });
+      }
     }
 
     // Если задана программа — проверяем, что она существует.
@@ -133,10 +139,16 @@ export async function streamRoutes(app: FastifyInstance) {
     // Меняем ТОЛЬКО цену группы (платёжный план) на будущее; уже созданные Charge
     // не пересчитываем (цена в начислении зафиксирована на момент зачисления).
     // null = снять план; иначе целое ≥ 0.
-    if (priceKopecks !== undefined && priceKopecks !== null && !isNonNegativeInt(priceKopecks)) {
-      return reply
-        .status(400)
-        .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+    if (priceKopecks !== undefined && priceKopecks !== null) {
+      if (!isNonNegativeInt(priceKopecks)) {
+        return reply
+          .status(400)
+          .send({ error: 'Цена группы должна быть целым числом копеек не меньше нуля' });
+      }
+      // Верхняя граница: защита от переполнения колонки Int4 и абсурдных значений.
+      if (priceKopecks > MAX_AMOUNT_KOPECKS) {
+        return reply.status(400).send({ error: 'Цена слишком большая' });
+      }
     }
 
     // Если задаётся ведущий — проверяем, что это существующий администратор.

@@ -658,7 +658,9 @@ describe('POST /admin/topup-requests/:id/approve — авто-погашение
       .mockResolvedValueOnce({ balanceKopecks: 0 }); // финальное чтение баланса в approve
     db.user.updateMany.mockResolvedValueOnce({ count: 1 }); // списание в debitBalance
     db.walletTransaction.create.mockResolvedValueOnce({ id: 'tx-2', kind: 'debit', amount: 5000 });
-    db.charge.update.mockResolvedValueOnce({});
+    // increment вернул строку с paidKopecks=5000 (полное погашение) → перевод в paid.
+    db.charge.update.mockResolvedValueOnce({ id: 'c-1', amountKopecks: 5000, paidKopecks: 5000 });
+    db.charge.updateMany.mockResolvedValueOnce({ count: 1 });
 
     const app = await buildApp();
     const res = await app.inject({
@@ -672,9 +674,13 @@ describe('POST /admin/topup-requests/:id/approve — авто-погашение
     const body = res.json();
     // Долг погашен → итоговый баланс 0.
     expect(body.balanceKopecks).toBe(0);
-    // Начисление закрыто (paid).
+    // paidKopecks увеличен АТОМАРНО через increment.
     expect(db.charge.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { paidKopecks: 5000, status: 'paid' } }),
+      expect.objectContaining({ data: { paidKopecks: { increment: 5000 } } }),
+    );
+    // Полное погашение → начисление закрыто (status='paid') условным updateMany.
+    expect(db.charge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'c-1', status: 'open' }, data: { status: 'paid' } }),
     );
   });
 });

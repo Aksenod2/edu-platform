@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { isPositiveInt, creditBalance } from '../lib/money.js';
+import { isPositiveInt, creditBalance, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 import { settleOutstandingCharges } from '../lib/charges.js';
 
 // Эпик «Оплата и баланс», Фаза 1.
@@ -27,7 +27,7 @@ const SCREENSHOT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 // защита от абсурдных значений и раздувания БД.
 const SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024;
 const NOTE_MAX_LEN = 1000;
-const MAX_AMOUNT_KOPECKS = 100_000_000; // 1 000 000 ₽
+// Потолок суммы (MAX_AMOUNT_KOPECKS) — общий, в lib/money.ts (1 000 000 ₽).
 
 function isScreenshotImage(fileName: string, mimeType: string): boolean {
   const lowerName = (fileName || '').toLowerCase();

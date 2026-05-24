@@ -27,6 +27,7 @@ vi.mock('@platform/db', async () => {
 import { streamRoutes } from '../streams.js';
 import { prisma, Prisma } from '@platform/db';
 import { signAccessToken } from '../../lib/jwt.js';
+import { MAX_AMOUNT_KOPECKS } from '../../lib/money.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
@@ -130,6 +131,47 @@ describe('POST /streams — валидация priceKopecks', () => {
     expect(db.stream.create).not.toHaveBeenCalled();
   });
 
+  it('400 — цена больше потолка MAX_AMOUNT_KOPECKS (переполнение Int4)', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', priceKopecks: MAX_AMOUNT_KOPECKS + 1 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe('Цена слишком большая');
+    expect(db.stream.create).not.toHaveBeenCalled();
+  });
+
+  it('201 — цена ровно на потолке MAX_AMOUNT_KOPECKS допустима', async () => {
+    db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа', priceKopecks: MAX_AMOUNT_KOPECKS });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', priceKopecks: MAX_AMOUNT_KOPECKS },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(db.stream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ priceKopecks: MAX_AMOUNT_KOPECKS }) }),
+    );
+  });
+
+  it('201 — цена null (план не задан) допустима', async () => {
+    db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа', priceKopecks: null });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', priceKopecks: null },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(db.stream.create).toHaveBeenCalled();
+  });
+
   it('201 — цена 0 допустима, передаётся в create', async () => {
     db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа', priceKopecks: 0 });
     const app = buildApp();
@@ -158,6 +200,36 @@ describe('PATCH /streams/:id — меняет только цену, Charge не
     });
     expect(res.statusCode).toBe(400);
     expect(db.stream.update).not.toHaveBeenCalled();
+  });
+
+  it('400 — цена больше потолка MAX_AMOUNT_KOPECKS (переполнение Int4)', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+      payload: { priceKopecks: MAX_AMOUNT_KOPECKS + 1 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe('Цена слишком большая');
+    expect(db.stream.update).not.toHaveBeenCalled();
+  });
+
+  it('200 — цена null снимает план (валидно)', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1' });
+    db.stream.update.mockResolvedValueOnce({ id: 's-1', priceKopecks: null });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+      payload: { priceKopecks: null },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(db.stream.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ priceKopecks: null }) }),
+    );
   });
 
   it('200 — обновляет priceKopecks', async () => {
