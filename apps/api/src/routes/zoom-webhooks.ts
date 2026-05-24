@@ -96,7 +96,23 @@ async function processEventAsync(
       });
 
       if (session) {
-        if (event === 'meeting.ended') {
+        if (event === 'meeting.started') {
+          // Созвон начался → занятие «Идёт» (live). Переводим ТОЛЬКО из 'planned':
+          // не трогаем уже завершённые ('done'), отменённые ('cancelled') и
+          // черновики ('draft'). updateMany с условием status='planned' идемпотентен:
+          // повторный meeting.started затронет 0 строк (занятие уже 'live'), а откат
+          // руками в иной статус не перебивается. ВАЖНО: фактическая доставка
+          // 'meeting.started' зависит от включения этого события в подписке Zoom-
+          // приложения (вне кода) — код к нему готов заранее.
+          const { count } = await prisma.session.updateMany({
+            where: { id: session.id, status: 'planned' },
+            data: { status: 'live' },
+          });
+          app.log.info(
+            { sessionId: session.id, meetingId, updated: count },
+            'meeting.started: занятие переведено в live (из planned)',
+          );
+        } else if (event === 'meeting.ended') {
           // Созвон завершён, облачная запись ещё обрабатывается на стороне Zoom —
           // помечаем запись «готовится» (идемпотентно, не перетирая обработку).
           await markRecordingPending({ sessionId: session.id });
@@ -123,14 +139,15 @@ async function processEventAsync(
 
           // Авто-перевод занятия в «Проведён»: созвон завершился → урок проведён.
           // Это автоматически включает выдачу ДЗ / показ записи (они завязаны на
-          // status='done'). Переводим ТОЛЬКО из 'planned' — не трогаем уже
-          // отменённые ('cancelled') и уже завершённые ('done'). updateMany с
-          // условием status='planned' идемпотентен: повторный вебхук затронет 0
-          // строк. Откат done→planned руками (PATCH) тоже не перебивается —
-          // повторный meeting.ended на ту же встречу обычно не приходит, а если
-          // и придёт по ретраю — идемпотентность дедупа вебхука его отсечёт.
+          // status='done'). Переводим из 'planned' ИЛИ 'live' (занятие могло быть
+          // в эфире, если ранее пришёл meeting.started) — не трогаем уже отменённые
+          // ('cancelled'), уже завершённые ('done') и черновики ('draft').
+          // updateMany с условием status IN ('planned','live') идемпотентен:
+          // повторный вебхук затронет 0 строк. Откат done→planned руками (PATCH)
+          // тоже не перебивается — повторный meeting.ended на ту же встречу обычно
+          // не приходит, а если придёт по ретраю — дедуп вебхука его отсечёт.
           await prisma.session.updateMany({
-            where: { id: session.id, status: 'planned' },
+            where: { id: session.id, status: { in: ['planned', 'live'] } },
             data: { status: 'done' },
           });
         } else if (event === 'recording.completed') {
@@ -287,6 +304,7 @@ export async function zoomWebhookRoutes(app: FastifyInstance) {
     // Тяжёлую работу (скачивание/резюме) делаем асинхронно, чтобы Zoom не
     // ретраил по таймауту. Отвечаем 200 сразу.
     if (
+      event === 'meeting.started' ||
       event === 'meeting.ended' ||
       event === 'recording.completed' ||
       event === 'meeting.summary_completed'

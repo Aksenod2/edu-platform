@@ -36,12 +36,14 @@ function startOfTodayUtc(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-// Свипер авто-done по дате. Переводит в 'done' занятия со status='planned' и
-// датой в прошлом, КРОМЕ тех, что редактировали руками после наступления даты
-// (защита откатов — см. вверху). 'cancelled'/'done'/'draft' не трогает.
-// Идемпотентен: повторный проход затрагивает 0 строк (статус уже не 'planned',
-// либо updatedAt поднялся самим update'ом за порог). Ошибки на каждом занятии
-// глотает (cron не должен падать). Возвращает число завершённых занятий.
+// Свипер авто-done по дате. Переводит в 'done' занятия со status 'planned' ИЛИ
+// 'live' и датой в прошлом, КРОМЕ тех, что редактировали руками после наступления
+// даты (защита откатов — см. вверху). 'cancelled'/'done'/'draft' не трогает.
+// Статус 'live' добираем тоже: занятие могло «зависнуть» в эфире (meeting.ended
+// не дошёл), а дата уже прошла — закрываем его. Идемпотентен: повторный проход
+// затрагивает 0 строк (статус уже 'done', либо updatedAt поднялся самим update'ом
+// за порог). Ошибки на каждом занятии глотает (cron не должен падать). Возвращает
+// число завершённых занятий.
 export async function sweepAutoDoneSessions(
   app: Pick<FastifyInstance, 'log'>,
   params?: { now?: Date },
@@ -53,12 +55,12 @@ export async function sweepAutoDoneSessions(
   );
   const graceMs = AUTO_DONE_GRACE_HOURS * 60 * 60 * 1000;
 
-  // Кандидаты: запланированные занятия с датой в прошлом, в окне просмотра.
+  // Кандидаты: занятия 'planned' или 'live' с датой в прошлом, в окне просмотра.
   // Фильтр «не тронуто после даты» делаем в коде (порог зависит от date каждого
   // ряда — выразить это в одном where-условии Prisma нельзя).
   const candidates = await prisma.session.findMany({
     where: {
-      status: 'planned',
+      status: { in: ['planned', 'live'] },
       date: { lt: todayStart, gte: lookbackStart },
     },
     select: { id: true, date: true, updatedAt: true },
@@ -74,10 +76,11 @@ export async function sweepAutoDoneSessions(
     if (s.updatedAt > threshold) continue;
 
     try {
-      // updateMany с повторным условием status='planned' — атомарно и идемпотентно
-      // (если статус успели сменить между выборкой и апдейтом, затронем 0 строк).
+      // updateMany с повторным условием status IN ('planned','live') — атомарно и
+      // идемпотентно (если статус успели сменить между выборкой и апдейтом — в т.ч.
+      // на 'done'/'cancelled' — затронем 0 строк).
       const { count } = await prisma.session.updateMany({
-        where: { id: s.id, status: 'planned' },
+        where: { id: s.id, status: { in: ['planned', 'live'] } },
         data: { status: 'done' },
       });
       if (count > 0) done += 1;
