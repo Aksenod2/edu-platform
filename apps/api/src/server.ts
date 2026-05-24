@@ -29,6 +29,10 @@ import { statsRoutes } from './routes/stats.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
 import { startCronJobs } from './lib/cron.js';
+import { assertJwtSecret } from './lib/jwt.js';
+
+// Fail-fast: на проде без JWT_SECRET не поднимаемся (см. assertJwtSecret).
+assertJwtSecret();
 
 const app = Fastify({
   logger: {

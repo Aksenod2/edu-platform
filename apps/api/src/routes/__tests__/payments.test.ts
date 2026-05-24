@@ -28,7 +28,7 @@ vi.mock('@platform/db', () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    paymentSettings: { upsert: vi.fn() },
+    paymentSettings: { upsert: vi.fn(), findUnique: vi.fn() },
     walletTransaction: { create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -48,6 +48,7 @@ vi.mock('../../lib/s3.js', () => ({
     size: 1,
   })),
   getFileUrl: vi.fn(async (key: string) => `https://signed.example/${encodeURIComponent(key)}`),
+  deleteFile: vi.fn(async () => {}),
   MAX_FILE_SIZE: 50 * 1024 * 1024,
 }));
 
@@ -55,11 +56,13 @@ import multipart from '@fastify/multipart';
 import { paymentRoutes } from '../payments.js';
 import { prisma } from '@platform/db';
 import { notifyMany } from '../../lib/notifications.js';
+import { deleteFile } from '../../lib/s3.js';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
 const notifyManyMock = vi.mocked(notifyMany);
+const deleteFileMock = vi.mocked(deleteFile);
 
 // Заявка на пополнение создаётся успешно с заданным id (общий стаб для тестов уведомления).
 function stubCreatedRequest(id = 'req-1', claimedAmountKopecks: number | null = 100000) {
@@ -869,6 +872,7 @@ describe('payment-settings', () => {
   });
 
   it('DELETE /admin/payment-settings/qr — обнуляет qrFileKey', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: null });
     db.paymentSettings.upsert.mockResolvedValueOnce({});
     const app = await buildApp();
     const res = await app.inject({
@@ -881,9 +885,44 @@ describe('payment-settings', () => {
     expect(res.json().qrUrl).toBeNull();
     const call = db.paymentSettings.upsert.mock.calls[0][0];
     expect(call.update).toMatchObject({ qrFileKey: null, updatedById: 'admin-1' });
+    // QR не было — удалять нечего.
+    expect(deleteFileMock).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/payment-settings/qr — удаляет прежний файл QR из S3', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/admin/payment-settings/qr',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().qrUrl).toBeNull();
+    // Прежний ключ best-effort удаляется из хранилища.
+    expect(deleteFileMock).toHaveBeenCalledWith('payment/old-qr.png');
+  });
+
+  it('DELETE /admin/payment-settings/qr — сбой удаления файла не валит ответ', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    deleteFileMock.mockRejectedValueOnce(new Error('S3 недоступен'));
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/admin/payment-settings/qr',
+      headers: authHeaders(adminToken),
+    });
+
+    // Несмотря на ошибку удаления, QR обнулён и ответ успешен.
+    expect(res.statusCode).toBe(200);
+    expect(res.json().qrUrl).toBeNull();
   });
 
   it('POST /admin/payment-settings/qr — загрузка QR (image) → qrUrl', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: null });
     db.paymentSettings.upsert.mockResolvedValueOnce({});
     const app = await buildApp();
     const mp = buildMultipart({ fileName: 'qr.png', contentType: 'image/png' });
@@ -897,6 +936,43 @@ describe('payment-settings', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json().qrUrl).toContain('signed.example');
     expect(db.paymentSettings.upsert).toHaveBeenCalled();
+    // Прежнего QR не было — удалять нечего.
+    expect(deleteFileMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /admin/payment-settings/qr — замена удаляет прежний файл QR', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'new.png', contentType: 'image/png' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    // Новый ключ из мока uploadFile: `payment/uploaded-new.png` — он отличается от прежнего.
+    expect(deleteFileMock).toHaveBeenCalledWith('payment/old-qr.png');
+  });
+
+  it('POST /admin/payment-settings/qr — сбой удаления прежнего файла не валит ответ', async () => {
+    db.paymentSettings.findUnique.mockResolvedValueOnce({ qrFileKey: 'payment/old-qr.png' });
+    db.paymentSettings.upsert.mockResolvedValueOnce({});
+    deleteFileMock.mockRejectedValueOnce(new Error('S3 недоступен'));
+    const app = await buildApp();
+    const mp = buildMultipart({ fileName: 'new.png', contentType: 'image/png' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/payment-settings/qr',
+      headers: { ...authHeaders(adminToken), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    // QR заменён, ответ успешен несмотря на сбой удаления старого файла.
+    expect(res.statusCode).toBe(201);
+    expect(res.json().qrUrl).toContain('signed.example');
   });
 
   it('POST /admin/payment-settings/qr — 400 на не-изображении', async () => {

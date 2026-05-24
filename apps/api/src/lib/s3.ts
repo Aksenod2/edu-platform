@@ -6,6 +6,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
@@ -96,6 +97,23 @@ export async function ensureBucketExists(): Promise<void> {
   // No-op: бакет создаётся в панели Timeweb; PostgreSQL-фолбэк не требует init.
 }
 
+// Канонические расширения для известных image-mime. Нужно, чтобы ключ в S3
+// соответствовал реальному типу: загруженный как «x.txt» PNG лёг с .png.
+// Для неизвестных mime маппинга нет — сохраняем расширение исходного имени.
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+};
+
+// Возвращает расширение для ключа: по mime-типу (если он известен), иначе —
+// расширение из исходного имени файла (прежнее поведение).
+function extensionForKey(originalName: string, mimeType: string): string {
+  const byMime = MIME_EXTENSIONS[mimeType.toLowerCase()];
+  if (byMime) return byMime;
+  return originalName.includes('.') ? (originalName.split('.').pop() ?? '') : '';
+}
+
 export async function uploadFile(
   buffer: Buffer,
   originalName: string,
@@ -106,7 +124,7 @@ export async function uploadFile(
     throw new Error('Файл превышает максимальный размер 50MB');
   }
 
-  const ext = originalName.includes('.') ? originalName.split('.').pop() : '';
+  const ext = extensionForKey(originalName, mimeType);
   const key = `${folder}/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
 
   if (s3 && S3_BUCKET) {
@@ -137,6 +155,29 @@ export async function uploadFile(
     url: `/files/${encodeURIComponent(key)}`,
     size: buffer.length,
   };
+}
+
+/**
+ * Удаляет файл по ключу из хранилища (S3 и/или PostgreSQL-фолбэк). Применяется
+ * для уборки осиротевших файлов (например, прежний QR при замене/удалении).
+ *
+ * Best-effort по своей природе: вызывающий, как правило, оборачивает в
+ * `.catch(() => {})`, чтобы сбой удаления не валил основную операцию. Отсутствие
+ * объекта (NoSuchKey/404) ошибкой не считается. Чистим оба места, потому что
+ * старый файл мог лежать ещё в PostgreSQL (до миграции на S3).
+ */
+export async function deleteFile(key: string): Promise<void> {
+  if (s3 && S3_BUCKET) {
+    try {
+      await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    } catch (err) {
+      // Уже нет объекта — не ошибка; остальное пробрасываем.
+      if (!isS3NotFound(err)) throw err;
+    }
+  }
+
+  // Подчищаем PostgreSQL-фолбэк: deleteMany не бросает, если записи нет.
+  await prisma.fileStorage.deleteMany({ where: { key } });
 }
 
 // Размер части multipart-загрузки (16MB) и число параллельных частей.
