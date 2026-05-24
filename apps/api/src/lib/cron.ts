@@ -3,6 +3,7 @@ import { prisma } from '@platform/db';
 import { createNotification } from './notifications.js';
 import { sweepFailedRecordings } from './zoom-recording.js';
 import { sweepSessionAttendance } from './zoom-attendance.js';
+import { sweepAutoDoneSessions } from './session-status.js';
 
 // Минимальный логгер (форма Fastify-логгера) для свиперов, работающих вне
 // HTTP-контекста (нет request/app в cron). Пишем в console, как остальные задачи.
@@ -89,6 +90,18 @@ export function startCronJobs(): void {
       await sweepSessionAttendance(cronLogger);
     } catch (err) {
       console.error('[cron] sweep zoom attendance error', err);
+    }
+  });
+
+  // Свипер авто-«Проведён» по дате — каждый час. Закрывает запланированные
+  // занятия БЕЗ Zoom (где нет вебхука meeting.ended), у которых дата уже прошла.
+  // Защита ручных откатов done→planned — внутри (эвристика updatedAt), ошибки
+  // глотает (cron не должен падать). См. sweepAutoDoneSessions (session-status.ts).
+  cron.schedule('5 * * * *', async () => {
+    try {
+      await sweepAutoDoneSessions(cronLogger);
+    } catch (err) {
+      console.error('[cron] sweep auto-done sessions error', err);
     }
   });
 

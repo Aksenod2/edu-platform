@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus, type Stream } from '@/lib/api';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import {
   parseLocalDate,
   dateKey,
@@ -82,6 +83,8 @@ export interface ScheduleCalendarProps {
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
+  /** Ре-фетч списка после смены статуса занятия из контрола (SessionStatusControl). */
+  onChanged?: () => void;
 }
 
 const MONTHS = [
@@ -97,6 +100,7 @@ export function ScheduleCalendar({
   onCreate,
   onUpdate,
   onDelete,
+  onChanged,
 }: ScheduleCalendarProps) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -287,6 +291,7 @@ export function ScheduleCalendar({
               onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
+              onChanged={onChanged}
             />
           )}
         </SheetContent>
@@ -314,6 +319,7 @@ interface DayDetailProps {
   onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
+  onChanged?: () => void;
 }
 
 function DayDetail({
@@ -325,6 +331,7 @@ function DayDetail({
   onCreate,
   onUpdate,
   onDelete,
+  onChanged,
 }: DayDetailProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -369,9 +376,26 @@ function DayDetail({
                     {lesson.title}
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
-                      {LESSON_STATUS_LABELS[lesson.status]}
-                    </Badge>
+                    {/* В редактируемом календаре статус меняется контролом
+                        (дропдаун + «Провести»). PATCH идёт по streamId занятия,
+                        поэтому контрол только при наличии streamId; иначе и в
+                        студентском режиме — read-only бейдж. Контрол живёт внутри
+                        Sheet, поэтому клики не доходят до ячейки — stopPropagation
+                        не нужен. */}
+                    {editable && lesson.streamId ? (
+                      <SessionStatusControl
+                        lessonId={lesson.id}
+                        streamId={lesson.streamId}
+                        status={lesson.status}
+                        hasDate={!!lesson.date}
+                        onChanged={onChanged}
+                        onEditRequest={() => setEditingId(lesson.id)}
+                      />
+                    ) : (
+                      <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
+                        {LESSON_STATUS_LABELS[lesson.status]}
+                      </Badge>
+                    )}
                     {lesson.streamName && (
                       <Badge variant="secondary" className="w-fit">
                         {lesson.streamName}

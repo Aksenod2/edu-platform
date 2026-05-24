@@ -315,6 +315,7 @@ function MonthView({
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
+        onChanged={onChanged}
       />
     </div>
   );

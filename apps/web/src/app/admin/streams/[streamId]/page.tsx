@@ -92,17 +92,16 @@ import {
   deleteAssignment,
   getTeachers,
   updateStream,
-  LESSON_STATUS_LABELS,
   type StreamWithCounts,
   type Student,
   type Teacher,
   type Lesson,
-  type LessonStatus,
   type Assignment,
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
 import { InviteLinkDialog } from '@/components/invite-link-dialog';
 import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
 const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
@@ -334,21 +333,11 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
+        onChanged={fetchAll}
       />
     </div>
   );
 }
-
-// Вариант бейджа для статуса урока (совпадает с другими экранами уроков).
-const lessonStatusBadgeVariant: Record<
-  LessonStatus,
-  'secondary' | 'default' | 'outline' | 'destructive'
-> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
 
 /** Дата "YYYY-MM-DD" в формате "ДД.ММ.ГГГГ" (без UTC-сдвига). */
 function formatLessonDate(date: string): string {
@@ -360,6 +349,7 @@ function formatLessonDate(date: string): string {
 // странице урока /admin/lessons/[id]; здесь — только обзор и «снять с потока».
 function LessonsTab({ stream }: { stream: StreamWithCounts }) {
   const { accessToken } = useAuth();
+  const router = useRouter();
 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -478,9 +468,18 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={lessonStatusBadgeVariant[lesson.status] ?? 'default'}>
-                      {LESSON_STATUS_LABELS[lesson.status]}
-                    </Badge>
+                    {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
+                        «Запланирован» требует даты → предлагаем открыть урок (там дата). */}
+                    <SessionStatusControl
+                      lessonId={lesson.id}
+                      streamId={stream.id}
+                      status={lesson.status}
+                      hasDate={!!lesson.date}
+                      onChanged={fetchLessons}
+                      onEditRequest={() =>
+                        router.push(`/admin/lessons/${lesson.id}?streamId=${stream.id}`)
+                      }
+                    />
                   </TableCell>
                   <TableCell className="tabular-nums text-muted-foreground">
                     {lesson.date

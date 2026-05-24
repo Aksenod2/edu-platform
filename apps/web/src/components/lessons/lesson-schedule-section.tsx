@@ -68,17 +68,16 @@ import {
   type Stream,
 } from '@/lib/api';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   LESSON_STATUS_LABELS,
+  STATUS_BADGE_VARIANT,
   STATUS_ORDER,
   dateKey,
 } from '@/components/schedule/utils';
-
-const STATUS_VARIANT: Record<LessonStatus, 'secondary' | 'default' | 'outline' | 'destructive'> = {
-  draft: 'secondary',
-  planned: 'default',
-  done: 'outline',
-  cancelled: 'destructive',
-};
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -410,7 +409,7 @@ export function LessonScheduleSection({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{s.streamName}</span>
-                  <Badge variant={STATUS_VARIANT[s.status]} className="font-normal">
+                  <Badge variant={STATUS_BADGE_VARIANT[s.status]} className="font-normal">
                     {LESSON_STATUS_LABELS[s.status]}
                   </Badge>
                   <span className="text-muted-foreground">
@@ -432,26 +431,36 @@ export function LessonScheduleSection({
                     </Badge>
                   )}
                   <div className="ml-auto flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7"
-                      onClick={() => openEdit(s)}
-                    >
-                      <Pencil className="size-4" />
-                      <span className="sr-only">Изменить</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-destructive hover:text-destructive"
-                      onClick={() => setRemoveStreamId(s.streamId)}
-                    >
-                      <Trash2 className="size-4" />
-                      <span className="sr-only">Снять с расписания</span>
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onClick={() => openEdit(s)}
+                        >
+                          <Pencil className="size-4" />
+                          <span className="sr-only">Изменить занятие</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Изменить занятие</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-destructive hover:text-destructive"
+                          onClick={() => setRemoveStreamId(s.streamId)}
+                        >
+                          <Trash2 className="size-4" />
+                          <span className="sr-only">Снять с расписания</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Снять с расписания</TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
 

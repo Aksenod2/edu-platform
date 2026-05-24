@@ -134,6 +134,34 @@ export async function createZoomMeeting(
   return { joinUrl: data.join_url, meetingId: String(data.id) };
 }
 
+// Удаляет встречу Zoom под аккаунтом пользователя.
+// DELETE https://api.zoom.us/v2/meetings/{meetingId} (Bearer).
+// Best-effort: вызывающий (отмена занятия) оборачивает в try/catch и НЕ валит
+// операцию при ошибке Zoom. 404 («встречи уже нет») трактуем как успех —
+// результат тот же. На прочие ошибки бросаем Error, чтобы вызывающий залогировал.
+export async function deleteZoomMeeting(userId: string, meetingId: string): Promise<void> {
+  const token = await getZoomAccessToken(userId);
+
+  const res = await fetch(`${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // 204 — удалено; 404 — встречи уже нет (тот же итог) — оба считаем успехом.
+  if (res.ok || res.status === 404) return;
+
+  let detail = '';
+  try {
+    const errBody = (await res.json()) as { message?: string };
+    detail = errBody.message || '';
+  } catch {
+    // тело может быть не JSON — игнорируем
+  }
+  throw new Error(
+    `Zoom вернул ошибку при удалении встречи (${res.status})${detail ? `: ${detail}` : ''}`,
+  );
+}
+
 // Технически ли возможно создать встречу Zoom для пользователя (БЕЗ учёта тумблера
 // автосоздания): интеграция включена, заполнены все реквизиты и настроен ключ
 // шифрования (без него не расшифровать секрет). Это предусловия самой интеграции —

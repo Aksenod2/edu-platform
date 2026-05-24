@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   CalendarClock,
@@ -37,6 +38,7 @@ import { MaterialRow } from '@/components/material-row';
 import { useAuth } from '@/lib/auth-context';
 import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
 import { LessonAttendanceSection } from '@/components/lessons/lesson-attendance-section';
@@ -203,7 +205,14 @@ export function LessonView({
       <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
 
       {/* ── Контекст занятия (есть только при ?streamId) ───────────────────── */}
-      {streamId && <SessionContextCard session={session} />}
+      {streamId && (
+        <SessionContextCard
+          session={session}
+          lessonId={lessonId}
+          streamId={streamId}
+          onChanged={load}
+        />
+      )}
 
       {/* Post-session CTA: занятие проведено + у урока есть ДЗ-шаблон.
           Не выдано → primary «Выдать ДЗ»; выдано → «Проверить сдачи». */}
@@ -446,7 +455,18 @@ export function LessonView({
 }
 
 // Блок «Это занятие»: статус/дата/ссылка/запись/итоги конкретного Session потока.
-function SessionContextCard({ session }: { session: LessonSession | null }) {
+function SessionContextCard({
+  session,
+  lessonId,
+  streamId,
+  onChanged,
+}: {
+  session: LessonSession | null;
+  lessonId: string;
+  streamId: string;
+  onChanged: () => void;
+}) {
+  const router = useRouter();
   if (!session) {
     return (
       <Card>
@@ -472,6 +492,12 @@ function SessionContextCard({ session }: { session: LessonSession | null }) {
     ? parseVideoEmbed(session.recordingVideoUrl)
     : null;
   const canJoin = status === 'planned' && !!session.meetingUrl;
+  // Состояние автозагрузки записи Zoom. Показываем его, как только оно появилось
+  // (не дожидаясь done и не дожидаясь готового файла) — чтобы сразу после занятия
+  // было видно «ждём видео». Инфоблок не нужен, когда плеер записи уже есть.
+  const recState = session.recordingStatus;
+  const showRecordingStatus =
+    !hasRecording && !!recState && recState !== 'none' && recState !== 'ready';
 
   return (
     <Card>
@@ -481,7 +507,19 @@ function SessionContextCard({ session }: { session: LessonSession | null }) {
             <CalendarClock className="size-5 shrink-0 text-muted-foreground" />
             Это занятие
           </CardTitle>
-          <Badge variant={STATUS_BADGE_VARIANT[status]}>{LESSON_STATUS_LABELS[status]}</Badge>
+          {/* Бейдж статуса = контрол смены статуса (дропдаун + «Провести»).
+              От «Проведён» зависят ДЗ/запись/посещаемость → onChanged перезагружает
+              данные урока. «Запланирован» без даты → ведём в редактирование. */}
+          <SessionStatusControl
+            lessonId={lessonId}
+            streamId={streamId}
+            status={status}
+            hasDate={!!session.date}
+            onChanged={onChanged}
+            onEditRequest={() =>
+              router.push(`/admin/lessons/${lessonId}?mode=edit&streamId=${streamId}`)
+            }
+          />
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -495,13 +533,26 @@ function SessionContextCard({ session }: { session: LessonSession | null }) {
             {session.date ? formatDate(session.date) : 'без даты'}
             {session.startTime ? `, ${session.startTime}` : ''}
           </span>
-          {status === 'done' && (
-            <RecordingStatusBadge
-              status={session.recordingStatus}
-              error={session.recordingError}
-            />
-          )}
         </div>
+
+        {/* Состояние записи занятия — понятным инфоблоком, как только оно есть
+            (раньше done): после проведения сразу видно «занятие завершилось,
+            ждём видео от Zoom». При готовой записи блок скрыт — ниже сам плеер. */}
+        {showRecordingStatus && (
+          <div className="flex flex-col gap-1 rounded-md border bg-muted/50 p-3">
+            <RecordingStatusBadge
+              status={recState}
+              error={session.recordingError}
+              className="w-fit"
+            />
+            <p className="text-xs text-muted-foreground">
+              {recState === 'failed'
+                ? session.recordingError?.trim() ||
+                  'Запись с Zoom не получена — обновите позже или перезапустите загрузку в режиме редактирования.'
+                : 'Занятие завершилось. Запись подтянется автоматически из Zoom — обычно в течение нескольких минут.'}
+            </p>
+          </div>
+        )}
 
         {canJoin && (
           <Button asChild variant="secondary" className="w-fit">

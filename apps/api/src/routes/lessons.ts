@@ -4,7 +4,12 @@ import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { createZoomMeeting, shouldAutoCreate, canCreateMeeting } from '../lib/zoom.js';
+import {
+  createZoomMeeting,
+  shouldAutoCreate,
+  canCreateMeeting,
+  deleteZoomMeeting,
+} from '../lib/zoom.js';
 import { processRecordingForSession } from '../lib/zoom-recording.js';
 import { pullSessionAttendanceFromZoom } from '../lib/zoom-attendance.js';
 import { pipeline } from 'node:stream/promises';
@@ -1038,6 +1043,35 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (body.status !== undefined && wasDraft && session && session.status !== 'draft') {
         notifyEnrolledLessonVisible(block.id, streamId, block.title).catch(() => {});
       }
+
+      // Отмена занятия: переход в 'cancelled' из НЕ-cancelled. Делаем один раз
+      // (по факту смены статуса), чтобы не дублировать уведомления при прочих
+      // правках уже отменённого занятия.
+      const prevStatus = existingSession?.status ?? 'draft';
+      const becameCancelled =
+        body.status === 'cancelled' && prevStatus !== 'cancelled';
+      if (becameCancelled) {
+        // zoomMeetingId нет в проекционной форме (sessionSelect) — дозапрашиваем
+        // отдельно, чтобы не менять shim. Если встреча есть — удаляем её в Zoom
+        // (best-effort: ошибка Zoom НЕ валит PATCH, только логируется), затем
+        // уведомляем зачисленных студентов об отмене тем же каналом, что и
+        // уведомление о публикации (notifyMany / lesson_published).
+        const sess = await prisma.session.findUnique({
+          where: { streamId_lessonId: { streamId, lessonId: id } },
+          select: { zoomMeetingId: true },
+        });
+        if (sess?.zoomMeetingId) {
+          try {
+            await deleteZoomMeeting(request.user!.userId, sess.zoomMeetingId);
+          } catch (err) {
+            app.log.warn(
+              { err, lessonId: id, streamId, meetingId: sess.zoomMeetingId },
+              'Не удалось удалить встречу Zoom при отмене занятия — продолжаем',
+            );
+          }
+        }
+        notifyEnrolledLessonCancelled(block.id, streamId, block.title).catch(() => {});
+      }
     }
 
     const projected = projectLesson(block, streamId ?? null, session);
@@ -1821,6 +1855,27 @@ async function notifyEnrolledLessonVisible(
     'lesson_published',
     'Новый урок',
     `Урок «${title}» доступен`,
+    { lessonId },
+  );
+}
+
+// Уведомление ученикам потока об отмене занятия. Используем тот же канал
+// (notifyMany / тип lesson_published), что и уведомление о публикации — отдельного
+// enum-типа под отмену в схеме нет, заводить его потребовало бы миграции.
+async function notifyEnrolledLessonCancelled(
+  lessonId: string,
+  streamId: string,
+  title: string,
+): Promise<void> {
+  const enrollments = await prisma.streamEnrollment.findMany({
+    where: { streamId },
+    select: { userId: true },
+  });
+  await notifyMany(
+    enrollments.map((e) => e.userId),
+    'lesson_published',
+    'Занятие отменено',
+    `Занятие «${title}» отменено`,
     { lessonId },
   );
 }
