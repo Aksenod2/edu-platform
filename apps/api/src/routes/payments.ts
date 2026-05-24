@@ -5,6 +5,7 @@ import { Writable } from 'node:stream';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { isPositiveInt, creditBalance } from '../lib/money.js';
+import { settleOutstandingCharges } from '../lib/charges.js';
 
 // Эпик «Оплата и баланс», Фаза 1.
 //
@@ -295,6 +296,11 @@ export async function paymentRoutes(app: FastifyInstance) {
             data: { walletTransactionId: credit.transaction.id },
           });
 
+          // (d) Авто-дозачёт долга: пополнили баланс → гасим открытые начисления студента
+          // доступными средствами (частично, баланс не в минус). Идемпотентно: повторно
+          // approve не пройдёт (статус уже approved), второго списания не будет.
+          const settled = await settleOutstandingCharges(tx, target.userId);
+
           const finalRequest = await tx.topUpRequest.findUniqueOrThrow({
             where: { id },
             select: {
@@ -308,8 +314,19 @@ export async function paymentRoutes(app: FastifyInstance) {
             },
           });
 
+          // Баланс после авто-погашения: если что-то списали, перечитываем актуальный.
+          const balanceKopecks =
+            settled > 0
+              ? (
+                  await tx.user.findUniqueOrThrow({
+                    where: { id: target.userId },
+                    select: { balanceKopecks: true },
+                  })
+                ).balanceKopecks
+              : credit.balanceKopecks;
+
           return {
-            balanceKopecks: credit.balanceKopecks,
+            balanceKopecks,
             transaction: credit.transaction,
             request: finalRequest,
           };
@@ -364,6 +381,89 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
 
     return { request: finalRequest };
+  });
+
+  // ─── Возврат по начислению за группу (ledger «Оплата и баланс») ─────────────
+
+  // POST /admin/charges/:id/refund { amountKopecks } — ручной возврат админом.
+  // Возвращает деньги на баланс студента (creditBalance, kind=topup, note='Возврат',
+  // привязка к начислению chargeId) и уменьшает Charge.paidKopecks на сумму возврата;
+  // начисление помечается status='refunded'. Сумма — целое 0<amount<=paidKopecks.
+  //
+  // ИДЕМПОТЕНТНОСТЬ: списываем уплату условным updateMany по (id, status!='refunded',
+  // paidKopecks>=amount) — count===0 значит уже возвращено / сумма больше уплаченной → 409/400.
+  app.post('/admin/charges/:id/refund', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { amountKopecks?: unknown };
+
+    if (!isPositiveInt(body.amountKopecks) || body.amountKopecks > MAX_AMOUNT_KOPECKS) {
+      return reply.status(400).send({
+        error: 'Сумма возврата должна быть положительным целым числом копеек в разумных пределах',
+      });
+    }
+    const amount = body.amountKopecks;
+    const adminId = request.user!.userId;
+
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { name: true },
+    });
+
+    // Проверяем существование начисления и что сумма возврата не превышает уплаченное.
+    const charge = await prisma.charge.findUnique({
+      where: { id },
+      select: { id: true, userId: true, paidKopecks: true, status: true },
+    });
+    if (!charge) {
+      return reply.status(404).send({ error: 'Начисление не найдено' });
+    }
+    if (charge.status === 'refunded') {
+      return reply.status(409).send({ error: 'Возврат уже выполнен' });
+    }
+    if (amount > charge.paidKopecks) {
+      return reply.status(400).send({ error: 'Сумма возврата больше уплаченной' });
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // Атомарно уменьшаем paidKopecks и помечаем refunded — фильтр по
+        // (status!='refunded', paidKopecks>=amount) защищает от гонок/повторного возврата.
+        const updated = await tx.charge.updateMany({
+          where: { id, status: { not: 'refunded' }, paidKopecks: { gte: amount } },
+          data: { paidKopecks: { decrement: amount }, status: 'refunded' },
+        });
+        if (updated.count === 0) {
+          throw new ConflictError('Возврат уже выполнен');
+        }
+
+        // Возвращаем деньги на баланс (привязка к начислению chargeId).
+        const credit = await creditBalance(tx, {
+          userId: charge.userId,
+          amountKopecks: amount,
+          note: 'Возврат',
+          createdBy: admin?.name ?? null,
+          chargeId: id,
+        });
+
+        const finalCharge = await tx.charge.findUniqueOrThrow({
+          where: { id },
+          select: { id: true, amountKopecks: true, paidKopecks: true, status: true },
+        });
+
+        return {
+          balanceKopecks: credit.balanceKopecks,
+          transaction: credit.transaction,
+          charge: finalCharge,
+        };
+      });
+
+      return result;
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        return reply.status(409).send({ error: err.message });
+      }
+      throw err;
+    }
   });
 
   // ─── Настройки оплаты (реквизиты для перевода) ──────────────────────────────

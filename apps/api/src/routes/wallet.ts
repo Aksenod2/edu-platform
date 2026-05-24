@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
-import { isPositiveInt } from '../lib/money.js';
+import { isPositiveInt, debitBalance, InsufficientFundsError } from '../lib/money.js';
 
 // Кошелёк студента: ручной баланс в копейках + история операций.
 // Пополнение/списание делает администратор вручную (после скриншота перевода в чате).
@@ -77,7 +77,9 @@ export async function walletRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Студент не найден' });
     }
 
-    // Нельзя уводить баланс в минус.
+    // Нельзя уводить баланс в минус — ранняя проверка для понятного 400 без обращения
+    // к транзакции (быстрый отказ). Финальный инвариант гарантирует debitBalance
+    // условным списанием (защита от гонок).
     if (student.balanceKopecks - amount < 0) {
       return reply.status(400).send({ error: 'Недостаточно средств' });
     }
@@ -87,25 +89,24 @@ export async function walletRoutes(app: FastifyInstance) {
       select: { name: true },
     });
 
-    // Атомарно: уменьшаем баланс и создаём запись истории.
-    const [updatedUser, transaction] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id },
-        data: { balanceKopecks: { decrement: amount } },
-        select: { balanceKopecks: true },
-      }),
-      prisma.walletTransaction.create({
-        data: {
+    // Атомарно: уменьшаем баланс и создаём запись истории (через общий хелпер
+    // debitBalance — условное списание balanceKopecks>=amount не уводит в минус).
+    try {
+      const { balanceKopecks, transaction } = await prisma.$transaction((tx) =>
+        debitBalance(tx, {
           userId: id,
-          amount,
-          kind: 'debit',
+          amountKopecks: amount,
           note,
           createdBy: admin?.name ?? null,
-        },
-      }),
-    ]);
-
-    return { balanceKopecks: updatedUser.balanceKopecks, transaction };
+        }),
+      );
+      return { balanceKopecks, transaction };
+    } catch (err) {
+      if (err instanceof InsufficientFundsError) {
+        return reply.status(400).send({ error: err.message });
+      }
+      throw err;
+    }
   });
 
   // GET /students/:id/wallet — баланс + история (admin или сам студент)
@@ -131,6 +132,36 @@ export async function walletRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return { balanceKopecks: student.balanceKopecks, transactions };
+    // Начисления за группы (ledger «Оплата и баланс»): что и сколько начислено/погашено.
+    // Финансы видит только админ либо сам студент (guard self||admin выше).
+    const chargeRows = await prisma.charge.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        streamId: true,
+        amountKopecks: true,
+        paidKopecks: true,
+        status: true,
+        stream: { select: { name: true } },
+      },
+    });
+
+    const charges = chargeRows.map((c) => ({
+      id: c.id,
+      streamId: c.streamId,
+      streamName: c.stream?.name ?? null,
+      amountKopecks: c.amountKopecks,
+      paidKopecks: c.paidKopecks,
+      status: c.status,
+    }));
+
+    // Текущий долг = сумма (начислено − погашено) по ОТКРЫТЫМ начислениям.
+    const outstandingKopecks = chargeRows.reduce(
+      (sum, c) => (c.status === 'open' ? sum + (c.amountKopecks - c.paidKopecks) : sum),
+      0,
+    );
+
+    return { balanceKopecks: student.balanceKopecks, transactions, charges, outstandingKopecks };
   });
 }

@@ -109,6 +109,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   },
   { group: 'Группы/потоки', method: 'DELETE', path: '/streams/:id', desc: 'Удалить группу' },
   { group: 'Группы/потоки', method: 'GET', path: '/streams/:id/students', desc: 'Ученики группы' },
+  { group: 'Группы/потоки', method: 'GET', path: '/streams/:id/charges', desc: 'Статус оплаты учеников группы (admin)' },
   {
     group: 'Группы/потоки',
     method: 'POST',
@@ -343,6 +344,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Кошелёк/платежи', method: 'GET', path: '/admin/topup-requests', desc: 'Все заявки на пополнение (admin)' },
   { group: 'Кошелёк/платежи', method: 'POST', path: '/admin/topup-requests/:id/approve', desc: 'Одобрить заявку на пополнение' },
   { group: 'Кошелёк/платежи', method: 'POST', path: '/admin/topup-requests/:id/reject', desc: 'Отклонить заявку на пополнение' },
+  { group: 'Кошелёк/платежи', method: 'POST', path: '/admin/charges/:id/refund', desc: 'Возврат по начислению за группу (admin)' },
   { group: 'Кошелёк/платежи', method: 'GET', path: '/payment-settings', desc: 'Реквизиты для оплаты' },
   { group: 'Кошелёк/платежи', method: 'PUT', path: '/admin/payment-settings', desc: 'Изменить реквизиты для оплаты' },
   { group: 'Кошелёк/платежи', method: 'POST', path: '/admin/payment-settings/qr', desc: 'Загрузить QR-код для оплаты' },
