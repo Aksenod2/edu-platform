@@ -6,7 +6,13 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 // Мокаем prisma: только методы, которые вызывает paymentRoutes (DB-free).
 vi.mock('@platform/db', () => ({
   prisma: {
-    user: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    user: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
     topUpRequest: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -28,6 +34,12 @@ vi.mock('@platform/db', () => ({
   },
 }));
 
+// Мокаем уведомления: проверяем факт fan-out админам, без реальной БД/почты/пуша.
+vi.mock('../../lib/notifications.js', () => ({
+  notifyMany: vi.fn(async () => {}),
+  createNotification: vi.fn(async () => {}),
+}));
+
 // Мокаем S3-хелперы (без сети): загрузка возвращает фиксированный ключ, getFileUrl — подписанную ссылку.
 vi.mock('../../lib/s3.js', () => ({
   uploadFile: vi.fn(async (_buf: Buffer, name: string, _mime: string, folder: string) => ({
@@ -42,10 +54,28 @@ vi.mock('../../lib/s3.js', () => ({
 import multipart from '@fastify/multipart';
 import { paymentRoutes } from '../payments.js';
 import { prisma } from '@platform/db';
+import { notifyMany } from '../../lib/notifications.js';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
+const notifyManyMock = vi.mocked(notifyMany);
+
+// Заявка на пополнение создаётся успешно с заданным id (общий стаб для тестов уведомления).
+function stubCreatedRequest(id = 'req-1', claimedAmountKopecks: number | null = 100000) {
+  db.topUpRequest.findFirst.mockResolvedValueOnce(null); // нет pending
+  db.topUpRequest.create.mockResolvedValueOnce({
+    id,
+    status: 'pending',
+    claimedAmountKopecks,
+    createdAt: new Date('2026-05-23T10:00:00Z'),
+  });
+}
+
+// Ждём, пока асинхронный best-effort fan-out (void IIFE) успеет выполниться.
+async function flushAsync() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
 async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify();
@@ -196,6 +226,111 @@ describe('POST /topup-requests', () => {
       payload: mp.payload,
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+// ─── POST /topup-requests — уведомление админам о новой заявке ─────────────────
+
+describe('POST /topup-requests — уведомление админам', () => {
+  it('уведомляет всех админов с типом topup_requested (имя студента + сумма)', async () => {
+    stubCreatedRequest('req-1', 500000); // 5 000 ₽
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Иван Петров' }); // имя студента
+    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }, { id: 'admin-2' }]); // админы
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '500000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    await flushAsync();
+
+    // Админов выбираем строго по роли.
+    expect(db.user.findMany).toHaveBeenCalledWith({
+      where: { role: 'admin' },
+      select: { id: true },
+    });
+    // Fan-out на всех админов с нужным типом, заголовком и metadata.
+    expect(notifyManyMock).toHaveBeenCalledTimes(1);
+    const [userIds, type, title, body, metadata] = notifyManyMock.mock.calls[0];
+    expect(userIds).toEqual(['admin-1', 'admin-2']);
+    expect(type).toBe('topup_requested');
+    expect(title).toBe('Новая заявка на пополнение');
+    // Тело: имя студента + сумма в рублях. Нормализуем пробелы (toLocaleString может
+    // ставить неразрывный пробел-разделитель тысяч в зависимости от ICU).
+    expect(body.replace(/[\u00A0\u202F]/g, ' ')).toBe('Иван Петров · 5 000 ₽');
+    expect(metadata).toEqual({ studentId: 's-1', requestId: 'req-1' });
+  });
+
+  it('без указанной суммы — тело «<имя> приложил оплату»', async () => {
+    stubCreatedRequest('req-2', null);
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Мария Сидорова' });
+    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+
+    const app = await buildApp();
+    const mp = buildMultipart({}); // без claimedAmountKopecks
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    await flushAsync();
+
+    expect(notifyManyMock).toHaveBeenCalledWith(
+      ['admin-1'],
+      'topup_requested',
+      'Новая заявка на пополнение',
+      'Мария Сидорова приложил оплату',
+      { studentId: 's-1', requestId: 'req-2' },
+    );
+  });
+
+  it('ошибка уведомления НЕ ломает создание заявки (всё равно 201)', async () => {
+    stubCreatedRequest('req-3', 100000);
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Студент' });
+    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+    notifyManyMock.mockRejectedValueOnce(new Error('почта недоступна'));
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    // Заявка создана, несмотря на сбой уведомления.
+    expect(res.statusCode).toBe(201);
+    expect(res.json().id).toBe('req-3');
+    await flushAsync();
+    expect(notifyManyMock).toHaveBeenCalled();
+  });
+
+  it('нет админов — уведомление не отправляется, заявка создаётся', async () => {
+    stubCreatedRequest('req-4', 100000);
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Студент' });
+    db.user.findMany.mockResolvedValueOnce([]); // админов нет
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    await flushAsync();
+    expect(notifyManyMock).not.toHaveBeenCalled();
   });
 });
 

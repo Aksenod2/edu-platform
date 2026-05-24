@@ -5,6 +5,7 @@ import { CalendarPlus, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
@@ -238,11 +239,10 @@ export function PlanLessonDialog({
           <div className="grid grid-cols-2 gap-3">
             <Field>
               <FieldLabel htmlFor="plan-date">Дата</FieldLabel>
-              <Input
+              <DatePicker
                 id="plan-date"
-                type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(v) => setDate(v ?? '')}
               />
             </Field>
             <Field>

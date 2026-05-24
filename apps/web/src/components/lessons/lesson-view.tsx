@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Separator } from '@/components/ui/separator';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
@@ -449,11 +449,11 @@ export function LessonView({
           </DialogHeader>
           <Field>
             <FieldLabel htmlFor="issue-due">Дедлайн</FieldLabel>
-            <Input
+            <DatePicker
               id="issue-due"
-              type="date"
               value={issueDue}
-              onChange={(e) => setIssueDue(e.target.value)}
+              onChange={(v) => setIssueDue(v ?? '')}
+              placeholder="Без дедлайна"
             />
           </Field>
           <DialogFooter>

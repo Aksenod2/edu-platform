@@ -88,6 +88,7 @@ enum NotificationType {
   assignment_submitted
   assignment_reviewed
   schedule_entry_created
+  topup_requested
 }
 
 model User {
