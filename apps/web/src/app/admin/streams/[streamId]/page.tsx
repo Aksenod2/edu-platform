@@ -102,6 +102,7 @@ import {
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
 import { InviteLinkDialog } from '@/components/invite-link-dialog';
+import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
 const TAB_VALUES = ['overview', 'students', 'lessons', 'assignments', 'schedule'];
@@ -407,19 +408,24 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
         storageKey="eduhint:stream-lessons-tab"
         title="Уроки этой группы"
       >
-        Это уроки из копилки, поставленные в расписание группы. «Снять с группы»
-        убирает занятие из расписания — сам урок-блок и его контент остаются в
-        копилке.
+        Это уроки из копилки, поставленные в расписание группы. «Запланировать
+        занятие» добавляет урок в эту группу. «Снять с группы» убирает занятие из
+        расписания — сам урок-блок и его контент остаются в копилке.
       </HintCallout>
 
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Уроки группы</h2>
-        <Button asChild>
-          <Link href="/admin/schedule">
-            <CalendarDays />
-            Запланировать занятие
-          </Link>
-        </Button>
+        {/* Планируем урок прямо здесь с предвыбранной текущей группой. Для архивной
+            группы кнопка диалога задизейблена (нет активных потоков для планирования). */}
+        {accessToken && (
+          <PlanLessonDialog
+            accessToken={accessToken}
+            streams={[stream]}
+            defaultStreamId={stream.id}
+            onPlanned={fetchLessons}
+            triggerClassName="w-full sm:w-auto"
+          />
+        )}
       </div>
 
       {error && (
@@ -452,7 +458,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                   colSpan={5}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В группе пока нет уроков. Запланируйте занятие в расписании.
+                  В группе пока нет уроков. Нажмите «Запланировать занятие».
                 </TableCell>
               </TableRow>
             ) : (
@@ -462,8 +468,10 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                     {lesson.sortOrder}
                   </TableCell>
                   <TableCell>
+                    {/* ?streamId — forward-compatible: будущий View Mode урока
+                        покажет контекст этой группы; текущая страница его игнорирует. */}
                     <Link
-                      href={`/admin/lessons/${lesson.id}`}
+                      href={`/admin/lessons/${lesson.id}?streamId=${stream.id}`}
                       className="font-medium text-foreground underline-offset-4 hover:underline"
                     >
                       {lesson.title}
@@ -484,7 +492,7 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8" asChild>
-                            <Link href={`/admin/lessons/${lesson.id}`}>
+                            <Link href={`/admin/lessons/${lesson.id}?streamId=${stream.id}`}>
                               <ExternalLink />
                               <span className="sr-only">Открыть урок</span>
                             </Link>
