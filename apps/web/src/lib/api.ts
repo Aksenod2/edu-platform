@@ -271,6 +271,9 @@ export interface Stream {
   updatedAt: string;
   teachers?: { id: string; name: string }[];
   shared?: boolean;
+  // Платёжный план группы: стоимость участия в КОПЕЙКАХ (UI показывает рубли).
+  // null = план не задан (начисления по группе не делаются).
+  priceKopecks?: number | null;
   // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
   ownerId?: string | null;
   owner?: { id: string; name: string } | null;
@@ -292,18 +295,28 @@ export async function getStreams(
 export async function createStream(
   accessToken: string,
   name: string,
+  // Опционально: платёжный план группы в копейках (целое ≥0).
+  priceKopecks?: number | null,
 ): Promise<{ stream: Stream }> {
   return request('/streams', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(
+      priceKopecks === undefined ? { name } : { name, priceKopecks },
+    ),
   });
 }
 
 export async function updateStream(
   accessToken: string,
   id: string,
-  data: { name?: string; ownerId?: string | null; programId?: string | null },
+  data: {
+    name?: string;
+    ownerId?: string | null;
+    programId?: string | null;
+    // Платёжный план группы в копейках (целое ≥0) или null = снять план.
+    priceKopecks?: number | null;
+  },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
     method: 'PATCH',
@@ -1464,15 +1477,54 @@ export interface WalletTransaction {
   createdAt: string;
 }
 
+// Статус начисления по группе: open — есть долг, paid — оплачено, refunded — возвращено.
+export type ChargeStatus = 'open' | 'paid' | 'refunded';
+
+// Начисление студенту за участие в группе (для блока «По группам» в кошельке).
+export interface StudentCharge {
+  id: string;
+  streamId: string;
+  streamName: string;
+  amountKopecks: number; // сколько начислено за группу
+  paidKopecks: number; // сколько уже оплачено
+  status: ChargeStatus;
+}
+
 export interface WalletResponse {
   balanceKopecks: number;
   transactions: WalletTransaction[];
+  // Начисления по группам (платёжный план). Пустой массив — начислений нет.
+  charges: StudentCharge[];
+  // Суммарный долг по открытым начислениям (копейки). 0 — долга нет.
+  outstandingKopecks: number;
 }
 
 /** Форматирует копейки в рубли: 123456 → «1 234 ₽». */
 export function formatKopecks(kopecks: number): string {
   const rubles = Math.round(kopecks) / 100;
   return `${rubles.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+}
+
+/**
+ * Переводит введённые пользователем рубли в копейки (целое).
+ * Принимает строку или число; запятую трактует как десятичный разделитель.
+ * Возвращает null, если значение не распознано или отрицательное.
+ * Округляет к ближайшей копейке, чтобы избежать float-ошибок (например 19.99 → 1999).
+ */
+export function rublesToKopecks(input: string | number): number | null {
+  const raw = typeof input === 'number' ? input : Number(String(input).trim().replace(',', '.'));
+  if (!Number.isFinite(raw) || raw < 0) return null;
+  return Math.round(raw * 100);
+}
+
+/**
+ * Переводит копейки в строку рублей для поля ввода (без символа валюты).
+ * Целое число рублей — без дробной части (120000 → «1200»), иначе с копейками.
+ */
+export function kopecksToRublesInput(kopecks: number | null | undefined): string {
+  if (kopecks == null) return '';
+  const rubles = Math.round(kopecks) / 100;
+  return Number.isInteger(rubles) ? String(rubles) : rubles.toFixed(2);
 }
 
 export async function getWallet(
@@ -1694,6 +1746,57 @@ export async function deletePaymentQr(
   return request('/admin/payment-settings/qr', {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Charges API (платёжный план группы)
+//
+// Начисления студентам за участие в группе. priceKopecks — цена группы (план);
+// по каждому студенту видно начислено/оплачено/остаток и платёжный статус.
+// Суммы — в КОПЕЙКАХ (UI показывает рубли).
+
+// Платёжный статус студента по группе:
+// paid — оплачено полностью, partial — оплачено частично, unpaid — есть долг,
+// none — начислений нет (например, ещё не начисляли).
+export type StreamChargePaymentStatus = 'paid' | 'partial' | 'unpaid' | 'none';
+
+// Строка таблицы оплат группы: студент + его начисление по этой группе.
+export interface StreamChargeRow {
+  id: string; // id студента
+  name: string;
+  email: string;
+  amountKopecks: number; // начислено
+  paidKopecks: number; // оплачено
+  status: ChargeStatus;
+  paymentStatus: StreamChargePaymentStatus;
+}
+
+export interface StreamChargesResponse {
+  // Цена группы (план) в копейках или null = план не задан.
+  priceKopecks: number | null;
+  students: StreamChargeRow[];
+}
+
+// Таблица оплат группы (admin): цена группы + начисления по студентам.
+export async function getStreamCharges(
+  accessToken: string,
+  streamId: string,
+): Promise<StreamChargesResponse> {
+  return request(`/streams/${encodeURIComponent(streamId)}/charges`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Вернуть сумму начисления на баланс студента (admin). amountKopecks — целое >0.
+export async function refundCharge(
+  accessToken: string,
+  chargeId: string,
+  amountKopecks: number,
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction }> {
+  return request(`/admin/charges/${encodeURIComponent(chargeId)}/refund`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ amountKopecks }),
   });
 }
 

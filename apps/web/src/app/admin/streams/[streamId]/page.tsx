@@ -17,11 +17,15 @@ import {
   ExternalLink,
   CalendarX,
   Send,
+  Wallet,
+  Undo2,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/back-button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -92,11 +96,18 @@ import {
   deleteAssignment,
   getTeachers,
   updateStream,
+  getStreamCharges,
+  refundCharge,
+  formatKopecks,
+  rublesToKopecks,
+  kopecksToRublesInput,
   type StreamWithCounts,
   type Student,
   type Teacher,
   type Lesson,
   type Assignment,
+  type StreamChargeRow,
+  type StreamChargePaymentStatus,
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
 import { InviteLinkDialog } from '@/components/invite-link-dialog';
@@ -776,6 +787,364 @@ function initials(name: string): string {
     .join('');
 }
 
+// Бейдж платёжного статуса студента по группе.
+const PAYMENT_STATUS_META: Record<
+  StreamChargePaymentStatus,
+  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+> = {
+  paid: { label: 'Оплачено', variant: 'default' },
+  partial: { label: 'Частично', variant: 'secondary' },
+  unpaid: { label: 'Должен', variant: 'destructive' },
+  none: { label: 'Нет начислений', variant: 'outline' },
+};
+
+// Карточка платёжного плана группы: ввод цены (рубли ↔ копейки) + сохранение.
+// Пустое значение = «план не задан» (priceKopecks: null).
+function PaymentPlanCard({
+  stream,
+  onChanged,
+}: {
+  stream: StreamWithCounts;
+  onChanged: () => void;
+}) {
+  const { accessToken } = useAuth();
+  const [value, setValue] = useState(kopecksToRublesInput(stream.priceKopecks));
+  const [saving, setSaving] = useState(false);
+
+  // Синхронизируем поле, если цена изменилась извне (после рефетча группы).
+  useEffect(() => {
+    setValue(kopecksToRublesInput(stream.priceKopecks));
+  }, [stream.priceKopecks]);
+
+  const currentKopecks = stream.priceKopecks ?? null;
+  // «Грязное» состояние: введённое отличается от сохранённого.
+  const trimmed = value.trim();
+  const parsed = trimmed === '' ? null : rublesToKopecks(trimmed);
+  const invalid = trimmed !== '' && parsed === null;
+  const dirty = (parsed ?? null) !== currentKopecks;
+
+  const handleSave = async () => {
+    if (!accessToken || invalid) return;
+    setSaving(true);
+    try {
+      await updateStream(accessToken, stream.id, { priceKopecks: parsed });
+      toast.success(parsed === null ? 'Платёжный план снят' : 'Цена группы сохранена');
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения цены');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+        <Wallet className="size-4 text-muted-foreground" />
+        <CardTitle className="text-base">Платёжный план</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+            <Label htmlFor="stream-price">Цена группы, ₽</Label>
+            <Input
+              id="stream-price"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="1"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Например, 30000"
+              aria-invalid={invalid}
+            />
+          </div>
+          <Button
+            onClick={handleSave}
+            disabled={saving || invalid || !dirty}
+            className="w-full sm:w-auto"
+          >
+            {saving && <Loader2 className="animate-spin" />}
+            Сохранить
+          </Button>
+        </div>
+        {invalid ? (
+          <p className="text-sm text-destructive">Укажите неотрицательную сумму в рублях.</p>
+        ) : currentKopecks === null ? (
+          <p className="text-sm text-muted-foreground">
+            План не задан — начисления по группе не делаются. Укажите цену, чтобы включить
+            платёжный план.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Текущая цена: <span className="font-medium text-foreground">{formatKopecks(currentKopecks)}</span>.
+            Очистите поле и сохраните, чтобы снять план.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Таблица оплат группы: студент / начислено / оплачено / остаток / статус + возврат.
+// На мобильных таблица превращается в стек карточек.
+function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
+  const { accessToken } = useAuth();
+
+  const [priceKopecks, setPriceKopecks] = useState<number | null>(null);
+  const [rows, setRows] = useState<StreamChargeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
+
+  // Возврат: выбранная строка + сумма (рубли) + индикатор.
+  const [refundRow, setRefundRow] = useState<StreamChargeRow | null>(null);
+  const [refundRubles, setRefundRubles] = useState('');
+  const [refunding, setRefunding] = useState(false);
+
+  const fetchCharges = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const data = await getStreamCharges(accessToken, stream.id);
+      setPriceKopecks(data.priceKopecks);
+      setRows(data.students);
+      setError('');
+      setForbidden(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ошибка загрузки оплат';
+      if (message.toLowerCase().includes('доступ')) setForbidden(true);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, stream.id]);
+
+  useEffect(() => {
+    fetchCharges();
+  }, [fetchCharges]);
+
+  const openRefund = (row: StreamChargeRow) => {
+    setRefundRow(row);
+    // По умолчанию — вся оплаченная сумма (её и можно вернуть).
+    setRefundRubles(kopecksToRublesInput(row.paidKopecks));
+  };
+
+  const handleRefund = async () => {
+    if (!accessToken || !refundRow) return;
+    const kopecks = rublesToKopecks(refundRubles);
+    if (kopecks === null || kopecks <= 0) {
+      toast.error('Укажите корректную сумму возврата');
+      return;
+    }
+    if (kopecks > refundRow.paidKopecks) {
+      toast.error('Сумма возврата больше оплаченной');
+      return;
+    }
+    setRefunding(true);
+    try {
+      await refundCharge(accessToken, refundRow.id, kopecks);
+      toast.success(`Возвращено ${formatKopecks(kopecks)} на баланс студента`);
+      setRefundRow(null);
+      await fetchCharges();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось выполнить возврат');
+    } finally {
+      setRefunding(false);
+    }
+  };
+
+  // Остаток долга по строке (только для open-начислений).
+  const outstanding = (row: StreamChargeRow) => Math.max(row.amountKopecks - row.paidKopecks, 0);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+        <Wallet className="size-4 text-muted-foreground" />
+        <CardTitle className="text-base">Оплаты</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {forbidden ? (
+          <p className="text-sm text-muted-foreground">
+            Недостаточно прав для просмотра оплат группы.
+          </p>
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : loading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : priceKopecks === null ? (
+          <div className="flex items-start gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Цена группы не задана. Укажите её в блоке «Платёжный план» выше — тогда здесь
+              появятся начисления и оплаты студентов.
+            </span>
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">В группе пока нет студентов.</p>
+        ) : (
+          <>
+            {/* Десктоп: таблица */}
+            <div className="hidden rounded-lg border sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Студент</TableHead>
+                    <TableHead className="text-right">Начислено</TableHead>
+                    <TableHead className="text-right">Оплачено</TableHead>
+                    <TableHead className="text-right">Остаток</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="w-[1%] text-right">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => {
+                    const meta = PAYMENT_STATUS_META[row.paymentStatus];
+                    const due = outstanding(row);
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-foreground">{row.name}</span>
+                            <span className="text-xs text-muted-foreground">{row.email}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatKopecks(row.paidKopecks)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right tabular-nums font-medium ${
+                            due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {due > 0 ? formatKopecks(due) : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={meta.variant}>{meta.label}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {row.paidKopecks > 0 ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openRefund(row)}
+                            >
+                              <Undo2 />
+                              Вернуть
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Мобильные: карточки-стек */}
+            <ul className="flex flex-col gap-3 sm:hidden">
+              {rows.map((row) => {
+                const meta = PAYMENT_STATUS_META[row.paymentStatus];
+                const due = outstanding(row);
+                return (
+                  <li key={row.id} className="rounded-lg border p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate font-medium text-foreground">{row.name}</span>
+                        <span className="truncate text-xs text-muted-foreground">{row.email}</span>
+                      </div>
+                      <Badge variant={meta.variant} className="shrink-0">
+                        {meta.label}
+                      </Badge>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Начислено</dt>
+                        <dd className="tabular-nums">
+                          {row.amountKopecks > 0 ? formatKopecks(row.amountKopecks) : '—'}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Оплачено</dt>
+                        <dd className="tabular-nums">{formatKopecks(row.paidKopecks)}</dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-muted-foreground">Остаток</dt>
+                        <dd
+                          className={`tabular-nums font-medium ${
+                            due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {due > 0 ? formatKopecks(due) : '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                    {row.paidKopecks > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 w-full"
+                        onClick={() => openRefund(row)}
+                      >
+                        <Undo2 />
+                        Вернуть
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </CardContent>
+
+      {/* Диалог возврата с подтверждением суммы */}
+      <Dialog open={!!refundRow} onOpenChange={(open) => { if (!open) setRefundRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Вернуть оплату</DialogTitle>
+            <DialogDescription>
+              {refundRow &&
+                `Сумма вернётся на баланс студента «${refundRow.name}». Оплачено по группе: ${formatKopecks(refundRow.paidKopecks)}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="refund-amount">Сумма возврата, ₽</Label>
+            <Input
+              id="refund-amount"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={refundRubles}
+              onChange={(e) => setRefundRubles(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundRow(null)} disabled={refunding}>
+              Отмена
+            </Button>
+            <Button onClick={handleRefund} disabled={refunding}>
+              {refunding && <Loader2 className="animate-spin" />}
+              Вернуть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 // Сентинел «без ведущего» — Radix Select не допускает пустую строку как value.
 const NO_OWNER = 'none';
 
@@ -909,6 +1278,10 @@ function OverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {/* Платёжный план группы (цена) + таблица оплат студентов */}
+      <PaymentPlanCard stream={stream} onChanged={onOwnerChange} />
+      <StreamChargesSection stream={stream} />
 
       <Card>
         <CardHeader>

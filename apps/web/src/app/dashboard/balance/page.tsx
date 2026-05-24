@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, Wallet, ExternalLink, Phone, Upload, X } from 'lucide-react';
+import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -15,6 +15,8 @@ import {
   type PaymentSettings,
   type TopUpRequest,
   type TopUpRequestStatus,
+  type StudentCharge,
+  type ChargeStatus,
 } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -46,11 +48,23 @@ const STATUS_VARIANT: Record<
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
+// Бейдж статуса начисления по группе.
+const CHARGE_STATUS_META: Record<
+  ChargeStatus,
+  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+> = {
+  open: { label: 'Не оплачено', variant: 'outline' },
+  paid: { label: 'Оплачено', variant: 'default' },
+  refunded: { label: 'Возврат', variant: 'secondary' },
+};
+
 export default function StudentBalancePage() {
   const { user, accessToken } = useAuth();
 
   const [balanceKopecks, setBalanceKopecks] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [charges, setCharges] = useState<StudentCharge[]>([]);
+  const [outstandingKopecks, setOutstandingKopecks] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -76,6 +90,9 @@ export default function StudentBalancePage() {
       const data = await getWallet(accessToken, user.id);
       setBalanceKopecks(data.balanceKopecks);
       setTransactions(data.transactions);
+      // charges/outstandingKopecks могут отсутствовать у старого бэка — страхуемся.
+      setCharges(data.charges ?? []);
+      setOutstandingKopecks(data.outstandingKopecks ?? 0);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки баланса');
@@ -224,6 +241,122 @@ export default function StudentBalancePage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Начисления по группам (платёжный план). Показываем только если есть. */}
+          {charges.length > 0 && (
+            <section className="flex flex-col gap-3">
+              {/* Заметная плашка общего долга — нейтрально-предупреждающе, без блокировок */}
+              {outstandingKopecks > 0 ? (
+                <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                  <TriangleAlert className="size-5 shrink-0 text-destructive" />
+                  <div className="flex flex-col">
+                    <span className="text-sm text-muted-foreground">К оплате по группам</span>
+                    <span className="text-xl font-bold tabular-nums text-destructive">
+                      {formatKopecks(outstandingKopecks)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-4">
+                  <CheckCircle2 className="size-5 shrink-0 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Задолженности по группам нет.
+                  </span>
+                </div>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>По группам</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Десктоп: таблица */}
+                  <div className="hidden rounded-lg border sm:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Группа</TableHead>
+                          <TableHead className="text-right">Начислено</TableHead>
+                          <TableHead className="text-right">Оплачено</TableHead>
+                          <TableHead className="text-right">Остаток</TableHead>
+                          <TableHead>Статус</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {charges.map((c) => {
+                          const meta = CHARGE_STATUS_META[c.status];
+                          const due = Math.max(c.amountKopecks - c.paidKopecks, 0);
+                          return (
+                            <TableRow key={c.id}>
+                              <TableCell className="font-medium text-foreground">
+                                {c.streamName}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatKopecks(c.amountKopecks)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatKopecks(c.paidKopecks)}
+                              </TableCell>
+                              <TableCell
+                                className={`text-right tabular-nums font-medium ${
+                                  due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                                }`}
+                              >
+                                {due > 0 ? formatKopecks(due) : '—'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={meta.variant}>{meta.label}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Мобильные: карточки-стек */}
+                  <ul className="flex flex-col gap-3 sm:hidden">
+                    {charges.map((c) => {
+                      const meta = CHARGE_STATUS_META[c.status];
+                      const due = Math.max(c.amountKopecks - c.paidKopecks, 0);
+                      return (
+                        <li key={c.id} className="rounded-lg border p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="min-w-0 truncate font-medium text-foreground">
+                              {c.streamName}
+                            </span>
+                            <Badge variant={meta.variant} className="shrink-0">
+                              {meta.label}
+                            </Badge>
+                          </div>
+                          <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                            <div className="flex flex-col">
+                              <dt className="text-xs text-muted-foreground">Начислено</dt>
+                              <dd className="tabular-nums">{formatKopecks(c.amountKopecks)}</dd>
+                            </div>
+                            <div className="flex flex-col">
+                              <dt className="text-xs text-muted-foreground">Оплачено</dt>
+                              <dd className="tabular-nums">{formatKopecks(c.paidKopecks)}</dd>
+                            </div>
+                            <div className="flex flex-col">
+                              <dt className="text-xs text-muted-foreground">Остаток</dt>
+                              <dd
+                                className={`tabular-nums font-medium ${
+                                  due > 0 ? 'text-destructive' : 'text-muted-foreground'
+                                }`}
+                              >
+                                {due > 0 ? formatKopecks(due) : '—'}
+                              </dd>
+                            </div>
+                          </dl>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
           {/* Как пополнить + форма «Я оплатил» */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
