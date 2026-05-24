@@ -7,9 +7,8 @@ import { cn } from '@platform/ui/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 import {
-  LESSON_STATUS_LABELS,
-  STATUS_BADGE_VARIANT,
   canJoinMeeting,
   type ScheduleLesson,
 } from '@/components/schedule/utils';
@@ -88,9 +87,7 @@ export function LessonItem({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant={STATUS_BADGE_VARIANT[lesson.status]} className="w-fit">
-          {LESSON_STATUS_LABELS[lesson.status]}
-        </Badge>
+        <LessonStatusBadge status={lesson.status} />
         {lesson.streamName && (
           <Badge variant="secondary" className="w-fit max-w-full truncate">
             {lesson.streamName}

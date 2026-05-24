@@ -20,18 +20,16 @@ import {
   getLesson,
   getLessons,
   getStudentAssignments,
-  LESSON_STATUS_LABELS,
   type Lesson,
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
 import {
-  STATUS_BADGE_VARIANT,
   canJoinMeeting,
   parseLocalDate,
 } from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Card,
@@ -177,9 +175,7 @@ export default function StudentLessonPage() {
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge variant={STATUS_BADGE_VARIANT[lesson.status] ?? 'default'}>
-                {LESSON_STATUS_LABELS[lesson.status] ?? lesson.status}
-              </Badge>
+              <LessonStatusBadge status={lesson.status} />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">{lesson.title}</h1>
 

@@ -74,10 +74,10 @@ import {
 } from '@/components/ui/tooltip';
 import {
   LESSON_STATUS_LABELS,
-  STATUS_BADGE_VARIANT,
-  STATUS_ORDER,
+  MANUAL_STATUS_ORDER,
   dateKey,
 } from '@/components/schedule/utils';
+import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -409,9 +409,7 @@ export function LessonScheduleSection({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{s.streamName}</span>
-                  <Badge variant={STATUS_BADGE_VARIANT[s.status]} className="font-normal">
-                    {LESSON_STATUS_LABELS[s.status]}
-                  </Badge>
+                  <LessonStatusBadge status={s.status} className="font-normal" />
                   <span className="text-muted-foreground">
                     {s.date ? formatDate(s.date) : 'без даты'}
                     {s.startTime ? `, ${s.startTime}` : ''}
@@ -692,7 +690,7 @@ export function LessonScheduleSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUS_ORDER.map((s) => (
+                  {MANUAL_STATUS_ORDER.map((s) => (
                     <SelectItem key={s} value={s}>
                       {LESSON_STATUS_LABELS[s]}
                     </SelectItem>
