@@ -254,6 +254,7 @@ export function StudentDynamicTab({
                       ref={roadmapRef}
                       value={roadmapDraft}
                       onChange={(e) => setRoadmapDraft(e.target.value)}
+                      maxLength={50000}
                       className="min-h-[240px] resize-y font-mono text-sm"
                       placeholder="С чем пришёл / В процессе / С чем ушёл…"
                       aria-label="Текст roadmap"
@@ -323,6 +324,7 @@ export function StudentDynamicTab({
                     ref={newEntryRef}
                     value={newEntryDraft}
                     onChange={(e) => setNewEntryDraft(e.target.value)}
+                    maxLength={50000}
                     className="min-h-[120px] resize-y font-mono text-sm"
                     placeholder="Что произошло, наблюдения, прогресс…"
                     aria-label="Текст новой записи"
@@ -569,6 +571,7 @@ function DynamicEntryCard({
               ref={textareaRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              maxLength={50000}
               className="min-h-[120px] resize-y font-mono text-sm"
               aria-label="Текст записи"
             />

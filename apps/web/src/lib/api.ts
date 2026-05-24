@@ -2037,7 +2037,7 @@ export async function deleteStudentDynamicEntry(
   accessToken: string,
   studentId: string,
   entryId: string,
-): Promise<{ success: boolean }> {
+): Promise<{ ok: boolean }> {
   return request(`/students/${studentId}/dynamic/entries/${entryId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
