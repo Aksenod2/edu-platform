@@ -119,6 +119,7 @@ model User {
   zoomIntegration         ZoomIntegration?
   topUpRequests           TopUpRequest[]           @relation("TopUpAuthor")
   reviewedTopUps          TopUpRequest[]           @relation("TopUpReviewer")
+  sessionAttendance       SessionAttendance[]
 }
 
 model ApiKey {
@@ -303,12 +304,57 @@ model Session {
   stream             Stream              @relation(fields: [streamId], references: [id], onDelete: Cascade)
   lesson             Lesson              @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   studentAssignments StudentAssignment[]
+  attendance         SessionAttendance[]
 
   @@unique([streamId, lessonId])
   @@index([streamId])
   @@index([lessonId])
   @@index([status, date])
   @@index([zoomMeetingId])
+}
+
+// Посещаемость занятия потока (B5, фаза 2). Две природы записей:
+//   source='zoom_report' — авто-забор из Zoom report participants API (один ряд на
+//     участника встречи; userId проставляется при сопоставлении по email со студентом потока);
+//   source='manual'      — ручная отметка админом (всегда привязана к студенту userId).
+// status и source хранятся строкой без enum — по конвенции проекта (ср. Session.recordingStatus
+// "строкой, без enum" и Session.summarySource 'zoom_ai' | 'manual').
+//   source: 'zoom_report' | 'manual'
+//   status: 'present' | 'absent'  (для zoom-участника по умолчанию 'present')
+//
+// ДЕДУП / ИДЕМПОТЕНТНОСТЬ — два непересекающихся частичных уникальных индекса (см. migration.sql):
+//   1) UNIQUE (sessionId, zoomParticipantId) WHERE zoomParticipantId IS NOT NULL
+//      — авто-забор апсёртит по (sessionId, zoomParticipantId), повторные синки не плодят дубли.
+//   2) UNIQUE (sessionId, userId) WHERE source='manual'
+//      — ручная отметка одна на (студент, занятие); upsert обновляет статус.
+// Индексы НЕ конфликтуют: zoom-гость без userId не нарушает (2), а ручная запись без
+// zoomParticipantId не нарушает (1). Один и тот же студент может иметь и zoom-ряд
+// (сопоставленный), и ручной ряд — это допустимо; финальный статус занятия выводит
+// приложение (manual имеет приоритет над zoom_report).
+model SessionAttendance {
+  id        String   @id @default(uuid())
+  sessionId String
+  // Сопоставленный студент. null = несопоставленный zoom-гость (нет userId по email).
+  userId    String?
+  source    String // 'zoom_report' | 'manual'
+  status    String   @default("present") // 'present' | 'absent'
+
+  // Данные из Zoom report participants API (все nullable).
+  zoomParticipantId String? // participant id Zoom (для дедупа авто-забора)
+  displayName       String? // имя участника из Zoom
+  email             String? // user_email из Zoom (для сопоставления со студентом потока)
+  joinedAt          DateTime? // самый ранний join_time
+  leftAt            DateTime? // самый поздний leave_time
+  durationSec       Int? // суммарная длительность по всем переподключениям, сек
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([userId])
 }
 
 model StudentAssignment {
