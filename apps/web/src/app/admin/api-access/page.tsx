@@ -195,7 +195,7 @@ export default function ApiAccessPage() {
                       <p className="text-xs text-muted-foreground">
                         Ключ даёт ПОЛНЫЕ права администратора и не имеет срока действия (бессрочный).
                         Храните его в секрете и отзывайте при компрометации. Утечка ключа = доступ к
-                        кошелькам, сбросу паролей и экспорту данных учеников.
+                        кошелькам, сбросу паролей и экспорту данных студентов.
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -319,7 +319,7 @@ export default function ApiAccessPage() {
             <Alert variant="destructive" className="mb-6">
               <AlertDescription>
                 <span className="font-semibold">Внимание: ключ = полные права администратора, бессрочный.</span>{' '}
-                Утечка ключа даёт доступ к кошелькам учеников, сбросу паролей и экспорту персональных
+                Утечка ключа даёт доступ к кошелькам студентов, сбросу паролей и экспорту персональных
                 данных. Действия по ключу <span className="font-semibold">не аудируются</span> — фиксируется
                 только дата последнего использования (<span className="font-mono text-xs">lastUsedAt</span>),
                 без журнала операций. Храните ключ в секрете, не передавайте третьим лицам и немедленно
@@ -344,7 +344,7 @@ export default function ApiAccessPage() {
               <p className="text-sm text-muted-foreground mb-2">Особенности отдельных доменов</p>
               <ul className="text-sm list-disc pl-5 flex flex-col gap-2">
                 <li>
-                  <span className="font-medium">Ленты, треды и чаты — append-only.</span> Записи можно только
+                  <span className="font-medium">Ленты, сообщения и чаты — append-only.</span> Записи можно только
                   добавлять (<span className="font-mono text-xs">POST .../entries</span>) и отмечать
                   прочитанными; правки и удаления отдельных записей нет (как и в веб-интерфейсе).
                 </li>
@@ -419,33 +419,33 @@ export default function ApiAccessPage() {
 
         <div className="flex flex-col gap-4">
           <ExampleCard
-            title="Список учеников"
+            title="Список студентов"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users`}
           />
           <ExampleCard
             title="Скачать всё по студенту"
             description="Удобная выгрузка одним запросом: профиль, задания, лента и список файлов с подписанными ссылками."
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users/ID_УЧЕНИКА/export`}
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/users/ID_СТУДЕНТА/export`}
           />
           <ExampleCard
-            title="Задания ученика"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  '${proxyBase}/student-assignments?studentId=ID_УЧЕНИКА'`}
+            title="Задания студента"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  '${proxyBase}/student-assignments?studentId=ID_СТУДЕНТА'`}
           />
           <ExampleCard
             title="Список групп"
             code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/streams`}
           />
           <ExampleCard
-            title="Профиль ученика"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/profiles/ID_УЧЕНИКА`}
+            title="Профиль студента"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/profiles/ID_СТУДЕНТА`}
           />
           <ExampleCard
-            title="Лента ученика (thread)"
-            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/threads/ID_УЧЕНИКА`}
+            title="Лента студента (thread)"
+            code={`curl -H 'Authorization: Bearer sk_ваш_ключ' \\\n  ${proxyBase}/threads/ID_СТУДЕНТА`}
           />
           <ExampleCard
             title="Отправить комментарий в ленту"
-            code={`curl -X POST -H 'Authorization: Bearer sk_ваш_ключ' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"type": "comment", "content": "Отличная работа!"}' \\\n  ${proxyBase}/threads/ID_УЧЕНИКА/entries`}
+            code={`curl -X POST -H 'Authorization: Bearer sk_ваш_ключ' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"type": "comment", "content": "Отличная работа!"}' \\\n  ${proxyBase}/threads/ID_СТУДЕНТА/entries`}
           />
         </div>
       </section>

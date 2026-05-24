@@ -185,7 +185,7 @@ export default function StreamDetailPage() {
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
-            <TabsTrigger value="students">Ученики</TabsTrigger>
+            <TabsTrigger value="students">Студенты</TabsTrigger>
             <TabsTrigger value="lessons">Уроки</TabsTrigger>
             <TabsTrigger value="assignments">Задания</TabsTrigger>
             <TabsTrigger value="schedule">Расписание</TabsTrigger>
@@ -633,7 +633,7 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
         title="Задания приходят из уроков"
       >
         Задание (ДЗ) живёт внутри урока. Здесь — задания, выданные этой группе:
-        ученики сдают, вы проверяете. Само ДЗ создаётся и редактируется на
+        студенты сдают, вы проверяете. Само ДЗ создаётся и редактируется на
         странице урока.
       </HintCallout>
 
@@ -885,7 +885,7 @@ function OverviewTab({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Учеников
+              Студентов
             </CardTitle>
             <Users className="size-4 text-muted-foreground" />
           </CardHeader>
@@ -968,7 +968,7 @@ function StudentsTab({
       setRoster(students);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки учеников');
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки студентов');
     } finally {
       setLoading(false);
     }
@@ -1047,7 +1047,7 @@ function StudentsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <h2 className="text-lg font-semibold tracking-tight">Ученики группы</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Студенты группы</h2>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           {accessToken && (
             <InviteLinkDialog
@@ -1058,7 +1058,7 @@ function StudentsTab({
           )}
           <Button className="w-full shrink-0 sm:w-auto" onClick={openAddDialog}>
             <UserPlus />
-            Добавить учеников
+            Добавить студентов
           </Button>
         </div>
       </div>
@@ -1092,7 +1092,7 @@ function StudentsTab({
                   colSpan={4}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  В группе пока нет учеников
+                  В группе пока нет студентов
                 </TableCell>
               </TableRow>
             ) : (
@@ -1143,9 +1143,9 @@ function StudentsTab({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Добавить учеников</DialogTitle>
+            <DialogTitle>Добавить студентов</DialogTitle>
             <DialogDescription>
-              Выберите учеников, которых нужно добавить в группу.
+              Выберите студентов, которых нужно добавить в группу.
             </DialogDescription>
           </DialogHeader>
 
@@ -1166,7 +1166,7 @@ function StudentsTab({
               </div>
             ) : candidates.length === 0 ? (
               <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                Нет доступных учеников для добавления
+                Нет доступных студентов для добавления
               </div>
             ) : (
               <ul className="divide-y">
@@ -1223,9 +1223,9 @@ function StudentsTab({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Убрать ученика из группы?</AlertDialogTitle>
+            <AlertDialogTitle>Убрать студента из группы?</AlertDialogTitle>
             <AlertDialogDescription>
-              {studentToRemove && `Ученик «${studentToRemove.name}» будет убран из этой группы.`}
+              {studentToRemove && `Студент «${studentToRemove.name}» будет убран из этой группы.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -176,7 +176,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
         select: { id: true, name: true },
       });
       if (!stream) {
-        return reply.status(404).send({ error: 'Поток не найден' });
+        return reply.status(404).send({ error: 'Группа не найдена' });
       }
     }
 
@@ -257,11 +257,11 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id: body.streamId } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (stream.status === 'archived') {
-      return reply.status(400).send({ error: 'Нельзя добавлять задания в архивный поток' });
+      return reply.status(400).send({ error: 'Нельзя добавлять задания в архивную группу' });
     }
 
     const lesson = await prisma.lesson.findUnique({ where: { id: body.lessonId } });
@@ -494,7 +494,7 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     const student = await prisma.user.findUnique({ where: { id } });
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const now = new Date();

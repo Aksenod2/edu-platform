@@ -231,8 +231,8 @@ export default function StreamsPage() {
         </Button>
       </div>
 
-      <HintCallout storageKey="eduhint:streams-list" title="Группа — это учебная группа учеников">
-        Группа — это набор учеников. В неё зачисляют учеников и составляют
+      <HintCallout storageKey="eduhint:streams-list" title="Группа — это учебная группа студентов">
+        Группа — это набор студентов. В неё зачисляют студентов и составляют
         расписание из уроков копилки. Один и тот же урок может идти в нескольких
         группах.
       </HintCallout>
@@ -304,7 +304,7 @@ export default function StreamsPage() {
               <TableHead>Название</TableHead>
               <TableHead>Ведущий</TableHead>
               <TableHead>Преподаватели</TableHead>
-              <TableHead className="text-right">Учеников</TableHead>
+              <TableHead className="text-right">Студентов</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Создан</TableHead>
               <TableHead className="w-[1%] text-right">Действия</TableHead>

@@ -187,7 +187,7 @@ export default function StudentsPage() {
       setNewEmail('');
       setNewName('');
       setCreateOpen(false);
-      showMessage('Ученик создан');
+      showMessage('Студент создан');
       await fetchStudents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка создания');
@@ -200,7 +200,7 @@ export default function StudentsPage() {
     if (!accessToken) return;
     try {
       await updateStudent(accessToken, student.id, { isActive: !student.isActive });
-      showMessage(student.isActive ? 'Ученик заблокирован' : 'Ученик разблокирован');
+      showMessage(student.isActive ? 'Студент заблокирован' : 'Студент разблокирован');
       await fetchStudents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
@@ -211,7 +211,7 @@ export default function StudentsPage() {
     if (!accessToken) return;
     try {
       await deleteStudent(accessToken, student.id);
-      showMessage('Ученик удалён');
+      showMessage('Студент удалён');
       await fetchStudents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка удаления');
@@ -242,19 +242,19 @@ export default function StudentsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">Ученики</h1>
-          <p className="text-sm text-muted-foreground">Управление учениками</p>
+          <h1 className="text-2xl font-bold tracking-tight">Студенты</h1>
+          <p className="text-sm text-muted-foreground">Управление студентами</p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button className="w-full shrink-0 sm:w-auto">
               <Plus />
-              Создать ученика
+              Создать студента
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Новый ученик</DialogTitle>
+              <DialogTitle>Новый студент</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreate}>
               <FieldGroup>
@@ -363,8 +363,8 @@ export default function StudentsPage() {
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   {streamFilter
-                    ? 'В этой группе нет учеников'
-                    : 'Ученики не найдены'}
+                    ? 'В этой группе нет студентов'
+                    : 'Студенты не найдены'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -475,9 +475,9 @@ export default function StudentsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить ученика?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить студента?</AlertDialogTitle>
             <AlertDialogDescription>
-              {studentToDelete && `Ученик ${studentToDelete.name} будет удалён.`}
+              {studentToDelete && `Студент ${studentToDelete.name} будет удалён.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -500,7 +500,7 @@ export default function StudentsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Сбросить пароль?</AlertDialogTitle>
             <AlertDialogDescription>
-              {studentToReset && `Для ученика ${studentToReset.name} будет сгенерирован новый временный пароль.`}
+              {studentToReset && `Для студента ${studentToReset.name} будет сгенерирован новый временный пароль.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

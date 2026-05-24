@@ -138,7 +138,7 @@ export async function threadRoutes(app: FastifyInstance) {
 
     // Students can only see their own thread
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const student = await prisma.user.findUnique({
@@ -147,7 +147,7 @@ export async function threadRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Find or auto-create conversation for student
@@ -220,7 +220,7 @@ export async function threadRoutes(app: FastifyInstance) {
     const user = request.user!;
 
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const entry = await prisma.conversationEntry.findUnique({
@@ -257,7 +257,7 @@ export async function threadRoutes(app: FastifyInstance) {
 
     // Students can only post to their own thread
     if (user.role === 'student' && user.userId !== studentId) {
-      return reply.status(403).send({ error: 'Нет доступа к чужому треду' });
+      return reply.status(403).send({ error: 'Нет доступа к чужой переписке' });
     }
 
     const student = await prisma.user.findUnique({
@@ -266,7 +266,7 @@ export async function threadRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Find or auto-create conversation
@@ -336,7 +336,7 @@ export async function threadRoutes(app: FastifyInstance) {
         userId: studentId,
         type: 'thread_entry',
         title: 'Новое сообщение от преподавателя',
-        body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+        body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в переписке',
         metadata: { conversationId: thread.id, entryId: entry.id },
       }).catch(() => {});
     } else {
@@ -351,7 +351,7 @@ export async function threadRoutes(app: FastifyInstance) {
           userId: admin.id,
           type: 'thread_entry',
           title: `Новое сообщение от ${authorName}`,
-          body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в треде',
+          body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в переписке',
           metadata: { conversationId: thread.id, entryId: entry.id, studentId },
         }).catch(() => {});
       }

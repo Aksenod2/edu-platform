@@ -125,7 +125,7 @@ export default function AdminThreadsPage() {
         <h1 className="mb-3 text-xl font-bold tracking-tight">Сообщения</h1>
         <div className="-m-1.5 overflow-x-auto p-1.5">
           <TabsList>
-          <TabsTrigger value="students">Ученики</TabsTrigger>
+          <TabsTrigger value="students">Студенты</TabsTrigger>
           <TabsTrigger value="staff">
             Штаб
             {staffUnread > 0 && (

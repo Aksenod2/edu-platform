@@ -343,7 +343,7 @@ export default function AdminSettingsPage() {
         footer={
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">
-              Настройки уведомлений для пользователей — в карточках учеников
+              Настройки уведомлений для пользователей — в карточках студентов
             </span>
             <Button variant="ghost" size="sm" onClick={() => router.push('/admin/students')}>
               Перейти

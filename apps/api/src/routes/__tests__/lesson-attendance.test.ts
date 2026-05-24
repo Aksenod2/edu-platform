@@ -302,7 +302,7 @@ describe('POST /lessons/:id/attendance/mark — ручная отметка', ()
       payload: { streamId: 'stream-1', userId: 'u9', status: 'present' },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'Студент не зачислен в поток' });
+    expect(res.json()).toEqual({ error: 'Студент не зачислен в группу' });
   });
 
   it('требует роль admin: студент → 403', async () => {

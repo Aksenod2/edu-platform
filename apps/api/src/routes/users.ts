@@ -269,7 +269,7 @@ export async function userRoutes(app: FastifyInstance) {
     // Invalidate all sessions
     await prisma.refreshToken.deleteMany({ where: { userId: id } });
 
-    return { tempPassword, message: 'Пароль сброшен. Передайте временный пароль ученику.' };
+    return { tempPassword, message: 'Пароль сброшен. Передайте временный пароль студенту.' };
   });
 
   // GET /users/:id/export — aggregated JSON dump of a student's data (admin only).
@@ -292,7 +292,7 @@ export async function userRoutes(app: FastifyInstance) {
     });
 
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const [studentAssignments, thread] = await Promise.all([

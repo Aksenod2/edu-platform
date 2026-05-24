@@ -464,12 +464,12 @@ export async function lessonRoutes(app: FastifyInstance) {
       select: { id: true, name: true, programId: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     // Студент видит уроки только своих потоков
     if (!isAdmin && !(await isEnrolled(request.user!.userId, streamId))) {
-      return reply.status(403).send({ error: 'Нет доступа к этому потоку' });
+      return reply.status(403).send({ error: 'Нет доступа к этой группе' });
     }
 
     const isMine = isAdmin && mine === 'true';
@@ -738,11 +738,11 @@ export async function lessonRoutes(app: FastifyInstance) {
       select: { id: true, status: true, programId: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (stream.status === 'archived') {
-      return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивный поток' });
+      return reply.status(400).send({ error: 'Нельзя добавлять уроки в архивную группу' });
     }
 
     // 1) Создаём блок урока.
@@ -1654,7 +1654,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       select: { id: true },
     });
     if (!enrollment) {
-      return reply.status(400).send({ error: 'Студент не зачислен в поток' });
+      return reply.status(400).send({ error: 'Студент не зачислен в группу' });
     }
 
     // Дедуп ручного ряда вручную по (sessionId, userId, source='manual').
@@ -1719,7 +1719,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         select: { id: true },
       });
       if (!enrollment) {
-        return reply.status(400).send({ error: 'Студент не зачислен в поток' });
+        return reply.status(400).send({ error: 'Студент не зачислен в группу' });
       }
 
       await prisma.sessionAttendance.update({

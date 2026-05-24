@@ -341,7 +341,7 @@ describe('POST /public/streams/join/:token — регистрация по сс�
     });
 
     expect(res.statusCode).toBe(409);
-    expect((res.json() as { error: string }).error).toBe('Набор в этот поток закрыт');
+    expect((res.json() as { error: string }).error).toBe('Набор в эту группу закрыт');
     expect(tx.user.create).not.toHaveBeenCalled();
   });
 

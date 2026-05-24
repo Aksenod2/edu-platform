@@ -24,7 +24,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const profile = await prisma.studentProfile.findUnique({
@@ -80,7 +80,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const body = request.body as {
@@ -143,7 +143,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const { content } = request.body as { content: string };
@@ -174,7 +174,7 @@ export async function profileRoutes(app: FastifyInstance) {
     });
 
     if (!student) {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const notes = await prisma.teacherNote.findMany({

@@ -64,7 +64,7 @@ export default function AdminLessonPage() {
             <h1 className="text-2xl font-bold tracking-tight">Редактирование урока</h1>
             <p className="text-sm text-muted-foreground">
               Переиспользуемый блок: видео, материалы, преподаватели и задание.
-              Расписание занятий настраивается ниже по потокам.
+              Расписание занятий настраивается ниже по группам.
             </p>
           </div>
 

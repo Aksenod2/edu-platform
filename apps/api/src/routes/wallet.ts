@@ -31,7 +31,7 @@ export async function walletRoutes(app: FastifyInstance) {
 
     const student = await prisma.user.findUnique({ where: { id } });
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Имя администратора, выполняющего операцию (для атрибуции в истории).
@@ -74,7 +74,7 @@ export async function walletRoutes(app: FastifyInstance) {
 
     const student = await prisma.user.findUnique({ where: { id } });
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     // Нельзя уводить баланс в минус.
@@ -123,7 +123,7 @@ export async function walletRoutes(app: FastifyInstance) {
       select: { balanceKopecks: true, role: true },
     });
     if (!student || student.role !== 'student') {
-      return reply.status(404).send({ error: 'Ученик не найден' });
+      return reply.status(404).send({ error: 'Студент не найден' });
     }
 
     const transactions = await prisma.walletTransaction.findMany({

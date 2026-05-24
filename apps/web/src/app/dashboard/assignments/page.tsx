@@ -460,9 +460,10 @@ export default function StudentAssignmentsPage() {
                           );
                         })()}
 
-                      {/* Actions row */}
-                      <div className="flex gap-5 items-center justify-between flex-wrap">
-                        <div className="flex gap-5 text-xs text-muted-foreground">
+                      {/* Actions row: на мобиле в столбик (мета над кнопками),
+                          на sm+ — в ряд с выравниванием по краям */}
+                      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                           {sa.submittedAt && (
                             <span>
                               Отправлено:{' '}
@@ -483,13 +484,21 @@ export default function StudentAssignmentsPage() {
                           )}
                         </div>
 
-                        <div className="flex gap-2 items-center">
-                          <Button asChild variant="outline" size="sm">
+                        {/* На мобиле кнопки в столбик во всю ширину (тап-таргет ≥44px),
+                            на sm+ — в ряд с переносом, чтобы ничего не обрезалось */}
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="w-full min-h-11 sm:w-auto sm:min-h-9"
+                          >
                             <Link href={`/dashboard/assignments/${sa.id}`}>Подробнее</Link>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            className="w-full min-h-11 sm:w-auto sm:min-h-9"
                             onClick={() =>
                               router.push(
                                 `/dashboard/messages?tab=personal&assignmentId=${a?.id}&title=${encodeURIComponent(a?.title || '')}`,
@@ -505,6 +514,7 @@ export default function StudentAssignmentsPage() {
                             <Button
                               size="sm"
                               variant={sa.status === 'submitted' ? 'outline' : 'default'}
+                              className="w-full min-h-11 sm:w-auto sm:min-h-9"
                               onClick={() => openSubmissionForm(sa.id)}
                             >
                               {sa.status === 'needs_revision'
