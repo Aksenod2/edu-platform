@@ -90,7 +90,7 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
 
       // В архивный поток по ссылке записаться нельзя.
       if (stream.status === 'archived') {
-        return reply.status(409).send({ error: 'Набор в этот поток закрыт' });
+        return reply.status(409).send({ error: 'Набор в эту группу закрыт' });
       }
 
       const passwordHash = await bcrypt.hash(password, 12);

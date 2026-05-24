@@ -48,11 +48,11 @@ test.describe('Админ-кабинет', () => {
     await expect(page.getByRole('button', { name: 'Сегодня' })).toBeVisible();
   });
 
-  test('сообщения: есть «Чаты потоков», нет вкладки «Потоки»', async ({ page }) => {
+  test('сообщения: есть «Чаты групп», нет вкладки «Группы»', async ({ page }) => {
     await page.goto('/admin/messages');
     const tablist = page.getByRole('tablist');
-    await expect(tablist.getByRole('tab', { name: 'Чаты потоков' })).toBeVisible();
-    await expect(tablist.getByRole('tab', { name: 'Потоки', exact: true })).toHaveCount(0);
+    await expect(tablist.getByRole('tab', { name: 'Чаты групп' })).toBeVisible();
+    await expect(tablist.getByRole('tab', { name: 'Группы', exact: true })).toHaveCount(0);
   });
 
   test('профиль: блок «Аватар» с загрузкой фото', async ({ page }) => {

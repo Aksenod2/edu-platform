@@ -152,7 +152,7 @@ export default function AdminPage() {
 
       <HintCallout storageKey="eduhint:intro-model" title="Как устроена платформа">
         Коротко о модели: урок — переиспользуемый блок с контентом и ДЗ (живёт в
-        копилке); группа — это набор учеников; расписание — когда урок проводят
+        копилке); группа — это набор студентов; расписание — когда урок проводят
         конкретной группе. Один урок можно вести в нескольких группах.
       </HintCallout>
 
@@ -169,7 +169,7 @@ export default function AdminPage() {
           {/* KPI strip */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
-              title="Активные ученики"
+              title="Активные студенты"
               value={stats.students.active}
               hint={`+${stats.students.newThisWeek} новых за неделю`}
               icon={Users}

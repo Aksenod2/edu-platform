@@ -262,9 +262,9 @@ export default function AssignmentDetailPage() {
             <div className="mb-4">
               <HintCallout
                 storageKey="eduhint:assignment-review-thread"
-                title="Разбор и переписка — это одно общение с учеником"
+                title="Разбор и переписка — это одно общение со студентом"
               >
-                «Разбор работы» (вердикт + комментарий) приходит ученику в его
+                «Разбор работы» (вердикт + комментарий) приходит студенту в его
                 переписку с преподавателем. Отдельного чата у задания нет — кнопка
                 «Переписка» открывает ту же самую переписку целиком.
               </HintCallout>
@@ -320,7 +320,7 @@ export default function AssignmentDetailPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Открыть общую переписку с учеником"
+                                title="Открыть общую переписку со студентом"
                                 onClick={() => router.push(`/admin/students/${sa.student!.id}?tab=thread`)}
                               >
                                 <MessageSquare />

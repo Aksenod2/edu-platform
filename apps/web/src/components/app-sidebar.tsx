@@ -122,7 +122,7 @@ const STUDENT_NAV: NavGroup[] = [
 
 const ROLE_LABEL: Record<'admin' | 'student', string> = {
   admin: 'Администратор',
-  student: 'Ученик',
+  student: 'Студент',
 };
 
 export function AppSidebar({

@@ -73,7 +73,7 @@ describe('DELETE /streams/:id — полное удаление потока', (
     });
 
     expect(res.statusCode).toBe(404);
-    expect((res.json() as { error: string }).error).toBe('Поток не найден');
+    expect((res.json() as { error: string }).error).toBe('Группа не найдена');
   });
 
   it('студент → 403, удаление не вызывается', async () => {

@@ -235,12 +235,12 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id: streamId } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     const { shared } = await getStreamShared(streamId);
     if (!shared) {
-      return reply.status(400).send({ error: 'Чат доступен только для общих потоков' });
+      return reply.status(400).send({ error: 'Чат доступен только для общих групп' });
     }
 
     const conversation = await getOrCreateStreamConversation(streamId);
@@ -296,12 +296,12 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id: streamId } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     const { shared, teacherIds } = await getStreamShared(streamId);
     if (!shared) {
-      return reply.status(400).send({ error: 'Чат доступен только для общих потоков' });
+      return reply.status(400).send({ error: 'Чат доступен только для общих групп' });
     }
 
     const conversation = await getOrCreateStreamConversation(streamId);
@@ -377,7 +377,7 @@ export async function conversationRoutes(app: FastifyInstance) {
     if (user.role === 'admin') return true;
     const enrolled = await isEnrolled(user.userId, streamId);
     if (enrolled) return true;
-    reply.status(403).send({ error: 'Нет доступа к чату этого потока' });
+    reply.status(403).send({ error: 'Нет доступа к чату этой группы' });
     return false;
   }
 
@@ -412,7 +412,7 @@ export async function conversationRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id: streamId } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (!(await canAccessCohort(request, reply, streamId))) return reply;
@@ -473,7 +473,7 @@ export async function conversationRoutes(app: FastifyInstance) {
 
       const stream = await prisma.stream.findUnique({ where: { id: streamId } });
       if (!stream) {
-        return reply.status(404).send({ error: 'Поток не найден' });
+        return reply.status(404).send({ error: 'Группа не найдена' });
       }
 
       if (!(await canAccessCohort(request, reply, streamId))) return reply;
@@ -659,13 +659,13 @@ async function notifyStream(
     type === 'text'
       ? content.slice(0, 200)
       : type === 'link'
-        ? `Новая ссылка в потоке «${streamName}»`
-        : `Новый файл в потоке «${streamName}»`;
+        ? `Новая ссылка в группе «${streamName}»`
+        : `Новый файл в группе «${streamName}»`;
 
   await notifyMany(
     [...recipients],
     'thread_entry',
-    `Новое сообщение в потоке «${streamName}» от ${authorName}`,
+    `Новое сообщение в группе «${streamName}» от ${authorName}`,
     body,
     { conversationId, entryId, streamId },
   );
@@ -788,13 +788,13 @@ async function notifyCohort(
     type === 'text'
       ? content.slice(0, 200)
       : type === 'link'
-        ? `Новая ссылка в чате потока «${streamName}»`
-        : `Новый файл в чате потока «${streamName}»`;
+        ? `Новая ссылка в чате группы «${streamName}»`
+        : `Новый файл в чате группы «${streamName}»`;
 
   await notifyMany(
     [...recipients],
     'thread_entry',
-    `Новое сообщение в чате потока «${streamName}» от ${authorName}`,
+    `Новое сообщение в чате группы «${streamName}» от ${authorName}`,
     body,
     { conversationId, entryId, streamId },
   );

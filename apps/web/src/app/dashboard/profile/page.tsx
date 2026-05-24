@@ -109,7 +109,7 @@ export default function ProfilePage() {
       {!isCompleted && (
         <Card className="mt-4 border-primary/20 bg-primary/5">
           <CardHeader>
-            <CardTitle>Рады видеть вас на потоке!</CardTitle>
+            <CardTitle>Рады видеть вас в группе!</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
             <p>

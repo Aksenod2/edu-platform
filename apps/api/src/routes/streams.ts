@@ -72,7 +72,7 @@ export async function streamRoutes(app: FastifyInstance) {
     const { name, programId } = request.body as { name: string; programId?: string | null };
 
     if (!name || !name.trim()) {
-      return reply.status(400).send({ error: 'Название потока обязательно' });
+      return reply.status(400).send({ error: 'Название группы обязательно' });
     }
 
     // Если задана программа — проверяем, что она существует.
@@ -109,11 +109,11 @@ export async function streamRoutes(app: FastifyInstance) {
 
     const existing = await prisma.stream.findUnique({ where: { id } });
     if (!existing) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (name !== undefined && !name.trim()) {
-      return reply.status(400).send({ error: 'Название потока не может быть пустым' });
+      return reply.status(400).send({ error: 'Название группы не может быть пустым' });
     }
 
     // Если задаётся ведущий — проверяем, что это существующий администратор.
@@ -175,7 +175,7 @@ export async function streamRoutes(app: FastifyInstance) {
     });
 
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     // joinToken/joinTokenAt НЕ светим в общих ответах — только через эндпоинты join-link.
@@ -201,7 +201,7 @@ export async function streamRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     const enrollments = await prisma.streamEnrollment.findMany({
@@ -228,7 +228,7 @@ export async function streamRoutes(app: FastifyInstance) {
 
     const stream = await prisma.stream.findUnique({ where: { id } });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
@@ -294,7 +294,7 @@ export async function streamRoutes(app: FastifyInstance) {
       select: { id: true, joinToken: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (stream.joinToken) {
@@ -320,7 +320,7 @@ export async function streamRoutes(app: FastifyInstance) {
       select: { id: true },
     });
     if (!stream) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     const token = generateJoinToken();
@@ -338,11 +338,11 @@ export async function streamRoutes(app: FastifyInstance) {
 
     const existing = await prisma.stream.findUnique({ where: { id } });
     if (!existing) {
-      return reply.status(404).send({ error: 'Поток не найден' });
+      return reply.status(404).send({ error: 'Группа не найдена' });
     }
 
     if (existing.status === 'archived') {
-      return reply.status(400).send({ error: 'Поток уже архивирован' });
+      return reply.status(400).send({ error: 'Группа уже архивирована' });
     }
 
     const stream = await prisma.stream.update({
@@ -369,11 +369,11 @@ export async function streamRoutes(app: FastifyInstance) {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2025'
       ) {
-        return reply.status(404).send({ error: 'Поток не найден' });
+        return reply.status(404).send({ error: 'Группа не найдена' });
       }
       throw err;
     }
 
-    return { message: 'Поток удалён' };
+    return { message: 'Группа удалена' };
   });
 }

@@ -197,7 +197,7 @@ export default function StudentProfilePage() {
       const result = await getThread(accessToken, studentId);
       setThreadEntries(result.entries);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки треда');
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки переписки');
     } finally {
       setLoadingThread(false);
     }
@@ -435,7 +435,7 @@ export default function StudentProfilePage() {
           className="h-auto px-2 text-muted-foreground"
           icon={<ChevronLeft className="size-4" />}
         >
-          К списку учеников
+          К списку студентов
         </BackButton>
         <Alert variant="destructive" className="mt-4">
           <AlertDescription>{error}</AlertDescription>
@@ -472,7 +472,7 @@ export default function StudentProfilePage() {
             className="-ml-2 h-auto px-2 text-muted-foreground"
             icon={<ChevronLeft className="size-4" />}
           >
-            К списку учеников
+            К списку студентов
           </BackButton>
 
           <div className="mt-2 mb-1 min-w-0">
@@ -694,7 +694,7 @@ export default function StudentProfilePage() {
                       )}
                     </div>
                   ) : (
-                    <p className="text-muted-foreground text-sm">Ученик ещё не заполнил анкету.</p>
+                    <p className="text-muted-foreground text-sm">Студент ещё не заполнил анкету.</p>
                   )}
                 </CardContent>
               </Card>
@@ -978,7 +978,7 @@ export default function StudentProfilePage() {
                 {inputMode === 'note' && (
                   <div className="flex items-center justify-between px-3 py-2 mb-2 bg-muted border rounded-md">
                     <span className="font-mono text-xs text-muted-foreground uppercase tracking-wide">
-                      Приватная заметка — ученик не увидит
+                      Приватная заметка — студент не увидит
                     </span>
                     <button
                       onClick={() => setInputMode('comment')}
@@ -1011,7 +1011,7 @@ export default function StudentProfilePage() {
                       e.target.style.height = 'auto';
                       e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
                     }}
-                    placeholder={inputMode === 'comment' ? 'Сообщение ученику' : 'Приватная заметка'}
+                    placeholder={inputMode === 'comment' ? 'Сообщение студенту' : 'Приватная заметка'}
                     rows={1}
                     className={[
                       'flex-1 rounded-lg px-3 py-2 text-sm text-foreground resize-none overflow-hidden leading-normal border outline-none',
@@ -1047,7 +1047,7 @@ export default function StudentProfilePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Отправить на доработку?</AlertDialogTitle>
             <AlertDialogDescription>
-              Задание «{pendingRevision?.assignment?.title || ''}» будет возвращено ученику на доработку.
+              Задание «{pendingRevision?.assignment?.title || ''}» будет возвращено студенту на доработку.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
