@@ -7,6 +7,7 @@ import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -589,11 +590,10 @@ function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
       <div className="grid grid-cols-2 gap-3">
         <Field>
           <FieldLabel htmlFor={`edit-date-${lesson.id}`}>Дата</FieldLabel>
-          <Input
+          <DatePicker
             id={`edit-date-${lesson.id}`}
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(v) => setDate(v ?? '')}
           />
         </Field>
         <Field>
@@ -733,11 +733,10 @@ function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: Cre
       <div className="grid grid-cols-2 gap-3">
         <Field>
           <FieldLabel htmlFor="new-date">Дата</FieldLabel>
-          <Input
+          <DatePicker
             id="new-date"
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(v) => setDate(v ?? '')}
           />
         </Field>
         <Field>

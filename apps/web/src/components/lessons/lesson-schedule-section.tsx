@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -527,11 +528,11 @@ export function LessonScheduleSection({
                         <FieldLabel htmlFor={`due-${s.streamId}`} className="text-xs">
                           Дедлайн
                         </FieldLabel>
-                        <Input
+                        <DatePicker
                           id={`due-${s.streamId}`}
-                          type="date"
                           value={issueDueDate}
-                          onChange={(e) => setIssueDueDate(e.target.value)}
+                          onChange={(v) => setIssueDueDate(v ?? '')}
+                          placeholder="Без дедлайна"
                           className="h-8"
                         />
                       </Field>
@@ -666,11 +667,10 @@ export function LessonScheduleSection({
             <div className="grid grid-cols-2 gap-3">
               <Field>
                 <FieldLabel htmlFor="sched-date">Дата</FieldLabel>
-                <Input
+                <DatePicker
                   id="sched-date"
-                  type="date"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(v) => setDate(v ?? '')}
                 />
               </Field>
               <Field>
