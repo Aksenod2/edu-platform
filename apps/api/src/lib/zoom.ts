@@ -256,9 +256,22 @@ interface ZoomRecordingsResponse {
   recording_files?: ZoomRecordingFile[];
 }
 
+// Ошибка вызова API Zoom с СОХРАНЁННЫМ HTTP-кодом. Нужна вызывающему (обработке
+// записи/транскрипта), чтобы отличить «записи ещё нет» (404 на листинге recordings
+// → данные формируются) от реальной ошибки доступа (403/нет scope → сбой). Текст
+// безопасен (только код, без сырого URL/тела ответа Zoom).
+export class ZoomApiHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message?: string) {
+    super(message ?? `Zoom вернул ошибку (HTTP ${status})`);
+    this.status = status;
+  }
+}
+
 // Возвращает список файлов записи встречи Zoom.
 // GET https://api.zoom.us/v2/meetings/{meetingId}/recordings (Bearer).
-// Бросает Error при неуспехе (вызывающий оборачивает и не падает).
+// Бросает ZoomApiHttpError при неуспехе (вызывающий смотрит status: 404 = записи
+// ещё нет/не готова → processing; прочее, напр. 403 = реальная ошибка → failed).
 export async function getMeetingRecordings(
   userId: string,
   meetingId: string,
@@ -281,7 +294,8 @@ export async function getMeetingRecordings(
     } catch {
       // тело может быть не JSON — игнорируем
     }
-    throw new Error(
+    throw new ZoomApiHttpError(
+      res.status,
       `Zoom вернул ошибку при получении записей (${res.status})${detail ? `: ${detail}` : ''}`,
     );
   }
