@@ -1352,7 +1352,7 @@ function OverviewTab({
             onValueChange={handleOwnerChange}
             disabled={savingOwner}
           >
-            <SelectTrigger className="w-[260px]">
+            <SelectTrigger className="w-full sm:w-[260px]">
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>

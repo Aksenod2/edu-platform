@@ -136,14 +136,19 @@ function isPdfOrMarkdown(fileName: string, mimeType: string): boolean {
   return PDF_MD_MIME_TYPES.has((mimeType || '').toLowerCase());
 }
 
-// Допускаем видеофайлы по расширению И mime. Проверяем оба, т.к. браузеры/ОС
-// иногда отдают пустой/неточный mime для .mov/.m4v.
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v'];
+// Допускаем ТОЛЬКО web-проигрываемые форматы: MP4 (H.264) и WebM. .mov/QuickTime
+// и .m4v браузеры (Chrome/Firefox, и десктоп, и мобилка) не воспроизводят —
+// поэтому НЕ принимаем их при загрузке (иначе у урока «чёрный экран»). Проверяем
+// И расширение, И mime: пустой/неточный mime (бывает у файлов) допускаем при
+// корректном расширении, но video/quicktime и т.п. отсекаем.
+const VIDEO_EXTENSIONS = ['.mp4', '.webm'];
+const VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm']);
 
 function isVideoFile(fileName: string, mimeType: string): boolean {
   const lowerName = (fileName || '').toLowerCase();
   const okExt = VIDEO_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
-  const okMime = (mimeType || '').toLowerCase().startsWith('video/');
+  const m = (mimeType || '').toLowerCase();
+  const okMime = VIDEO_MIME_TYPES.has(m) || m === '' || m === 'application/octet-stream';
   return okExt && okMime;
 }
 
@@ -1353,7 +1358,10 @@ export async function lessonRoutes(app: FastifyInstance) {
     if (!isVideoFile(originalName, mimeType)) {
       // Слив потока, чтобы не подвиснуть на необработанном файле.
       data.file.resume();
-      return reply.status(400).send({ error: 'Поддерживаются видеофайлы (MP4)' });
+      return reply.status(400).send({
+        error:
+          'Поддерживаются только MP4 (H.264) и WebM. Формат .mov/HEVC браузеры не проигрывают — перекодируйте видео в MP4.',
+      });
     }
 
     const chunks: Buffer[] = [];
@@ -1449,7 +1457,10 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (!isVideoFile(originalName, mimeType)) {
         // Слив потока, чтобы не подвиснуть на необработанном файле.
         data.file.resume();
-        return reply.status(400).send({ error: 'Поддерживаются видеофайлы (MP4)' });
+        return reply.status(400).send({
+        error:
+          'Поддерживаются только MP4 (H.264) и WebM. Формат .mov/HEVC браузеры не проигрывают — перекодируйте видео в MP4.',
+      });
       }
 
       const chunks: Buffer[] = [];

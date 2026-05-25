@@ -194,7 +194,7 @@ export function LessonVideosManager({
             Добавить файл
             <input
               type="file"
-              accept="video/mp4,video/webm,.mp4,.webm,.mov,.m4v"
+              accept="video/mp4,video/webm,.mp4,.webm"
               className="hidden"
               disabled={busy}
               onChange={(e) => {
@@ -214,6 +214,10 @@ export function LessonVideosManager({
             className="w-full"
           />
         </div>
+        <p className="text-xs text-muted-foreground">
+          Только MP4 (H.264) или WebM — другие форматы (.mov, HEVC) браузеры не
+          проигрывают. Если видео с айфона — перекодируйте в MP4 перед загрузкой.
+        </p>
 
         {/* Добавить ссылку */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

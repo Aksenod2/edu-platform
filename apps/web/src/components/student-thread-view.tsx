@@ -466,7 +466,7 @@ function MessageBubble({
       className={cn(
         'flex min-w-0 max-w-[85%] items-end gap-2',
         showAuthor ? 'mt-4' : 'mt-1',
-        isOwn ? 'flex-row-reverse self-end' : 'flex-row self-start',
+        isOwn ? 'ml-auto flex-row-reverse' : 'mr-auto flex-row',
       )}
     >
       {showAuthor ? (
