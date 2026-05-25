@@ -83,6 +83,10 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
         required: false,
         note: 'Привязка к программе. Без неё поток менторский (уроки задаются напрямую). Создатель становится ведущим.',
       },
+      { name: 'priceKopecks', type: 'number', required: false, note: 'Разовая цена за участие (копейки); начисляется при зачислении.' },
+      { name: 'billingType', type: 'string', required: false, note: 'one_time | monthly. monthly = ежемесячная менторская оплата (списывается автоматически).' },
+      { name: 'monthlyPriceKopecks', type: 'number', required: false, note: 'Месячная сумма списания (копейки) — обязательна при billingType=monthly.' },
+      { name: 'billingDayOfMonth', type: 'number', required: false, note: 'День месяца списания 1–28 — обязателен при billingType=monthly.' },
     ],
     example:
       `curl -X POST <BASE>/streams \\\n` +
@@ -100,6 +104,10 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
       { name: 'name', type: 'string', required: false, note: 'Новое название (непустое).' },
       { name: 'ownerId', type: 'string', required: false, note: 'Новый ведущий (существующий admin).' },
       { name: 'programId', type: 'string', required: false, note: 'Программа; null делает поток менторским.' },
+      { name: 'priceKopecks', type: 'number', required: false, note: 'Разовая цена за участие (копейки).' },
+      { name: 'billingType', type: 'string', required: false, note: 'one_time | monthly (ежемесячная менторская оплата).' },
+      { name: 'monthlyPriceKopecks', type: 'number', required: false, note: 'Месячная сумма (копейки) при billingType=monthly.' },
+      { name: 'billingDayOfMonth', type: 'number', required: false, note: 'День списания 1–28 при billingType=monthly.' },
     ],
     example:
       `curl -X PATCH <BASE>/streams/ID_ГРУППЫ \\\n` +
@@ -319,7 +327,23 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   },
   { group: 'Ученики', method: 'GET', path: '/teachers', desc: 'Список преподавателей (admin)' },
   { group: 'Ученики', method: 'GET', path: '/users/:id', desc: 'Карточка ученика' },
-  { group: 'Ученики', method: 'PATCH', path: '/users/:id', desc: 'Изменить ученика' },
+  {
+    group: 'Ученики',
+    method: 'PATCH',
+    path: '/users/:id',
+    desc: 'Изменить ученика (имя, email, блокировка, демо-флаг)',
+    body: [
+      { name: 'name', type: 'string', required: false, note: 'Имя ученика.' },
+      { name: 'email', type: 'string', required: false, note: 'Email (логин); проверяется уникальность.' },
+      { name: 'isActive', type: 'boolean', required: false, note: 'false = заблокировать вход.' },
+      {
+        name: 'isDemo',
+        type: 'boolean',
+        required: false,
+        note: 'Демо/служебный аккаунт: не списываются деньги и не учитывается в статистике.',
+      },
+    ],
+  },
   { group: 'Ученики', method: 'DELETE', path: '/users/:id', desc: 'Удалить ученика' },
   { group: 'Ученики', method: 'POST', path: '/users/:id/invite', desc: 'Сгенерировать ссылку-приглашение' },
   { group: 'Ученики', method: 'POST', path: '/users/:id/reset-password', desc: 'Сбросить пароль ученика' },
