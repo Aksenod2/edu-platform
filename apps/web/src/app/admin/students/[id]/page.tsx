@@ -521,7 +521,7 @@ export default function StudentProfilePage() {
               <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
               {isDemo && <Badge variant="secondary">Демо</Badge>}
             </div>
-            <p className="text-muted-foreground m-0 text-sm">
+            <p className="text-muted-foreground m-0 text-sm break-words">
               {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
             </p>
           </div>
