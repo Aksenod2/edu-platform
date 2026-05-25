@@ -155,6 +155,12 @@ model User {
   sessionAttendance       SessionAttendance[]
   charges                 Charge[]                 @relation("ChargeUser")
   createdCharges          Charge[]                 @relation("ChargeCreatedBy")
+  // «Динамика ученика» (приватный инструмент преподавателя). Roadmap-шапка — одна
+  // на ученика; записи ленты — много. Авторство/правки фиксируем через updatedBy/author.
+  studentDynamic          StudentDynamic?          @relation("StudentDynamicStudent")
+  updatedDynamics         StudentDynamic[]         @relation("StudentDynamicUpdatedBy")
+  dynamicEntries          StudentDynamicEntry[]    @relation("StudentDynamicEntryStudent")
+  authoredDynamicEntries  StudentDynamicEntry[]    @relation("StudentDynamicEntryAuthor")
 }
 
 model ApiKey {
@@ -720,4 +726,39 @@ model ZoomWebhookEvent {
   status      String    @default("received") // received | processed | failed
   createdAt   DateTime  @default(now())
   processedAt DateTime?
+}
+
+// «Динамика ученика» — приватный инструмент преподавателя/админа (ученик НЕ видит).
+// Roadmap-шапка: один ряд на ученика, markdown-конспект «с чем пришёл / в процессе /
+// с чем ушёл». Записи прогресса хранятся отдельно (StudentDynamicEntry).
+model StudentDynamic {
+  id          String   @id @default(uuid())
+  studentId   String   @unique
+  roadmap     String? // markdown «с чем пришёл / в процессе / с чем ушёл»
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  student   User  @relation("StudentDynamicStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  updatedBy User? @relation("StudentDynamicUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// Лента датированных записей прогресса ученика (markdown). source — задел под Фазу 2
+// (Claude-автозаполнение из транскрипта): manual | ai_transcript. lessonId/sessionId —
+// необязательная привязка к уроку/проведению (простые nullable-строки без FK).
+model StudentDynamicEntry {
+  id        String   @id @default(uuid())
+  studentId String
+  authorId  String?
+  content   String // markdown-текст записи
+  source    String   @default("manual") // manual | ai_transcript (задел под Фазу 2)
+  lessonId  String?
+  sessionId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student User  @relation("StudentDynamicEntryStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  author  User? @relation("StudentDynamicEntryAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
 }

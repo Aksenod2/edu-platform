@@ -854,7 +854,7 @@ export async function deleteLessonMaterial(
   lessonId: string,
   s3Key: string,
 ): Promise<{ materials: LessonMaterial[] }> {
-  return request(`/lessons/${lessonId}/materials/${encodeURIComponent(s3Key)}`, {
+  return request(`/lessons/${lessonId}/materials?s3Key=${encodeURIComponent(s3Key)}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1957,6 +1957,90 @@ export async function addTeacherNote(
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ content }),
+  });
+}
+
+// Student dynamic (динамика ученика) — приватный инструмент преподавателя/админа.
+// Roadmap-шапка («с чем пришёл / в процессе / с чем ушёл») + лента датированных записей.
+
+export interface StudentDynamicEntry {
+  id: string;
+  content: string;
+  source: string;
+  authorName: string | null;
+  lessonId: string | null;
+  sessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudentDynamic {
+  roadmap: string | null;
+  updatedAt: string | null;
+  updatedByName: string | null;
+  entries: StudentDynamicEntry[];
+}
+
+export async function getStudentDynamic(
+  accessToken: string,
+  studentId: string,
+): Promise<StudentDynamic> {
+  return request(`/students/${studentId}/dynamic`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// PUT возвращает только мету roadmap (без ленты entries) — мёржим в стейт на клиенте.
+export type StudentDynamicRoadmap = Pick<
+  StudentDynamic,
+  'roadmap' | 'updatedAt' | 'updatedByName'
+>;
+
+export async function updateStudentDynamicRoadmap(
+  accessToken: string,
+  studentId: string,
+  roadmap: string,
+): Promise<StudentDynamicRoadmap> {
+  return request(`/students/${studentId}/dynamic/roadmap`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ roadmap }),
+  });
+}
+
+export async function createStudentDynamicEntry(
+  accessToken: string,
+  studentId: string,
+  content: string,
+): Promise<{ entry: StudentDynamicEntry }> {
+  return request(`/students/${studentId}/dynamic/entries`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function updateStudentDynamicEntry(
+  accessToken: string,
+  studentId: string,
+  entryId: string,
+  content: string,
+): Promise<{ entry: StudentDynamicEntry }> {
+  return request(`/students/${studentId}/dynamic/entries/${entryId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function deleteStudentDynamicEntry(
+  accessToken: string,
+  studentId: string,
+  entryId: string,
+): Promise<{ ok: boolean }> {
+  return request(`/students/${studentId}/dynamic/entries/${entryId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 

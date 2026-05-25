@@ -1293,11 +1293,18 @@ export async function lessonRoutes(app: FastifyInstance) {
     return reply.status(201).send({ materials });
   });
 
-  // DELETE /lessons/:id/materials/:s3Key — удаление материала урока (admin).
-  // Работает с БЛОКОМ урока — поведение без изменений.
-  app.delete('/lessons/:id/materials/:s3Key', { onRequest: adminOnly }, async (request, reply) => {
-    const { id, s3Key } = request.params as { id: string; s3Key: string };
-    const key = decodeURIComponent(s3Key);
+  // DELETE /lessons/:id/materials?s3Key=... — удаление материала урока (admin).
+  // s3Key передаём в QUERY, а НЕ в пути: ключ материала содержит '/'
+  // (напр. lesson-materials/<ts>-<uuid>.md), а закодированный слэш (%2F) в
+  // path-параметре ломает маршрутизацию/прокси (404) → материал «не удалялся».
+  app.delete('/lessons/:id/materials', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { s3Key } = request.query as { s3Key?: string };
+    if (!s3Key) {
+      return reply.status(400).send({ error: 'Не указан ключ материала (s3Key)' });
+    }
+    // Значения query Fastify уже декодирует — используем как есть.
+    const key = s3Key;
 
     const lesson = await prisma.lesson.findUnique({ where: { id } });
     if (!lesson) {
