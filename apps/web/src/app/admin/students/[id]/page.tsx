@@ -78,10 +78,11 @@ export default function StudentProfilePage() {
   // прямой ссылкой /admin/students/:id?tab=thread (раньше для этого была отдельная
   // страница /thread).
   const tabParam = searchParams.get('tab');
+  // По умолчанию открываем «Динамику» (первая вкладка); прочие — по ?tab=.
   const initialTab: Tab =
-    tabParam === 'dynamic' || tabParam === 'assignments' || tabParam === 'thread'
+    tabParam === 'profile' || tabParam === 'assignments' || tabParam === 'thread'
       ? tabParam
-      : 'profile';
+      : 'dynamic';
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
 
   const handleTabChange = (value: Tab) => {
@@ -529,10 +530,10 @@ export default function StudentProfilePage() {
           <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as Tab)} className="mt-4">
             <div className="-m-1.5 overflow-x-auto p-1.5">
               <TabsList>
-                <TabsTrigger value="profile">Профиль</TabsTrigger>
                 <TabsTrigger value="dynamic">Динамика</TabsTrigger>
                 <TabsTrigger value="assignments">Задания</TabsTrigger>
                 <TabsTrigger value="thread">Сообщения</TabsTrigger>
+                <TabsTrigger value="profile">Профиль</TabsTrigger>
               </TabsList>
             </div>
           </Tabs>
