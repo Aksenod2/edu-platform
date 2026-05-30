@@ -89,16 +89,18 @@ export function FileLightbox({
         )}
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[90vh] flex-col gap-4 sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle className="truncate pr-6 text-left" title={fileName}>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-3 p-4 sm:max-w-3xl sm:gap-4 sm:p-6">
+        {/* Шапка: заголовок не наезжает на крестик (pr-8), длинное имя — в одну строку с многоточием. */}
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="truncate pr-8 text-left" title={fileName}>
             {fileName}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Контент: занимает всё свободное место между шапкой и подвалом и скроллится сам. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex flex-1 items-center justify-center py-12">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
@@ -106,13 +108,16 @@ export function FileLightbox({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : kind === 'image' ? (
+            // Картинка вписывается в доступную высоту контента, без растягивания.
             <img
               src={proxied}
               alt={fileName}
-              className="mx-auto max-h-[78vh] w-auto object-contain"
+              className="mx-auto max-h-full w-auto object-contain"
             />
           ) : kind === 'pdf' ? (
-            <iframe src={proxied} className="h-[78vh] w-full rounded-md border" title={fileName} />
+            // PDF тянется на всю доступную высоту контента (а не фиксированный vh),
+            // поэтому подвал с кнопками всегда влезает и не налезает на превью.
+            <iframe src={proxied} className="h-full min-h-0 w-full rounded-md border" title={fileName} />
           ) : kind === 'markdown' ? (
             content.trim() ? (
               <MarkdownContent content={content} />
@@ -134,14 +139,16 @@ export function FileLightbox({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button asChild variant="outline" size="sm">
+        {/* Подвал: отделён границей, кнопки на мобилке — стопкой во всю ширину,
+            на sm+ — в ряд справа. Не налезает на контент. */}
+        <div className="flex shrink-0 flex-col gap-2 border-t pt-3 sm:flex-row sm:justify-end sm:pt-4">
+          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
             <a href={fileDownloadUrl(url)}>
               <Download className="size-4" />
               Скачать
             </a>
           </Button>
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
             <a href={url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="size-4" />
               Открыть в новой вкладке
