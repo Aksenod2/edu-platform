@@ -28,11 +28,56 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@platform/ui/lib/utils';
 import { getLessons, createLessonBlock } from '@/lib/api';
 import { type LessonBlock } from '@/components/lessons/lesson-block';
 import { initials } from '@/components/lessons/teacher-picker';
 import { HintCallout } from '@/components/hint-callout';
+
+// Варианты сортировки копилки уроков. Дефолт — по дате создания, старые сверху.
+type SortKey =
+  | 'created-asc'
+  | 'created-desc'
+  | 'title-asc'
+  | 'title-desc'
+  | 'updated-desc';
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'created-asc', label: 'По дате создания (старые сверху)' },
+  { value: 'created-desc', label: 'По дате создания (новые сверху)' },
+  { value: 'title-asc', label: 'По названию (А→Я)' },
+  { value: 'title-desc', label: 'По названию (Я→А)' },
+  { value: 'updated-desc', label: 'По дате обновления (свежие сверху)' },
+];
+
+// Натуральная сортировка названий: «Урок 2» < «Урок 10» (numeric), регистр/диакритика
+// игнорируются (sensitivity: 'base') — чтобы нумерованные уроки шли по порядку.
+const titleCollator = new Intl.Collator('ru', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+function compareLessons(a: LessonBlock, b: LessonBlock, sort: SortKey): number {
+  switch (sort) {
+    case 'created-asc':
+      return a.createdAt.localeCompare(b.createdAt);
+    case 'created-desc':
+      return b.createdAt.localeCompare(a.createdAt);
+    case 'updated-desc':
+      return b.updatedAt.localeCompare(a.updatedAt);
+    case 'title-asc':
+      return titleCollator.compare(a.title, b.title);
+    case 'title-desc':
+      return titleCollator.compare(b.title, a.title);
+  }
+}
 
 export default function AdminLessonsPage() {
   const router = useRouter();
@@ -42,6 +87,7 @@ export default function AdminLessonsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortKey>('created-asc');
   const [creating, setCreating] = useState(false);
 
   const fetchLessons = useCallback(async () => {
@@ -67,9 +113,12 @@ export default function AdminLessonsPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return lessons;
-    return lessons.filter((l) => l.title.toLowerCase().includes(q));
-  }, [lessons, search]);
+    const matched = q
+      ? lessons.filter((l) => l.title.toLowerCase().includes(q))
+      : lessons;
+    // Не мутируем исходный массив из состояния — сортируем копию.
+    return [...matched].sort((a, b) => compareLessons(a, b, sort));
+  }, [lessons, search, sort]);
 
   const handleCreate = async () => {
     if (!accessToken) return;
@@ -104,14 +153,28 @@ export default function AdminLessonsPage() {
         кому его провести — настраивается в расписании группы.
       </HintCallout>
 
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Поиск по названию..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-8"
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative sm:max-w-sm sm:flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Поиск по названию..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+          <SelectTrigger className="w-full sm:w-auto sm:min-w-[16rem]" aria-label="Сортировка">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {error && (
