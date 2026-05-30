@@ -118,6 +118,43 @@ function parseBilling(
   return { fields };
 }
 
+/**
+ * Валидирует и нормализует внешнюю ссылку на оплату группы (Stream.paymentUrl).
+ *
+ * Правила:
+ *  - поле не передано (undefined) → `{}` (ничего не меняем);
+ *  - null или пустая строка (после trim) → `{ paymentUrl: null }` (очистка ссылки);
+ *  - непустая строка → должна быть корректным http(s) URL, иначе ошибка 400.
+ *
+ * Возвращает либо набор полей для записи (только если ключ присутствует во вводе),
+ * либо текст ошибки.
+ */
+function parsePaymentUrl(
+  value: unknown,
+): { fields: { paymentUrl?: string | null } } | { error: string } {
+  if (value === undefined) {
+    return { fields: {} };
+  }
+  // null или пустая строка → очистка ссылки (сохраняем null).
+  if (value === null || (typeof value === 'string' && value.trim() === '')) {
+    return { fields: { paymentUrl: null } };
+  }
+  if (typeof value !== 'string') {
+    return { error: 'Ссылка на оплату должна быть корректным URL (http/https)' };
+  }
+  const trimmed = value.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: 'Ссылка на оплату должна быть корректным URL (http/https)' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: 'Ссылка на оплату должна быть корректным URL (http/https)' };
+  }
+  return { fields: { paymentUrl: trimmed } };
+}
+
 // Публичный токен инвайт-ссылки: 32 случайных байта в base64url (URL-safe).
 function generateJoinToken(): string {
   return crypto.randomBytes(32).toString('base64url');
@@ -189,6 +226,7 @@ export async function streamRoutes(app: FastifyInstance) {
       name: string;
       programId?: string | null;
       priceKopecks?: number | null;
+      paymentUrl?: string | null;
     } & BillingInput;
     const { name, programId, priceKopecks } = body;
 
@@ -215,6 +253,12 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: billing.error });
     }
 
+    // Внешняя ссылка на оплату (вставляет админ вручную): http(s) URL или очистка (null).
+    const payment = parsePaymentUrl(body.paymentUrl);
+    if ('error' in payment) {
+      return reply.status(400).send({ error: payment.error });
+    }
+
     // Если задана программа — проверяем, что она существует.
     if (programId !== undefined && programId !== null) {
       const program = await prisma.program.findUnique({
@@ -234,6 +278,7 @@ export async function streamRoutes(app: FastifyInstance) {
         ...(programId !== undefined && programId !== null && { programId }),
         ...(priceKopecks !== undefined && { priceKopecks }),
         ...billing.fields,
+        ...payment.fields,
       },
     });
 
@@ -248,6 +293,7 @@ export async function streamRoutes(app: FastifyInstance) {
       ownerId?: string | null;
       programId?: string | null;
       priceKopecks?: number | null;
+      paymentUrl?: string | null;
     } & BillingInput;
     const { name, ownerId, programId, priceKopecks } = body;
 
@@ -282,6 +328,12 @@ export async function streamRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: billing.error });
     }
 
+    // Внешняя ссылка на оплату: http(s) URL; пустая строка/null = очистка ссылки.
+    const payment = parsePaymentUrl(body.paymentUrl);
+    if ('error' in payment) {
+      return reply.status(400).send({ error: payment.error });
+    }
+
     // Если задаётся ведущий — проверяем, что это существующий администратор.
     if (ownerId !== undefined && ownerId !== null) {
       const owner = await prisma.user.findFirst({
@@ -313,6 +365,7 @@ export async function streamRoutes(app: FastifyInstance) {
         ...(programId !== undefined && { programId }),
         ...(priceKopecks !== undefined && { priceKopecks }),
         ...billing.fields,
+        ...payment.fields,
       },
     });
 

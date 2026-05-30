@@ -289,6 +289,9 @@ export interface Stream {
   monthlyPriceKopecks?: number | null;
   // День месяца списания (1..28) для менторских групп или null.
   billingDayOfMonth?: number | null;
+  // Внешняя ссылка на оплату (вставляет админ вручную). null/нет = ссылка не задана.
+  // Студент видит кнопку «Оплатить» по этой ссылке для своих активных групп.
+  paymentUrl?: string | null;
   // Ведущий потока (явный владелец): питает фильтр «мои» и атрибуцию.
   ownerId?: string | null;
   owner?: { id: string; name: string } | null;
@@ -317,6 +320,8 @@ export async function createStream(
     billingType?: StreamBillingType;
     monthlyPriceKopecks?: number | null;
     billingDayOfMonth?: number | null;
+    // Внешняя ссылка на оплату (http/https) или null/'' = очистить.
+    paymentUrl?: string | null;
   },
 ): Promise<{ stream: Stream }> {
   return request('/streams', {
@@ -341,6 +346,8 @@ export async function updateStream(
     monthlyPriceKopecks?: number | null;
     // День месяца списания (1..28) или null = снять.
     billingDayOfMonth?: number | null;
+    // Внешняя ссылка на оплату (http/https) или null/'' = очистить ссылку.
+    paymentUrl?: string | null;
   },
 ): Promise<{ stream: Stream }> {
   return request(`/streams/${id}`, {
@@ -1543,6 +1550,14 @@ export interface StudentCharge {
   kind?: ChargeKind;
 }
 
+// Активная группа студента с внешней ссылкой на оплату (кнопка «Оплатить»).
+// paymentUrl — http(s) URL, заданный админом; присутствуют только группы с ссылкой.
+export interface PayableStream {
+  id: string;
+  name: string;
+  paymentUrl: string;
+}
+
 // Предстоящее ежемесячное списание за менторскую группу (блок «Следующее списание»).
 // nextChargeDate — ISO-строка; willGoIntoDebt=true, если баланса может не хватить.
 export interface NextMentorshipCharge {
@@ -1562,6 +1577,8 @@ export interface WalletResponse {
   outstandingKopecks: number;
   // Предстоящие ежемесячные списания за менторские группы. [] — таких групп нет.
   nextMentorshipCharges: NextMentorshipCharge[];
+  // Активные группы студента с внешней ссылкой на оплату (кнопка «Оплатить»). [] — нет.
+  payableStreams: PayableStream[];
 }
 
 /** Форматирует копейки в рубли: 123456 → «1 234 ₽». */

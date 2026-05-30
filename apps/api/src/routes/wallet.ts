@@ -173,6 +173,10 @@ export async function walletRoutes(app: FastifyInstance) {
       willGoIntoDebt: boolean;
     }> = [];
 
+    // Группы студента с внешней ссылкой на оплату — для кнопки «Оплатить» на /dashboard/balance.
+    // Только АКТИВНЫЕ группы с заданным paymentUrl. Демо-аккаунты не платят → для них пусто.
+    let payableStreams: Array<{ id: string; name: string; paymentUrl: string }> = [];
+
     if (!student.isDemo) {
       const monthlyEnrollments = await prisma.streamEnrollment.findMany({
         where: {
@@ -211,6 +215,24 @@ export async function walletRoutes(app: FastifyInstance) {
       nextMentorshipCharges.sort((a, b) =>
         a.nextChargeDate < b.nextChargeDate ? -1 : a.nextChargeDate > b.nextChargeDate ? 1 : 0,
       );
+
+      // Скоуп по userId=id (guard self||admin выше) — студент видит только свои группы.
+      const payableEnrollments = await prisma.streamEnrollment.findMany({
+        where: {
+          userId: id,
+          stream: { status: 'active', paymentUrl: { not: null } },
+        },
+        select: {
+          stream: { select: { id: true, name: true, paymentUrl: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      payableStreams = payableEnrollments.map(({ stream }) => ({
+        id: stream.id,
+        name: stream.name,
+        // paymentUrl не null по условию запроса (not: null) — приводим тип.
+        paymentUrl: stream.paymentUrl as string,
+      }));
     }
 
     // Начисления за группы (ledger «Оплата и баланс»): что и сколько начислено/погашено.
@@ -249,6 +271,7 @@ export async function walletRoutes(app: FastifyInstance) {
       charges,
       outstandingKopecks,
       nextMentorshipCharges,
+      payableStreams,
     };
   });
 }

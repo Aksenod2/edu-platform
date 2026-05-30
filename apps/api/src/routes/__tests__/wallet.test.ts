@@ -347,7 +347,8 @@ describe('GET /students/:id/wallet', () => {
   it('200 — админ: баланс, история, charges и outstandingKopecks', async () => {
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 3000, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
-    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    // 1-й вызов — прогноз месячных списаний; 2-й — payableStreams (группы со ссылкой).
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([
       {
         id: 'c-1',
@@ -391,7 +392,7 @@ describe('GET /students/:id/wallet', () => {
   it('200 — сам студент (token userId === :id)', async () => {
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 1500, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
-    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([]);
     const app = buildApp();
     const res = await app.inject({
@@ -403,6 +404,40 @@ describe('GET /students/:id/wallet', () => {
     expect(res.json().balanceKopecks).toBe(1500);
     expect(res.json().outstandingKopecks).toBe(0);
     expect(res.json().nextMentorshipCharges).toEqual([]);
+    expect(res.json().payableStreams).toEqual([]);
+  });
+
+  it('200 — payableStreams: только активные группы студента со ссылкой на оплату', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 0, role: 'student', isDemo: false });
+    db.walletTransaction.findMany.mockResolvedValueOnce([]);
+    db.charge.findMany.mockResolvedValueOnce([]);
+    // 1-й вызов — прогноз (пусто); 2-й — payableStreams.
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { stream: { id: 'st-1', name: 'Группа со ссылкой', paymentUrl: 'https://pay.example/abc' } },
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/students/s-1/wallet',
+      headers: authHeaders(studentToken('s-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.payableStreams).toEqual([
+      { id: 'st-1', name: 'Группа со ссылкой', paymentUrl: 'https://pay.example/abc' },
+    ]);
+    // Выборка ограничена активными группами студента с непустым paymentUrl.
+    expect(db.streamEnrollment.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 's-1',
+          stream: expect.objectContaining({ status: 'active', paymentUrl: { not: null } }),
+        }),
+      }),
+    );
   });
 });
 
@@ -412,16 +447,19 @@ describe('GET /students/:id/wallet — nextMentorshipCharges (прогноз м�
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 100000, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([]);
-    db.streamEnrollment.findMany.mockResolvedValueOnce([
-      {
-        stream: {
-          id: 'st-1',
-          name: 'Менторская',
-          monthlyPriceKopecks: 500000,
-          billingDayOfMonth: 15,
+    db.streamEnrollment.findMany
+      .mockResolvedValueOnce([
+        {
+          stream: {
+            id: 'st-1',
+            name: 'Менторская',
+            monthlyPriceKopecks: 500000,
+            billingDayOfMonth: 15,
+          },
         },
-      },
-    ]);
+      ])
+      // 2-й вызов — payableStreams (в этом тесте не проверяем, пусто).
+      .mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -462,9 +500,11 @@ describe('GET /students/:id/wallet — nextMentorshipCharges (прогноз м�
     db.user.findUnique.mockResolvedValueOnce({ balanceKopecks: 600000, role: 'student', isDemo: false });
     db.walletTransaction.findMany.mockResolvedValueOnce([]);
     db.charge.findMany.mockResolvedValueOnce([]);
-    db.streamEnrollment.findMany.mockResolvedValueOnce([
-      { stream: { id: 'st-1', name: 'Менторская', monthlyPriceKopecks: 500000, billingDayOfMonth: 15 } },
-    ]);
+    db.streamEnrollment.findMany
+      .mockResolvedValueOnce([
+        { stream: { id: 'st-1', name: 'Менторская', monthlyPriceKopecks: 500000, billingDayOfMonth: 15 } },
+      ])
+      .mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -490,6 +530,7 @@ describe('GET /students/:id/wallet — nextMentorshipCharges (прогноз м�
 
     expect(res.statusCode).toBe(200);
     expect(res.json().nextMentorshipCharges).toEqual([]);
+    expect(res.json().payableStreams).toEqual([]);
     expect(db.streamEnrollment.findMany).not.toHaveBeenCalled();
   });
 });

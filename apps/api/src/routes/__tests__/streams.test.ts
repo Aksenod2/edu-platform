@@ -694,3 +694,137 @@ describe('GET /streams/:id/students — ростер содержит демо �
     expect(selectArg.isDemo).toBe(true);
   });
 });
+
+describe('POST /streams — валидация paymentUrl (внешняя ссылка на оплату)', () => {
+  it('400 — невалидный URL', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', paymentUrl: 'не-ссылка' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe(
+      'Ссылка на оплату должна быть корректным URL (http/https)',
+    );
+    expect(db.stream.create).not.toHaveBeenCalled();
+  });
+
+  it('400 — не-http(s) протокол (ftp)', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', paymentUrl: 'ftp://pay.example/x' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.stream.create).not.toHaveBeenCalled();
+  });
+
+  it('201 — валидный https URL сохраняется (trim)', async () => {
+    db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа', paymentUrl: 'https://pay.example/x' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', paymentUrl: '  https://pay.example/x  ' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(db.stream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ paymentUrl: 'https://pay.example/x' }) }),
+    );
+  });
+
+  it('201 — пустая строка → paymentUrl: null (очистка)', async () => {
+    db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа', paymentUrl: null });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа', paymentUrl: '   ' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(db.stream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ paymentUrl: null }) }),
+    );
+  });
+
+  it('201 — paymentUrl не передан → ключ не пишется в create', async () => {
+    db.stream.create.mockResolvedValueOnce({ id: 's-1', name: 'Группа' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(adminToken),
+      payload: { name: 'Группа' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect('paymentUrl' in db.stream.create.mock.calls[0][0].data).toBe(false);
+  });
+
+  it('403 — студент не может создавать группу', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/streams',
+      headers: authHeaders(studentToken),
+      payload: { name: 'Группа', paymentUrl: 'https://pay.example/x' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(db.stream.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /streams/:id — валидация paymentUrl', () => {
+  it('400 — невалидный URL', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1', billingType: 'one_time' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+      payload: { paymentUrl: 'javascript:alert(1)' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe(
+      'Ссылка на оплату должна быть корректным URL (http/https)',
+    );
+    expect(db.stream.update).not.toHaveBeenCalled();
+  });
+
+  it('200 — пустая строка очищает ссылку (paymentUrl: null)', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1', billingType: 'one_time' });
+    db.stream.update.mockResolvedValueOnce({ id: 's-1', paymentUrl: null });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+      payload: { paymentUrl: '' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(db.stream.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ paymentUrl: null }) }),
+    );
+  });
+
+  it('200 — валидный http URL сохраняется', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1', billingType: 'one_time' });
+    db.stream.update.mockResolvedValueOnce({ id: 's-1', paymentUrl: 'http://pay.example/y' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/streams/s-1',
+      headers: authHeaders(adminToken),
+      payload: { paymentUrl: 'http://pay.example/y' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(db.stream.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ paymentUrl: 'http://pay.example/y' }) }),
+    );
+  });
+});
