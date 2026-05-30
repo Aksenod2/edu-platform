@@ -174,7 +174,8 @@ export async function walletRoutes(app: FastifyInstance) {
     }> = [];
 
     // Группы студента с внешней ссылкой на оплату — для кнопки «Оплатить» на /dashboard/balance.
-    // Только АКТИВНЫЕ группы с заданным paymentUrl. Демо-аккаунты не платят → для них пусто.
+    // Только АКТИВНЫЕ группы с заданным paymentUrl. Заполняется ниже для ВСЕХ студентов
+    // (включая демо) — см. payableEnrollments после блока авто-списаний.
     let payableStreams: Array<{ id: string; name: string; paymentUrl: string }> = [];
 
     if (!student.isDemo) {
@@ -216,24 +217,27 @@ export async function walletRoutes(app: FastifyInstance) {
         a.nextChargeDate < b.nextChargeDate ? -1 : a.nextChargeDate > b.nextChargeDate ? 1 : 0,
       );
 
-      // Скоуп по userId=id (guard self||admin выше) — студент видит только свои группы.
-      const payableEnrollments = await prisma.streamEnrollment.findMany({
-        where: {
-          userId: id,
-          stream: { status: 'active', paymentUrl: { not: null } },
-        },
-        select: {
-          stream: { select: { id: true, name: true, paymentUrl: true } },
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-      payableStreams = payableEnrollments.map(({ stream }) => ({
-        id: stream.id,
-        name: stream.name,
-        // paymentUrl не null по условию запроса (not: null) — приводим тип.
-        paymentUrl: stream.paymentUrl as string,
-      }));
     }
+
+    // Ссылка на оплату группы — показываем ВСЕМ студентам, включая демо: это просто
+    // внешняя ссылка для оплаты участия (не авто-списание, баланс не трогает).
+    // Скоуп по userId=id (guard self||admin выше) — студент видит только свои группы.
+    const payableEnrollments = await prisma.streamEnrollment.findMany({
+      where: {
+        userId: id,
+        stream: { status: 'active', paymentUrl: { not: null } },
+      },
+      select: {
+        stream: { select: { id: true, name: true, paymentUrl: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    payableStreams = payableEnrollments.map(({ stream }) => ({
+      id: stream.id,
+      name: stream.name,
+      // paymentUrl не null по условию запроса (not: null) — приводим тип.
+      paymentUrl: stream.paymentUrl as string,
+    }));
 
     // Начисления за группы (ledger «Оплата и баланс»): что и сколько начислено/погашено.
     // Финансы видит только админ либо сам студент (guard self||admin выше).
