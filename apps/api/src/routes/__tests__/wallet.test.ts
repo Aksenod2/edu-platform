@@ -8,7 +8,7 @@ vi.mock('@platform/db', () => ({
   prisma: {
     user: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     walletTransaction: { create: vi.fn(), findMany: vi.fn() },
-    charge: { findMany: vi.fn() },
+    charge: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     streamEnrollment: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -125,13 +125,18 @@ describe('POST /students/:id/wallet/topup', () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it('успех (admin) — вызывает $transaction и возвращает balanceKopecks + transaction', async () => {
+  it('успех (admin) — без открытых начислений: зачисляет баланс, ничего не гасит', async () => {
     // первый findUnique — студент; второй — имя админа
     db.user.findUnique
       .mockResolvedValueOnce({ role: 'student', balanceKopecks: 5000, name: 'Студент' })
       .mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    // creditBalance: user.update (новый баланс) + walletTransaction.create
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 6000 });
     const tx = { id: 'tx-1', kind: 'topup', amount: 1000 };
-    db.$transaction.mockResolvedValueOnce([{ balanceKopecks: 6000 }, tx]);
+    db.walletTransaction.create.mockResolvedValueOnce(tx);
+    // settleOutstandingCharges: открытых начислений нет → ничего не гасит.
+    db.charge.findMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -143,11 +148,103 @@ describe('POST /students/:id/wallet/topup', () => {
 
     expect(res.statusCode).toBe(200);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
-    // wallet использует массивную форму $transaction([...])
-    expect(Array.isArray(db.$transaction.mock.calls[0][0])).toBe(true);
+    // wallet теперь использует интерактивную форму $transaction(async (tx) => ...)
+    expect(typeof db.$transaction.mock.calls[0][0]).toBe('function');
     const body = res.json();
     expect(body.balanceKopecks).toBe(6000);
     expect(body.transaction).toEqual(tx);
+    expect(body.settledKopecks).toBe(0);
+    // Долг не гасили — balanceKopecks не перечитывали повторно.
+    expect(db.user.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('успех — пополнение ПОЛНОСТЬЮ гасит открытое начисление → status=paid', async () => {
+    db.user.findUnique
+      .mockResolvedValueOnce({ role: 'student', balanceKopecks: 0, name: 'Студент' })
+      .mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    // creditBalance: зачислили 10000 → баланс 10000
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 10000 });
+    const topupTx = { id: 'tx-topup', kind: 'topup', amount: 10000 };
+    db.walletTransaction.create
+      .mockResolvedValueOnce(topupTx) // topup в creditBalance
+      .mockResolvedValueOnce({ id: 'tx-debit', kind: 'debit', amount: 10000 }); // debit в settle
+    // settleOutstandingCharges: одно открытое начисление на 10000 (paid 0)
+    db.charge.findMany.mockResolvedValueOnce([
+      { id: 'c-1', amountKopecks: 10000, paidKopecks: 0, status: 'open' },
+    ]);
+    // findUniqueOrThrow вызывается трижды: (1) available в settle, (2) fresh-баланс
+    // в debitBalance, (3) перечитанный баланс в обработчике после погашения.
+    db.user.findUniqueOrThrow
+      .mockResolvedValueOnce({ balanceKopecks: 10000 }) // available в settle
+      .mockResolvedValueOnce({ balanceKopecks: 0 }) // fresh в debitBalance
+      .mockResolvedValueOnce({ balanceKopecks: 0 }); // перечитанный после погашения
+    // debitBalance внутри settle: условное updateMany (count 1)
+    db.user.updateMany.mockResolvedValueOnce({ count: 1 });
+    // charge.update increment → полностью погашено
+    db.charge.update.mockResolvedValueOnce({ id: 'c-1', amountKopecks: 10000, paidKopecks: 10000 });
+    db.charge.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/students/s-1/wallet/topup',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 10000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Весь баланс ушёл на погашение долга.
+    expect(body.balanceKopecks).toBe(0);
+    expect(body.settledKopecks).toBe(10000);
+    expect(body.transaction).toEqual(topupTx);
+    // Полное погашение → перевод начисления в 'paid' (условие на status='open').
+    expect(db.charge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c-1', status: 'open' },
+        data: { status: 'paid' },
+      }),
+    );
+  });
+
+  it('успех — пополнение ЧАСТИЧНО гасит начисление → остаётся открытым (partial)', async () => {
+    db.user.findUnique
+      .mockResolvedValueOnce({ role: 'student', balanceKopecks: 0, name: 'Студент' })
+      .mockResolvedValueOnce({ name: 'Админ' });
+    mockTxCallback();
+    // creditBalance: зачислили 3000 → баланс 3000
+    db.user.update.mockResolvedValueOnce({ balanceKopecks: 3000 });
+    const topupTx = { id: 'tx-topup', kind: 'topup', amount: 3000 };
+    db.walletTransaction.create
+      .mockResolvedValueOnce(topupTx)
+      .mockResolvedValueOnce({ id: 'tx-debit', kind: 'debit', amount: 3000 });
+    // открытое начисление на 10000 — средств хватит только частично (3000).
+    db.charge.findMany.mockResolvedValueOnce([
+      { id: 'c-1', amountKopecks: 10000, paidKopecks: 0, status: 'open' },
+    ]);
+    db.user.findUniqueOrThrow
+      .mockResolvedValueOnce({ balanceKopecks: 3000 }) // available в settle
+      .mockResolvedValueOnce({ balanceKopecks: 0 }) // fresh в debitBalance
+      .mockResolvedValueOnce({ balanceKopecks: 0 }); // после погашения
+    db.user.updateMany.mockResolvedValueOnce({ count: 1 });
+    // increment paidKopecks → 3000 < 10000, начисление НЕ закрывается.
+    db.charge.update.mockResolvedValueOnce({ id: 'c-1', amountKopecks: 10000, paidKopecks: 3000 });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/students/s-1/wallet/topup',
+      headers: authHeaders(adminToken),
+      payload: { amountKopecks: 3000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.balanceKopecks).toBe(0);
+    expect(body.settledKopecks).toBe(3000);
+    // Частичное погашение — начисление в 'paid' НЕ переводим.
+    expect(db.charge.updateMany).not.toHaveBeenCalled();
   });
 
   it('403 — не админ (студент) не может пополнять', async () => {

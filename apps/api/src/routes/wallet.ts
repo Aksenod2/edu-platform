@@ -3,10 +3,12 @@ import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import {
   isPositiveInt,
+  creditBalance,
   debitBalance,
   InsufficientFundsError,
   MAX_AMOUNT_KOPECKS,
 } from '../lib/money.js';
+import { settleOutstandingCharges } from '../lib/charges.js';
 import { computeNextChargeInfo } from '../lib/mentorship-billing.js';
 
 // Кошелёк студента: ручной баланс в копейках + история операций.
@@ -48,25 +50,42 @@ export async function walletRoutes(app: FastifyInstance) {
       select: { name: true },
     });
 
-    // Атомарно: увеличиваем баланс и создаём запись истории.
-    const [updatedUser, transaction] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id },
-        data: { balanceKopecks: { increment: amount } },
-        select: { balanceKopecks: true },
-      }),
-      prisma.walletTransaction.create({
-        data: {
+    // Атомарно (в одной транзакции): зачисляем баланс + запись истории, затем
+    // авто-дозачёт долга — гасим открытые начисления студента доступными средствами
+    // (как делает одобрение заявки на пополнение в payments.ts). settleOutstandingCharges
+    // идемпотентна и не уводит баланс в минус; интерактивная форма $transaction нужна,
+    // чтобы прокинуть один и тот же tx в creditBalance и settleOutstandingCharges.
+    const { balanceKopecks, transaction, settledKopecks } = await prisma.$transaction(
+      async (tx) => {
+        const credit = await creditBalance(tx, {
           userId: id,
-          amount,
-          kind: 'topup',
+          amountKopecks: amount,
           note,
           createdBy: admin?.name ?? null,
-        },
-      }),
-    ]);
+        });
 
-    return { balanceKopecks: updatedUser.balanceKopecks, transaction };
+        const settled = await settleOutstandingCharges(tx, id);
+
+        // Баланс после авто-погашения: если что-то списали — перечитываем актуальный.
+        const finalBalance =
+          settled > 0
+            ? (
+                await tx.user.findUniqueOrThrow({
+                  where: { id },
+                  select: { balanceKopecks: true },
+                })
+              ).balanceKopecks
+            : credit.balanceKopecks;
+
+        return {
+          balanceKopecks: finalBalance,
+          transaction: credit.transaction,
+          settledKopecks: settled,
+        };
+      },
+    );
+
+    return { balanceKopecks, transaction, settledKopecks };
   });
 
   // POST /students/:id/wallet/debit — ручное списание с баланса студента (admin)

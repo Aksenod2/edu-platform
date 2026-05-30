@@ -1605,7 +1605,7 @@ export async function topupWallet(
   accessToken: string,
   studentId: string,
   data: { amountKopecks: number; note?: string },
-): Promise<{ balanceKopecks: number; transaction: WalletTransaction }> {
+): Promise<{ balanceKopecks: number; transaction: WalletTransaction; settledKopecks: number }> {
   return request(`/students/${encodeURIComponent(studentId)}/wallet/topup`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
