@@ -600,12 +600,14 @@ function SubmissionCard({
   return (
     <div className="mt-4 mr-auto max-w-[85%] pl-10">
       <div className="overflow-hidden rounded-lg border">
-        <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Badge variant={status.variant}>{status.label}</Badge>
-            <span className="text-sm font-medium">{entry.assignment?.title}</span>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b bg-muted/40 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+            <span className="min-w-0 truncate text-sm font-medium" title={entry.assignment?.title}>
+              {entry.assignment?.title}
+            </span>
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {date.toLocaleString('ru-RU', { day: 'numeric', month: 'short' })} ·{' '}
             {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
           </span>

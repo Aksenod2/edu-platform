@@ -72,7 +72,7 @@ export function LessonItem({
       <div className="flex items-start justify-between gap-2">
         <p
           className={cn(
-            'font-medium leading-tight',
+            'min-w-0 break-words font-medium leading-tight',
             compact && 'text-sm',
             cancelled && 'line-through',
           )}

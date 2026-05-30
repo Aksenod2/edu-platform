@@ -437,13 +437,15 @@ export default function DashboardPage() {
                     data.upcoming.map((e) => (
                       <div key={e.id} className="flex flex-col gap-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{e.title}</span>
+                          <span className="min-w-0 truncate text-sm font-medium" title={e.title}>
+                            {e.title}
+                          </span>
                           <Badge variant="outline" className="shrink-0">
                             {e.streamName}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <CalendarDays className="size-3" />
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                          <CalendarDays className="size-3 shrink-0" />
                           <span className="tabular-nums">
                             {e.date ? formatDate(e.date) : ''}
                             {e.startTime ? ` · ${e.startTime}` : ''}
@@ -453,7 +455,7 @@ export default function DashboardPage() {
                               href={e.meetingUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="ml-auto inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                              className="ml-auto inline-flex shrink-0 items-center gap-1 font-medium text-primary hover:underline"
                             >
                               <Video className="size-3" />
                               Подключиться

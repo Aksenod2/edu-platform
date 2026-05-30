@@ -367,10 +367,10 @@ function DayDetail({
               )}
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <p
                     className={cn(
-                      'font-medium leading-tight',
+                      'min-w-0 break-words font-medium leading-tight',
                       lesson.status === 'cancelled' && 'line-through',
                     )}
                   >
