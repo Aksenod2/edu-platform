@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Loader2, FileText, Paperclip, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FieldLabel } from '@/components/ui/field';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,14 +93,19 @@ export function LessonMaterialsSection({
             >
               <FileText className="size-4 shrink-0 text-muted-foreground" />
               {m.url ? (
-                <a
-                  href={m.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 truncate text-foreground underline underline-offset-4"
-                >
-                  {m.fileName}
-                </a>
+                <FileLightbox
+                  fileName={m.fileName}
+                  url={m.url}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex-1 truncate text-left text-foreground underline underline-offset-4"
+                      title={m.fileName}
+                    >
+                      {m.fileName}
+                    </button>
+                  }
+                />
               ) : (
                 <span className="flex-1 truncate text-foreground">{m.fileName}</span>
               )}

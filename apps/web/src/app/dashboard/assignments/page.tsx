@@ -35,6 +35,7 @@ import {
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT, STATUS_ORDER } from '@/lib/assignment-status';
 import { useBack } from '@/components/back-button';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import Link from 'next/link';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -406,14 +407,7 @@ export default function StudentAssignmentsPage() {
                             )}
                           </div>
                           {sa.fileSignedUrl && (
-                            <a
-                              href={sa.fileSignedUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary no-underline"
-                            >
-                              Открыть ↗
-                            </a>
+                            <FileLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
                           )}
                         </div>
                       )}

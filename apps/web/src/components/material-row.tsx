@@ -1,8 +1,9 @@
 'use client';
 
-import { FileText, ExternalLink, Download } from 'lucide-react';
+import { FileText, Download, Eye } from 'lucide-react';
 import { fileDownloadUrl, type LessonMaterial } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { FileLightbox } from '@/components/files/file-lightbox';
 
 function formatSize(size: number) {
   return size < 1024 * 1024
@@ -27,12 +28,16 @@ export function MaterialRow({ material }: { material: LessonMaterial }) {
       </div>
       {url && (
         <div className="flex shrink-0 items-center gap-1">
-          <Button asChild variant="ghost" size="sm">
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" />
-              <span className="hidden sm:inline">Открыть</span>
-            </a>
-          </Button>
+          <FileLightbox
+            fileName={fileName}
+            url={url}
+            trigger={
+              <Button type="button" variant="ghost" size="sm">
+                <Eye className="size-4" />
+                <span className="hidden sm:inline">Просмотр</span>
+              </Button>
+            }
+          />
           <Button asChild variant="ghost" size="sm">
             <a href={fileDownloadUrl(url)}>
               <Download className="size-4" />

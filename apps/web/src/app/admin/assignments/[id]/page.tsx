@@ -13,10 +13,10 @@ import {
   type Assignment,
   type StudentAssignment,
 } from '@/lib/api';
-import { Calendar, ChevronLeft, Download, Eye, FileText, Link2, Loader2, MessageSquare } from 'lucide-react';
+import { Calendar, ChevronLeft, Download, FileText, Link2, Loader2, MessageSquare } from 'lucide-react';
 import { useBack } from '@/components/back-button';
 import { toast } from 'sonner';
-import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import { HintCallout } from '@/components/hint-callout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -378,29 +378,11 @@ export default function AssignmentDetailPage() {
                               </span>
                               {sa.fileSignedUrl && (
                                 <div className="flex shrink-0 items-center gap-1">
-                                  {isMarkdownFile(sa.fileName) ? (
-                                    // .md рендерим инлайн в лайтбоксе (без скачивания).
-                                    <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
-                                  ) : (
-                                    // Прочие файлы открываем в новой вкладке: /files отдаёт
-                                    // их inline (Content-Disposition: inline) — браузер
-                                    // показывает PDF/картинку/текст, не скачивая.
-                                    <Button
-                                      asChild
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-muted-foreground"
-                                    >
-                                      <a
-                                        href={sa.fileSignedUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        <Eye className="size-4" />
-                                        Просмотр
-                                      </a>
-                                    </Button>
-                                  )}
+                                  <FileLightbox
+                                    fileName={sa.fileName}
+                                    url={sa.fileSignedUrl}
+                                    className="text-muted-foreground"
+                                  />
                                   <Button
                                     asChild
                                     variant="ghost"

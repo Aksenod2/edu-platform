@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import { cn } from '@platform/ui/lib/utils';
 import {
   getThread,
@@ -526,9 +527,18 @@ function MessageBubble({
                       </span>
                     )}
                     {entry.metadata?.url && (
-                      <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium underline-offset-2 hover:underline">
-                        Скачать
-                      </a>
+                      <FileLightbox
+                        fileName={entry.metadata.fileName || entry.content}
+                        url={entry.metadata.url}
+                        trigger={
+                          <button
+                            type="button"
+                            className="text-xs font-medium underline-offset-2 hover:underline"
+                          >
+                            Просмотр
+                          </button>
+                        }
+                      />
                     )}
                   </div>
                 </div>

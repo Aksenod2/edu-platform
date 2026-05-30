@@ -9,7 +9,7 @@ import {
   StickyNote,
   Send,
   X,
-  Download,
+  Eye,
   Check,
   CheckCheck,
 } from 'lucide-react';
@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
@@ -493,20 +494,24 @@ function MessageBubble({
                   <div className="truncate font-medium">
                     {entry.metadata?.fileName || entry.content}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     {entry.metadata?.size != null && (
                       <span className="text-xs opacity-80">{formatBytes(entry.metadata.size)}</span>
                     )}
                     {entry.metadata?.url && (
-                      <a
-                        href={entry.metadata.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs underline"
-                      >
-                        <Download className="size-3" />
-                        Скачать
-                      </a>
+                      <FileLightbox
+                        fileName={entry.metadata.fileName || entry.content}
+                        url={entry.metadata.url}
+                        trigger={
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-xs underline"
+                          >
+                            <Eye className="size-3" />
+                            Просмотр
+                          </button>
+                        }
+                      />
                     )}
                   </div>
                 </div>
@@ -636,14 +641,15 @@ function SubmissionCard({
                 )}
               </div>
               {sa.fileSignedUrl && (
-                <a
-                  href={sa.fileSignedUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs underline"
-                >
-                  Открыть
-                </a>
+                <FileLightbox
+                  fileName={sa.fileName}
+                  url={sa.fileSignedUrl}
+                  trigger={
+                    <button type="button" className="text-xs underline">
+                      Просмотр
+                    </button>
+                  }
+                />
               )}
             </div>
           )}

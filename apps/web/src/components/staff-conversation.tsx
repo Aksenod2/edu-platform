@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2, Paperclip, Link2, Send, X, Download } from 'lucide-react';
+import { Loader2, Paperclip, Link2, Send, X, Eye } from 'lucide-react';
 import {
   getStaffConversation,
   addStaffEntry,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
@@ -405,20 +406,24 @@ function StaffMessageBubble({
                   <div className="truncate font-medium">
                     {entry.metadata?.fileName || entry.content}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     {entry.metadata?.size != null && (
                       <span className="text-xs opacity-80">{formatBytes(entry.metadata.size)}</span>
                     )}
                     {entry.metadata?.url && (
-                      <a
-                        href={entry.metadata.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs underline"
-                      >
-                        <Download className="size-3" />
-                        Скачать
-                      </a>
+                      <FileLightbox
+                        fileName={entry.metadata.fileName || entry.content}
+                        url={entry.metadata.url}
+                        trigger={
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-xs underline"
+                          >
+                            <Eye className="size-3" />
+                            Просмотр
+                          </button>
+                        }
+                      />
                     )}
                   </div>
                 </div>

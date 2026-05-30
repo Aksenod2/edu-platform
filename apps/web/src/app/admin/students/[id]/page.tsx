@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   Download,
-  Eye,
   FileText,
   Loader2,
   RotateCcw,
@@ -18,7 +17,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
-import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
+import { FileLightbox } from '@/components/files/file-lightbox';
 import { StudentDynamicTab } from '@/components/students/student-dynamic-tab';
 import { BackButton } from '@/components/back-button';
 
@@ -1136,17 +1135,11 @@ function AssignmentCard({
               </div>
               {sa.fileSignedUrl && (
                 <div className="flex flex-wrap items-center gap-1">
-                  {isMarkdownFile(sa.fileName) ? (
-                    <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
-                  ) : (
-                    // Прочие файлы — inline-просмотр в новой вкладке (/files отдаёт inline).
-                    <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-                      <a href={sa.fileSignedUrl} target="_blank" rel="noopener noreferrer">
-                        <Eye className="size-4" />
-                        Просмотр
-                      </a>
-                    </Button>
-                  )}
+                  <FileLightbox
+                    fileName={sa.fileName}
+                    url={sa.fileSignedUrl}
+                    className="text-muted-foreground"
+                  />
                   <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
                     <a href={fileDownloadUrl(sa.fileSignedUrl)}>
                       <Download className="size-4" />
