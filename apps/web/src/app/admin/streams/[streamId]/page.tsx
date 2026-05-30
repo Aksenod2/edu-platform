@@ -837,6 +837,8 @@ function PaymentPlanCard({
   const [day, setDay] = useState<string>(
     stream.billingDayOfMonth != null ? String(stream.billingDayOfMonth) : '',
   );
+  // Ссылка на оплату (опционально). null с бэка показываем как пустую строку.
+  const [paymentUrl, setPaymentUrl] = useState(stream.paymentUrl ?? '');
   const [saving, setSaving] = useState(false);
 
   // Синхронизируем поля, если план изменился извне (после рефетча группы).
@@ -845,7 +847,8 @@ function PaymentPlanCard({
     setOnceValue(kopecksToRublesInput(stream.priceKopecks));
     setMonthlyValue(kopecksToRublesInput(stream.monthlyPriceKopecks));
     setDay(stream.billingDayOfMonth != null ? String(stream.billingDayOfMonth) : '');
-  }, [stream.billingType, stream.priceKopecks, stream.monthlyPriceKopecks, stream.billingDayOfMonth]);
+    setPaymentUrl(stream.paymentUrl ?? '');
+  }, [stream.billingType, stream.priceKopecks, stream.monthlyPriceKopecks, stream.billingDayOfMonth, stream.paymentUrl]);
 
   // --- Разбор и валидация по выбранному типу ---
   const onceTrimmed = onceValue.trim();
@@ -865,8 +868,13 @@ function PaymentPlanCard({
       ? onceInvalid
       : monthlyAmountInvalid || monthlyAmountMissing || monthlyDayMissing;
 
-  // «Грязное» состояние: изменился тип или значимые поля выбранного типа.
+  // Ссылка на оплату: сравниваем обрезанное значение с сохранённым (null → '').
+  const paymentUrlTrimmed = paymentUrl.trim();
+  const paymentUrlDirty = paymentUrlTrimmed !== (stream.paymentUrl ?? '');
+
+  // «Грязное» состояние: изменился тип, значимые поля выбранного типа или ссылка.
   const dirty =
+    paymentUrlDirty ||
     type !== savedType ||
     (type === 'one_time'
       ? (onceParsed ?? null) !== (stream.priceKopecks ?? null)
@@ -877,11 +885,14 @@ function PaymentPlanCard({
     if (!accessToken || invalid) return;
     setSaving(true);
     try {
+      // Ссылку шлём в обоих режимах: пустая строка = бэк очистит её в null.
+      // URL валидирует бэк — при 400 покажем его сообщение тостом ниже.
       if (type === 'one_time') {
         // Разовая: пустая цена = снять план (priceKopecks: null).
         await updateStream(accessToken, stream.id, {
           billingType: 'one_time',
           priceKopecks: onceParsed,
+          paymentUrl: paymentUrlTrimmed,
         });
         toast.success(onceParsed === null ? 'Платёжный план снят' : 'Цена группы сохранена');
       } else {
@@ -889,6 +900,7 @@ function PaymentPlanCard({
           billingType: 'monthly',
           monthlyPriceKopecks: monthlyParsed,
           billingDayOfMonth: dayNum,
+          paymentUrl: paymentUrlTrimmed,
         });
         toast.success('Ежемесячный план сохранён');
       }
@@ -983,6 +995,23 @@ function PaymentPlanCard({
             </div>
           </div>
         )}
+
+        {/* Ссылка на оплату — внешняя платёжная страница группы (опционально). */}
+        <div className="flex w-full flex-col gap-2">
+          <Label htmlFor="stream-payment-url">Ссылка на оплату</Label>
+          <Input
+            id="stream-payment-url"
+            type="url"
+            inputMode="url"
+            placeholder="https://..."
+            value={paymentUrl}
+            onChange={(e) => setPaymentUrl(e.target.value)}
+          />
+          <p className="text-sm text-muted-foreground">
+            Платёжная страница группы — студенты увидят кнопку «Оплатить» в
+            кабинете. Можно оставить пустым.
+          </p>
+        </div>
 
         <div>
           <Button

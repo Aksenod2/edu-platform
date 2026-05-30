@@ -117,6 +117,8 @@ export default function StreamsPage() {
   const [newPrice, setNewPrice] = useState('');
   const [newMonthlyPrice, setNewMonthlyPrice] = useState('');
   const [newBillingDay, setNewBillingDay] = useState('');
+  // Ссылка на оплату (опционально). Пустую отправляем как '' — бэк очистит в null.
+  const [newPaymentUrl, setNewPaymentUrl] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -191,6 +193,7 @@ export default function StreamsPage() {
     setNewPrice('');
     setNewMonthlyPrice('');
     setNewBillingDay('');
+    setNewPaymentUrl('');
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -198,10 +201,14 @@ export default function StreamsPage() {
     if (!accessToken || !newName.trim()) return;
     const billing = buildNewBilling();
     if (billing === null) return; // невалидный план — не создаём
+    // Ссылка на оплату едет в том же billing-объекте createStream. Пустую строку
+    // шлём как есть — бэк очистит её в null. URL валидирует бэк (на 400 покажем ошибку).
+    const paymentUrl = newPaymentUrl.trim();
+    const payload = { ...(billing ?? {}), paymentUrl };
     setCreating(true);
     setError('');
     try {
-      await createStream(accessToken, newName.trim(), billing);
+      await createStream(accessToken, newName.trim(), payload);
       resetCreateForm();
       setShowCreateForm(false);
       await fetchStreams();
@@ -392,6 +399,24 @@ export default function StreamsPage() {
                     </Field>
                   </div>
                 )}
+
+                <Field>
+                  <FieldLabel htmlFor="new-stream-payment-url">
+                    Ссылка на оплату
+                  </FieldLabel>
+                  <Input
+                    id="new-stream-payment-url"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://..."
+                    value={newPaymentUrl}
+                    onChange={(e) => setNewPaymentUrl(e.target.value)}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Платёжная страница группы — студенты увидят кнопку «Оплатить» в
+                    кабинете. Можно оставить пустым.
+                  </p>
+                </Field>
 
                 <Field>
                   <Button
