@@ -4,7 +4,20 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { ChevronLeft, Download, Eye, FileText, Loader2, Wallet } from 'lucide-react';
+import {
+  CalendarClock,
+  CalendarPlus,
+  CheckCircle2,
+  ChevronLeft,
+  Download,
+  Eye,
+  FileText,
+  Loader2,
+  RotateCcw,
+  Users,
+  Wallet,
+} from 'lucide-react';
+import { cn } from '@platform/ui/lib/utils';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import { StudentDynamicTab } from '@/components/students/student-dynamic-tab';
 import { BackButton } from '@/components/back-button';
@@ -866,166 +879,43 @@ export default function StudentProfilePage() {
                   {assignments.length === 0 ? 'Заданий пока нет.' : 'Нет заданий с выбранным фильтром.'}
                 </p>
               ) : (
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {['Задание', 'Статус', 'Группа', 'Назначено', 'Срок сдачи', 'Действия'].map((h) => (
-                          <TableHead key={h}>{h}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredAssignments.map((sa) => {
-                        const isOverdue = sa.status !== 'reviewed' && sa.assignment?.dueDate && new Date(sa.assignment.dueDate) < now;
-                        return (
-                          <TableRow key={sa.id}>
-                            <TableCell className="text-foreground">{sa.assignment?.title || '—'}</TableCell>
-                            <TableCell>
-                              <span className="inline-flex items-center gap-1.5">
-                                <Badge variant={STATUS_VARIANT[sa.status] || 'outline'}>
-                                  {STATUS_LABELS[sa.status] || sa.status}
-                                </Badge>
-                                {isOverdue && <Badge variant="destructive">Просрочено</Badge>}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">{sa.assignment?.stream?.name || '—'}</TableCell>
-                            <TableCell>
-                              <span className="font-mono text-xs text-muted-foreground">
-                                {new Date(sa.createdAt).toLocaleDateString('ru-RU')}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className="font-mono text-xs text-muted-foreground">
-                                {sa.assignment?.dueDate
-                                  ? new Date(sa.assignment.dueDate).toLocaleDateString('ru-RU')
-                                  : '—'}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              {sa.status === 'submitted' && (
-                                <div className="flex max-w-[360px] flex-col gap-3">
-                                  {/* Работа студента: текст ответа + вложение — чтобы
-                                      проверять прямо здесь, не уходя на /admin/assignments. */}
-                                  {(sa.content || sa.fileName) && (
-                                    <div className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3">
-                                      <span className="text-xs text-muted-foreground">Работа студента</span>
-                                      {sa.content && (
-                                        <p className="whitespace-pre-wrap text-sm text-foreground">
-                                          {sa.content}
-                                        </p>
-                                      )}
-                                      {sa.fileName && (
-                                        <div className="flex flex-col gap-1.5">
-                                          <div className="flex items-center gap-2 text-sm">
-                                            <FileText className="size-4 shrink-0 text-muted-foreground" />
-                                            <span className="truncate text-foreground" title={sa.fileName}>
-                                              {sa.fileName}
-                                            </span>
-                                          </div>
-                                          {sa.fileSignedUrl && (
-                                            <div className="flex items-center gap-1">
-                                              {isMarkdownFile(sa.fileName) ? (
-                                                <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
-                                              ) : (
-                                                // Прочие файлы — inline-просмотр в новой вкладке (/files отдаёт inline).
-                                                <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-                                                  <a href={sa.fileSignedUrl} target="_blank" rel="noopener noreferrer">
-                                                    <Eye className="size-4" />
-                                                    Просмотр
-                                                  </a>
-                                                </Button>
-                                              )}
-                                              <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-                                                <a href={fileDownloadUrl(sa.fileSignedUrl)}>
-                                                  <Download className="size-4" />
-                                                  Скачать
-                                                </a>
-                                              </Button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Критерии оценки — чтобы проверяющий сверялся. */}
-                                  {sa.assignment?.criteria && (
-                                    <div className="flex flex-col gap-1.5 rounded-md border p-3">
-                                      <span className="text-xs text-muted-foreground">Критерии оценки</span>
-                                      <p className="whitespace-pre-wrap text-sm text-foreground">
-                                        {sa.assignment.criteria}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  <div className="flex flex-col gap-1.5">
-                                    <Textarea
-                                      value={reviewTexts[sa.id] ?? ''}
-                                      onChange={(e) => {
-                                        setReviewTexts((prev) => ({ ...prev, [sa.id]: e.target.value }));
-                                        if (reviewErrors[sa.id]) {
-                                          setReviewErrors((prev) => {
-                                            const next = { ...prev };
-                                            delete next[sa.id];
-                                            return next;
-                                          });
-                                        }
-                                      }}
-                                      placeholder="Разбор работы (вердикт + комментарий). Видит студент."
-                                      rows={3}
-                                      aria-invalid={reviewErrors[sa.id] ? true : undefined}
-                                      className="min-w-[240px]"
-                                    />
-                                    {reviewErrors[sa.id] && (
-                                      <span className="text-xs text-destructive">
-                                        Для «На доработку» причина обязательна.
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex gap-1.5">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => handleUpdateAssignment(sa.id, 'reviewed')}
-                                      disabled={updatingId === sa.id}
-                                    >
-                                      Принять
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => {
-                                        // Причина обязательна — не открываем диалог с пустым разбором.
-                                        if (!reviewTexts[sa.id]?.trim()) {
-                                          setReviewErrors((prev) => ({ ...prev, [sa.id]: true }));
-                                          toast.error('Укажите причину доработки — она видна студенту.');
-                                          return;
-                                        }
-                                        setPendingRevision(sa);
-                                      }}
-                                      disabled={updatingId === sa.id}
-                                    >
-                                      На доработку
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                              {sa.status === 'assigned' && (
-                                <span className="font-mono text-xs text-muted-foreground">—</span>
-                              )}
-                              {sa.status === 'needs_revision' && (
-                                <span className="font-mono text-xs text-muted-foreground">↩ Ожидает пересдачи</span>
-                              )}
-                              {sa.status === 'reviewed' && (
-                                <span className="font-mono text-xs text-muted-foreground">✓ Принято</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                <div className="flex flex-col gap-4">
+                  {filteredAssignments.map((sa) => {
+                    const isOverdue =
+                      sa.status !== 'reviewed' &&
+                      sa.assignment?.dueDate &&
+                      new Date(sa.assignment.dueDate) < now;
+                    return (
+                      <AssignmentCard
+                        key={sa.id}
+                        sa={sa}
+                        isOverdue={!!isOverdue}
+                        reviewText={reviewTexts[sa.id] ?? ''}
+                        reviewError={!!reviewErrors[sa.id]}
+                        updating={updatingId === sa.id}
+                        onReviewTextChange={(value) => {
+                          setReviewTexts((prev) => ({ ...prev, [sa.id]: value }));
+                          if (reviewErrors[sa.id]) {
+                            setReviewErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[sa.id];
+                              return next;
+                            });
+                          }
+                        }}
+                        onAccept={() => handleUpdateAssignment(sa.id, 'reviewed')}
+                        onRequestRevision={() => {
+                          // Причина обязательна — не открываем диалог с пустым разбором.
+                          if (!reviewTexts[sa.id]?.trim()) {
+                            setReviewErrors((prev) => ({ ...prev, [sa.id]: true }));
+                            toast.error('Укажите причину доработки — она видна студенту.');
+                            return;
+                          }
+                          setPendingRevision(sa);
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1152,6 +1042,229 @@ export default function StudentProfilePage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/* ─── AssignmentCard ─── */
+
+// Полноширинная карточка одной сдачи студента: шапка (заголовок + статус +
+// группа + даты), работа студента (текст/файл), критерии и зона ревью.
+// Для submitted — поле разбора + кнопки; для reviewed/needs_revision —
+// сохранённый разбор (вердикт + текст + автор + дата).
+function AssignmentCard({
+  sa,
+  isOverdue,
+  reviewText,
+  reviewError,
+  updating,
+  onReviewTextChange,
+  onAccept,
+  onRequestRevision,
+}: {
+  sa: StudentAssignment;
+  isOverdue: boolean;
+  reviewText: string;
+  reviewError: boolean;
+  updating: boolean;
+  onReviewTextChange: (value: string) => void;
+  onAccept: () => void;
+  onRequestRevision: () => void;
+}) {
+  const hasWork = !!(sa.content || sa.fileName);
+  const isReviewed = sa.status === 'reviewed';
+  const isNeedsRevision = sa.status === 'needs_revision';
+
+  return (
+    <Card className="overflow-hidden">
+      {/* Шапка: заголовок + статус + метаданные (группа / даты) */}
+      <CardHeader className="gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <CardTitle className="min-w-0 flex-1 text-base leading-snug break-words">
+            {sa.assignment?.title || 'Без названия'}
+          </CardTitle>
+          <span className="inline-flex shrink-0 flex-wrap items-center gap-1.5">
+            <Badge variant={STATUS_VARIANT[sa.status] || 'outline'}>
+              {STATUS_LABELS[sa.status] || sa.status}
+            </Badge>
+            {isOverdue && <Badge variant="destructive">Просрочено</Badge>}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <Users className="size-3.5 shrink-0" />
+            <span className="truncate">{sa.assignment?.stream?.name || 'Без группы'}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarPlus className="size-3.5 shrink-0" />
+            <span className="tabular-nums">
+              Назначено {new Date(sa.createdAt).toLocaleDateString('ru-RU')}
+            </span>
+          </span>
+          <span className={cn('inline-flex items-center gap-1.5', isOverdue && 'text-destructive')}>
+            <CalendarClock className="size-3.5 shrink-0" />
+            <span className="tabular-nums">
+              Срок{' '}
+              {sa.assignment?.dueDate
+                ? new Date(sa.assignment.dueDate).toLocaleDateString('ru-RU')
+                : '—'}
+            </span>
+          </span>
+        </div>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-4">
+        {/* Работа студента: текст ответа + вложение */}
+        <section className="flex flex-col gap-2 rounded-lg border bg-muted/40 p-3">
+          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            Работа студента
+          </span>
+          {sa.content ? (
+            <p className="whitespace-pre-wrap break-words text-sm text-foreground">{sa.content}</p>
+          ) : !sa.fileName ? (
+            <p className="text-sm text-muted-foreground">
+              {hasWork ? '' : 'Готово (без текста и файла).'}
+            </p>
+          ) : null}
+          {sa.fileName && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate text-foreground" title={sa.fileName}>
+                  {sa.fileName}
+                </span>
+              </div>
+              {sa.fileSignedUrl && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {isMarkdownFile(sa.fileName) ? (
+                    <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
+                  ) : (
+                    // Прочие файлы — inline-просмотр в новой вкладке (/files отдаёт inline).
+                    <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                      <a href={sa.fileSignedUrl} target="_blank" rel="noopener noreferrer">
+                        <Eye className="size-4" />
+                        Просмотр
+                      </a>
+                    </Button>
+                  )}
+                  <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                    <a href={fileDownloadUrl(sa.fileSignedUrl)}>
+                      <Download className="size-4" />
+                      Скачать
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Критерии оценки — чтобы проверяющий сверялся. */}
+        {sa.assignment?.criteria && (
+          <section className="flex flex-col gap-1.5 rounded-lg border p-3">
+            <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Критерии оценки
+            </span>
+            <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+              {sa.assignment.criteria}
+            </p>
+          </section>
+        )}
+
+        {/* Зона ревью */}
+        {sa.status === 'submitted' && (
+          <section className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Textarea
+                value={reviewText}
+                onChange={(e) => onReviewTextChange(e.target.value)}
+                placeholder="Разбор работы (вердикт + комментарий). Видит студент."
+                rows={3}
+                aria-invalid={reviewError ? true : undefined}
+                className="w-full resize-y"
+              />
+              {reviewError && (
+                <span className="text-xs text-destructive">
+                  Для «На доработку» причина обязательна.
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={onAccept} disabled={updating}>
+                {updating && <Loader2 className="animate-spin" />}
+                Принять
+              </Button>
+              <Button variant="secondary" size="sm" onClick={onRequestRevision} disabled={updating}>
+                На доработку
+              </Button>
+            </div>
+          </section>
+        )}
+
+        {/* Сохранённый разбор для уже проверенных сдач */}
+        {(isReviewed || isNeedsRevision) && (
+          <ReviewSummary
+            verdict={isReviewed ? 'reviewed' : 'needs_revision'}
+            reviewText={sa.reviewText}
+            reviewedBy={sa.reviewedBy}
+            reviewedAt={sa.reviewedAt}
+          />
+        )}
+
+        {sa.status === 'assigned' && (
+          <p className="text-sm text-muted-foreground">Студент ещё не сдал работу.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ─── ReviewSummary ─── */
+
+// Блок с сохранённым разбором: вердикт (Принято / На доработку), текст
+// комментария (виден студенту), автор и дата проверки.
+function ReviewSummary({
+  verdict,
+  reviewText,
+  reviewedBy,
+  reviewedAt,
+}: {
+  verdict: 'reviewed' | 'needs_revision';
+  reviewText: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+}) {
+  const accepted = verdict === 'reviewed';
+  return (
+    <section
+      className={cn(
+        'flex flex-col gap-2 rounded-lg border-l-4 bg-muted/40 p-3',
+        accepted ? 'border-l-primary' : 'border-l-destructive',
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          Разбор работы
+        </span>
+        <Badge variant={accepted ? 'default' : 'destructive'} className="gap-1">
+          {accepted ? <CheckCircle2 className="size-3.5" /> : <RotateCcw className="size-3.5" />}
+          {accepted ? 'Принято' : 'На доработку'}
+        </Badge>
+      </div>
+
+      {reviewText ? (
+        <p className="whitespace-pre-wrap break-words text-sm text-foreground">{reviewText}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground">Комментарий не оставлен.</p>
+      )}
+
+      {(reviewedBy || reviewedAt) && (
+        <span className="font-mono text-xs text-muted-foreground">
+          {reviewedBy || 'Проверяющий'}
+          {reviewedAt && <> — {new Date(reviewedAt).toLocaleString('ru-RU')}</>}
+        </span>
+      )}
+    </section>
   );
 }
 
