@@ -481,24 +481,24 @@ export default function StudentLessonPage() {
           {(prev || next) && (
             <div className="flex items-center justify-between gap-3 border-t pt-4">
               {prev ? (
-                <Button variant="outline" asChild>
-                  <Link href={`/dashboard/lessons/${prev.id}`}>
-                    <ArrowLeft />
-                    <span className="max-w-[12rem] truncate">{prev.title}</span>
+                <Button variant="outline" asChild className="min-w-0 flex-1 justify-start">
+                  <Link href={`/dashboard/lessons/${prev.id}`} className="min-w-0">
+                    <ArrowLeft className="shrink-0" />
+                    <span className="min-w-0 truncate">{prev.title}</span>
                   </Link>
                 </Button>
               ) : (
-                <span />
+                <span className="flex-1" />
               )}
               {next ? (
-                <Button variant="outline" asChild>
-                  <Link href={`/dashboard/lessons/${next.id}`}>
-                    <span className="max-w-[12rem] truncate">{next.title}</span>
-                    <ArrowRight />
+                <Button variant="outline" asChild className="min-w-0 flex-1 justify-end">
+                  <Link href={`/dashboard/lessons/${next.id}`} className="min-w-0">
+                    <span className="min-w-0 truncate">{next.title}</span>
+                    <ArrowRight className="shrink-0" />
                   </Link>
                 </Button>
               ) : (
-                <span />
+                <span className="flex-1" />
               )}
             </div>
           )}
