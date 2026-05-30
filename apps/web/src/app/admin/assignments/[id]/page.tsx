@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -295,23 +296,40 @@ export default function AssignmentDetailPage() {
                       <CardContent className="flex flex-col gap-4">
                         {/* Шапка карточки: студент + статус + переписка */}
                         <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <Avatar className="size-10 shrink-0">
-                              <AvatarFallback className="text-xs font-medium">
-                                {studentInitials(sa.student?.name, sa.student?.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex min-w-0 flex-col">
-                              <span className="truncate font-medium text-foreground">
-                                {sa.student?.name ?? '—'}
-                              </span>
-                              {sa.student?.email && (
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {sa.student.email}
+                          {sa.student ? (
+                            // Аватар + имя ведут на карточку студента.
+                            <Link
+                              href={`/admin/students/${sa.student.id}`}
+                              className="flex min-w-0 items-center gap-3 rounded-md transition-colors hover:text-primary"
+                            >
+                              <Avatar className="size-10 shrink-0">
+                                <AvatarFallback className="text-xs font-medium">
+                                  {studentInitials(sa.student.name, sa.student.email)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex min-w-0 flex-col">
+                                <span className="truncate font-medium">
+                                  {sa.student.name ?? '—'}
                                 </span>
-                              )}
+                                {sa.student.email && (
+                                  <span className="truncate text-xs text-muted-foreground">
+                                    {sa.student.email}
+                                  </span>
+                                )}
+                              </div>
+                            </Link>
+                          ) : (
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar className="size-10 shrink-0">
+                                <AvatarFallback className="text-xs font-medium">
+                                  {studentInitials(null, null)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex min-w-0 flex-col">
+                                <span className="truncate font-medium text-foreground">—</span>
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div className="flex shrink-0 items-center gap-2">
                             <Badge variant={statusVariants[sa.status] ?? 'secondary'}>
                               {statusLabels[sa.status] ?? sa.status}

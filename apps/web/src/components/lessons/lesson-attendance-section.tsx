@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -479,7 +480,12 @@ export function LessonAttendanceSection({
                         className="flex flex-wrap items-center justify-between gap-3 p-3"
                       >
                         <div className="flex min-w-0 flex-col gap-0.5">
-                          <span className="truncate text-sm font-medium">{student.name}</span>
+                          <Link
+                            href={`/admin/students/${student.id}`}
+                            className="truncate text-sm font-medium transition-colors hover:text-primary"
+                          >
+                            {student.name}
+                          </Link>
                           {zoom && (
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                               <span className="flex items-center gap-1">

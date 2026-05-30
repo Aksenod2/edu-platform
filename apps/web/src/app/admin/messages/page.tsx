@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { Loader2, MessagesSquare, ChevronLeft, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -198,19 +199,36 @@ export default function AdminThreadsPage() {
             <ul>
               {visible.map((t) => (
                 <li key={t.studentId}>
-                  <button
-                    onClick={() => setSelected(t.studentId)}
+                  {/* Строка диалога: клик по аватару/имени → карточка студента;
+                      клик по остальной зоне → открыть переписку справа. Две зоны
+                      разведены, чтобы выбор диалога не конфликтовал с переходом. */}
+                  <div
                     className={cn(
-                      'flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent',
+                      'relative flex items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-accent',
                       selected === t.studentId && 'bg-accent',
                     )}
                   >
-                    <Avatar className="size-9 shrink-0">
-                      <AvatarFallback className="text-xs">{initials(t.studentName)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{t.studentName}</span>
+                    <Link
+                      href={`/admin/students/${t.studentId}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="z-10 flex shrink-0 items-center gap-3 rounded-md transition-colors hover:text-primary"
+                    >
+                      <Avatar className="size-9 shrink-0">
+                        <AvatarFallback className="text-xs">{initials(t.studentName)}</AvatarFallback>
+                      </Avatar>
+                      <span className="truncate text-sm font-medium md:max-w-[7rem] lg:max-w-[9rem]">
+                        {t.studentName}
+                      </span>
+                    </Link>
+                    {/* Кнопка выбора диалога растянута на всю строку (через ::after),
+                        но лежит ПОД ссылкой студента (z-10 выше) — клики не пересекаются. */}
+                    <button
+                      type="button"
+                      onClick={() => setSelected(t.studentId)}
+                      aria-label={`Открыть переписку: ${t.studentName}`}
+                      className="min-w-0 flex-1 text-left after:absolute after:inset-0 after:content-['']"
+                    >
+                      <div className="flex items-center justify-end gap-2">
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {relativeTime(t.lastEntryAt)}
                         </span>
@@ -224,8 +242,8 @@ export default function AdminThreadsPage() {
                           <Badge variant="secondary">{t.unreadCount}</Badge>
                         )}
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -247,7 +265,14 @@ export default function AdminThreadsPage() {
               >
                 <ChevronLeft />
               </Button>
-              <span className="truncate font-medium">{selectedThread?.studentName}</span>
+              {selectedThread && (
+                <Link
+                  href={`/admin/students/${selectedThread.studentId}`}
+                  className="truncate font-medium transition-colors hover:text-primary"
+                >
+                  {selectedThread.studentName}
+                </Link>
+              )}
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
               <ThreadConversation

@@ -1164,10 +1164,14 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                     return (
                       <TableRow key={row.id}>
                         <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium text-foreground">{row.name}</span>
+                          {/* row.id — это userId студента: имя ведёт на его карточку. */}
+                          <Link
+                            href={`/admin/students/${row.id}`}
+                            className="flex flex-col rounded-md transition-colors hover:text-primary"
+                          >
+                            <span className="font-medium">{row.name}</span>
                             <span className="text-xs text-muted-foreground">{row.email}</span>
-                          </div>
+                          </Link>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {row.amountKopecks ? formatKopecks(row.amountKopecks) : '—'}
@@ -1214,10 +1218,13 @@ function StreamChargesSection({ stream }: { stream: StreamWithCounts }) {
                 return (
                   <li key={row.id} className="rounded-lg border p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium text-foreground">{row.name}</span>
+                      <Link
+                        href={`/admin/students/${row.id}`}
+                        className="flex min-w-0 flex-col rounded-md transition-colors hover:text-primary"
+                      >
+                        <span className="truncate font-medium">{row.name}</span>
                         <span className="truncate text-xs text-muted-foreground">{row.email}</span>
-                      </div>
+                      </Link>
                       <Badge variant={meta.variant} className="shrink-0">
                         {meta.label}
                       </Badge>
