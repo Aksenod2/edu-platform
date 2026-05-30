@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
@@ -155,6 +156,27 @@ export async function uploadFile(
     url: `/files/${encodeURIComponent(key)}`,
     size: buffer.length,
   };
+}
+
+/**
+ * Проверяет, что объект РЕАЛЬНО присутствует/читается в хранилище по ключу
+ * (HeadObject). Защита после загрузки: если PutObject «прошёл», но объект потом
+ * не читается (права на чтение префикса / недурабельная запись на стороне
+ * хранилища), мы узнаём об этом СРАЗУ и не отдаём «успех», который позже
+ * превращается в 404. Возвращает реальную причину (имя ошибки S3 + HTTP-код).
+ * При DB-фолбэке (S3 выключен) всегда ok — там запись и чтение синхронны.
+ */
+export async function verifyStoredObject(
+  key: string,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  if (!s3 || !S3_BUCKET) return { ok: true };
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    return { ok: true };
+  } catch (err) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    return { ok: false, detail: `${e?.name ?? 'S3Error'} (HTTP ${e?.$metadata?.httpStatusCode ?? '?'})` };
+  }
 }
 
 /**

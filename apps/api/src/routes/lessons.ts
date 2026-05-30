@@ -3,7 +3,7 @@ import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
-import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { uploadFile, getFileUrl, verifyStoredObject } from '../lib/s3.js';
 import {
   createZoomMeeting,
   shouldAutoCreate,
@@ -1276,6 +1276,17 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply
         .status(400)
         .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+    }
+
+    // Защита/диагностика: запись «прошла», но сразу проверяем, что объект
+    // реально читается из хранилища. Если нет (права на чтение префикса lessons/
+    // или недурабельная запись) — отдаём явную ошибку с реальной причиной S3,
+    // а не «успех», который потом превращается в 404 при «Просмотре».
+    const verify = await verifyStoredObject(uploaded.key);
+    if (!verify.ok) {
+      return reply.status(502).send({
+        error: `Файл загружен, но не читается из хранилища (${verify.detail}). Запись прошла, чтение — нет: вероятно, у S3 нет прав на чтение папки lessons/. Сообщите администратору.`,
+      });
     }
 
     const material: LessonMaterial = {
