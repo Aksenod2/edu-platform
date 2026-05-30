@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2, CalendarClock } from 'lucide-react';
+import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2, CalendarClock, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -18,6 +18,7 @@ import {
   type StudentCharge,
   type ChargeStatus,
   type NextMentorshipCharge,
+  type PayableStream,
 } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -81,6 +82,8 @@ export default function StudentBalancePage() {
   const [charges, setCharges] = useState<StudentCharge[]>([]);
   const [outstandingKopecks, setOutstandingKopecks] = useState(0);
   const [nextCharges, setNextCharges] = useState<NextMentorshipCharge[]>([]);
+  // Активные группы студента с внешней ссылкой на оплату (кнопка «Оплатить»).
+  const [payableStreams, setPayableStreams] = useState<PayableStream[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -111,6 +114,7 @@ export default function StudentBalancePage() {
       setCharges(data.charges ?? []);
       setOutstandingKopecks(data.outstandingKopecks ?? 0);
       setNextCharges(data.nextMentorshipCharges ?? []);
+      setPayableStreams(data.payableStreams ?? []);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки баланса');
@@ -291,6 +295,46 @@ export default function StudentBalancePage() {
               </Card>
             )}
           </div>
+
+          {/* Оплата групп: активные группы с внешней ссылкой на оплату.
+              Показываем ВСЕГДА, когда массив непустой; иначе блок не рендерим. */}
+          {payableStreams.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Оплата групп</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="flex flex-col gap-3">
+                  {payableStreams.map((stream) => (
+                    <li
+                      key={stream.id}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CreditCard
+                          aria-hidden="true"
+                          className="size-4 shrink-0 text-muted-foreground"
+                        />
+                        <span className="min-w-0 truncate font-medium text-foreground">
+                          {stream.name}
+                        </span>
+                      </div>
+                      <Button asChild size="sm" className="shrink-0">
+                        <a
+                          href={stream.paymentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink />
+                          Оплатить
+                        </a>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Следующее списание (менторские группы). Скрыт, если месячных групп нет.
               Акцент один: при долге («К оплате») блок мягкий/нейтральный, иначе при
