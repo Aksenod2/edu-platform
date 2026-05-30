@@ -1,18 +1,16 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, Wallet, ExternalLink, Phone, Upload, X, TriangleAlert, CheckCircle2, CalendarClock, CreditCard } from 'lucide-react';
+import { Loader2, Wallet, ExternalLink, Upload, X, TriangleAlert, CheckCircle2, CalendarClock, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
   getWallet,
-  getPaymentSettings,
   getMyTopUpRequests,
   createTopUpRequest,
   formatKopecks,
   TOPUP_STATUS_LABELS,
   type WalletTransaction,
-  type PaymentSettings,
   type TopUpRequest,
   type TopUpRequestStatus,
   type StudentCharge,
@@ -87,9 +85,6 @@ export default function StudentBalancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [settings, setSettings] = useState<PaymentSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
-
   const [requests, setRequests] = useState<TopUpRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [requestsError, setRequestsError] = useState('');
@@ -123,20 +118,6 @@ export default function StudentBalancePage() {
     }
   }, [accessToken, user]);
 
-  const fetchSettings = useCallback(async () => {
-    if (!accessToken) return;
-    setSettingsLoading(true);
-    try {
-      setSettings(await getPaymentSettings(accessToken));
-    } catch {
-      // Реквизиты — вспомогательный блок: ошибку не показываем «красным»,
-      // отрисуем мягкую подсказку «реквизиты пока не указаны».
-      setSettings(null);
-    } finally {
-      setSettingsLoading(false);
-    }
-  }, [accessToken]);
-
   const fetchRequests = useCallback(async () => {
     if (!accessToken) return;
     setRequestsLoading(true);
@@ -153,9 +134,8 @@ export default function StudentBalancePage() {
 
   useEffect(() => {
     fetchWallet();
-    fetchSettings();
     fetchRequests();
-  }, [fetchWallet, fetchSettings, fetchRequests]);
+  }, [fetchWallet, fetchRequests]);
 
   // Локальное превью выбранного скрина; отзываем objectURL при смене файла.
   useEffect(() => {
@@ -225,10 +205,6 @@ export default function StudentBalancePage() {
       setSubmitting(false);
     }
   }
-
-  const hasSettings =
-    settings &&
-    (settings.qrUrl || settings.transferUrl || settings.transferPhone || settings.instructions);
 
   return (
     <>
@@ -395,14 +371,9 @@ export default function StudentBalancePage() {
                   </ul>
 
                   {warn && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm text-warning">
-                        На балансе может не хватить — пополните до {formatChargeDate(earliest)}.
-                      </p>
-                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-                        <a href="#topup">Пополнить</a>
-                      </Button>
-                    </div>
+                    <p className="text-sm text-warning">
+                      На балансе может не хватить — пополните до {formatChargeDate(earliest)}.
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -505,59 +476,8 @@ export default function StudentBalancePage() {
             </section>
           )}
 
-          {/* Как пополнить + форма «Я оплатил» */}
-          <div id="topup" className="grid scroll-mt-20 grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Реквизиты */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Как пополнить</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {settingsLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : !hasSettings ? (
-                  <p className="text-sm text-muted-foreground">
-                    Реквизиты пока не указаны. Обратитесь к преподавателю.
-                  </p>
-                ) : (
-                  <>
-                    {settings?.instructions && (
-                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                        {settings.instructions}
-                      </p>
-                    )}
-                    {settings?.qrUrl && (
-                      // img, а не next/image: src — подписанный временный URL из S3
-                      <img
-                        src={settings.qrUrl}
-                        alt="QR-код для перевода"
-                        className="size-44 self-start rounded-lg border bg-background object-contain p-2"
-                      />
-                    )}
-                    <div className="flex flex-col gap-2">
-                      {settings?.transferUrl && (
-                        <Button asChild className="w-full sm:w-auto">
-                          <a href={settings.transferUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink />
-                            Перевести
-                          </a>
-                        </Button>
-                      )}
-                      {settings?.transferPhone && (
-                        <div className="flex items-center gap-2 text-sm text-foreground">
-                          <Phone className="size-4 text-muted-foreground" />
-                          <span className="tabular-nums">{settings.transferPhone}</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Форма «Я оплатил» */}
+          {/* Форма «Я оплатил» */}
+          <div id="topup" className="scroll-mt-20">
             <Card>
               <CardHeader>
                 <CardTitle>Я оплатил</CardTitle>
