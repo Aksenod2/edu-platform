@@ -565,7 +565,7 @@ export default function StudentProfilePage() {
 
           {/* ── Profile tab ── */}
           {activeTab === 'profile' && (
-            <div className="grid items-stretch gap-6 py-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 items-stretch gap-6 py-4 lg:grid-cols-2">
 
               {/* Тип аккаунта: демо/служебный флаг (admin) */}
               <Card className="lg:col-span-2">
@@ -612,7 +612,7 @@ export default function StudentProfilePage() {
                     </div>
 
                     {/* Операции: пополнить / списать */}
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {/* Пополнить */}
                       <div className="flex flex-col gap-2 rounded-lg border p-3">
                         <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">

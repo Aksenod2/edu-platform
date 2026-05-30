@@ -167,7 +167,7 @@ export default function AdminPage() {
       ) : stats ? (
         <>
           {/* KPI strip */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               title="Активные студенты"
               value={stats.students.active}
@@ -195,7 +195,7 @@ export default function AdminPage() {
           </div>
 
           {/* Two-column area */}
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {/* LEFT: requires attention */}
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -397,7 +397,7 @@ function StatusBars({
 function DashboardSkeleton() {
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
@@ -410,7 +410,7 @@ function DashboardSkeleton() {
           </Card>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <Skeleton className="h-5 w-40" />
