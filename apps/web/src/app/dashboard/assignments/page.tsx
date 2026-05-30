@@ -542,7 +542,7 @@ export default function StudentAssignmentsPage() {
           if (!open) closeSubmissionForm();
         }}
       >
-        <DialogContent className="max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px]">
           {(() => {
             const modalSa = assignments.find((s) => s.id === submissionModalSaId);
             const modalAssignment = modalSa?.assignment;
