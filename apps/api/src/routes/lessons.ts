@@ -3,7 +3,7 @@ import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
-import { uploadFile, getFileUrl, verifyStoredObject } from '../lib/s3.js';
+import { uploadFile, getFileUrl, verifyStoredObject, deleteFile } from '../lib/s3.js';
 import {
   createZoomMeeting,
   shouldAutoCreate,
@@ -1296,8 +1296,17 @@ export async function lessonRoutes(app: FastifyInstance) {
       size: uploaded.size,
     };
 
+    // Перезалив файла с тем же именем ЗАМЕНЯЕТ прежний материал, а не плодит дубль
+    // (иначе в уроке копятся «старый битый + новый» с одинаковым именем). Старые
+    // объекты с тем же именем подчищаем в хранилище best-effort.
     const current = sanitizeLessonMaterials(lesson.materials);
-    const nextMaterials = [...current, material];
+    const replaced = current.filter((m) => m.fileName === originalName);
+    for (const old of replaced) {
+      if (old.s3Key && old.s3Key !== uploaded.key) {
+        deleteFile(old.s3Key).catch(() => {});
+      }
+    }
+    const nextMaterials = [...current.filter((m) => m.fileName !== originalName), material];
 
     await prisma.lesson.update({
       where: { id },

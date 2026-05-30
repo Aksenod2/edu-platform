@@ -66,7 +66,14 @@ function computeSignature(key: string, exp: number): string {
 export function signFileUrl(key: string): string {
   const exp = Math.floor(Date.now() / 1000) + FILE_URL_TTL_SECONDS;
   const sig = computeSignature(key, exp);
-  return `/files/${encodeURIComponent(key)}?exp=${exp}&sig=${sig}`;
+  // Кодируем сегменты ключа ПО ОТДЕЛЬНОСТИ, сохраняя реальные слеши: путь должен
+  // быть /files/lessons/<...>, а НЕ /files/lessons%2F<...>. Закодированный слеш
+  // (%2F) ломает прохождение через Next /api-proxy (catch-all) на проде — запрос
+  // не матчится в route-handler и улетает в API целиком → «Route not found 404».
+  // Подпись (HMAC от исходного key) НЕ меняется; /files/* читает декодированный
+  // путь как тот же key — обратная совместимость сохранена.
+  const encodedPath = key.split('/').map(encodeURIComponent).join('/');
+  return `/files/${encodedPath}?exp=${exp}&sig=${sig}`;
 }
 
 /**
