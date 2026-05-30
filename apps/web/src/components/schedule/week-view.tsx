@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,19 @@ export function WeekView({
   );
 
   const lessonsByDay = useMemo(() => groupByDay(lessons), [lessons]);
+
+  // Адаптивная ширина колонок (десктоп): дни с занятиями шире, пустые — примерно
+  // вдвое уже. Доли задаём во fr, чтобы сумма колонок всегда занимала всю ширину.
+  // Если занятий нет ни в одном дне — все колонки равны (1fr).
+  const columnTemplate = useMemo(() => {
+    return days
+      .map((day) =>
+        (lessonsByDay.get(dateKey(day))?.length ?? 0) > 0
+          ? 'minmax(0, 2fr)'
+          : 'minmax(3.5rem, 1fr)',
+      )
+      .join(' ');
+  }, [days, lessonsByDay]);
 
   const weekEnd = addDays(weekStart, 6);
   const rangeLabel = `${weekStart.toLocaleDateString('ru-RU', {
@@ -74,7 +87,14 @@ export function WeekView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-7 sm:gap-2">
+      {/* На мобилке — стопка (grid-cols-1). На десктопе (sm:) колонки распределяются
+          по долям из --week-cols: дни с занятиями шире, пустые уже. CSS-переменная
+          задаётся inline, но применяется к grid только на sm:, поэтому мобильная
+          стопка не ломается. min-width у колонок держит читаемость заголовков. */}
+      <div
+        className="grid grid-cols-1 gap-3 sm:gap-2 sm:[grid-template-columns:var(--week-cols)]"
+        style={{ '--week-cols': columnTemplate } as CSSProperties}
+      >
         {days.map((day, i) => {
           const dayLessons = lessonsByDay.get(dateKey(day)) ?? [];
           const isToday = isSameDay(day, today);
@@ -82,12 +102,12 @@ export function WeekView({
             <div
               key={dateKey(day)}
               className={cn(
-                'flex min-h-[120px] flex-col gap-2 rounded-lg border bg-card p-2',
+                'flex min-h-[120px] min-w-0 flex-col gap-2 rounded-lg border bg-card p-2',
                 isToday && 'border-primary',
               )}
             >
               <div className="flex items-baseline justify-between gap-1 border-b pb-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
+                <span className="truncate text-xs font-medium text-muted-foreground">
                   {WEEKDAYS_SHORT[i]}
                 </span>
                 <span
