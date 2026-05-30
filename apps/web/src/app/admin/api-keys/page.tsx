@@ -10,6 +10,7 @@ import {
 } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, Eye, EyeOff, Copy } from 'lucide-react';
+import { BackButton } from '@/components/back-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -123,6 +124,11 @@ export default function ApiKeysPage() {
 
   return (
     <>
+      <div className="mb-4">
+        {/* На раздел заходят из «Настроек» → возврат туда, если истории нет. */}
+        <BackButton fallbackHref="/admin/settings" />
+      </div>
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">API-ключи</h1>
