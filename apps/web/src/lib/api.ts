@@ -623,10 +623,12 @@ export function fileDownloadUrl(url: string): string {
 export function toProxiedFileUrl(url: string): string {
   if (!url || typeof window === 'undefined') return url;
   try {
-    // Абсолютный URL → берём path+query и префиксуем same-origin прокси.
+    // Файлы отдаём SAME-ORIGIN по пути /files/... : на проде Caddy шлёт /files → api,
+    // в dev — rewrite в next.config. Берём path+query из подписанного URL и
+    // запрашиваем same-origin — так нет CORS (для fetch .md) и не нужен хрупкий
+    // /api-proxy (он на проде не доносил /api-proxy/files/... до Next → 404).
     const parsed = new URL(url, window.location.origin);
-    if (parsed.origin === window.location.origin) return url; // уже same-origin
-    return `/api-proxy${parsed.pathname}${parsed.search}`;
+    return `${parsed.pathname}${parsed.search}`;
   } catch {
     return url;
   }

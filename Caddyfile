@@ -7,6 +7,13 @@ xn--90ad2cb.xn--p1ai, xn--0-8sbf7bfq.xn--p1ai {
         reverse_proxy api:4000
     }
 
+    # Файлы хранилища — НАПРЯМУЮ в API (подписанные URL stateless), минуя Next.
+    # iframe/img/fetch грузят /files/... same-origin без хрупкого /api-proxy
+    # (тот на проде не доносил /api-proxy/files/... до Next-обработчика → 404).
+    handle /files/* {
+        reverse_proxy api:4000
+    }
+
     # Всё остальное — на Next.js, как раньше.
     handle {
         reverse_proxy web:3000

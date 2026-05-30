@@ -143,13 +143,13 @@ export function FileLightbox({
             на sm+ — в ряд справа. Не налезает на контент. */}
         <div className="flex shrink-0 flex-col gap-2 border-t pt-3 sm:flex-row sm:justify-end sm:pt-4">
           <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-            <a href={fileDownloadUrl(url)}>
+            <a href={fileDownloadUrl(proxied)}>
               <Download className="size-4" />
               Скачать
             </a>
           </Button>
           <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-            <a href={url} target="_blank" rel="noopener noreferrer">
+            <a href={proxied} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="size-4" />
               Открыть в новой вкладке
             </a>
