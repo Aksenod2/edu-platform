@@ -334,7 +334,7 @@ export default function ApiKeysPage() {
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-2">Базовый URL</p>
               <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md">
-                <span className="font-mono text-xs flex-1">{proxyBase}</span>
+                <span className="font-mono text-xs flex-1 min-w-0 break-all">{proxyBase}</span>
               </div>
             </div>
 

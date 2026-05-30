@@ -382,7 +382,7 @@ export default function ApiAccessPage() {
                 В примерах ниже используется прокси веб-приложения — он сам пробрасывает токен к API:
               </p>
               <div className="flex items-center gap-2 px-3 py-2 bg-muted border rounded-md mb-2">
-                <span className="font-mono text-xs flex-1">{proxyBase}</span>
+                <span className="font-mono text-xs flex-1 min-w-0 break-all">{proxyBase}</span>
               </div>
               <p className="text-sm text-muted-foreground">
                 Можно обращаться и напрямую к API — по его собственному адресу (зависит от окружения; запросите его у администратора инфраструктуры).

@@ -44,7 +44,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <NotificationBell />
           </div>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">{children}</div>
+        {/* min-w-0 + overflow-x-clip системно гасят горизонтальный «выезд» страницы
+            на мобилке: случайно широкий контент (длинные строки, неперенесённые
+            flex-ряды) обрезается, а намеренно широкие таблицы скроллятся в своих
+            внутренних overflow-x-auto обёртках, не растягивая контейнер. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto p-4 md:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
