@@ -61,8 +61,11 @@ export function MarkdownLightbox({
       const res = await fetch(toProxiedFileUrl(url), { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setContent(await res.text());
-    } catch {
-      setError('Не удалось открыть файл');
+    } catch (e) {
+      // Показываем HTTP-код — помогает отличить «объект пропал» (404) от
+      // «подпись/доступ» (401/403) и сетевой ошибки при диагностике на проде.
+      const detail = e instanceof Error && /^HTTP \d+/.test(e.message) ? ` (${e.message})` : '';
+      setError(`Не удалось открыть файл${detail}`);
     } finally {
       setLoading(false);
     }
