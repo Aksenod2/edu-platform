@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { ChevronLeft, Download, FileText, Loader2, Wallet } from 'lucide-react';
+import { ChevronLeft, Download, Eye, FileText, Loader2, Wallet } from 'lucide-react';
 import { MarkdownLightbox, isMarkdownFile } from '@/components/assignments/markdown-lightbox';
 import { StudentDynamicTab } from '@/components/students/student-dynamic-tab';
 import { BackButton } from '@/components/back-button';
@@ -925,8 +925,16 @@ export default function StudentProfilePage() {
                                           </div>
                                           {sa.fileSignedUrl && (
                                             <div className="flex items-center gap-1">
-                                              {isMarkdownFile(sa.fileName) && (
+                                              {isMarkdownFile(sa.fileName) ? (
                                                 <MarkdownLightbox fileName={sa.fileName} url={sa.fileSignedUrl} />
+                                              ) : (
+                                                // Прочие файлы — inline-просмотр в новой вкладке (/files отдаёт inline).
+                                                <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                                                  <a href={sa.fileSignedUrl} target="_blank" rel="noopener noreferrer">
+                                                    <Eye className="size-4" />
+                                                    Просмотр
+                                                  </a>
+                                                </Button>
                                               )}
                                               <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
                                                 <a href={fileDownloadUrl(sa.fileSignedUrl)}>

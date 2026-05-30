@@ -331,6 +331,52 @@ function fileNameFromKey(key: string): string {
   return base;
 }
 
+/**
+ * Возвращает человекочитаемое имя файла для UI.
+ *
+ * Источник истины об оригинальном имени — поле `fileName` в БД (для сдач —
+ * `StudentAssignment.fileName`, копия `part.filename`). Но у части записей туда
+ * по ошибке/в старой схеме лёг сырой ключ хранилища (`fileUrl`) либо имя вовсе
+ * не сохранилось. Чтобы в интерфейсе НИКОГДА не светился сырой ключ:
+ *  - если `fileName` пустой ИЛИ совпадает с ключом ИЛИ выглядит как наш ключ
+ *    (`<folder>/<ts>-<uuid>.<ext>`), берём базовое имя из ключа и срезаем
+ *    служебный префикс `<timestamp>-<uuid>-`, оставляя расширение;
+ *  - иначе возвращаем сохранённое имя как есть.
+ *
+ * Для НОВЫХ загрузок `fileName` всегда корректен (см. submit-хендлер), поэтому
+ * этот хелпер — защитный фолбэк для старых/битых записей, а не основной путь.
+ */
+export function displayFileName(
+  fileName: string | null | undefined,
+  fileUrl: string | null | undefined,
+): string | null {
+  const key = fileUrl ?? '';
+  const name = fileName?.trim() ?? '';
+
+  // Похоже ли значение на сырой ключ хранилища: содержит наш префикс-папку со
+  // слешем и сегмент `<ts>-<uuid>` (uuid v4), либо буквально равно ключу.
+  const looksLikeKey = (value: string): boolean => {
+    if (!value) return false;
+    if (key && value === key) return true;
+    return /(^|\/)\d{10,}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
+      value,
+    );
+  };
+
+  if (name && !looksLikeKey(name)) return name;
+
+  // Фолбэк из ключа: базовое имя без папки и без служебного префикса
+  // `<timestamp>-<uuid>-`. Если после среза ничего не осталось — отдаём базовое
+  // имя ключа целиком, чтобы не вернуть пустую строку.
+  if (!key) return name || null;
+  const base = fileNameFromKey(key);
+  const stripped = base.replace(
+    /^\d{10,}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-?/i,
+    '',
+  );
+  return stripped || base || null;
+}
+
 async function readFromS3(key: string, rangeHeader?: string): Promise<ReadFileResult | null> {
   if (!s3 || !S3_BUCKET) return null;
   try {

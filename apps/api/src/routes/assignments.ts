@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { createNotification, notifyMany } from '../lib/notifications.js';
-import { uploadFile, getFileUrl } from '../lib/s3.js';
+import { uploadFile, getFileUrl, displayFileName } from '../lib/s3.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 
@@ -587,6 +587,9 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
         if (sa.fileUrl) {
           projected.fileSignedUrl = await getFileUrl(sa.fileUrl);
+          // Защитный фолбэк: у старых/битых записей в fileName мог лечь сырой ключ
+          // хранилища — отдаём в UI человекочитаемое имя, не ключ.
+          projected.fileName = displayFileName(sa.fileName, sa.fileUrl);
         }
 
         return projected;
@@ -746,6 +749,8 @@ export async function assignmentRoutes(app: FastifyInstance) {
     // Generate signed URL for file if present
     if (updatedRow.fileUrl) {
       updated.fileSignedUrl = await getFileUrl(updatedRow.fileUrl);
+      // Защитный фолбэк: не отдаём сырой ключ в качестве имени (см. displayFileName).
+      updated.fileName = displayFileName(updatedRow.fileName, updatedRow.fileUrl);
     }
 
     // Notify relevant parties about status change
