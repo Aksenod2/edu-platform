@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@platform/db';
-import { verifyFileSignature, readFile, verifyStoredObject } from '../lib/s3.js';
+import { verifyFileSignature, readFile } from '../lib/s3.js';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { requireRole } from '../middleware/auth.js';
 
@@ -123,23 +123,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const result = await readFile(key, request.headers.range);
 
     if (result.kind === 'not_found') {
-      // ВРЕМЕННАЯ ДИАГНОСТИКА (баг «материалы урока → 404»): GET не нашёл объект.
-      // Спрашиваем хранилище напрямую через HeadObject, чтобы различить причины
-      // РАЗНЫМИ HTTP-кодами (лайтбокс показывает код): 404 — объекта нет (запись не
-      // долетела); 403 — чтение запрещено (права на префикс); 502 — объект есть, но
-      // GET его не отдал (рассинхрон/особенность чтения). Убрать после диагноза.
-      const head = await verifyStoredObject(key);
-      if (head.ok) {
-        return reply
-          .status(502)
-          .send({ error: `Объект есть в хранилище (HeadObject ok), но GET вернул not_found — рассинхрон/особенность чтения. key=${key}` });
-      }
-      if (/403|AccessDenied|Forbidden/i.test(head.detail)) {
-        return reply
-          .status(403)
-          .send({ error: `Чтение объекта запрещено хранилищем: ${head.detail}. key=${key}` });
-      }
-      return reply.status(404).send({ error: `File not found (${head.detail}). key=${key}` });
+      return reply.status(404).send({ error: 'File not found' });
     }
 
     if (result.kind === 'range_not_satisfiable') {
