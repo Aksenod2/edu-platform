@@ -89,7 +89,7 @@ export function FileLightbox({
         )}
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[90vh] flex-col gap-3 p-4 sm:max-w-3xl sm:gap-4 sm:p-6">
+      <DialogContent className="top-0 left-[50%] flex h-[100dvh] max-h-[100dvh] w-full max-w-full translate-x-[-50%] translate-y-0 flex-col gap-3 rounded-none border-0 p-4 sm:max-w-3xl sm:gap-4 sm:rounded-xl sm:border sm:p-6">
         {/* Шапка: заголовок не наезжает на крестик (pr-8), длинное имя — в одну строку с многоточием. */}
         <DialogHeader className="shrink-0">
           <DialogTitle className="truncate pr-8 text-left" title={fileName}>
@@ -97,7 +97,9 @@ export function FileLightbox({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Контент: занимает всё свободное место между шапкой и подвалом и скроллится сам. */}
+        {/* Контент: занимает всю высоту между шапкой и подвалом, скроллится сам.
+            Лайтбокс растянут на всю высоту экрана (h-100dvh), поэтому превью
+            (картинка/PDF) видно максимально крупно, верх и низ не срезаются. */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {loading ? (
             <div className="flex flex-1 items-center justify-center py-12">
