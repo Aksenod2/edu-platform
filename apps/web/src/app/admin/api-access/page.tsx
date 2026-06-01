@@ -393,6 +393,57 @@ export default function ApiAccessPage() {
         </Card>
       </section>
 
+      {/* ─── Секция: готовые сценарии для интеграций ───────────────── */}
+      <section className="mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Готовые сценарии (для интеграций)</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            <p className="text-sm text-muted-foreground">
+              Частые задачи AI-агента ментора: переписка с учеником и разбор занятий.
+              Подставьте свой ключ <code className="font-mono text-xs">sk_…</code> и параметры пути.
+            </p>
+            {[
+              {
+                title: 'Чат ментор↔студент — прочитать ВСЮ переписку',
+                desc: 'Возвращает сообщения обеих сторон (включая студента): author {id,name,role}, type, content, createdAt. ВАЖНО: НЕ передавайте ?lessonId/?assignmentId — это опциональный фильтр по уроку, он отсекает общие сообщения студента.',
+                code: `curl -H "Authorization: Bearer sk_..." \\\n  "${proxyBase}/threads/:studentId"`,
+              },
+              {
+                title: 'Отправить сообщение студенту в его личный чат',
+                desc: 'Студент увидит его в своём интерфейсе платформы (это канонический канал 1:1). type: text | link | comment.',
+                code: `curl -X POST "${proxyBase}/threads/:studentId/entries" \\\n  -H "Authorization: Bearer sk_..." \\\n  -H "Content-Type: application/json" \\\n  -d '{"type":"text","content":"Текст сообщения"}'`,
+              },
+              {
+                title: 'Транскрипт занятия — полный текст сразу в JSON',
+                desc: 'inline=true отдаёт текст в поле "text" (без скачивания файла) — самый надёжный путь для интеграций. format: txt (по умолчанию) | vtt.',
+                code: `curl -H "Authorization: Bearer sk_..." \\\n  "${proxyBase}/lessons/:id/sessions/:streamId/transcript?format=txt&inline=true"`,
+              },
+            ].map((ex) => (
+              <div key={ex.title}>
+                <p className="text-sm font-medium">{ex.title}</p>
+                <p className="text-sm text-muted-foreground mb-2">{ex.desc}</p>
+                <div className="relative">
+                  <pre className="overflow-x-auto whitespace-pre rounded-md border bg-muted p-3 pr-10 font-mono text-xs">
+                    {ex.code}
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1.5 top-1.5"
+                    onClick={() => handleCopy(ex.code)}
+                    aria-label="Скопировать"
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
+
       {/* ─── Секция 3: Полный список эндпоинтов ───────────────────── */}
       <section className="mb-8">
         <Card>
