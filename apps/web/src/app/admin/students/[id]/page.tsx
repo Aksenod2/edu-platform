@@ -938,13 +938,17 @@ export default function StudentProfilePage() {
                     <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Сообщений пока нет</span>
                   </div>
                 ) : (
-                  threadEntries.map((entry, i) => (
-                    <ThreadBubble
-                      key={entry.id}
-                      entry={entry}
-                      showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
-                    />
-                  ))
+                  // mt-auto прижимает ленту к низу: при малом числе сообщений баблы
+                  // липнут к полю ввода (как в мессенджерах), а не висят сверху.
+                  <div className="mt-auto flex flex-col gap-2">
+                    {threadEntries.map((entry, i) => (
+                      <ThreadBubble
+                        key={entry.id}
+                        entry={entry}
+                        showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
+                      />
+                    ))}
+                  </div>
                 )}
                 <div ref={bottomRef} />
               </div>
