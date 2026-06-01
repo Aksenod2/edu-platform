@@ -21,7 +21,9 @@ function parseSignedUrl(url: string): { key: string; exp: string; sig: string } 
 describe('s3 signed file URLs', () => {
   it('signFileUrl возвращает путь вида /files/<key>?exp=...&sig=...', () => {
     const url = signFileUrl('threads/abc.png');
-    expect(url).toMatch(/^\/files\/threads%2Fabc\.png\?exp=\d+&sig=[0-9a-f]+$/);
+    // Слеши в ключе НЕ кодируются (путь /files/threads/abc.png, а не %2F) —
+    // %2F ломает прохождение через Next /api-proxy на проде (см. signFileUrl).
+    expect(url).toMatch(/^\/files\/threads\/abc\.png\?exp=\d+&sig=[0-9a-f]+$/);
 
     const { key, exp, sig } = parseSignedUrl(url);
     expect(key).toBe('threads/abc.png');
