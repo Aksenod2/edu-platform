@@ -13,6 +13,10 @@ import { Upload } from '@aws-sdk/lib-storage';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+// Лимит размера для ВИДЕО уроков (per-route, не общий multipart-лимит). Записи
+// Телемоста/Zoom на десятки минут весят сотни МБ — 5 ГБ хватает с запасом.
+export const VIDEO_MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
+
 const API_BASE_URL =
   process.env.API_BASE_URL ||
   (process.env.RENDER_EXTERNAL_URL
@@ -128,6 +132,14 @@ function extensionForKey(originalName: string, mimeType: string): string {
   return originalName.includes('.') ? (originalName.split('.').pop() ?? '') : '';
 }
 
+// Генерирует ключ объекта в хранилище: `<folder>/<ts>-<uuid>.<ext>`. Расширение
+// берётся по mime-типу (если известен) либо из исходного имени (см.
+// extensionForKey). Вынесено из uploadFile для переиспользования в uploadLargeFile.
+function buildStorageKey(originalName: string, mimeType: string, folder: string): string {
+  const ext = extensionForKey(originalName, mimeType);
+  return `${folder}/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
+}
+
 export async function uploadFile(
   buffer: Buffer,
   originalName: string,
@@ -138,8 +150,7 @@ export async function uploadFile(
     throw new Error('Файл превышает максимальный размер 50MB');
   }
 
-  const ext = extensionForKey(originalName, mimeType);
-  const key = `${folder}/${Date.now()}-${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
+  const key = buildStorageKey(originalName, mimeType, folder);
 
   if (s3 && S3_BUCKET) {
     await s3.send(
@@ -266,6 +277,65 @@ export async function uploadStream(
   });
 
   await upload.done();
+
+  return {
+    key,
+    url: `/files/${encodeURIComponent(key)}`,
+  };
+}
+
+/**
+ * Стримовая загрузка ЗАГРУЖАЕМОГО клиентом файла (multipart) в S3 БЕЗ лимита
+ * MAX_FILE_SIZE. В отличие от uploadStream сама генерирует ключ через
+ * buildStorageKey (вызывающему не нужно знать формат ключа) — для пользовательских
+ * загрузок видео уроков (lesson-videos), которые могут весить гигабайты.
+ *
+ * Тело (`body`) качается потоком и не буферится в память целиком. При S3 грузим
+ * multipart-ом через @aws-sdk/lib-storage Upload; в dev-фолбэке без S3 собираем
+ * поток в буфер и пишем в PostgreSQL (как uploadFile) — для локальной разработки.
+ */
+export async function uploadLargeFile(
+  body: Readable,
+  originalName: string,
+  mimeType: string,
+  folder: string,
+): Promise<{ key: string; url: string }> {
+  const key = buildStorageKey(originalName, mimeType, folder);
+
+  if (s3 && S3_BUCKET) {
+    const upload = new Upload({
+      client: s3,
+      params: {
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: mimeType,
+        // Имя файла храним в метаданных (percent-encoded — поддержка кириллицы).
+        Metadata: { 'original-name': encodeURIComponent(originalName) },
+      },
+      queueSize: STREAM_QUEUE_SIZE,
+      partSize: STREAM_PART_SIZE,
+      leavePartsOnError: false,
+    });
+
+    await upload.done();
+  } else {
+    // Dev-фолбэк без S3: собираем поток в буфер и пишем в PostgreSQL.
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    await prisma.fileStorage.create({
+      data: {
+        key,
+        data: Uint8Array.from(buffer),
+        mimeType,
+        fileName: originalName,
+        size: buffer.length,
+      },
+    });
+  }
 
   return {
     key,

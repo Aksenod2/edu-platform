@@ -3,7 +3,15 @@ import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
-import { uploadFile, getFileUrl, verifyStoredObject, deleteFile, readFileText } from '../lib/s3.js';
+import {
+  uploadFile,
+  uploadLargeFile,
+  VIDEO_MAX_FILE_SIZE,
+  getFileUrl,
+  verifyStoredObject,
+  deleteFile,
+  readFileText,
+} from '../lib/s3.js';
 import {
   createZoomMeeting,
   shouldAutoCreate,
@@ -1353,8 +1361,10 @@ export async function lessonRoutes(app: FastifyInstance) {
   // Работает с БЛОКОМ урока (lesson.videoKey) — поведение без изменений.
   // Принимается ОДИН видеофайл (mp4/webm/mov/m4v, mime video/*).
   //
-  // ВНИМАНИЕ: лимит размера НЕ повышаем — действует общий multipart-лимит
-  // MAX_FILE_SIZE (50МБ) из server.ts.
+  // Видео грузится ПОТОКОМ в S3 через uploadLargeFile с per-route лимитом
+  // VIDEO_MAX_FILE_SIZE (5 ГБ) — общий multipart-лимит MAX_FILE_SIZE (50МБ) из
+  // server.ts тут НЕ применяется. Обрезанный лимитом файл (truncated) отклоняем
+  // c 413, а не сохраняем недолитым.
   app.post('/lessons/:id/video', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
@@ -1367,7 +1377,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
     }
 
-    const data = await request.file();
+    const data = await request.file({ limits: { fileSize: VIDEO_MAX_FILE_SIZE } });
     if (!data) {
       return reply.status(400).send({ error: 'Файл не найден в запросе' });
     }
@@ -1384,26 +1394,20 @@ export async function lessonRoutes(app: FastifyInstance) {
       });
     }
 
-    const chunks: Buffer[] = [];
-    await pipeline(
-      data.file,
-      new Writable({
-        write(chunk, _enc, cb) {
-          chunks.push(chunk);
-          cb();
-        },
-      }),
-    );
-
-    const buffer = Buffer.concat(chunks);
-
-    let uploaded: { key: string; url: string; size: number };
+    let uploaded: { key: string; url: string };
     try {
-      uploaded = await uploadFile(buffer, originalName, mimeType, 'lesson-videos');
+      uploaded = await uploadLargeFile(data.file, originalName, mimeType, 'lesson-videos');
     } catch (err) {
       return reply
         .status(400)
         .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+    }
+
+    // Защита от тихой обрезки: busboy усекает поток на лимите fileSize и выставляет
+    // truncated. Не сохраняем недолитое видео — удаляем загруженный объект и 413.
+    if (data.file.truncated) {
+      await deleteFile(uploaded.key).catch(() => {});
+      return reply.status(413).send({ error: 'Видео превышает максимальный размер 5 ГБ' });
     }
 
     const updated = (await prisma.lesson.update({
@@ -1466,7 +1470,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     // ── Видео-ФАЙЛ (multipart) ──────────────────────────────────────────────
     if (request.isMultipart()) {
-      const data = await request.file();
+      const data = await request.file({ limits: { fileSize: VIDEO_MAX_FILE_SIZE } });
       if (!data) {
         return reply.status(400).send({ error: 'Файл не найден в запросе' });
       }
@@ -1483,25 +1487,19 @@ export async function lessonRoutes(app: FastifyInstance) {
       });
       }
 
-      const chunks: Buffer[] = [];
-      await pipeline(
-        data.file,
-        new Writable({
-          write(chunk, _enc, cb) {
-            chunks.push(chunk);
-            cb();
-          },
-        }),
-      );
-      const buffer = Buffer.concat(chunks);
-
-      let uploaded: { key: string; url: string; size: number };
+      let uploaded: { key: string; url: string };
       try {
-        uploaded = await uploadFile(buffer, originalName, mimeType, 'lesson-videos');
+        uploaded = await uploadLargeFile(data.file, originalName, mimeType, 'lesson-videos');
       } catch (err) {
         return reply
           .status(400)
           .send({ error: err instanceof Error ? err.message : 'Ошибка загрузки файла' });
+      }
+
+      // Защита от тихой обрезки: см. POST /lessons/:id/video.
+      if (data.file.truncated) {
+        await deleteFile(uploaded.key).catch(() => {});
+        return reply.status(413).send({ error: 'Видео превышает максимальный размер 5 ГБ' });
       }
 
       const rawTitle = (request.query as { title?: string }).title;
