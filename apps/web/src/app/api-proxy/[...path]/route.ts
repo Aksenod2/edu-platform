@@ -35,11 +35,20 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
   // Sending an empty body with content-type: application/json causes
   // Fastify to reject it as invalid JSON (400 Bad Request).
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    const bodyBuf = await request.arrayBuffer();
-    if (bodyBuf.byteLength > 0) {
-      init.body = bodyBuf;
-      const contentType = request.headers.get('content-type');
-      if (contentType) headers.set('content-type', contentType);
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.startsWith('multipart/form-data')) {
+      // Большие загрузки (видео) пересылаем ПОТОКОМ, не буферизуя в память.
+      init.body = request.body;
+      (init as RequestInit & { duplex?: 'half' }).duplex = 'half';
+      headers.set('content-type', contentType);
+    } else {
+      // Прочие тела (JSON и т.п.) — как раньше: пустое тело не отправляем,
+      // иначе Fastify реджектит пустой JSON как 400.
+      const bodyBuf = await request.arrayBuffer();
+      if (bodyBuf.byteLength > 0) {
+        init.body = bodyBuf;
+        if (contentType) headers.set('content-type', contentType);
+      }
     }
   }
 
