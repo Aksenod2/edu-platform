@@ -19,6 +19,12 @@ const API_BASE_URL =
     ? `https://${process.env.RENDER_EXTERNAL_URL}`
     : `http://localhost:${process.env.PORT || 4000}`);
 
+// База для ФАЙЛОВЫХ ссылок — без суффикса /api-proxy. Файлы отдаются по /files
+// напрямую (Caddy: handle /files/* → api), а НЕ через хрупкий /api-proxy (он на
+// проде не доносит /api-proxy/files/... до обработчика → таймаут/404). На проде
+// API_BASE_URL = https://губу.рф/api-proxy — для файлов срезаем хвост /api-proxy.
+const FILE_BASE_URL = API_BASE_URL.replace(/\/api-proxy\/?$/, '');
+
 // Reuse the server JWT secret to sign file download capability links.
 const SIGNING_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 
@@ -268,9 +274,10 @@ export async function uploadStream(
 }
 
 export async function getFileUrl(key: string): Promise<string> {
-  // Returns an absolute, signed, time-limited URL so the browser can fetch the
-  // file without permanent public access (через прокси-роут /files/:key).
-  return `${API_BASE_URL}${signFileUrl(key)}`;
+  // Returns an absolute, signed, time-limited URL. Файл отдаётся по /files на
+  // FILE_BASE_URL (без /api-proxy) — этот путь Caddy шлёт прямо в API, поэтому
+  // ссылка резолвится и в браузере, и из серверных интеграций (sk_-ключ).
+  return `${FILE_BASE_URL}${signFileUrl(key)}`;
 }
 
 // --- Чтение файла (для роута GET /files/*) -----------------------------------
@@ -473,6 +480,22 @@ export async function readFile(key: string, rangeHeader?: string): Promise<ReadF
     if (fromS3) return fromS3;
   }
   return readFromPostgres(key, rangeHeader);
+}
+
+/**
+ * Читает файл целиком как текст (UTF-8) — для inline-отдачи в JSON (напр. текст
+ * транскрипта), чтобы интеграции не зависели от достижимости файлового URL.
+ * Возвращает null, если объекта нет. Тело S3 приходит потоком — собираем целиком.
+ */
+export async function readFileText(key: string): Promise<string | null> {
+  const result = await readFile(key);
+  if (result.kind !== 'ok') return null;
+  if (Buffer.isBuffer(result.body)) return result.body.toString('utf8');
+  const chunks: Buffer[] = [];
+  for await (const chunk of result.body as Readable) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 export { MAX_FILE_SIZE };

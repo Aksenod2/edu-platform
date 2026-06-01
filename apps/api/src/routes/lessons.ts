@@ -3,7 +3,7 @@ import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
-import { uploadFile, getFileUrl, verifyStoredObject, deleteFile } from '../lib/s3.js';
+import { uploadFile, getFileUrl, verifyStoredObject, deleteFile, readFileText } from '../lib/s3.js';
 import {
   createZoomMeeting,
   shouldAutoCreate,
@@ -2148,8 +2148,9 @@ export async function lessonRoutes(app: FastifyInstance) {
     { onRequest: lessonTeacherOrAdmin },
     async (request, reply) => {
       const { id, streamId } = request.params as { id: string; streamId: string };
-      const { format } = request.query as { format?: string };
+      const { format, inline } = request.query as { format?: string; inline?: string };
       const fmt = format === 'vtt' ? 'vtt' : 'txt';
+      const wantInline = inline === 'true' || inline === '1';
 
       const session = await prisma.session.findFirst({
         where: { lessonId: id, streamId },
@@ -2169,6 +2170,18 @@ export async function lessonRoutes(app: FastifyInstance) {
         return reply
           .status(404)
           .send({ error: 'Транскрипт недоступен', status: session.transcriptStatus ?? null });
+      }
+
+      // inline=true — отдаём ТЕКСТ транскрипта прямо в JSON: интеграции по sk_-ключу
+      // получают содержимое за один запрос, без зависимости от достижимости /files.
+      if (wantInline) {
+        const text = await readFileText(key);
+        if (text === null) {
+          return reply
+            .status(404)
+            .send({ error: 'Транскрипт недоступен в хранилище', status: session.transcriptStatus ?? null });
+        }
+        return { format: fmt, status: session.transcriptStatus ?? null, text };
       }
 
       const url = await getFileUrl(key);
