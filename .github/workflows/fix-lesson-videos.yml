@@ -1,0 +1,55 @@
+name: Fix lesson videos
+# Разовый ручной workflow: чинит битые видео уроков (конвертированные из
+# Яндекс.Телемоста), у которых сбит внутренний индекс MP4 — браузер перематывает
+# видео в начало на середине. Запускается ТОЛЬКО вручную (workflow_dispatch).
+#
+# Как пользоваться:
+#   1) Сначала запустить с mode = diagnose (только чтение) — подтвердить причину.
+#   2) Затем mode = fix — пересборка (без потери качества) + замена в S3 с
+#      резервной копией оригинала. Ссылки на видео не меняются.
+#   3) Если для какого-то файла remux не помог — mode = fix-reencode (запасной,
+#      с перекодированием).
+#
+# Логика чинки — в scripts/fix-lesson-videos.sh (выполняется на VPS).
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Режим: diagnose (только чтение) / fix (пересборка) / fix-reencode (перекодирование)'
+        required: true
+        default: 'diagnose'
+        type: choice
+        options:
+          - diagnose
+          - fix
+          - fix-reencode
+      keys:
+        description: 'Ключи файлов через запятую (пусто = уроки 1,2,4 по умолчанию)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: fix-lesson-videos
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run fixer over SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          MODE: ${{ inputs.mode }}
+          KEYS: ${{ inputs.keys }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Скрипт и node-утилиты уже лежат на VPS (доставлены деплоем main).
+          # Запускаем из каталога репозитория на сервере.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" \
+            "set -e; cd /root/edu-platform && bash scripts/fix-lesson-videos.sh '$MODE' '$KEYS'"
