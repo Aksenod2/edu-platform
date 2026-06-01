@@ -264,7 +264,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/sessions/:streamId', desc: 'Снять урок с расписания потока' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/sessions/:streamId/recording/retry', desc: 'Повторить автозагрузку записи Zoom' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/sessions/:streamId/refresh', desc: 'Обновить из Zoom: запись, итоги, транскрипт, посещаемость' },
-  { group: 'Уроки', method: 'GET', path: '/lessons/:id/sessions/:streamId/transcript', desc: 'Транскрипт занятия (vtt|txt) — препод урока/админ' },
+  { group: 'Уроки', method: 'GET', path: '/lessons/:id/sessions/:streamId/transcript', desc: 'Транскрипт занятия. ?format=txt|vtt (по умолч. txt). ?inline=true — вернуть ТЕКСТ прямо в JSON (поле text), без файла (рекомендуется для интеграций). Без inline — поле url на /files/...?exp&sig. Препод урока/админ.' },
 
   // ─── Задания/сдачи ───────────────────────────────────────────────────────
   { group: 'Задания/сдачи', method: 'GET', path: '/assignments', desc: 'Список заданий' },
@@ -456,7 +456,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Интеграции (Zoom)', method: 'POST', path: '/admin/integrations/zoom/test', desc: 'Проверить подключение к Zoom' },
 
   // ─── Файлы ───────────────────────────────────────────────────────────────
-  { group: 'Файлы', method: 'GET', path: '/files/*', desc: 'Скачать файл (по подписи или админским Bearer)' },
+  { group: 'Файлы', method: 'GET', path: '/files/*', desc: 'Скачать файл по подписи (?exp&sig) или админскому Bearer. URL приходят на /files/...?exp&sig (НЕ через /api-proxy) и отдаются за секунды.' },
   { group: 'Файлы', method: 'DELETE', path: '/admin/files', desc: 'Удалить ВСЕ загруженные файлы (сброс данных, необратимо)' },
 
   // ─── API-ключи ───────────────────────────────────────────────────────────
