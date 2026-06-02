@@ -51,7 +51,7 @@ import { parseVideoEmbed } from '@/lib/video-embed';
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
 
 export default function StudentLessonPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const params = useParams();
   const lessonId = params.id as string;
 
@@ -262,7 +262,22 @@ export default function StudentLessonPage() {
                           <div className="text-sm font-medium">{video.title}</div>
                         )}
                         {video.kind === 'file' ? (
-                          <VideoFileFrame src={video.url} label={video.title ?? lesson.title} />
+                          <VideoFileFrame
+                            src={video.url}
+                            label={video.title ?? lesson.title}
+                            // Трекинг прогресса просмотра — только студенту, для нашего
+                            // видеофайла урока, когда есть streamId и videoId. Запись
+                            // занятия (Zoom) и внешние embed не трекаем.
+                            track={
+                              user?.role === 'student' && lesson.streamId
+                                ? {
+                                    lessonId: lesson.id,
+                                    videoId: video.id,
+                                    streamId: lesson.streamId,
+                                  }
+                                : undefined
+                            }
+                          />
                         ) : videoEmbed ? (
                           <VideoEmbedFrame src={videoEmbed} title={video.title ?? lesson.title} />
                         ) : (

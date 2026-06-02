@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { useVideoTracking, type VideoTrackTarget } from '@/components/lessons/use-video-tracking';
 
 // Общие контейнеры плеера для видео урока и записи занятия (DRY): используются
 // на странице урока студента, в блоке расписания админа и т.п.
@@ -12,8 +14,26 @@ import { useState } from 'react';
 // playsInline — чтобы на iOS видео играло встроенно, а не уходило в фуллскрин.
 // onError — если браузер не может проиграть (напр. .mov/HEVC или файл недоступен),
 // показываем понятный текст вместо чёрного экрана.
-export function VideoFileFrame({ src, label }: { src: string; label?: string }) {
+export function VideoFileFrame({
+  src,
+  label,
+  track,
+}: {
+  src: string;
+  label?: string;
+  // Опционально: включает фоновый трекинг прогресса просмотра НАШЕГО видеофайла
+  // урока (лог активности студента). Не передан — поведение плеера не меняется.
+  track?: VideoTrackTarget;
+}) {
   const [failed, setFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const { accessToken } = useAuth();
+
+  useVideoTracking({
+    videoRef,
+    target: track ?? null,
+    accessToken,
+  });
 
   if (failed) {
     return (
@@ -29,6 +49,7 @@ export function VideoFileFrame({ src, label }: { src: string; label?: string }) 
   return (
     <div className="flex max-h-[70vh] items-center justify-center overflow-hidden rounded-lg border bg-muted">
       <video
+        ref={videoRef}
         controls
         playsInline
         preload="metadata"

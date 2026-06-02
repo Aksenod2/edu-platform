@@ -1021,6 +1021,50 @@ export async function deleteLesson(
   });
 }
 
+// ─── Прогресс просмотра видео урока (лог активности студента, Этап A) ────────
+
+// Тело отправки прогресса просмотра НАШЕГО видеофайла урока. intervals — НОВЫЕ
+// реально проигранные куски [start,end] (сек) с прошлой отправки; ended — пометка
+// завершения (событие ended плеера).
+export interface VideoProgressPayload {
+  lessonId: string;
+  videoId: string;
+  streamId: string;
+  positionSec: number;
+  durationSec: number;
+  intervals: [number, number][];
+  ended?: boolean;
+}
+
+// Серверная сводка прогресса по видео (для будущего UI прогресса).
+export interface VideoProgressResult {
+  watchedPercent: number;
+  watchedSec: number;
+  lastPositionSec: number;
+  completed: boolean;
+}
+
+// URL роута прогресса (для keepalive-fetch при уходе со страницы из хука трекинга,
+// где нужен ручной Authorization-заголовок). Тот же base/proxy, что и у request().
+export function videoProgressUrl(lessonId: string, videoId: string): string {
+  return `${API_URL}/lessons/${lessonId}/videos/${videoId}/progress`;
+}
+
+// Отправить накопленный прогресс просмотра видеофайла урока. Фоновая телеметрия —
+// вызывающий код сам решает, как реагировать на ошибку (хук её глотает).
+export async function sendVideoProgress(
+  accessToken: string,
+  payload: VideoProgressPayload,
+): Promise<VideoProgressResult> {
+  const { lessonId, videoId, streamId, positionSec, durationSec, intervals, ended } =
+    payload;
+  return request(`/lessons/${lessonId}/videos/${videoId}/progress`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ streamId, positionSec, durationSec, intervals, ended }),
+  });
+}
+
 // Занятие урока в конкретном потоке (для блока «Расписание» на странице урока).
 export interface LessonSession {
   streamId: string;
