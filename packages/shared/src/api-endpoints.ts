@@ -393,6 +393,12 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     path: '/students/:id/dynamic/entries/:entryId',
     desc: 'Удалить запись ленты динамики ученика (приватно, admin)',
   },
+  {
+    group: 'Ученики',
+    method: 'GET',
+    path: '/students/:id/activity',
+    desc: 'Лог активности ученика: единая лента (посещения, сдачи и проверки ДЗ, просмотры видео). Курсорная пагинация по timestamp (query: limit 1..100, before — ISO-курсор). Приватно, admin.',
+  },
 
   // ─── Программы ───────────────────────────────────────────────────────────
   { group: 'Программы', method: 'GET', path: '/programs', desc: 'Список программ' },
