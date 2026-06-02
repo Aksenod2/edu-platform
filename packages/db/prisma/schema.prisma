@@ -161,6 +161,8 @@ model User {
   updatedDynamics         StudentDynamic[]         @relation("StudentDynamicUpdatedBy")
   dynamicEntries          StudentDynamicEntry[]    @relation("StudentDynamicEntryStudent")
   authoredDynamicEntries  StudentDynamicEntry[]    @relation("StudentDynamicEntryAuthor")
+  // Лог активности студента: прогресс просмотра видео уроков (Этап A).
+  videoViews              VideoView[]
 }
 
 model ApiKey {
@@ -229,6 +231,7 @@ model Stream {
   enrollments   StreamEnrollment[]
   conversations Conversation[]
   charges       Charge[]
+  videoViews    VideoView[]
 
   @@index([ownerId])
   @@index([programId])
@@ -291,7 +294,48 @@ model LessonVideo {
 
   lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
+  videoViews VideoView[]
+
   @@index([lessonId])
+}
+
+// Прогресс просмотра конкретного загруженного видео урока конкретным студентом
+// в контексте конкретного потока (Этап A эпика «Лог активности студента»).
+// Один ряд на тройку (студент, видео, поток) — апсёртится клиентом по биениям плеера.
+//
+// watchedSec — сумма УНИКАЛЬНЫХ просмотренных секунд (по UNION интервалов, без учёта
+//   повторов); watchedPercent = watchedSec / durationSec, 0..100. watchedIntervals —
+//   смёрженные интервалы [[start,end],...] для честного пересчёта при следующих биениях.
+// lastPositionSec / sessionsCount / totalPlayedSec — задел под Уровень 2 («продолжить
+//   с места», аналитика по заходам и суммарному времени с повторами).
+// completedAt — когда впервые достигнут порог «досмотрел» (>=90%). lastWatchedAt —
+//   время последнего прогресса (обновляется приложением при апсёрте; сорт в ленте активности).
+//
+// onDelete: всё Cascade — запись о просмотре теряет смысл без студента/видео/потока.
+model VideoView {
+  id              String    @id @default(uuid())
+  studentId       String
+  lessonVideoId   String
+  streamId        String
+  watchedSec      Int       @default(0)
+  watchedPercent  Int       @default(0)
+  lastPositionSec Int       @default(0)
+  durationSec     Int?
+  watchedIntervals Json     @default("[]")
+  sessionsCount   Int       @default(0)
+  totalPlayedSec  Int       @default(0)
+  completedAt     DateTime?
+  lastWatchedAt   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonVideo LessonVideo @relation(fields: [lessonVideoId], references: [id], onDelete: Cascade)
+  stream      Stream      @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, lessonVideoId, streamId])
+  @@index([studentId, lastWatchedAt])
+  @@index([lessonVideoId, streamId])
 }
 
 model LessonTeacher {
