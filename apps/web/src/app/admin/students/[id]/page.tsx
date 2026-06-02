@@ -19,6 +19,7 @@ import {
 import { cn } from '@platform/ui/lib/utils';
 import { FileLightbox } from '@/components/files/file-lightbox';
 import { StudentDynamicTab } from '@/components/students/student-dynamic-tab';
+import { StudentActivityTab } from '@/components/students/student-activity-tab';
 import { BackButton } from '@/components/back-button';
 
 const THREAD_POLL_INTERVAL_MS = 5000;
@@ -77,7 +78,7 @@ import {
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
 
-type Tab = 'profile' | 'dynamic' | 'assignments' | 'thread';
+type Tab = 'profile' | 'dynamic' | 'activity' | 'assignments' | 'thread';
 
 export default function StudentProfilePage() {
   const { accessToken } = useAuth();
@@ -92,7 +93,10 @@ export default function StudentProfilePage() {
   const tabParam = searchParams.get('tab');
   // По умолчанию открываем «Динамику» (первая вкладка); прочие — по ?tab=.
   const initialTab: Tab =
-    tabParam === 'profile' || tabParam === 'assignments' || tabParam === 'thread'
+    tabParam === 'profile' ||
+    tabParam === 'activity' ||
+    tabParam === 'assignments' ||
+    tabParam === 'thread'
       ? tabParam
       : 'dynamic';
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
@@ -543,6 +547,7 @@ export default function StudentProfilePage() {
             <div className="-m-1.5 overflow-x-auto p-1.5">
               <TabsList>
                 <TabsTrigger value="dynamic">Динамика</TabsTrigger>
+                <TabsTrigger value="activity">Активность</TabsTrigger>
                 <TabsTrigger value="assignments">Задания</TabsTrigger>
                 <TabsTrigger value="thread">Сообщения</TabsTrigger>
                 <TabsTrigger value="profile">Профиль</TabsTrigger>
@@ -825,6 +830,15 @@ export default function StudentProfilePage() {
           {activeTab === 'dynamic' && accessToken && (
             <div className="py-4">
               <StudentDynamicTab accessToken={accessToken} studentId={studentId} />
+            </div>
+          )}
+
+          {/* ── Activity tab ── */}
+          {/* Компонент сам грузит первую страницу при монтировании (ленивая
+              загрузка по активной вкладке), как StudentDynamicTab. */}
+          {activeTab === 'activity' && accessToken && (
+            <div className="py-4">
+              <StudentActivityTab accessToken={accessToken} studentId={studentId} />
             </div>
           )}
 

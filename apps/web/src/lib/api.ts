@@ -2107,6 +2107,50 @@ export async function deleteStudentDynamicEntry(
   });
 }
 
+// Лог активности студента (агрегированная лента событий: посещения, сдачи и
+// проверки ДЗ, просмотры видео) — только для админа. Курсорная пагинация по
+// timestamp (before=nextCursor подгружает следующую страницу).
+
+export type ActivityEventType =
+  | 'attendance'
+  | 'assignment_submitted'
+  | 'assignment_reviewed'
+  | 'video_watched';
+
+export interface ActivityEvent {
+  id: string;
+  type: ActivityEventType;
+  timestamp: string;
+  lessonId: string | null;
+  lessonTitle: string | null;
+  streamId: string | null;
+  streamName: string | null;
+  status?: string;
+  videoId?: string;
+  videoTitle?: string | null;
+  watchedPercent?: number;
+  completed?: boolean;
+}
+
+export interface StudentActivityResponse {
+  items: ActivityEvent[];
+  nextCursor: string | null;
+}
+
+export async function getStudentActivity(
+  accessToken: string,
+  studentId: string,
+  params?: { limit?: number; before?: string },
+): Promise<StudentActivityResponse> {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.before) query.set('before', params.before);
+  const qs = query.toString();
+  return request(`/students/${studentId}/activity${qs ? `?${qs}` : ''}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Threads API
 
 export type ThreadEntryType = 'text' | 'file' | 'audio' | 'link' | 'comment' | 'note';
