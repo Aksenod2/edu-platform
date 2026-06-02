@@ -255,6 +255,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Уроки', method: 'PATCH', path: '/lessons/:id/videos/:videoId', desc: 'Изменить видео урока' },
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/videos/:videoId', desc: 'Удалить видео урока' },
   { group: 'Уроки', method: 'PUT', path: '/lessons/:id/videos/order', desc: 'Переупорядочить видео урока' },
+  { group: 'Уроки', method: 'POST', path: '/lessons/:id/videos/:videoId/progress', desc: 'Записать прогресс просмотра видео урока студентом' },
   { group: 'Уроки', method: 'GET', path: '/lessons/:id/analytics', desc: 'Аналитика сдач по занятию (в потоке)' },
   { group: 'Уроки', method: 'GET', path: '/lessons/:id/attendance', desc: 'Посещаемость занятия (сводка + записи)' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/attendance/resync', desc: 'Забрать посещаемость из Zoom заново' },

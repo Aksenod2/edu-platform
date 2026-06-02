@@ -3,6 +3,7 @@ import { prisma, Prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { notifyMany } from '../lib/notifications.js';
 import { isEnrolled } from '../lib/enrollment.js';
+import { computeProgress, MAX_INPUT_INTERVALS } from '../lib/video-progress.js';
 import {
   uploadFile,
   uploadLargeFile,
@@ -1573,6 +1574,183 @@ export async function lessonRoutes(app: FastifyInstance) {
     await prisma.lessonVideo.delete({ where: { id: videoId } });
 
     return await lessonVideosResponse(id);
+  });
+
+  // POST /lessons/:id/videos/:videoId/progress — приём прогресса просмотра видео
+  // урока студентом (Этап A эпика «Лог активности студента»).
+  //   :id = lessonId, :videoId = lessonVideoId. Вызывающий — ЗАЧИСЛЕННЫЙ в streamId
+  //   студент; studentId = вызывающий (из токена, не из тела).
+  // Контракт зафиксирован (от него зависит фронт): тело { streamId, positionSec,
+  //   durationSec, intervals: [[start,end],...], ended? }; ответ { watchedPercent,
+  //   watchedSec, lastPositionSec, completed }.
+  // Право: достаточно факта зачисления в streamId (роль студента явно не требуем).
+  // Считаем «честные» секунды по UNION интервалов на сервере (computeProgress):
+  //   перемотка назад/повтор не растят watchedSec, перемотка в конец ≠ 100%.
+  app.post('/lessons/:id/videos/:videoId/progress', { onRequest: anyAuth }, async (request, reply) => {
+    const { id, videoId } = request.params as { id: string; videoId: string };
+    const studentId = request.user?.userId;
+    if (!studentId) {
+      return reply.status(401).send({ error: 'Не авторизован' });
+    }
+
+    const body = request.body as {
+      streamId?: unknown;
+      positionSec?: unknown;
+      durationSec?: unknown;
+      intervals?: unknown;
+      ended?: unknown;
+    };
+
+    // ── Валидация тела (ручная — в стиле остальных роутов файла) ───────────────
+    const streamId = typeof body.streamId === 'string' ? body.streamId.trim() : '';
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+    const durationSec = body.durationSec;
+    if (typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec <= 0) {
+      return reply.status(400).send({ error: 'durationSec должен быть числом > 0' });
+    }
+    const positionSecRaw = body.positionSec;
+    if (
+      typeof positionSecRaw !== 'number' ||
+      !Number.isFinite(positionSecRaw) ||
+      positionSecRaw < 0
+    ) {
+      return reply.status(400).send({ error: 'positionSec должен быть числом >= 0' });
+    }
+    if (body.intervals !== undefined && !Array.isArray(body.intervals)) {
+      return reply.status(400).send({ error: 'intervals должен быть массивом пар чисел' });
+    }
+    // Ограничение числа входящих интервалов — защита от раздувания JSON. Лишние
+    // отбрасываем (а не падаем): берём первые MAX_INPUT_INTERVALS.
+    const rawIntervals = Array.isArray(body.intervals)
+      ? (body.intervals as unknown[]).slice(0, MAX_INPUT_INTERVALS)
+      : [];
+    // Позицию плеера клампим к [0, durationSec] (плеер может прислать чуть больше).
+    const lastPositionSec = Math.round(Math.max(0, Math.min(positionSecRaw, durationSec)));
+
+    // ── Проверки существования/доступа ────────────────────────────────────────
+    // Видео должно существовать и принадлежать уроку (:id).
+    const video = await prisma.lessonVideo.findFirst({
+      where: { id: videoId, lessonId: id },
+      select: { id: true, videoKey: true },
+    });
+    if (!video) {
+      return reply.status(404).send({ error: 'Видео не найдено' });
+    }
+    // Отслеживаем только НАШИ файлы (videoKey != null). Внешнее видео (только
+    // videoUrl) не трекается — у плеера ссылки нет «честных» интервалов от нас.
+    if (!video.videoKey) {
+      return reply.status(400).send({ error: 'Внешнее видео не отслеживается' });
+    }
+
+    const stream = await prisma.stream.findUnique({
+      where: { id: streamId },
+      select: { id: true },
+    });
+    if (!stream) {
+      return reply.status(404).send({ error: 'Группа не найдена' });
+    }
+
+    // Зачисление студента в поток — единственное право на запись прогресса.
+    const enrollment = await prisma.streamEnrollment.findUnique({
+      where: { streamId_userId: { streamId, userId: studentId } },
+      select: { id: true },
+    });
+    if (!enrollment) {
+      return reply.status(403).send({ error: 'Вы не зачислены в эту группу' });
+    }
+
+    const durationSecInt = Math.round(durationSec);
+
+    // ── Атомарный апсёрт прогресса (читаем + считаем union + пишем в одной TX) ──
+    // Конкурентные биения не должны терять union: текущие watchedIntervals читаем
+    // и слитые пишем атомарно. При гонке на создании ряда возможна коллизия
+    // уникального индекса (studentId, lessonVideoId, streamId) → один ретрай.
+    const runUpsert = async () => {
+      return prisma.$transaction(async (tx) => {
+        const existing = await tx.videoView.findUnique({
+          where: {
+            studentId_lessonVideoId_streamId: {
+              studentId,
+              lessonVideoId: videoId,
+              streamId,
+            },
+          },
+          select: { id: true, watchedIntervals: true, completedAt: true },
+        });
+
+        // UNION сохранённых + новых интервалов; watchedSec/percent/completed.
+        const progress = computeProgress(
+          existing?.watchedIntervals ?? [],
+          rawIntervals,
+          durationSecInt,
+        );
+
+        // completedAt выставляем при первом достижении порога; не сбрасываем.
+        const alreadyCompleted = existing?.completedAt != null;
+        const completedAt = alreadyCompleted
+          ? existing!.completedAt
+          : progress.completed
+            ? new Date()
+            : null;
+
+        const now = new Date();
+
+        if (existing) {
+          await tx.videoView.update({
+            where: { id: existing.id },
+            data: {
+              watchedSec: progress.watchedSec,
+              watchedPercent: progress.watchedPercent,
+              lastPositionSec,
+              durationSec: durationSecInt,
+              watchedIntervals: progress.mergedIntervals,
+              // totalPlayedSec копит сырое (с повторами) время — задел Ур.2.
+              totalPlayedSec: { increment: progress.rawPlayedSec },
+              lastWatchedAt: now,
+              ...(completedAt && !alreadyCompleted ? { completedAt } : {}),
+            },
+          });
+        } else {
+          await tx.videoView.create({
+            data: {
+              studentId,
+              lessonVideoId: videoId,
+              streamId,
+              watchedSec: progress.watchedSec,
+              watchedPercent: progress.watchedPercent,
+              lastPositionSec,
+              durationSec: durationSecInt,
+              watchedIntervals: progress.mergedIntervals,
+              totalPlayedSec: progress.rawPlayedSec,
+              // Первое создание ряда = первый заход (задел Ур.2).
+              sessionsCount: 1,
+              lastWatchedAt: now,
+              ...(completedAt ? { completedAt } : {}),
+            },
+          });
+        }
+
+        return {
+          watchedPercent: progress.watchedPercent,
+          watchedSec: progress.watchedSec,
+          lastPositionSec,
+          completed: completedAt != null,
+        };
+      });
+    };
+
+    try {
+      return await runUpsert();
+    } catch (err) {
+      // Коллизия уникального индекса при гонке создания ряда — один ретрай
+      // (теперь ряд уже существует → пойдём по ветке update).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return await runUpsert();
+      }
+      throw err;
+    }
   });
 
   // PUT /lessons/:id/videos/order — переупорядочить видео урока (admin).
