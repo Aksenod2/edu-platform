@@ -29,6 +29,7 @@ import {
   submitStudentAssignment,
   getStreams,
   getThread,
+  trackMaterialAccess,
   type StudentAssignment,
   type Stream,
   type ThreadEntry,
@@ -439,6 +440,18 @@ export default function StudentAssignmentsPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 download={m.type === 'file' ? m.name : undefined}
+                                // Файловые материалы качаются → трекаем как 'downloaded'
+                                // (ссылки и задания без урока/потока пропускаем).
+                                onClick={
+                                  m.type === 'file' && m.s3Key && a.lessonId && a.streamId
+                                    ? () =>
+                                        trackMaterialAccess(accessToken!, a.lessonId!, {
+                                          streamId: a.streamId,
+                                          s3Key: m.s3Key!,
+                                          accessType: 'downloaded',
+                                        })
+                                    : undefined
+                                }
                                 className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted border text-primary no-underline text-sm transition-opacity hover:opacity-80"
                               >
                                 {m.type === 'file' ? (

@@ -447,7 +447,21 @@ export default function StudentLessonPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
                 {lesson.materials.map((m) => (
-                  <MaterialRow key={m.s3Key} material={m} />
+                  <MaterialRow
+                    key={m.s3Key}
+                    material={m}
+                    // Трекинг обращений к материалу — только студенту и при streamId
+                    // (так же, как track у VideoFileFrame выше).
+                    track={
+                      user?.role === 'student' && lesson.streamId
+                        ? {
+                            accessToken: accessToken!,
+                            lessonId: lesson.id,
+                            streamId: lesson.streamId,
+                          }
+                        : undefined
+                    }
+                  />
                 ))}
               </CardContent>
             </Card>

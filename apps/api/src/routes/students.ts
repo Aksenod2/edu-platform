@@ -4,12 +4,14 @@ import { requireRole } from '../middleware/auth.js';
 
 // Лента активности ОДНОГО студента (Этап B эпика «Лог активности студента»).
 //
-// Эндпоинт-агрегатор: собирает в единую датированную ленту события из четырёх
+// Эндпоинт-агрегатор: собирает в единую датированную ленту события из шести
 // источников и отдаёт их одной страницей (cursor-пагинация по timestamp DESC):
 //   1) посещаемость занятий          (SessionAttendance → Session)
 //   2) сдача домашки                 (StudentAssignment.submittedAt)
 //   3) проверка домашки              (StudentAssignment.reviewedAt)
 //   4) просмотр видео урока          (VideoView → LessonVideo)
+//   5) просмотр материала            (MaterialAccess.accessType = 'viewed')
+//   6) скачивание материала          (MaterialAccess.accessType = 'downloaded')
 //
 // КРИТИЧНО: карточка студента — зона админа/преподавателя (преподаватель = admin
 // по решению заказчика). Ученик доступа к ленте НЕ имеет → весь роут под admin.
@@ -25,7 +27,9 @@ type ActivityType =
   | 'attendance'
   | 'assignment_submitted'
   | 'assignment_reviewed'
-  | 'video_watched';
+  | 'video_watched'
+  | 'material_viewed'
+  | 'material_downloaded';
 
 interface ActivityEvent {
   id: string;
@@ -40,6 +44,7 @@ interface ActivityEvent {
   videoTitle?: string | null;
   watchedPercent?: number;
   completed?: boolean;
+  materialName?: string;
 }
 
 // Клампим limit в [1..100], дефолт 50. Нечисловое/мусор → дефолт.
@@ -262,10 +267,51 @@ export async function studentsRoutes(app: FastifyInstance) {
       completed: row.completedAt !== null,
     }));
 
+    // ── Материалы: открыл / скачал (accessedAt) ─────────────────────────────────
+    // Журнал append-only: каждое обращение к материалу урока = отдельная строка.
+    // type зависит от accessType ('downloaded' → material_downloaded, иначе viewed).
+    const materialRows = await prisma.materialAccess.findMany({
+      where: {
+        studentId: id,
+        ...(before ? { accessedAt: { lt: before } } : {}),
+      },
+      select: {
+        id: true,
+        lessonId: true,
+        streamId: true,
+        fileName: true,
+        accessType: true,
+        accessedAt: true,
+        lesson: { select: { title: true } },
+        stream: { select: { name: true } },
+      },
+      orderBy: { accessedAt: 'desc' },
+      take: limit,
+    });
+
+    const materialEvents: ActivityEvent[] = materialRows.map((row) => {
+      const type: ActivityType =
+        row.accessType === 'downloaded' ? 'material_downloaded' : 'material_viewed';
+      return {
+        id: `${type}:${row.id}`,
+        type,
+        timestamp: row.accessedAt.toISOString(),
+        lessonId: row.lessonId,
+        lessonTitle: row.lesson?.title ?? null,
+        streamId: row.streamId,
+        streamName: row.stream?.name ?? null,
+        materialName: row.fileName,
+      };
+    });
+
     // Объединяем все источники, сортируем по timestamp DESC, берём первые limit.
-    const merged = [...attendanceEvents, ...submittedEvents, ...reviewedEvents, ...videoEvents].sort(
-      (a, b) => b.timestamp.localeCompare(a.timestamp),
-    );
+    const merged = [
+      ...attendanceEvents,
+      ...submittedEvents,
+      ...reviewedEvents,
+      ...videoEvents,
+      ...materialEvents,
+    ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     const items = merged.slice(0, limit);
 

@@ -1065,6 +1065,27 @@ export async function sendVideoProgress(
   });
 }
 
+export type MaterialAccessType = 'viewed' | 'downloaded';
+
+// Зафиксировать обращение студента к материалу урока (просмотр/скачивание).
+// Фоновая телеметрия: ошибки сети ГЛОТАЕМ — обращение к файлу не должно зависеть
+// от доставки лога. Вешается на onClick соответствующего действия.
+export async function trackMaterialAccess(
+  accessToken: string,
+  lessonId: string,
+  payload: { streamId: string; s3Key: string; accessType: MaterialAccessType },
+): Promise<void> {
+  try {
+    await request(`/lessons/${lessonId}/materials/access`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // no-op: фоновая телеметрия не мешает пользователю.
+  }
+}
+
 // Занятие урока в конкретном потоке (для блока «Расписание» на странице урока).
 export interface LessonSession {
   streamId: string;
@@ -2115,7 +2136,9 @@ export type ActivityEventType =
   | 'attendance'
   | 'assignment_submitted'
   | 'assignment_reviewed'
-  | 'video_watched';
+  | 'video_watched'
+  | 'material_viewed'
+  | 'material_downloaded';
 
 export interface ActivityEvent {
   id: string;
@@ -2130,6 +2153,8 @@ export interface ActivityEvent {
   videoTitle?: string | null;
   watchedPercent?: number;
   completed?: boolean;
+  // Имя файла материала (для событий material_viewed / material_downloaded).
+  materialName?: string;
 }
 
 export interface StudentActivityResponse {

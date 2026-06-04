@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   CheckCircle2,
   ClipboardCheck,
+  Download,
+  Eye,
   FileUp,
   Loader2,
   PlayCircle,
@@ -114,6 +116,24 @@ function describeEvent(event: ActivityEvent): EventView {
           : percent
             ? { label: percent, variant: 'secondary' }
             : undefined,
+      };
+    }
+    case 'material_viewed':
+    case 'material_downloaded': {
+      // Подпись — урок/поток (как у video_watched).
+      const parts = [
+        event.lessonTitle ? `Урок «${event.lessonTitle}»` : null,
+        event.streamName ? `Поток ${event.streamName}` : null,
+      ].filter(Boolean) as string[];
+      const name = event.materialName ?? 'без названия';
+      const viewed = event.type === 'material_viewed';
+      return {
+        icon: viewed ? Eye : Download,
+        iconClass: 'text-foreground',
+        title: viewed
+          ? `Посмотрел материал «${name}»`
+          : `Скачал материал «${name}»`,
+        subtitle: parts.length ? parts.join(' · ') : undefined,
       };
     }
     default:
