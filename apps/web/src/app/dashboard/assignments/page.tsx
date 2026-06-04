@@ -33,7 +33,7 @@ import {
   type Stream,
   type ThreadEntry,
 } from '@/lib/api';
-import { STATUS_LABELS, STATUS_VARIANT, STATUS_ORDER } from '@/lib/assignment-status';
+import { STATUS_LABELS, STATUS_ORDER, type StudentAssignmentStatus } from '@/lib/assignment-status';
 import { useBack } from '@/components/back-button';
 import { FileLightbox } from '@/components/files/file-lightbox';
 import Link from 'next/link';
@@ -50,6 +50,23 @@ function lessonNumber(title?: string | null): number | null {
   if (!title) return null;
   const m = title.match(/урок\s*0*(\d+)/i);
   return m ? parseInt(m[1], 10) : null;
+}
+
+// Цвет статуса (Уровень 2): Принято=зелёный, На проверке=синий, На доработке=янтарный,
+// Назначено=нейтральный. Возвращаем className поверх Badge — tailwind-merge заменит фон
+// варианта. Просрочка показывается отдельным красным бейджем (см. карточку).
+function statusBadgeClass(status: StudentAssignmentStatus): string {
+  switch (status) {
+    case 'reviewed':
+      return 'border-transparent bg-green-600/15 text-green-700 dark:text-green-400';
+    case 'submitted':
+      return 'border-transparent bg-blue-600/15 text-blue-700 dark:text-blue-400';
+    case 'needs_revision':
+      return 'border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-500';
+    case 'assigned':
+    default:
+      return 'border-transparent bg-muted text-muted-foreground';
+  }
 }
 
 export default function StudentAssignmentsPage() {
@@ -155,11 +172,10 @@ export default function StudentAssignmentsPage() {
     }
   };
 
-  // Сортировка по умолчанию: по номеру урока по возрастанию (01→06). Уроки без
-  // распознанного номера (индивидуальные/без урока) — в конец. Тай-брейк: группа,
-  // затем название задания — порядок детерминирован.
-  const sortedAssignments = useMemo(() => {
-    return [...assignments].sort((x, y) => {
+  // Группировка (Уровень 2): по группе/программе → внутри по номеру урока (01→06).
+  // Уроки без распознанного номера — в конец группы. Группы упорядочены по названию.
+  const groups = useMemo(() => {
+    const sorted = [...assignments].sort((x, y) => {
       const nx = lessonNumber(x.assignment?.lesson?.title);
       const ny = lessonNumber(y.assignment?.lesson?.title);
       if (nx !== ny) {
@@ -167,12 +183,31 @@ export default function StudentAssignmentsPage() {
         if (ny == null) return -1;
         return nx - ny;
       }
-      const sx = x.assignment?.stream?.name ?? '';
-      const sy = y.assignment?.stream?.name ?? '';
-      if (sx !== sy) return sx.localeCompare(sy, 'ru');
       return (x.assignment?.title ?? '').localeCompare(y.assignment?.title ?? '', 'ru');
     });
+    const map = new Map<string, { key: string; name: string; items: StudentAssignment[] }>();
+    for (const sa of sorted) {
+      const key = sa.assignment?.stream?.id ?? 'none';
+      const name = sa.assignment?.stream?.name ?? 'Без группы';
+      const g = map.get(key) ?? { key, name, items: [] };
+      g.items.push(sa);
+      map.set(key, g);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }, [assignments]);
+
+  // «Сейчас» — первое незакрытое задание (Назначено/На доработке) в каждой группе по
+  // порядку уроков: подсказка «что делать дальше» в рамках программы.
+  const currentIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of groups) {
+      const next = g.items.find(
+        (sa) => sa.status === 'assigned' || sa.status === 'needs_revision',
+      );
+      if (next) set.add(next.id);
+    }
+    return set;
+  }, [groups]);
 
   return (
     <>
@@ -269,11 +304,21 @@ export default function StudentAssignmentsPage() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {sortedAssignments.map((sa) => {
+          <div className="flex flex-col gap-8">
+            {groups.map((group) => (
+              <section key={group.key} className="flex flex-col gap-2">
+                {/* Заголовок-секция группы/программы (Уровень 2). */}
+                <h2 className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {group.name}
+                  <span className="ml-2 normal-case tracking-normal text-muted-foreground/60">
+                    {group.items.length}
+                  </span>
+                </h2>
+                {group.items.map((sa) => {
               const a = sa.assignment;
               const lessonNo = lessonNumber(a?.lesson?.title);
               const isExpanded = expandedId === sa.id;
+              const isCurrent = currentIds.has(sa.id);
               const isOverdue =
                 a?.dueDate &&
                 new Date(a.dueDate) < new Date() &&
@@ -309,17 +354,27 @@ export default function StudentAssignmentsPage() {
                         {a?.title}
                       </div>
                       <div className="flex gap-2 items-center flex-wrap">
-                        <Badge variant={STATUS_VARIANT[sa.status] ?? 'default'}>
+                        {/* Статус — главный сигнал, цветом (Уровень 2). Шумные бейджи
+                            «Длинное»/«Индивидуальное» убраны; группа — в заголовке секции. */}
+                        <Badge variant="secondary" className={statusBadgeClass(sa.status)}>
                           {STATUS_LABELS[sa.status]}
                         </Badge>
-                        {a?.type && (
-                          <Badge variant="outline">{TYPE_LABELS[a.type] ?? a.type}</Badge>
-                        )}
-                        {a && !a.groupId && <Badge variant="secondary">Индивидуальное</Badge>}
-                        {a?.stream && (
-                          <span className="text-xs text-muted-foreground">
-                            {a.stream.name}
-                          </span>
+                        {isOverdue ? (
+                          <Badge
+                            variant="secondary"
+                            className="border-transparent bg-destructive/15 text-destructive"
+                          >
+                            Просрочено
+                          </Badge>
+                        ) : (
+                          isCurrent && (
+                            <Badge
+                              variant="secondary"
+                              className="border-transparent bg-primary/15 text-primary"
+                            >
+                              Сейчас
+                            </Badge>
+                          )
                         )}
                         {a?.lesson && (
                           <span className="text-xs text-muted-foreground">
@@ -563,7 +618,9 @@ export default function StudentAssignmentsPage() {
                   )}
                 </div>
               );
-            })}
+                })}
+              </section>
+            ))}
           </div>
         )}
       </div>
