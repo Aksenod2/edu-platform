@@ -5,15 +5,16 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 
 // DB-free: мокаем prisma — только методы, которые трогает агрегатор ленты активности.
 // Источники: sessionAttendance.findMany, studentAssignment.findMany (×2: submitted/
-// reviewed), videoView.findMany. Эти запросы выполняются последовательно в порядке
-// исходника, поэтому studentAssignment.findMany управляем через mockResolvedValueOnce
-// в порядке вызовов (1-й = submitted, 2-й = reviewed).
+// reviewed), videoView.findMany, materialAccess.findMany. Эти запросы выполняются
+// последовательно в порядке исходника, поэтому studentAssignment.findMany управляем
+// через mockResolvedValueOnce в порядке вызовов (1-й = submitted, 2-й = reviewed).
 vi.mock('@platform/db', () => ({
   prisma: {
     user: { findUnique: vi.fn() },
     sessionAttendance: { findMany: vi.fn() },
     studentAssignment: { findMany: vi.fn() },
     videoView: { findMany: vi.fn() },
+    materialAccess: { findMany: vi.fn() },
   },
 }));
 
@@ -110,11 +111,34 @@ function videoRow(opts: {
   };
 }
 
+function materialRow(opts: {
+  id: string;
+  accessedAt: Date;
+  accessType: 'viewed' | 'downloaded';
+  fileName?: string;
+  lessonId?: string;
+  streamId?: string;
+  lessonTitle?: string;
+  streamName?: string;
+}) {
+  return {
+    id: opts.id,
+    lessonId: opts.lessonId ?? 'lesson-d',
+    streamId: opts.streamId ?? 'stream-d',
+    fileName: opts.fileName ?? 'материал.pdf',
+    accessType: opts.accessType,
+    accessedAt: opts.accessedAt,
+    lesson: { title: opts.lessonTitle ?? 'Урок D' },
+    stream: { name: opts.streamName ?? 'Поток D' },
+  };
+}
+
 // Хелпер: задать пустые ответы по всем источникам (по умолчанию).
 function mockEmptySources() {
   db.sessionAttendance.findMany.mockResolvedValue([]);
   db.studentAssignment.findMany.mockResolvedValue([]);
   db.videoView.findMany.mockResolvedValue([]);
+  db.materialAccess.findMany.mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -199,6 +223,7 @@ describe('GET /students/:id/activity — happy path', () => {
         completedAt: new Date('2026-05-02T00:00:00Z'),
       }),
     ]);
+    db.materialAccess.findMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -286,6 +311,7 @@ describe('GET /students/:id/activity — дедуп посещаемости', (
     ]);
     db.studentAssignment.findMany.mockResolvedValue([]);
     db.videoView.findMany.mockResolvedValueOnce([]);
+    db.materialAccess.findMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -314,6 +340,7 @@ describe('GET /students/:id/activity — дедуп посещаемости', (
     ]);
     db.studentAssignment.findMany.mockResolvedValue([]);
     db.videoView.findMany.mockResolvedValueOnce([]);
+    db.materialAccess.findMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res = await app.inject({
@@ -344,6 +371,7 @@ describe('GET /students/:id/activity — пагинация', () => {
     db.studentAssignment.findMany.mockResolvedValue([]);
     // Источник видео сам применяет take:limit + сортировку DESC → отдаём первые 2.
     db.videoView.findMany.mockResolvedValueOnce(allVideos.slice(0, 2));
+    db.materialAccess.findMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const res1 = await app.inject({
@@ -364,6 +392,7 @@ describe('GET /students/:id/activity — пагинация', () => {
     db.sessionAttendance.findMany.mockResolvedValueOnce([]);
     db.studentAssignment.findMany.mockResolvedValue([]);
     db.videoView.findMany.mockResolvedValueOnce(allVideos.slice(2, 4));
+    db.materialAccess.findMany.mockResolvedValueOnce([]);
 
     const res2 = await app.inject({
       method: 'GET',
@@ -403,5 +432,139 @@ describe('GET /students/:id/activity — пагинация', () => {
     expect(res.statusCode).toBe(200);
     // Видео-источник берёт take:limit — после клампа limit=100.
     expect(db.videoView.findMany.mock.calls[0][0].take).toBe(100);
+  });
+});
+
+describe('GET /students/:id/activity — материалы (MaterialAccess)', () => {
+  it('200 — обращения к материалам попадают в ленту с правильными type/materialName/lessonTitle/streamName', async () => {
+    mockStudentExists();
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+    db.studentAssignment.findMany.mockResolvedValue([]);
+    db.videoView.findMany.mockResolvedValueOnce([]);
+    db.materialAccess.findMany.mockResolvedValueOnce([
+      materialRow({
+        id: 'ma-1',
+        accessedAt: new Date('2026-05-10T00:00:00Z'),
+        accessType: 'downloaded',
+        fileName: 'конспект.pdf',
+        lessonTitle: 'Урок D',
+        streamName: 'Поток D',
+      }),
+      materialRow({
+        id: 'ma-2',
+        accessedAt: new Date('2026-05-09T00:00:00Z'),
+        accessType: 'viewed',
+        fileName: 'слайды.pptx',
+      }),
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/students/${STUDENT_ID}/activity`,
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(2);
+
+    const downloaded = body.items.find((e: { type: string }) => e.type === 'material_downloaded');
+    expect(downloaded).toMatchObject({
+      id: 'material_downloaded:ma-1',
+      type: 'material_downloaded',
+      materialName: 'конспект.pdf',
+      lessonId: 'lesson-d',
+      lessonTitle: 'Урок D',
+      streamId: 'stream-d',
+      streamName: 'Поток D',
+      timestamp: '2026-05-10T00:00:00.000Z',
+    });
+
+    const viewed = body.items.find((e: { type: string }) => e.type === 'material_viewed');
+    expect(viewed).toMatchObject({
+      id: 'material_viewed:ma-2',
+      type: 'material_viewed',
+      materialName: 'слайды.pptx',
+    });
+  });
+
+  it('200 — материалы корректно сортируются вперемешку с другими событиями по времени', async () => {
+    mockStudentExists();
+    db.sessionAttendance.findMany.mockResolvedValueOnce([
+      attendanceRow({
+        sessionId: 'sess-1',
+        source: 'manual',
+        status: 'present',
+        date: new Date('2026-05-01T00:00:00Z'),
+      }),
+    ]);
+    db.studentAssignment.findMany.mockResolvedValue([]);
+    db.videoView.findMany.mockResolvedValueOnce([
+      videoRow({ id: 'vv-1', lastWatchedAt: new Date('2026-05-03T00:00:00Z') }),
+    ]);
+    db.materialAccess.findMany.mockResolvedValueOnce([
+      materialRow({ id: 'ma-1', accessedAt: new Date('2026-05-04T00:00:00Z'), accessType: 'viewed' }),
+      materialRow({ id: 'ma-2', accessedAt: new Date('2026-05-02T00:00:00Z'), accessType: 'downloaded' }),
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/students/${STUDENT_ID}/activity`,
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const types = res.json().items.map((e: { type: string }) => e.type);
+    // material(05-04) > video(05-03) > material(05-02) > attendance(05-01).
+    expect(types).toEqual(['material_viewed', 'video_watched', 'material_downloaded', 'attendance']);
+  });
+
+  it('200 — before-курсор проброшен в запрос materialAccess (accessedAt < before)', async () => {
+    mockStudentExists();
+    mockEmptySources();
+
+    const before = '2026-05-03T00:00:00.000Z';
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/students/${STUDENT_ID}/activity?limit=2&before=${encodeURIComponent(before)}`,
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const where = db.materialAccess.findMany.mock.calls[0][0].where;
+    expect(where.studentId).toBe(STUDENT_ID);
+    expect(where.accessedAt).toEqual({ lt: new Date(before) });
+    // take ограничен limit (как у остальных источников).
+    expect(db.materialAccess.findMany.mock.calls[0][0].take).toBe(2);
+  });
+
+  it('200 — материалы участвуют в курсор-пагинации (nextCursor по последнему событию)', async () => {
+    mockStudentExists();
+    db.sessionAttendance.findMany.mockResolvedValueOnce([]);
+    db.studentAssignment.findMany.mockResolvedValue([]);
+    db.videoView.findMany.mockResolvedValueOnce([]);
+    db.materialAccess.findMany.mockResolvedValueOnce([
+      materialRow({ id: 'ma-1', accessedAt: new Date('2026-05-04T00:00:00Z'), accessType: 'viewed' }),
+      materialRow({ id: 'ma-2', accessedAt: new Date('2026-05-03T00:00:00Z'), accessType: 'viewed' }),
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/students/${STUDENT_ID}/activity?limit=2`,
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items.map((e: { id: string }) => e.id)).toEqual([
+      'material_viewed:ma-1',
+      'material_viewed:ma-2',
+    ]);
+    // Ровно limit → nextCursor = timestamp последнего.
+    expect(body.nextCursor).toBe('2026-05-03T00:00:00.000Z');
   });
 });

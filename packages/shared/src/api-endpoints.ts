@@ -256,6 +256,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Уроки', method: 'DELETE', path: '/lessons/:id/videos/:videoId', desc: 'Удалить видео урока' },
   { group: 'Уроки', method: 'PUT', path: '/lessons/:id/videos/order', desc: 'Переупорядочить видео урока' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/videos/:videoId/progress', desc: 'Записать прогресс просмотра видео урока студентом' },
+  { group: 'Уроки', method: 'POST', path: '/lessons/:id/materials/access', desc: 'Зафиксировать обращение студента к материалу урока (просмотр/скачивание)' },
   { group: 'Уроки', method: 'GET', path: '/lessons/:id/analytics', desc: 'Аналитика сдач по занятию (в потоке)' },
   { group: 'Уроки', method: 'GET', path: '/lessons/:id/attendance', desc: 'Посещаемость занятия (сводка + записи)' },
   { group: 'Уроки', method: 'POST', path: '/lessons/:id/attendance/resync', desc: 'Забрать посещаемость из Zoom заново' },
@@ -397,7 +398,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     group: 'Ученики',
     method: 'GET',
     path: '/students/:id/activity',
-    desc: 'Лог активности ученика: единая лента (посещения, сдачи и проверки ДЗ, просмотры видео). Курсорная пагинация по timestamp (query: limit 1..100, before — ISO-курсор). Приватно, admin.',
+    desc: 'Лог активности ученика: единая лента (посещения, сдачи и проверки ДЗ, просмотры видео, обращения к материалам). Курсорная пагинация по timestamp (query: limit 1..100, before — ISO-курсор). Приватно, admin.',
   },
 
   // ─── Программы ───────────────────────────────────────────────────────────

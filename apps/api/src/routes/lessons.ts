@@ -1753,6 +1753,90 @@ export async function lessonRoutes(app: FastifyInstance) {
     }
   });
 
+  // POST /lessons/:id/materials/access — приём события обращения студента к
+  // материалу урока (эпик «Лог активности студента»).
+  //   :id = lessonId. Вызывающий — ЗАЧИСЛЕННЫЙ в streamId студент; studentId =
+  //   вызывающий (из токена, не из тела). Журнал append-only: каждое обращение =
+  //   отдельная строка (без upsert/дедупа).
+  // Контракт тела: { streamId, s3Key, accessType: 'viewed' | 'downloaded' }.
+  // Право: достаточно факта зачисления в streamId (роль студента явно не требуем) —
+  //   ровно как у POST /lessons/:id/videos/:videoId/progress.
+  app.post('/lessons/:id/materials/access', { onRequest: anyAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const studentId = request.user?.userId;
+    if (!studentId) {
+      return reply.status(401).send({ error: 'Не авторизован' });
+    }
+
+    const body = request.body as {
+      streamId?: unknown;
+      s3Key?: unknown;
+      accessType?: unknown;
+    };
+
+    // ── Валидация тела (ручная — в стиле video-прогресс роута) ──────────────────
+    if (body.accessType !== 'viewed' && body.accessType !== 'downloaded') {
+      return reply.status(400).send({ error: "accessType должен быть 'viewed' или 'downloaded'" });
+    }
+    const accessType = body.accessType;
+    const streamId = typeof body.streamId === 'string' ? body.streamId.trim() : '';
+    if (!streamId) {
+      return reply.status(400).send({ error: 'streamId обязателен' });
+    }
+    const s3Key = typeof body.s3Key === 'string' ? body.s3Key.trim() : '';
+    if (!s3Key) {
+      return reply.status(400).send({ error: 's3Key обязателен' });
+    }
+
+    // ── Проверки существования/принадлежности материала уроку ───────────────────
+    const lesson = await prisma.lesson.findUnique({
+      where: { id },
+      select: { id: true, materials: true, assignmentMaterials: true },
+    });
+    if (!lesson) {
+      return reply.status(404).send({ error: 'Урок не найден' });
+    }
+
+    // s3Key должен принадлежать этому уроку: ищем среди materials[].s3Key (имя в
+    // .fileName) ИЛИ среди assignmentMaterials[].s3Key (имя в .name). Записи без
+    // s3Key (assignmentMaterials type:'url') пропускаем. fileName — снимок имени
+    // из найденного дескриптора.
+    const lessonMaterials = sanitizeLessonMaterials(lesson.materials);
+    const foundMaterial = lessonMaterials.find((m) => m.s3Key === s3Key);
+
+    let fileName: string | null = foundMaterial ? foundMaterial.fileName : null;
+    if (fileName === null && Array.isArray(lesson.assignmentMaterials)) {
+      for (const raw of lesson.assignmentMaterials as unknown[]) {
+        if (!raw || typeof raw !== 'object') continue;
+        const m = raw as Record<string, unknown>;
+        if (typeof m.s3Key === 'string' && m.s3Key === s3Key) {
+          fileName = typeof m.name === 'string' ? m.name : '';
+          break;
+        }
+      }
+    }
+
+    if (fileName === null) {
+      return reply.status(404).send({ error: 'Материал не найден' });
+    }
+
+    // Зачисление студента в поток — единственное право на запись события.
+    const enrollment = await prisma.streamEnrollment.findUnique({
+      where: { streamId_userId: { streamId, userId: studentId } },
+      select: { id: true },
+    });
+    if (!enrollment) {
+      return reply.status(403).send({ error: 'Вы не зачислены в эту группу' });
+    }
+
+    // Append-only: просто создаём строку (accessedAt дефолтится).
+    await prisma.materialAccess.create({
+      data: { studentId, lessonId: id, streamId, s3Key, fileName, accessType },
+    });
+
+    return { ok: true };
+  });
+
   // PUT /lessons/:id/videos/order — переупорядочить видео урока (admin).
   // orderedIds — желаемый порядок; sortOrder = индекс. Чужие id игнорируем.
   app.put('/lessons/:id/videos/order', { onRequest: adminOnly }, async (request, reply) => {

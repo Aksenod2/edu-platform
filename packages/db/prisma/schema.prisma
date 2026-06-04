@@ -163,6 +163,8 @@ model User {
   authoredDynamicEntries  StudentDynamicEntry[]    @relation("StudentDynamicEntryAuthor")
   // Лог активности студента: прогресс просмотра видео уроков (Этап A).
   videoViews              VideoView[]
+  // Лог активности студента: обращения к материалам урока (просмотр/скачивание).
+  materialAccesses        MaterialAccess[]
 }
 
 model ApiKey {
@@ -195,24 +197,24 @@ model RefreshToken {
 }
 
 model Stream {
-  id          String       @id @default(uuid())
-  name        String
-  status      StreamStatus @default(active)
-  ownerId     String?
-  programId   String?
+  id                  String            @id @default(uuid())
+  name                String
+  status              StreamStatus      @default(active)
+  ownerId             String?
+  programId           String?
   // Публичный токен постоянной инвайт-ссылки вступления в поток (одна ссылка на поток).
   // null = ссылка ещё не сгенерирована. НЕ путать с User.inviteToken — это другой механизм.
-  joinToken   String?      @unique
+  joinToken           String?           @unique
   // Когда токен сгенерирован/перевыпущен (для UI и аудита).
-  joinTokenAt DateTime?
+  joinTokenAt         DateTime?
   // Внешняя ссылка на оплату группы (платёжная страница банка/сервиса), которую
   // админ вставляет вручную. null = ссылка не задана. Это просто внешний URL —
   // система НЕ отслеживает факт оплаты по нему (баланс/долг админ отмечает вручную).
-  paymentUrl  String?
+  paymentUrl          String?
   // Платёжный план группы: цена за участие в копейках. null = план не задан
   // (студенты не начисляются автоматически). Эпик «Оплата и баланс».
   // Смысл — РАЗОВАЯ цена (billingType = one_time).
-  priceKopecks Int?
+  priceKopecks        Int?
   // Тип биллинга группы: one_time (разовая, priceKopecks) либо monthly (ежемесячное
   // авто-списание, monthlyPriceKopecks в день billingDayOfMonth). Эпик
   // «Авто-списание за менторские группы».
@@ -222,16 +224,17 @@ model Stream {
   // День месяца для авто-списания (1–28; значения 29–31 cron клампит к последнему дню
   // месяца — в БД хранится как есть, валидация на стороне приложения).
   billingDayOfMonth   Int?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  owner         User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  program       Program?           @relation(fields: [programId], references: [id], onDelete: SetNull)
-  sessions      Session[]
-  enrollments   StreamEnrollment[]
-  conversations Conversation[]
-  charges       Charge[]
-  videoViews    VideoView[]
+  owner            User?              @relation("StreamOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  program          Program?           @relation(fields: [programId], references: [id], onDelete: SetNull)
+  sessions         Session[]
+  enrollments      StreamEnrollment[]
+  conversations    Conversation[]
+  charges          Charge[]
+  videoViews       VideoView[]
+  materialAccesses MaterialAccess[]
 
   @@index([ownerId])
   @@index([programId])
@@ -275,6 +278,7 @@ model Lesson {
   sessions            Session[]
   conversationEntries ConversationEntry[]
   videos              LessonVideo[]
+  materialAccesses    MaterialAccess[]
 }
 
 // Видеозапись урока. У одного урока может быть несколько видео (части записи или
@@ -313,21 +317,21 @@ model LessonVideo {
 //
 // onDelete: всё Cascade — запись о просмотре теряет смысл без студента/видео/потока.
 model VideoView {
-  id              String    @id @default(uuid())
-  studentId       String
-  lessonVideoId   String
-  streamId        String
-  watchedSec      Int       @default(0)
-  watchedPercent  Int       @default(0)
-  lastPositionSec Int       @default(0)
-  durationSec     Int?
-  watchedIntervals Json     @default("[]")
-  sessionsCount   Int       @default(0)
-  totalPlayedSec  Int       @default(0)
-  completedAt     DateTime?
-  lastWatchedAt   DateTime  @default(now())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  studentId        String
+  lessonVideoId    String
+  streamId         String
+  watchedSec       Int       @default(0)
+  watchedPercent   Int       @default(0)
+  lastPositionSec  Int       @default(0)
+  durationSec      Int?
+  watchedIntervals Json      @default("[]")
+  sessionsCount    Int       @default(0)
+  totalPlayedSec   Int       @default(0)
+  completedAt      DateTime?
+  lastWatchedAt    DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   lessonVideo LessonVideo @relation(fields: [lessonVideoId], references: [id], onDelete: Cascade)
@@ -336,6 +340,41 @@ model VideoView {
   @@unique([studentId, lessonVideoId, streamId])
   @@index([studentId, lastWatchedAt])
   @@index([lessonVideoId, streamId])
+}
+
+// Журнал обращений студента к материалам урока (просмотр/скачивание) в контексте
+// потока — append-only лента активности (Этап A эпика «Лог активности студента»).
+// В отличие от VideoView это НЕ агрегат, а журнал: каждое обращение = отдельная
+// строка, @@unique НЕТ намеренно (так решил заказчик) — повторные просмотры/скачивания
+// одного файла плодят новые записи, по ним строится хронология действий.
+//
+//   s3Key      — ключ файла-материала в FileStorage/S3 (материалы урока хранятся в
+//                Lesson.materials как JSON и могут меняться — поэтому ссылаемся на ключ);
+//   fileName   — СНИМОК имени файла на момент обращения (для отображения в ленте, даже
+//                если материал позже переименован/удалён из Lesson.materials);
+//   accessType — тип обращения: 'viewed' | 'downloaded' (строкой, без enum — по конвенции
+//                проекта, ср. VideoView и SessionAttendance.source/status);
+//   accessedAt — время обращения, по нему сортировка в ленте активности.
+//
+// onDelete: studentId/lessonId/streamId — все Cascade: запись об обращении не имеет
+//   смысла без студента, урока или потока, поэтому удаляется вместе с любым из них.
+model MaterialAccess {
+  id         String   @id @default(uuid())
+  studentId  String
+  lessonId   String
+  streamId   String
+  s3Key      String
+  fileName   String
+  accessType String // 'viewed' | 'downloaded'
+  accessedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lesson  Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  stream  Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, accessedAt])
+  @@index([lessonId, streamId])
 }
 
 model LessonTeacher {
@@ -406,11 +445,11 @@ model Session {
   summarySource   String? // источник summary: 'zoom_ai' | 'manual'
 
   // Итоги + Транскрипт занятия (Ф1.2 + Ф2.6). Все поля nullable — фича аддитивна.
-  summaryStatus       String?   // статус итогов: none | pending | processing | ready | failed (строкой, без enum)
-  transcriptStatus    String?   // статус транскрипта: none | pending | processing | ready | failed
-  transcriptVttKey    String?   // ключ S3 для сырого .vtt транскрипта
-  transcriptTxtKey    String?   // ключ S3 для очищенного .txt транскрипта
-  transcriptError     String?   // текст ошибки забора транскрипта (для препода/админа)
+  summaryStatus         String? // статус итогов: none | pending | processing | ready | failed (строкой, без enum)
+  transcriptStatus      String? // статус транскрипта: none | pending | processing | ready | failed
+  transcriptVttKey      String? // ключ S3 для сырого .vtt транскрипта
+  transcriptTxtKey      String? // ключ S3 для очищенного .txt транскрипта
+  transcriptError       String? // текст ошибки забора транскрипта (для препода/админа)
   transcriptRequestedAt DateTime? // когда запросили транскрипт (для увеличенного таймаута до failed — приходит позже записи)
   recordingRequestedAt  DateTime? // когда запись запрошена/ожидается (ставится на meeting.ended) — для таймаута «формируется → недоступно»
   summaryRequestedAt    DateTime? // когда итоги запрошены/ожидаются (на meeting.ended) — для таймаута состояния итогов
@@ -446,14 +485,14 @@ model Session {
 // (сопоставленный), и ручной ряд — это допустимо; финальный статус занятия выводит
 // приложение (manual имеет приоритет над zoom_report).
 model SessionAttendance {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   sessionId String
   // Сопоставленный студент. null = несопоставленный zoom-гость (нет userId по email).
   userId    String?
   source    String // 'zoom_report' | 'manual'
-  status    String   @default("present") // 'present' | 'absent'
+  status    String  @default("present") // 'present' | 'absent'
   // ряд хоста встречи (преподаватель), не студент-гость — не сопоставляется и не считается гостем
-  isHost    Boolean  @default(false)
+  isHost    Boolean @default(false)
 
   // Данные из Zoom report participants API (все nullable).
   zoomParticipantId String? // participant id Zoom (для дедупа авто-забора)
