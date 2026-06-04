@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Loader2, ChevronDown, ChevronLeft, X, FileText, ExternalLink, MessageCircle, ClipboardList } from 'lucide-react';
@@ -42,6 +42,15 @@ const TYPE_LABELS: Record<string, string> = {
   short: 'Короткое',
   long: 'Длинное',
 };
+
+// Номер урока вытаскиваем из заголовка урока («Урок 01 — …» → 1). Числового поля
+// порядка в API заданий нет, а нумерация в названии — ровно тот ориентир, по которому
+// студент ищет урок. Нет совпадения (напр. индивидуальное задание без урока) → null.
+function lessonNumber(title?: string | null): number | null {
+  if (!title) return null;
+  const m = title.match(/урок\s*0*(\d+)/i);
+  return m ? parseInt(m[1], 10) : null;
+}
 
 export default function StudentAssignmentsPage() {
   const { user, accessToken } = useAuth();
@@ -146,6 +155,25 @@ export default function StudentAssignmentsPage() {
     }
   };
 
+  // Сортировка по умолчанию: по номеру урока по возрастанию (01→06). Уроки без
+  // распознанного номера (индивидуальные/без урока) — в конец. Тай-брейк: группа,
+  // затем название задания — порядок детерминирован.
+  const sortedAssignments = useMemo(() => {
+    return [...assignments].sort((x, y) => {
+      const nx = lessonNumber(x.assignment?.lesson?.title);
+      const ny = lessonNumber(y.assignment?.lesson?.title);
+      if (nx !== ny) {
+        if (nx == null) return 1;
+        if (ny == null) return -1;
+        return nx - ny;
+      }
+      const sx = x.assignment?.stream?.name ?? '';
+      const sy = y.assignment?.stream?.name ?? '';
+      if (sx !== sy) return sx.localeCompare(sy, 'ru');
+      return (x.assignment?.title ?? '').localeCompare(y.assignment?.title ?? '', 'ru');
+    });
+  }, [assignments]);
+
   return (
     <>
       <div className="max-w-3xl">
@@ -242,8 +270,9 @@ export default function StudentAssignmentsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {assignments.map((sa) => {
+            {sortedAssignments.map((sa) => {
               const a = sa.assignment;
+              const lessonNo = lessonNumber(a?.lesson?.title);
               const isExpanded = expandedId === sa.id;
               const isOverdue =
                 a?.dueDate &&
@@ -265,6 +294,16 @@ export default function StudentAssignmentsPage() {
                       isExpanded ? 'bg-muted' : 'bg-transparent'
                     }`}
                   >
+                    {/* Якорь карточки — номер урока (01→06). Сортировка идёт по нему,
+                        поэтому он вынесен влево крупным, а не мелкой сноской внизу. */}
+                    <div className="shrink-0 self-start flex flex-col items-center justify-center rounded-md border bg-muted px-2.5 py-1.5 min-w-[3rem]">
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">
+                        Урок
+                      </span>
+                      <span className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-foreground">
+                        {lessonNo != null ? String(lessonNo).padStart(2, '0') : '—'}
+                      </span>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-base text-foreground overflow-hidden text-ellipsis whitespace-nowrap mb-2">
                         {a?.title}
@@ -284,7 +323,7 @@ export default function StudentAssignmentsPage() {
                         )}
                         {a?.lesson && (
                           <span className="text-xs text-muted-foreground">
-                            Урок: {a.lesson.title}
+                            {a.lesson.title}
                           </span>
                         )}
                       </div>
