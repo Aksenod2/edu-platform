@@ -44,6 +44,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MaterialRow } from '@/components/material-row';
+import { MarkdownContent } from '@/components/markdown/markdown-content';
 import { useAuth } from '@/lib/auth-context';
 import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
@@ -317,9 +318,7 @@ export function LessonView({
             <CardTitle>Краткое описание</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
-              {lesson.summary}
-            </p>
+            <MarkdownContent content={lesson.summary} />
           </CardContent>
         </Card>
       )}
@@ -334,9 +333,7 @@ export function LessonView({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
-              {lesson.notes}
-            </p>
+            <MarkdownContent content={lesson.notes} />
           </CardContent>
         </Card>
       )}
@@ -373,16 +370,12 @@ export function LessonView({
               </Badge>
             </div>
             {lesson.assignmentDescription && (
-              <p className="whitespace-pre-wrap text-muted-foreground">
-                {lesson.assignmentDescription}
-              </p>
+              <MarkdownContent content={lesson.assignmentDescription} />
             )}
             {lesson.assignmentCriteria && (
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-muted-foreground">Критерии оценки</span>
-                <p className="whitespace-pre-wrap text-muted-foreground">
-                  {lesson.assignmentCriteria}
-                </p>
+                <MarkdownContent content={lesson.assignmentCriteria} />
               </div>
             )}
             {lesson.assignmentTags && lesson.assignmentTags.length > 0 && (
