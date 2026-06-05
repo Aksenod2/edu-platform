@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -55,6 +55,14 @@ export default function StudentLessonPage() {
   const params = useParams();
   const lessonId = params.id as string;
 
+  // Актуальный токен держим в ref и используем его внутри загрузки урока, но НЕ
+  // перезапускаем загрузку при «тихом» обновлении токена (авто-refresh на 401
+  // примерно каждые 15 мин — TTL access-токена). Иначе getLesson отдавал бы
+  // ЗАНОВО подписанные ссылки на видео (новые exp/sig), у <video> менялся бы src
+  // и браузер перезагружал запись с нуля — студент терял место в записи занятия.
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
+
   const [lesson, setLesson] = useState<LessonWithAssignments | null>(null);
   const [prev, setPrev] = useState<Lesson | null>(null);
   const [next, setNext] = useState<Lesson | null>(null);
@@ -65,16 +73,17 @@ export default function StudentLessonPage() {
   const [error, setError] = useState('');
 
   const fetchLesson = useCallback(async () => {
-    if (!accessToken || !lessonId) return;
+    const token = accessTokenRef.current;
+    if (!token || !lessonId) return;
     setLoading(true);
     try {
-      const { lesson: data } = await getLesson(accessToken, lessonId);
+      const { lesson: data } = await getLesson(token, lessonId);
       setLesson(data);
       setError('');
 
       // Соседние уроки потока для навигации prev/next
       try {
-        const { lessons } = await getLessons(accessToken, data.streamId);
+        const { lessons } = await getLessons(token, data.streamId);
         const sorted = [...lessons].sort((a, b) => a.sortOrder - b.sortOrder);
         const idx = sorted.findIndex((l) => l.id === data.id);
         setPrev(idx > 0 ? sorted[idx - 1] : null);
@@ -88,7 +97,7 @@ export default function StudentLessonPage() {
       // чтобы ссылка вела на корректную детальную страницу.
       if (data.assignments && data.assignments.length > 0) {
         try {
-          const { studentAssignments } = await getStudentAssignments(accessToken, {
+          const { studentAssignments } = await getStudentAssignments(token, {
             streamId: data.streamId,
           });
           const map: Record<string, string> = {};
@@ -107,11 +116,18 @@ export default function StudentLessonPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, lessonId]);
+    // Зависимость только от lessonId: при «тихом» обновлении токена ссылку на
+    // функцию не пересоздаём, поэтому эффект ниже не перезапускает загрузку.
+  }, [lessonId]);
 
+  // Грузим урок при смене урока или при ПЕРВОМ появлении токена (hasToken: false
+  // → true один раз). Последующие обновления значения токена (refresh) hasToken
+  // не меняют → перезагрузки урока (и сброса видео) не происходит.
+  const hasToken = Boolean(accessToken);
   useEffect(() => {
+    if (!hasToken) return;
     fetchLesson();
-  }, [fetchLesson]);
+  }, [fetchLesson, hasToken]);
 
   const embedUrl = lesson?.videoUrl ? parseVideoEmbed(lesson.videoUrl) : null;
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
