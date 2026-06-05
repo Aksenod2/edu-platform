@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MaterialRow } from '@/components/material-row';
+import { MarkdownContent } from '@/components/markdown/markdown-content';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { VideoEmbedFrame, VideoFileFrame } from '@/components/lessons/video-frame';
 import { parseVideoEmbed } from '@/lib/video-embed';
@@ -402,13 +403,14 @@ export default function StudentLessonPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
-                    {lesson.summary}
-                  </p>
+                  {/* Комментарий к уроку — markdown (списки, ссылки, переносы),
+                      а не «голый» абзац (см. MarkdownContent — безопасно, без raw-HTML). */}
+                  <MarkdownContent content={lesson.summary} />
                 </CardContent>
               </Card>
             ) : (
-              <p className="text-lg leading-relaxed text-muted-foreground">{lesson.summary}</p>
+              // Легаси-комментарий (без summarySource) — тоже markdown.
+              <MarkdownContent content={lesson.summary} />
             )
           ) : (
             // Текста итогов нет — показываем состояние формирования. Единый «вид»:
