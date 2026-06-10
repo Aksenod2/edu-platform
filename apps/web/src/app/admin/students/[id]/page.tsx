@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { isNewDay } from '@/lib/chat-date';
+import { ChatDateSeparator } from '@/components/chat-date-separator';
 import {
   CalendarClock,
   CalendarPlus,
@@ -956,11 +958,15 @@ export default function StudentProfilePage() {
                   // липнут к полю ввода (как в мессенджерах), а не висят сверху.
                   <div className="mt-auto flex flex-col gap-2">
                     {threadEntries.map((entry, i) => (
-                      <ThreadBubble
-                        key={entry.id}
-                        entry={entry}
-                        showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
-                      />
+                      <Fragment key={entry.id}>
+                        {isNewDay(threadEntries[i - 1]?.createdAt, entry.createdAt) && (
+                          <ChatDateSeparator dateIso={entry.createdAt} />
+                        )}
+                        <ThreadBubble
+                          entry={entry}
+                          showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
+                        />
+                      </Fragment>
                     ))}
                   </div>
                 )}
