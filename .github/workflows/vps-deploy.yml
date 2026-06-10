@@ -1,6 +1,10 @@
 name: Deploy to VPS
+# Гейт: выкат запускается только если зелёный CI на main (workflow_run от ci.yml).
+# Ручной запуск через workflow_dispatch — резервный путь, минует гейт намеренно.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 concurrency:
@@ -8,6 +12,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    # CI должен быть успешен — иначе выкат не запускается.
+    # workflow_dispatch минует условие (для экстренных ручных выкатов).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
