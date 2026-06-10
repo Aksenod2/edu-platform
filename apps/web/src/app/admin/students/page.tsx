@@ -277,7 +277,7 @@ export default function StudentsPage() {
                   <FieldLabel htmlFor="new-name">Имя</FieldLabel>
                   <Input
                     id="new-name"
-                    placeholder="Имя"
+                    placeholder="Иван"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     required
@@ -287,7 +287,7 @@ export default function StudentsPage() {
                   <FieldLabel htmlFor="new-last-name">Фамилия (необязательно)</FieldLabel>
                   <Input
                     id="new-last-name"
-                    placeholder="Фамилия"
+                    placeholder="Иванов"
                     value={newLastName}
                     onChange={(e) => setNewLastName(e.target.value)}
                   />
