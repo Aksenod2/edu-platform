@@ -30,6 +30,18 @@ function translateNetworkError(err: unknown): string {
   return err.message;
 }
 
+// Ошибка API с HTTP-статусом: когда вызывающему коду важно различать причины
+// (например, 404 «нет такого документа» против сетевой ошибки с ретраем).
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 const HTTP_STATUS_MESSAGES: Record<number, string> = {
   400: 'Некорректный запрос',
   401: 'Необходима авторизация',
@@ -121,7 +133,7 @@ async function request<T>(
   if (!res.ok) {
     const serverMsg = typeof data.error === 'string' ? data.error : null;
     const fallback = HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`;
-    throw new Error(serverMsg || fallback);
+    throw new ApiError(serverMsg || fallback, res.status);
   }
   return data as T;
 }
@@ -252,6 +264,36 @@ export async function verifyEmail(token: string): Promise<{ message: string }> {
     method: 'POST',
     body: JSON.stringify({ token }),
   });
+}
+
+// --- Публичные юридические документы (без авторизации) -----------------------
+
+export interface PublicLegalDocumentSummary {
+  slug: string;
+  title: string;
+  // null — версии ещё не опубликованы (документ «готовится к публикации»).
+  currentVersion: { versionNumber: number; publishedAt: string } | null;
+}
+
+export interface PublicLegalDocument {
+  slug: string;
+  title: string;
+  versionNumber: number | null;
+  publishedAt: string | null;
+  // markdown-текст актуальной версии; null — версий ещё нет.
+  body: string | null;
+}
+
+export async function getPublicLegalDocuments(): Promise<{
+  documents: PublicLegalDocumentSummary[];
+}> {
+  return request('/public/legal');
+}
+
+export async function getPublicLegalDocument(
+  slug: string,
+): Promise<{ document: PublicLegalDocument }> {
+  return request(`/public/legal/${encodeURIComponent(slug)}`);
 }
 
 // Streams API

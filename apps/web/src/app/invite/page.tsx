@@ -13,6 +13,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SiteFooter } from '@/components/site-footer';
 import { acceptInvite } from '@/lib/api';
 import { CheckCircle } from 'lucide-react';
 
@@ -51,9 +52,10 @@ function InviteForm() {
   };
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
+    <div className="flex min-h-svh w-full flex-col">
+      <div className="flex w-full flex-1 items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <Card>
           {!token ? (
             <>
               <CardHeader>
@@ -130,8 +132,10 @@ function InviteForm() {
               </CardContent>
             </>
           )}
-        </Card>
+          </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

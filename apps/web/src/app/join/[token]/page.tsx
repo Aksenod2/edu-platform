@@ -15,6 +15,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SiteFooter } from '@/components/site-footer';
 import { getPublicJoinStream, joinStreamByToken } from '@/lib/api';
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -96,9 +97,10 @@ export default function JoinStreamPage() {
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
+    <div className="flex min-h-svh w-full flex-col">
+      <div className="flex w-full flex-1 items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <Card>
           {previewLoading ? (
             <CardContent className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -230,8 +232,10 @@ export default function JoinStreamPage() {
               </CardContent>
             </>
           )}
-        </Card>
+          </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }
