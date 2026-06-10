@@ -506,6 +506,15 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   {
     group: 'Профиль владельца ключа',
     method: 'POST',
+    path: '/users/me/consents',
+    desc: 'Дать юридические согласия (досбор у существующих пользователей; append-запись, в ответе — оставшиеся обязательные)',
+    body: [
+      { name: 'consents', type: 'string[]', required: true, note: 'Типы согласий: offer, personalData, serviceNotifications, marketing.' },
+    ],
+  },
+  {
+    group: 'Профиль владельца ключа',
+    method: 'POST',
     path: '/users/me/consents/marketing',
     desc: 'Дать/отозвать согласие на рекламные рассылки (append-запись; 409, если документ ещё не опубликован)',
     body: [

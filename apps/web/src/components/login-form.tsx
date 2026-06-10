@@ -4,7 +4,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 import { cn } from "@platform/ui/lib/utils"
-import { useAuth } from '@/lib/auth-context';
+import { needsConsents, useAuth } from '@/lib/auth-context';
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -37,6 +37,8 @@ export function LoginForm({
     if (authLoading || !user) return;
     if (user.mustChangePassword) {
       router.replace('/change-password');
+    } else if (needsConsents(user)) {
+      router.replace('/consents');
     } else if (user.role === 'admin') {
       router.replace('/admin');
     } else {
@@ -53,6 +55,8 @@ export function LoginForm({
       const user = await login(email.trim().toLowerCase(), password);
       if (user.mustChangePassword) {
         router.push('/change-password');
+      } else if (needsConsents(user)) {
+        router.push('/consents');
       } else if (user.role === 'admin') {
         router.push('/admin');
       } else {

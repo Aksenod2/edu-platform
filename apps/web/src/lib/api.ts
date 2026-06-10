@@ -17,6 +17,9 @@ interface AuthResponse {
     mustChangePassword: boolean;
     avatarUrl?: string | null;
     questionnaireCompleted?: boolean;
+    // Только у студента: недостающие ОБЯЗАТЕЛЬНЫЕ согласия (зарегистрирован до
+    // их появления). Пусто/нет поля = всё дано, гейт /consents не нужен.
+    pendingConsents?: ConsentType[];
   };
 }
 
@@ -355,6 +358,20 @@ export async function setMarketingConsent(
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ granted }),
+  });
+}
+
+// Зафиксировать согласия текущего пользователя (гейт /consents для студентов,
+// зарегистрированных до появления согласий; можно включить опциональный marketing).
+// Возвращает список оставшихся недоданных обязательных согласий (в норме []).
+export async function grantMyConsents(
+  accessToken: string,
+  consents: ConsentType[],
+): Promise<{ pendingConsents: ConsentType[] }> {
+  return request('/users/me/consents', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ consents }),
   });
 }
 

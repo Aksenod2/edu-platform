@@ -30,6 +30,15 @@ export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
   marketing: 'marketing-consent',
 };
 
+// Обязательные юридические согласия: без них студент не может пользоваться
+// платформой (Волна 1.1 «досбор согласий у существующих пользователей»).
+// marketing — опциональное, в гейт не входит.
+export const REQUIRED_CONSENT_TYPES: ConsentTypeValue[] = [
+  'offer',
+  'personalData',
+  'serviceNotifications',
+];
+
 export function isConsentType(value: unknown): value is ConsentTypeValue {
   return typeof value === 'string' && (CONSENT_TYPES as readonly string[]).includes(value);
 }
@@ -70,6 +79,37 @@ export async function latestVersionForSlug(
     orderBy: { versionNumber: 'desc' },
     select: { id: true, versionNumber: true },
   });
+}
+
+/**
+ * Недостающие ОБЯЗАТЕЛЬНЫЕ согласия пользователя: типы из REQUIRED_CONSENT_TYPES,
+ * по которым нет НИ ОДНОЙ записи action=granted (любой версии документа).
+ *
+ * Тип считается недостающим, только если у его документа ЕСТЬ опубликованная
+ * версия: пока версий нет, фиксировать согласие не к чему — вход не блокируем
+ * (та же мягкая деградация, что в recordConsents).
+ */
+export async function pendingRequiredConsents(userId: string): Promise<ConsentTypeValue[]> {
+  // Один запрос за granted-записями пользователя по обязательным типам.
+  const granted = await prisma.userConsent.findMany({
+    where: { userId, consentType: { in: REQUIRED_CONSENT_TYPES }, action: 'granted' },
+    select: { consentType: true },
+    distinct: ['consentType'],
+  });
+  const grantedTypes = new Set<string>(granted.map((c) => c.consentType));
+
+  const missing = REQUIRED_CONSENT_TYPES.filter((type) => !grantedTypes.has(type));
+  if (missing.length === 0) return [];
+
+  // И один — за наличием опубликованных версий у документов недостающих типов.
+  const slugs = [...new Set(missing.map((type) => CONSENT_TYPE_TO_SLUG[type]))];
+  const versions = await prisma.legalDocumentVersion.findMany({
+    where: { document: { slug: { in: slugs } } },
+    select: { document: { select: { slug: true } } },
+  });
+  const publishedSlugs = new Set(versions.map((v) => v.document.slug));
+
+  return missing.filter((type) => publishedSlugs.has(CONSENT_TYPE_TO_SLUG[type]));
 }
 
 /**
