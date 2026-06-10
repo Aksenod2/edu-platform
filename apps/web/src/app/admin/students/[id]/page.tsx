@@ -1,11 +1,8 @@
 'use client';
 
-import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
-import { isNewDay } from '@/lib/chat-date';
-import { ChatDateSeparator } from '@/components/chat-date-separator';
 import {
   CalendarClock,
   CalendarPlus,
@@ -23,8 +20,7 @@ import { FileLightbox } from '@/components/files/file-lightbox';
 import { StudentDynamicTab } from '@/components/students/student-dynamic-tab';
 import { StudentActivityTab } from '@/components/students/student-activity-tab';
 import { BackButton } from '@/components/back-button';
-
-const THREAD_POLL_INTERVAL_MS = 5000;
+import { ThreadConversation } from '@/components/thread-conversation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -60,9 +56,6 @@ import {
   getStudentAssignments,
   updateStudentAssignment,
   getStudentAssignmentsSummary,
-  getThread,
-  addThreadEntry,
-  uploadThreadFile,
   getWallet,
   topupWallet,
   debitWallet,
@@ -74,8 +67,6 @@ import {
   type TeacherNote,
   type StudentAssignment,
   type AssignmentsSummary,
-  type ThreadEntry,
-  type ThreadEntryType,
   type WalletTransaction,
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
@@ -146,26 +137,10 @@ export default function StudentProfilePage() {
   const [isDemo, setIsDemo] = useState<boolean | null>(null);
   const [togglingDemo, setTogglingDemo] = useState(false);
 
-  // Thread state
-  const [threadEntries, setThreadEntries] = useState<ThreadEntry[]>([]);
-  const [loadingThread, setLoadingThread] = useState(false);
-  const [inputMode, setInputMode] = useState<'comment' | 'note'>('comment');
-  const [threadContent, setThreadContent] = useState('');
-  const [sendingThread, setSendingThread] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const threadScrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Прижата ли лента треда к низу — чтобы поллинг не дёргал скролл при чтении истории.
-  const threadStick = useRef(true);
-  const threadLenRef = useRef(0);
-  useEffect(() => {
-    threadLenRef.current = threadEntries.length;
-  }, [threadEntries]);
   // Отмечаем, что вкладка уже загружалась, чтобы не дёргать запрос повторно.
-  // Раньше условием было `.length === 0`, и для пустого треда/списка это
-  // зацикливало загрузку (спиннер мигал поверх «Тред пуст»).
-  const fetchedRef = useRef({ thread: false, assignments: false, summary: false });
+  // Раньше условием было `.length === 0`, и для пустого списка это
+  // зацикливало загрузку (спиннер мигал поверх пустого состояния).
+  const fetchedRef = useRef({ assignments: false, summary: false });
 
   const fetchProfile = useCallback(async () => {
     if (!accessToken || !studentId) return;
@@ -247,19 +222,6 @@ export default function StudentProfilePage() {
     }
   }, [accessToken, studentId]);
 
-  const fetchThread = useCallback(async () => {
-    if (!accessToken || !studentId) return;
-    setLoadingThread(true);
-    try {
-      const result = await getThread(accessToken, studentId);
-      setThreadEntries(result.entries);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки переписки');
-    } finally {
-      setLoadingThread(false);
-    }
-  }, [accessToken, studentId]);
-
   useEffect(() => {
     if (accessToken && studentId) {
       fetchProfile();
@@ -271,8 +233,7 @@ export default function StudentProfilePage() {
   // При смене ученика сбрасываем «уже загружено» и устаревшие данные вкладок,
   // чтобы они перезагрузились для нового ученика.
   useEffect(() => {
-    fetchedRef.current = { thread: false, assignments: false, summary: false };
-    setThreadEntries([]);
+    fetchedRef.current = { assignments: false, summary: false };
     setAssignments([]);
     setAssignmentsSummary(null);
     setIsDemo(null);
@@ -290,40 +251,6 @@ export default function StudentProfilePage() {
       }
     }
   }, [accessToken, studentId, activeTab, loadingAssignments, fetchAssignments, loadingSummary, fetchSummary]);
-
-  useEffect(() => {
-    if (accessToken && studentId && activeTab === 'thread' && !fetchedRef.current.thread && !loadingThread) {
-      fetchedRef.current.thread = true;
-      fetchThread();
-    }
-  }, [accessToken, studentId, activeTab, loadingThread, fetchThread]);
-
-  // Тихий рефреш треда для поллинга: без спиннера, со слиянием по id.
-  const refreshThreadSilently = useCallback(async () => {
-    if (!accessToken || !studentId) return;
-    try {
-      const result = await getThread(accessToken, studentId);
-      setThreadEntries((prev) => mergeById(result.entries, prev));
-    } catch {
-      // тихий рефреш — ошибки не показываем
-    }
-  }, [accessToken, studentId]);
-
-  usePolling(refreshThreadSilently, THREAD_POLL_INTERVAL_MS, activeTab === 'thread');
-
-  const handleThreadScroll = () => {
-    const el = threadScrollRef.current;
-    if (el) threadStick.current = isNearBottom(el);
-  };
-
-  // Прокрутка к низу при появлении новых сообщений — только если пользователь
-  // у низа ленты (или сам только что отправил). Иначе не мешаем читать историю.
-  useEffect(() => {
-    if (activeTab !== 'thread' || threadEntries.length === 0) return;
-    if (threadStick.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [threadEntries, activeTab]);
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,45 +366,6 @@ export default function StudentProfilePage() {
     }
   };
 
-  const handleSendThread = async () => {
-    if (!accessToken || !threadContent.trim()) return;
-    setSendingThread(true);
-    try {
-      const { entry } = await addThreadEntry(accessToken, studentId, {
-        type: inputMode as ThreadEntryType,
-        content: threadContent.trim(),
-      });
-      threadStick.current = true;
-      setThreadEntries((prev) => [...prev, entry]);
-      setThreadContent('');
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка отправки');
-    } finally {
-      setSendingThread(false);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !accessToken) return;
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('Файл превышает максимальный размер 50MB');
-      return;
-    }
-    setSendingThread(true);
-    try {
-      const { entry } = await uploadThreadFile(accessToken, studentId, file, 'file');
-      threadStick.current = true;
-      setThreadEntries((prev) => [...prev, entry]);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки файла');
-    } finally {
-      setSendingThread(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   if (loadingProfile) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -517,8 +405,6 @@ export default function StudentProfilePage() {
           return dueDate && new Date(dueDate) < now;
         })
       : assignments.filter((a) => a.status === statusFilter);
-
-  const hasThreadContent = threadContent.trim().length > 0;
 
   return (
     <>
@@ -937,107 +823,10 @@ export default function StudentProfilePage() {
           )}
 
           {/* ── Thread tab ── */}
-          {activeTab === 'thread' && (
-            <div className="flex flex-col flex-1 min-h-0">
-              {/* Thread messages */}
-              <div
-                ref={threadScrollRef}
-                onScroll={handleThreadScroll}
-                className="flex-1 overflow-y-auto p-4 flex flex-col gap-2"
-              >
-                {loadingThread ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <Loader2 className="size-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : threadEntries.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <span className="font-mono text-sm text-muted-foreground uppercase tracking-wide">Сообщений пока нет</span>
-                  </div>
-                ) : (
-                  // mt-auto прижимает ленту к низу: при малом числе сообщений баблы
-                  // липнут к полю ввода (как в мессенджерах), а не висят сверху.
-                  <div className="mt-auto flex flex-col gap-2">
-                    {threadEntries.map((entry, i) => (
-                      <Fragment key={entry.id}>
-                        {isNewDay(threadEntries[i - 1]?.createdAt, entry.createdAt) && (
-                          <ChatDateSeparator dateIso={entry.createdAt} />
-                        )}
-                        <ThreadBubble
-                          entry={entry}
-                          showAuthor={i === 0 || threadEntries[i - 1].authorId !== entry.authorId}
-                        />
-                      </Fragment>
-                    ))}
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Compose bar */}
-              <div className="border-t px-4 py-3 bg-card">
-                {inputMode === 'note' && (
-                  <div className="flex items-center justify-between px-3 py-2 mb-2 bg-muted border rounded-md">
-                    <span className="font-mono text-xs text-muted-foreground uppercase tracking-wide">
-                      Приватная заметка — студент не увидит
-                    </span>
-                    <button
-                      onClick={() => setInputMode('comment')}
-                      className="bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground p-1 flex"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-end gap-2">
-                  <div className="flex gap-1">
-                    <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
-                    <ComposeButton title="Прикрепить файл" onClick={() => fileInputRef.current?.click()} disabled={sendingThread}>
-                      <PaperclipIcon />
-                    </ComposeButton>
-                    <ComposeButton
-                      title="Приватная заметка"
-                      active={inputMode === 'note'}
-                      onClick={() => setInputMode(inputMode === 'note' ? 'comment' : 'note')}
-                    >
-                      <NoteIcon />
-                    </ComposeButton>
-                  </div>
-                  <textarea
-                    ref={textareaRef}
-                    value={threadContent}
-                    onChange={(e) => {
-                      setThreadContent(e.target.value);
-                      e.target.style.height = 'auto';
-                      e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-                    }}
-                    placeholder={inputMode === 'comment' ? 'Сообщение студенту' : 'Приватная заметка'}
-                    rows={1}
-                    className={[
-                      'flex-1 rounded-lg px-3 py-2 text-sm text-foreground resize-none overflow-hidden leading-normal border outline-none',
-                      inputMode === 'note' ? 'bg-muted' : 'bg-background',
-                    ].join(' ')}
-                    style={{ minHeight: 36, maxHeight: 160 }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendThread(); }
-                    }}
-                  />
-                  <button
-                    disabled={sendingThread || !hasThreadContent}
-                    onClick={handleSendThread}
-                    className={[
-                      'flex items-center justify-center shrink-0 border-0 rounded-full size-9 transition-colors',
-                      hasThreadContent
-                        ? 'bg-primary text-primary-foreground cursor-pointer hover:bg-primary/90'
-                        : 'bg-muted text-muted-foreground cursor-default',
-                    ].join(' ')}
-                  >
-                    <SendIcon />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Общий компонент переписки (тот же, что в инбоксе «Сообщения») —
+              лента, композер с заметками/файлами/ссылками, поллинг и карточки
+              сданных работ живут в одном месте. */}
+          {activeTab === 'thread' && <ThreadConversation studentId={studentId} />}
         </div>
       </div>
 
@@ -1302,132 +1091,3 @@ function SummaryCard({ label, value, variant }: {
   );
 }
 
-/* ─── ComposeButton ─── */
-
-function ComposeButton({ children, title, onClick, disabled, active }: {
-  children: React.ReactNode; title: string; onClick: () => void; disabled?: boolean; active?: boolean;
-}) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      disabled={disabled}
-      className={[
-        'flex items-center justify-center shrink-0 border-0 rounded-full size-9 transition-colors',
-        active ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground',
-        disabled ? 'opacity-40 cursor-default' : 'cursor-pointer hover:text-foreground',
-      ].join(' ')}
-    >
-      {children}
-    </button>
-  );
-}
-
-/* ─── ThreadBubble ─── */
-
-function ThreadBubble({ entry, showAuthor }: { entry: ThreadEntry; showAuthor: boolean }) {
-  const isAdmin = entry.author.role === 'admin';
-  const isNote = entry.type === 'note';
-  const date = new Date(entry.createdAt);
-  const initials = entry.author.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-
-  return (
-    <div className={[
-      'flex items-end gap-2',
-      isAdmin ? 'flex-row-reverse self-end' : 'flex-row self-start',
-      showAuthor ? 'mt-4' : 'mt-1',
-      'max-w-[85%]',
-    ].join(' ')}>
-      {showAuthor ? (
-        <div
-          className={[
-            'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
-            'text-xs font-mono font-bold border',
-            isNote ? 'bg-muted border-dashed text-muted-foreground'
-              : isAdmin ? 'bg-primary text-primary-foreground border-transparent'
-              : 'bg-muted text-muted-foreground',
-          ].join(' ')}
-        >
-          {initials}
-        </div>
-      ) : (
-        <div className="w-8 shrink-0" />
-      )}
-      <div className="min-w-0">
-        {showAuthor && (
-          <div className={[
-            'text-xs font-mono mb-1 tracking-wide uppercase',
-            isNote ? 'text-muted-foreground' : isAdmin ? 'text-primary' : 'text-muted-foreground',
-            isAdmin ? 'text-right' : 'text-left',
-          ].join(' ')}>
-            {entry.author.name}
-            {isNote && <span className="ml-2">заметка</span>}
-          </div>
-        )}
-        <div className={[
-          'px-4 py-3 border',
-          isNote
-            ? 'bg-muted border-dashed rounded-xl'
-            : isAdmin
-              ? 'bg-primary text-primary-foreground border-transparent rounded-xl rounded-br-xs'
-              : 'bg-muted rounded-xl rounded-bl-xs',
-        ].join(' ')}>
-          <div className={`text-sm leading-normal break-words ${isAdmin && !isNote ? 'text-primary-foreground' : 'text-foreground'}`}>
-            {['text', 'comment', 'note'].includes(entry.type) ? (
-              <span className="whitespace-pre-wrap">{entry.content}</span>
-            ) : entry.type === 'file' ? (
-              <div className="flex items-center gap-3">
-                <span>{entry.metadata?.fileName || entry.content}</span>
-                {entry.metadata?.url && (
-                  <a href={entry.metadata.url} target="_blank" rel="noopener noreferrer" className="underline text-xs">
-                    Скачать
-                  </a>
-                )}
-              </div>
-            ) : entry.type === 'audio' && entry.metadata?.url ? (
-              <audio controls src={entry.metadata.url} className="max-w-full h-9" />
-            ) : entry.type === 'link' ? (
-              <a href={entry.content} target="_blank" rel="noopener noreferrer" className="underline break-all">
-                {entry.content}
-              </a>
-            ) : null}
-          </div>
-          <div className={`text-[10px] mt-1 font-mono opacity-70 ${isAdmin ? 'text-left' : 'text-right'}`}>
-            {date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-          </div>
-        </div>
-        {entry.assignment && (
-          <span className="block font-mono text-xs mt-1 text-muted-foreground">
-            К заданию: {entry.assignment.title}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── SVG Icons ─── */
-
-function PaperclipIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.5 9.25l-7.72 7.72a4.25 4.25 0 01-6.01-6.01L11.5 3.24a2.83 2.83 0 014 4L7.78 14.96a1.42 1.42 0 01-2-2l7.22-7.22" />
-    </svg>
-  );
-}
-
-function NoteIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 3h12v14H4z" /><path d="M7 7h6M7 10h6M7 13h3" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <path d="M3 10l14-7-7 14v-7H3z" fill="currentColor" />
-    </svg>
-  );
-}
