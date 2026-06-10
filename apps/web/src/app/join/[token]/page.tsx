@@ -177,8 +177,8 @@ export default function JoinStreamPage() {
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Иван Иванов"
-                        autoComplete="name"
+                        placeholder="Иван"
+                        autoComplete="given-name"
                         required
                       />
                     </Field>

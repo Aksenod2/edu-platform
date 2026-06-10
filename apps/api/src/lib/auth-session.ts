@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify';
 import { prisma } from '@platform/db';
 import { signAccessToken } from './jwt.js';
 import { getFileUrl } from './s3.js';
+import { pendingRequiredConsents } from './consents.js';
 
 // Срок жизни refresh-токена (в днях). Должен совпадать с тем, что было в auth.ts.
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -50,6 +51,9 @@ export interface SessionResult {
     mustChangePassword: boolean;
     avatarUrl: string | null;
     questionnaireCompleted?: boolean;
+    // Недостающие обязательные согласия (Волна 1.1): только для студентов,
+    // по непустому массиву фронт показывает гейт досбора согласий.
+    pendingConsents?: string[];
   };
 }
 
@@ -100,6 +104,10 @@ export async function issueSession(
         user.role === 'student'
           ? !!user.studentProfile?.questionnaireCompletedAt
           : undefined,
+      // Гейтим только студентов: админ — владелец платформы, ему согласия
+      // давать не нужно (поле undefined → в JSON отсутствует).
+      pendingConsents:
+        user.role === 'student' ? await pendingRequiredConsents(user.id) : undefined,
     },
   };
 }

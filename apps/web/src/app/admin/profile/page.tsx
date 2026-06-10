@@ -317,8 +317,8 @@ export default function AdminProfilePage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Иван Иванов"
-                  autoComplete="name"
+                  placeholder="Иван"
+                  autoComplete="given-name"
                 />
               </div>
               <div className="flex flex-col gap-2">

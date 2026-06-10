@@ -1,9 +1,9 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { login as apiLogin, refresh as apiRefresh, logout as apiLogout, registerAuthHandlers } from './api';
+import { login as apiLogin, refresh as apiRefresh, logout as apiLogout, registerAuthHandlers, type ConsentType } from './api';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -13,6 +13,8 @@ interface User {
   mustChangePassword: boolean;
   avatarUrl?: string | null;
   questionnaireCompleted?: boolean;
+  // Только у студента: недостающие обязательные согласия (пусто/нет = гейт не нужен).
+  pendingConsents?: ConsentType[];
 }
 
 interface AuthContextValue {
@@ -23,6 +25,19 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   setAccessToken: (token: string) => void;
   setUser: (user: User) => void;
+}
+
+/**
+ * Гейт согласий (волна 1.1): студент с недоданными обязательными согласиями
+ * должен попасть на /consents. Единая проверка для всех точек маршрутизации
+ * (главная, дашборд, логин, смена пароля) — условие не дублируем.
+ */
+export function needsConsents(
+  user: Pick<User, 'role' | 'pendingConsents'> | null,
+): boolean {
+  return (
+    !!user && user.role === 'student' && !!user.pendingConsents && user.pendingConsents.length > 0
+  );
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);

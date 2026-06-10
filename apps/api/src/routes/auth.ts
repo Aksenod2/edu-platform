@@ -14,6 +14,7 @@ import {
   latestVersionForSlug,
   listUserConsents,
   parseConsentTypes,
+  pendingRequiredConsents,
   recordConsents,
   requestUserAgent,
 } from '../lib/consents.js';
@@ -134,6 +135,11 @@ export async function authRoutes(app: FastifyInstance) {
         avatarUrl: await avatarUrlFor(storedToken.user.avatarKey),
         questionnaireCompleted: storedToken.user.role === 'student'
           ? !!storedToken.user.studentProfile?.questionnaireCompletedAt
+          : undefined,
+        // Недостающие обязательные согласия (Волна 1.1) — только для студентов,
+        // как в issueSession: админа гейтом согласий не блокируем.
+        pendingConsents: storedToken.user.role === 'student'
+          ? await pendingRequiredConsents(storedToken.user.id)
           : undefined,
       },
     };
@@ -545,6 +551,34 @@ export async function authRoutes(app: FastifyInstance) {
   // свои ip/userAgent пользователь видеть может.
   app.get('/users/me/consents', { onRequest: authenticate }, async (request) => {
     return { consents: await listUserConsents(request.user!.userId) };
+  });
+
+  // POST /users/me/consents — досбор согласий у СУЩЕСТВУЮЩИХ пользователей
+  // (Волна 1.1): студенты, зарегистрированные ДО появления согласий, дают
+  // обязательные при следующем заходе на платформу. Журнал append-only через
+  // recordConsents (ip/userAgent фиксируются автоматически); marketing можно
+  // передавать вместе с обязательными. В ответе — оставшиеся обязательные
+  // согласия: по пустому массиву фронт понимает, что гейт снят.
+  app.post('/users/me/consents', { onRequest: authenticate }, async (request, reply) => {
+    const userId = request.user!.userId;
+    const body = (request.body ?? {}) as { consents?: unknown };
+
+    const types = parseConsentTypes(body.consents);
+    if (types === null) {
+      return reply.status(400).send({ error: 'Некорректный формат согласий' });
+    }
+    if (types.length === 0) {
+      return reply.status(400).send({ error: 'Не передано ни одного согласия' });
+    }
+
+    // Уже данные обязательные согласия повторно не журналируем (повторный POST
+    // не должен плодить дубли в append-only журнале); marketing — append by design:
+    // granted-запись = актуальный статус подписки, пишем как передали.
+    const pendingBefore = await pendingRequiredConsents(userId);
+    const toRecord = types.filter((type) => type === 'marketing' || pendingBefore.includes(type));
+    await recordConsents(userId, toRecord, request);
+
+    return reply.status(201).send({ pendingConsents: await pendingRequiredConsents(userId) });
   });
 
   // POST /users/me/consents/marketing — дать/отозвать согласие на рекламные
