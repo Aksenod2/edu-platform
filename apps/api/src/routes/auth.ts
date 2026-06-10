@@ -268,6 +268,10 @@ export async function authRoutes(app: FastifyInstance) {
       },
     });
 
+    // Инвалидируем все сессии (refresh-токены) — как в reset-password и
+    // PATCH /users/me: смена пароля должна разлогинивать другие устройства.
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
     // Issue new access token with updated state
     const accessToken = signAccessToken({ userId: user.id, role: user.role });
 
