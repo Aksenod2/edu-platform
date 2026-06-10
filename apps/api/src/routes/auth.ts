@@ -8,7 +8,7 @@ import { signAccessToken } from '../lib/jwt.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { issueSession } from '../lib/auth-session.js';
+import { issueSession, buildSessionUserPayload } from '../lib/auth-session.js';
 import { normalizeEmail, isValidEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import {
   latestVersionForSlug,
@@ -124,24 +124,9 @@ export async function authRoutes(app: FastifyInstance) {
 
     return {
       accessToken,
-      user: {
-        id: storedToken.user.id,
-        email: storedToken.user.email,
-        name: storedToken.user.name,
-        lastName: storedToken.user.lastName,
-        phone: storedToken.user.phone,
-        role: storedToken.user.role,
-        mustChangePassword: storedToken.user.mustChangePassword,
-        avatarUrl: await avatarUrlFor(storedToken.user.avatarKey),
-        questionnaireCompleted: storedToken.user.role === 'student'
-          ? !!storedToken.user.studentProfile?.questionnaireCompletedAt
-          : undefined,
-        // Недостающие обязательные согласия (Волна 1.1) — только для студентов,
-        // как в issueSession: админа гейтом согласий не блокируем.
-        pendingConsents: storedToken.user.role === 'student'
-          ? await pendingRequiredConsents(storedToken.user.id)
-          : undefined,
-      },
+      // User-объект собирается общим хелпером (тот же, что в issueSession/login):
+      // avatarUrl, questionnaireCompleted и pendingConsents — в одном месте.
+      user: await buildSessionUserPayload(storedToken.user),
     };
   });
 
