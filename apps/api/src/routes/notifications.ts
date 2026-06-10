@@ -13,7 +13,9 @@ const ALL_NOTIFICATION_TYPES: NotificationType[] = [
 ];
 
 export async function notificationRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authenticate);
+  // onRequest (а не preHandler): request.user должен быть установлен ДО
+  // глобального preHandler-гейта согласий (consent-gate, issue #119).
+  app.addHook('onRequest', authenticate);
 
   // GET /notifications/count?unread=true — lightweight badge counter
   app.get('/notifications/count', async (request, reply) => {

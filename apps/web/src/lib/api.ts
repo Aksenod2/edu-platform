@@ -136,6 +136,21 @@ async function request<T>(
   }
 
   if (!res.ok) {
+    // Серверный гейт согласий (issue #119): студент с недоданными обязательными
+    // согласиями получает 403 CONSENTS_REQUIRED на любой «рабочий» запрос.
+    // Ловит старые вкладки, где user в контексте ещё без pendingConsents:
+    // уводим на /consents жёсткой навигацией (страница сама перечитает user
+    // через /auth/refresh). Ошибку всё равно бросаем — вызывающий код не должен
+    // получить undefined вместо данных.
+    if (
+      res.status === 403 &&
+      data.code === 'CONSENTS_REQUIRED' &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/consents') &&
+      !window.location.pathname.startsWith('/login')
+    ) {
+      window.location.assign('/consents');
+    }
     const serverMsg = typeof data.error === 'string' ? data.error : null;
     const fallback = HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`;
     throw new ApiError(serverMsg || fallback, res.status);
