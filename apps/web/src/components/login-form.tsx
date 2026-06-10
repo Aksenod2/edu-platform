@@ -50,7 +50,7 @@ export function LoginForm({
     setLoading(true);
 
     try {
-      const user = await login(email, password);
+      const user = await login(email.trim().toLowerCase(), password);
       if (user.mustChangePassword) {
         router.push('/change-password');
       } else if (user.role === 'admin') {

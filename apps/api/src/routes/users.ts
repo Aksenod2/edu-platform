@@ -5,6 +5,7 @@ import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
+import { normalizeEmail } from '../lib/validation.js';
 
 const INVITE_TOKEN_TTL_HOURS = 72;
 
@@ -73,11 +74,13 @@ export async function userRoutes(app: FastifyInstance) {
 
   // POST /users — create student
   app.post('/users', async (request, reply) => {
-    const { email, name } = request.body as { email: string; name: string };
+    const { email: rawEmail, name } = request.body as { email: string; name: string };
 
-    if (!email || !name) {
+    if (!rawEmail || !name) {
       return reply.status(400).send({ error: 'Email и имя обязательны' });
     }
+
+    const email = normalizeEmail(rawEmail);
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -153,8 +156,9 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Пользователь не найден' });
     }
 
-    if (body.email && body.email !== existing.email) {
-      const emailTaken = await prisma.user.findUnique({ where: { email: body.email } });
+    const normalizedEmail = body.email ? normalizeEmail(body.email) : undefined;
+    if (normalizedEmail && normalizedEmail !== existing.email) {
+      const emailTaken = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (emailTaken) {
         return reply.status(409).send({ error: 'Этот email уже используется' });
       }
@@ -169,7 +173,7 @@ export async function userRoutes(app: FastifyInstance) {
     const data: Record<string, unknown> = {};
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.name) data.name = body.name;
-    if (body.email) data.email = body.email;
+    if (normalizedEmail) data.email = normalizedEmail;
     if (body.isDemo !== undefined) data.isDemo = body.isDemo;
 
     // When deactivating, also invalidate all refresh tokens

@@ -8,6 +8,12 @@ const transporter = nodemailer.createTransport({
   port: smtpPort,
   // port 465 uses implicit TLS; port 587 uses STARTTLS (secure: false)
   secure: smtpPort === 465,
+  // Таймауты, чтобы при недоступном SMTP (например, провайдер режет исходящий порт)
+  // соединение не висело бесконечно, а быстро падало в ошибку — отправка писем
+  // запускается в фоне, но висящие сокеты копят коннекты и память.
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 15_000,
   ...(process.env.SMTP_USER && process.env.SMTP_PASS
     ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }
     : {}),

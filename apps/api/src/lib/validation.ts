@@ -14,3 +14,10 @@ export function isValidEmail(email: string): boolean {
 export function isValidPassword(password: string): boolean {
   return typeof password === 'string' && password.length >= MIN_PASSWORD_LENGTH;
 }
+
+// Нормализация email: регистр и пробелы по краям не должны влиять на поиск/уникальность.
+// Применяем ЕДИНООБРАЗНО везде, где email приходит от пользователя (вход, сброс, создание,
+// смена) — иначе аккаунт, заведённый как "Marina@mail.ru", не найдётся по "marina@mail.ru".
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}

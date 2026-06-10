@@ -9,6 +9,7 @@ import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { issueSession } from '../lib/auth-session.js';
+import { normalizeEmail, isValidEmail } from '../lib/validation.js';
 
 // Подписанный временный URL аватара пользователя по avatarKey (или null).
 async function avatarUrlFor(avatarKey: string | null | undefined): Promise<string | null> {
@@ -32,9 +33,6 @@ function isAvatarImage(fileName: string, mimeType: string): boolean {
   return okExt && okMime;
 }
 
-// Простая проверка формата email (как в HTML5 type=email, без избыточной строгости).
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 function refreshTokenExpiresAt(): Date {
@@ -51,7 +49,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizeEmail(email) },
       include: { studentProfile: { select: { questionnaireCompletedAt: true } } },
     });
     if (!user || !user.isActive) {
@@ -150,7 +148,8 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     // Always return success to prevent email enumeration
-    const user = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (user && user.isActive) {
       const resetToken = crypto.randomBytes(32).toString('hex');
       await prisma.user.update({
@@ -161,11 +160,12 @@ export async function authRoutes(app: FastifyInstance) {
         },
       });
 
-      try {
-        await sendPasswordResetEmail(email, resetToken);
-      } catch (err) {
+      // Письмо отправляем НЕ блокируя HTTP-ответ: иначе при недоступном SMTP запрос
+      // висит на ретраях, а форма на фронте бесконечно показывает «Отправка...».
+      // Заодно это держит ответ быстрым и одинаковым (защита от перечисления email).
+      void sendPasswordResetEmail(normalizedEmail, resetToken).catch((err) => {
         request.log.error(err, 'Failed to send password reset email');
-      }
+      });
     }
 
     return { message: 'Если аккаунт существует, письмо со ссылкой отправлено' };
@@ -333,8 +333,8 @@ export async function authRoutes(app: FastifyInstance) {
 
     // --- Email ---
     if (body.email !== undefined) {
-      const email = body.email.trim().toLowerCase();
-      if (!EMAIL_REGEX.test(email)) {
+      const email = normalizeEmail(body.email);
+      if (!isValidEmail(email)) {
         return reply.status(400).send({ error: 'Некорректный формат email' });
       }
       if (email !== user.email) {

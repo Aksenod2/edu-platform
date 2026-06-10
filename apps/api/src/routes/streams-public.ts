@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import type { FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { prisma, Prisma } from '@platform/db';
-import { isValidEmail, isValidPassword, MIN_PASSWORD_LENGTH } from '../lib/validation.js';
+import { isValidEmail, isValidPassword, MIN_PASSWORD_LENGTH, normalizeEmail } from '../lib/validation.js';
 import { enrollStudentInStream } from '../lib/stream-enroll.js';
 import { issueSession } from '../lib/auth-session.js';
 
@@ -62,7 +62,7 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
       };
 
       const email =
-        typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        typeof body.email === 'string' ? normalizeEmail(body.email) : '';
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       const password = typeof body.password === 'string' ? body.password : '';
 
