@@ -25,8 +25,10 @@ vi.mock('@platform/db', async () => {
       stream: { findUnique: vi.fn(), update: vi.fn() },
       refreshToken: { create: vi.fn() },
       // Волна 1.1: issueSession считает pendingConsents студента — дефолт «пусто»
-      // (реализация в vi.fn переживает clearAllMocks).
+      // (реализация в vi.fn переживает clearAllMocks). legalDocument.findMany —
+      // для pendingRequiredConsents, legalDocumentVersion — для recordConsents.
       userConsent: { findMany: vi.fn(() => Promise.resolve([])) },
+      legalDocument: { findMany: vi.fn(() => Promise.resolve([])) },
       legalDocumentVersion: { findMany: vi.fn(() => Promise.resolve([])) },
       // $transaction(callback) выполняет колбэк с tx-клиентом.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

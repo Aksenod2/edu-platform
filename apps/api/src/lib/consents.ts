@@ -102,12 +102,14 @@ export async function pendingRequiredConsents(userId: string): Promise<ConsentTy
   if (missing.length === 0) return [];
 
   // И один — за наличием опубликованных версий у документов недостающих типов.
+  // Запрашиваем сами ДОКУМЕНТЫ с фильтром versions: { some: {} } — по строке на
+  // документ, а не на каждую версию (число редакций со временем растёт).
   const slugs = [...new Set(missing.map((type) => CONSENT_TYPE_TO_SLUG[type]))];
-  const versions = await prisma.legalDocumentVersion.findMany({
-    where: { document: { slug: { in: slugs } } },
-    select: { document: { select: { slug: true } } },
+  const documents = await prisma.legalDocument.findMany({
+    where: { slug: { in: slugs }, versions: { some: {} } },
+    select: { slug: true },
   });
-  const publishedSlugs = new Set(versions.map((v) => v.document.slug));
+  const publishedSlugs = new Set(documents.map((d) => d.slug));
 
   return missing.filter((type) => publishedSlugs.has(CONSENT_TYPE_TO_SLUG[type]));
 }
