@@ -10,8 +10,8 @@ vi.mock('@platform/db', () => ({
   prisma: {
     stream: { findUnique: vi.fn() },
     lesson: { findUnique: vi.fn(), update: vi.fn() },
-    session: { upsert: vi.fn(), findUnique: vi.fn() },
-    streamEnrollment: { findMany: vi.fn() },
+    session: { upsert: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
+    streamEnrollment: { findMany: vi.fn(), findUnique: vi.fn() },
     studentAssignment: { createMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     user: { findUnique: vi.fn(), findMany: vi.fn() },
     conversation: { findUnique: vi.fn(), create: vi.fn() },
@@ -491,5 +491,143 @@ describe('PATCH /student-assignments/:id — сдача студентом (subm
 
     expect(res.statusCode).toBe(400);
     expect(db.studentAssignment.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Авторизация чтения заданий (фикс утечки чужого контента) ────────────────
+//
+// GET /assignments и GET /assignments/:id раньше стояли под anyAuth без проверки
+// зачисления: любой студент получал задания всех групп (включая подписанные
+// ссылки на платные материалы). Теперь: студент видит только задания потоков,
+// на которые зачислён; _count.studentAssignments отдаётся только админу.
+
+describe('GET /assignments — доступ студента ограничен его потоками', () => {
+  it('студент с чужим streamId → 403, выборка заданий не выполняется', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 'stream-1', name: 'Поток 1' });
+    db.streamEnrollment.findUnique.mockResolvedValueOnce(null); // не зачислен
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments?streamId=stream-1',
+      headers: authHeaders(studentToken('stu-1')),
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(db.session.findMany).not.toHaveBeenCalled();
+  });
+
+  it('студент со своим streamId → 200, без _count (число сдач — только админу)', async () => {
+    db.stream.findUnique.mockResolvedValueOnce({ id: 'stream-1', name: 'Поток 1' });
+    db.streamEnrollment.findUnique.mockResolvedValueOnce({ id: 'enr-1' }); // зачислен
+    db.session.findMany.mockResolvedValueOnce([sessionWithLesson()]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments?streamId=stream-1',
+      headers: authHeaders(studentToken('stu-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { assignments: Array<Record<string, unknown>> };
+    expect(body.assignments).toHaveLength(1);
+    expect(body.assignments[0].id).toBe('session-1');
+    // _count не запрошен из БД и не отдан студенту.
+    const select = db.session.findMany.mock.calls[0][0].select;
+    expect(select._count).toBeUndefined();
+    expect(body.assignments[0]._count).toBeUndefined();
+  });
+
+  it('студент без streamId → список фильтруется по его зачислениям (не все группы)', async () => {
+    db.session.findMany.mockResolvedValueOnce([]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments',
+      headers: authHeaders(studentToken('stu-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const where = db.session.findMany.mock.calls[0][0].where;
+    expect(where.stream).toEqual({ enrollments: { some: { userId: 'stu-1' } } });
+  });
+
+  it('админ без streamId → все задания, с _count, без фильтра по зачислениям', async () => {
+    db.session.findMany.mockResolvedValueOnce([
+      sessionWithLesson({ _count: { studentAssignments: 5 } }),
+    ]);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const arg = db.session.findMany.mock.calls[0][0];
+    expect(arg.where.stream).toBeUndefined(); // админ не ограничен зачислениями
+    expect(arg.select._count).toEqual({ select: { studentAssignments: true } });
+    const body = res.json() as { assignments: Array<{ _count?: { studentAssignments: number } }> };
+    expect(body.assignments[0]._count).toEqual({ studentAssignments: 5 });
+    // Проверка зачисления для админа не выполняется.
+    expect(db.streamEnrollment.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /assignments/:id — студент не получает задание чужого потока', () => {
+  it('студент без зачисления в поток задания → 404 (существование не раскрываем)', async () => {
+    db.session.findUnique.mockResolvedValueOnce(sessionWithLesson());
+    db.streamEnrollment.findUnique.mockResolvedValueOnce(null); // не зачислен
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments/session-1',
+      headers: authHeaders(studentToken('stu-1')),
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('зачисленный студент получает задание своего потока (без _count)', async () => {
+    db.session.findUnique.mockResolvedValueOnce(sessionWithLesson());
+    db.streamEnrollment.findUnique.mockResolvedValueOnce({ id: 'enr-1' });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments/session-1',
+      headers: authHeaders(studentToken('stu-1')),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { assignment: Record<string, unknown> };
+    expect(body.assignment.id).toBe('session-1');
+    expect(body.assignment._count).toBeUndefined();
+    // Зачисление сверено именно с потоком задания.
+    expect(db.streamEnrollment.findUnique).toHaveBeenCalledWith({
+      where: { streamId_userId: { streamId: 'stream-1', userId: 'stu-1' } },
+    });
+  });
+
+  it('админ получает задание любого потока с _count, без проверки зачисления', async () => {
+    db.session.findUnique.mockResolvedValueOnce(
+      sessionWithLesson({ _count: { studentAssignments: 2 } }),
+    );
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assignments/session-1',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { assignment: { _count?: { studentAssignments: number } } };
+    expect(body.assignment._count).toEqual({ studentAssignments: 2 });
+    expect(db.streamEnrollment.findUnique).not.toHaveBeenCalled();
   });
 });

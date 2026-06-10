@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
+import { isEnrolled } from '../lib/enrollment.js';
 import { createNotification, notifyMany } from '../lib/notifications.js';
 import { uploadFile, getFileUrl, displayFileName } from '../lib/s3.js';
 import { pipeline } from 'node:stream/promises';
@@ -166,8 +167,14 @@ export async function assignmentRoutes(app: FastifyInstance) {
   // GET /assignments?streamId=xxx — список заданий потока.
   // Синтезируем по одному заданию на каждую Session потока, чей блок урока имеет
   // hasAssignment=true. id задания = sessionId.
+  //
+  // Доступ: админ видит всё; студент — только задания потоков, на которые он
+  // зачислён (с чужим streamId → 403, без streamId → фильтр по своим зачислениям).
+  // _count.studentAssignments (число сдач) отдаём только админу.
   app.get('/assignments', { onRequest: anyAuth }, async (request, reply) => {
     const { streamId } = request.query as { streamId?: string };
+    const isAdmin = request.user?.role === 'admin';
+    const userId = request.user!.userId;
 
     let stream: { id: string; name: string } | null = null;
     if (streamId) {
@@ -178,17 +185,25 @@ export async function assignmentRoutes(app: FastifyInstance) {
       if (!stream) {
         return reply.status(404).send({ error: 'Группа не найдена' });
       }
+      // Студент видит задания только своих потоков (как в lessons.ts).
+      if (!isAdmin && !(await isEnrolled(userId, streamId))) {
+        return reply.status(403).send({ error: 'Нет доступа к этой группе' });
+      }
     }
 
     const sessions = (await prisma.session.findMany({
       where: {
         ...(streamId ? { streamId } : {}),
+        // Без streamId студент получает задания только своих потоков
+        // (админ — всех потоков, как раньше).
+        ...(!isAdmin ? { stream: { enrollments: { some: { userId } } } } : {}),
         lesson: { hasAssignment: true },
       },
       select: {
         ...sessionAssignmentSelect,
         stream: { select: { id: true, name: true } },
-        _count: { select: { studentAssignments: true } },
+        // Счётчик сдач — только админу (студенту знать число чужих сдач незачем).
+        ...(isAdmin ? { _count: { select: { studentAssignments: true } } } : {}),
       },
       orderBy: { createdAt: 'desc' },
     })) as unknown as SessionWithLesson[];
@@ -201,19 +216,28 @@ export async function assignmentRoutes(app: FastifyInstance) {
   });
 
   // GET /assignments/:id — получить задание (id = sessionId).
+  // Студент получает задание только своего потока: чужое → 404 (не раскрываем
+  // существование). _count.studentAssignments — только админу.
   app.get('/assignments/:id', { onRequest: anyAuth }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const isAdmin = request.user?.role === 'admin';
 
     const session = (await prisma.session.findUnique({
       where: { id },
       select: {
         ...sessionAssignmentSelect,
         stream: { select: { id: true, name: true } },
-        _count: { select: { studentAssignments: true } },
+        ...(isAdmin ? { _count: { select: { studentAssignments: true } } } : {}),
       },
     })) as unknown as SessionWithLesson | null;
 
     if (!session || !session.lesson.hasAssignment) {
+      return reply.status(404).send({ error: 'Задание не найдено' });
+    }
+
+    // Проверка зачисления — ДО подписи ссылок на материалы (finalizeAssignment),
+    // иначе студент чужого потока скачает платный контент.
+    if (!isAdmin && !(await isEnrolled(request.user!.userId, session.streamId))) {
       return reply.status(404).send({ error: 'Задание не найдено' });
     }
 
