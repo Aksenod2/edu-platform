@@ -5,7 +5,8 @@ import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
-import { normalizeEmail } from '../lib/validation.js';
+import { normalizeEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
+import { listUserConsents } from '../lib/consents.js';
 
 const INVITE_TOKEN_TTL_HOURS = 72;
 
@@ -29,6 +30,7 @@ export async function userRoutes(app: FastifyInstance) {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
       ];
     }
@@ -39,6 +41,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         role: true,
         isActive: true,
         // isDemo отдаём в списке студентов, чтобы фронт пометил демо/служебные аккаунты
@@ -74,10 +78,33 @@ export async function userRoutes(app: FastifyInstance) {
 
   // POST /users — create student
   app.post('/users', async (request, reply) => {
-    const { email: rawEmail, name } = request.body as { email: string; name: string };
+    const body = request.body as {
+      email: string;
+      name: string;
+      lastName?: unknown;
+      phone?: unknown;
+    };
+    const { email: rawEmail, name } = body;
 
     if (!rawEmail || !name) {
       return reply.status(400).send({ error: 'Email и имя обязательны' });
+    }
+
+    // --- Опциональные фамилия и телефон (Волна 1 «правовой минимум») ---
+    if (body.lastName !== undefined && typeof body.lastName !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат фамилии' });
+    }
+    const lastName =
+      typeof body.lastName === 'string' && body.lastName.trim() !== ''
+        ? body.lastName.trim()
+        : null;
+
+    if (body.phone !== undefined && typeof body.phone !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
+    }
+    const phone = typeof body.phone === 'string' ? normalizePhone(body.phone) : null;
+    if (phone !== null && !isValidPhone(phone)) {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
     }
 
     const email = normalizeEmail(rawEmail);
@@ -95,6 +122,8 @@ export async function userRoutes(app: FastifyInstance) {
       data: {
         email,
         name,
+        lastName,
+        phone,
         passwordHash,
         role: 'student',
         mustChangePassword: true,
@@ -103,6 +132,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         role: true,
         isActive: true,
         createdAt: true,
@@ -122,6 +153,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         role: true,
         isActive: true,
         isDemo: true,
@@ -141,12 +174,27 @@ export async function userRoutes(app: FastifyInstance) {
     return { user };
   });
 
+  // GET /users/:id/consents — история юридических согласий ученика (admin).
+  // Append-only журнал: тип, действие, дата, ip/userAgent и документ (slug+версия).
+  app.get('/users/:id/consents', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    return { consents: await listUserConsents(id) };
+  });
+
   // PATCH /users/:id — update student (block/unblock, edit name/email)
   app.patch('/users/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as {
       isActive?: boolean;
       name?: string;
+      lastName?: unknown;
+      phone?: unknown;
       email?: string;
       isDemo?: boolean;
     };
@@ -170,9 +218,26 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'isDemo должен быть булевым значением' });
     }
 
+    // --- Фамилия и телефон (nullable: пустая строка очищает поле) ---
+    if (body.lastName !== undefined && typeof body.lastName !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат фамилии' });
+    }
+    if (body.phone !== undefined && typeof body.phone !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
+    }
+    const phone = typeof body.phone === 'string' ? normalizePhone(body.phone) : undefined;
+    if (typeof phone === 'string' && !isValidPhone(phone)) {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
+    }
+
     const data: Record<string, unknown> = {};
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.name) data.name = body.name;
+    if (typeof body.lastName === 'string') {
+      const lastName = body.lastName.trim();
+      data.lastName = lastName === '' ? null : lastName;
+    }
+    if (phone !== undefined) data.phone = phone;
     if (normalizedEmail) data.email = normalizedEmail;
     if (body.isDemo !== undefined) data.isDemo = body.isDemo;
 
@@ -188,6 +253,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         role: true,
         isActive: true,
         isDemo: true,
@@ -301,6 +368,8 @@ export async function userRoutes(app: FastifyInstance) {
       select: {
         id: true,
         name: true,
+        lastName: true,
+        phone: true,
         email: true,
         role: true,
         createdAt: true,

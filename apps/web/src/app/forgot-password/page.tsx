@@ -3,13 +3,15 @@
 // email» — честная инструкция. Пароль выдаёт администратор из админки
 // (Студенты → «⋮» → «Сброс пароля»), при первом входе система требует сменить его.
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SiteFooter } from '@/components/site-footer';
 import { KeyRound } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
+    <div className="flex min-h-svh w-full flex-col">
+      <div className="flex w-full flex-1 items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <Card>
           <CardHeader>
             <CardTitle>Восстановление пароля</CardTitle>
             <CardDescription>Пароль восстанавливается через преподавателя</CardDescription>
@@ -29,8 +31,10 @@ export default function ForgotPasswordPage() {
               ← Вернуться ко входу
             </a>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

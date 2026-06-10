@@ -29,6 +29,7 @@ import {
   type Student,
   type StreamWithCounts,
 } from '@/lib/api';
+import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -107,6 +108,10 @@ export default function StudentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  // Фамилия и телефон опциональны: согласия здесь не собираем —
+  // участник даст их сам при активации инвайта.
+  const [newLastName, setNewLastName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [creating, setCreating] = useState(false);
 
   // Подтверждения деструктивных действий
@@ -181,11 +186,21 @@ export default function StudentsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken) return;
+    const normalizedPhone = normalizePhone(newPhone);
+    if (normalizedPhone && !isValidPhone(normalizedPhone)) {
+      setError(PHONE_FORMAT_ERROR);
+      return;
+    }
     setCreating(true);
     try {
-      await createStudent(accessToken, newEmail, newName);
+      await createStudent(accessToken, newEmail, newName, {
+        ...(newLastName.trim() ? { lastName: newLastName.trim() } : {}),
+        ...(normalizedPhone ? { phone: normalizedPhone } : {}),
+      });
       setNewEmail('');
       setNewName('');
+      setNewLastName('');
+      setNewPhone('');
       setCreateOpen(false);
       showMessage('Студент создан');
       await fetchStudents();
@@ -267,6 +282,26 @@ export default function StudentsPage() {
                     onChange={(e) => setNewName(e.target.value)}
                     required
                   />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="new-last-name">Фамилия (необязательно)</FieldLabel>
+                  <Input
+                    id="new-last-name"
+                    placeholder="Фамилия"
+                    value={newLastName}
+                    onChange={(e) => setNewLastName(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="new-phone">Телефон (необязательно)</FieldLabel>
+                  <Input
+                    id="new-phone"
+                    type="tel"
+                    placeholder="+79991234567"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">{PHONE_HINT}</p>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="new-email">Email</FieldLabel>

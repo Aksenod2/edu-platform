@@ -7,6 +7,8 @@ interface User {
   id: string;
   email: string;
   name: string;
+  lastName?: string | null;
+  phone?: string | null;
   role: 'admin' | 'student';
   mustChangePassword: boolean;
   avatarUrl?: string | null;

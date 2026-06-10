@@ -12,6 +12,7 @@ import { prisma } from '@platform/db';
 import { authRoutes } from './routes/auth.js';
 import { streamRoutes } from './routes/streams.js';
 import { streamsPublicRoutes } from './routes/streams-public.js';
+import { legalPublicRoutes } from './routes/legal.js';
 import { userRoutes } from './routes/users.js';
 import { studentDynamicRoutes } from './routes/student-dynamic.js';
 import { studentsRoutes } from './routes/students.js';
@@ -37,6 +38,10 @@ import { assertJwtSecret } from './lib/jwt.js';
 assertJwtSecret();
 
 const app = Fastify({
+  // Мы за reverse-proxy (Caddy на VPS): доверяем X-Forwarded-For, чтобы request.ip
+  // был РЕАЛЬНЫМ IP клиента, а не IP прокси. Это критично для юридической фиксации
+  // согласий (UserConsent.ip) и делает rate-limit честным (счёт по клиенту, не по прокси).
+  trustProxy: true,
   logger: {
     // Не логировать чувствительные заголовки запроса/ответа: токены авторизации,
     // подпись вебхука Zoom и cookie. Fastify по умолчанию пишет req.headers в логи
@@ -79,6 +84,9 @@ await app.register(streamRoutes);
 // плагин-скоуп с локальным rate-limit (мягче на GET, жёстче на POST) — инкапсуляция
 // rate-limit НЕ затрагивает остальные роуты.
 await app.register(streamsPublicRoutes);
+// Публичное чтение юридических документов (оферта, политики) — без JWT, со своим
+// rate-limit-скоупом (по образцу streams-public).
+await app.register(legalPublicRoutes);
 await app.register(userRoutes);
 await app.register(studentDynamicRoutes);
 await app.register(studentsRoutes);

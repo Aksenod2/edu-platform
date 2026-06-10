@@ -15,7 +15,16 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SiteFooter } from '@/components/site-footer';
+import {
+  ConsentCheckboxes,
+  EMPTY_CONSENTS,
+  consentsToList,
+  requiredConsentsGiven,
+  type ConsentValues,
+} from '@/components/consent-checkboxes';
 import { getPublicJoinStream, joinStreamByToken } from '@/lib/api';
+import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -33,10 +42,14 @@ export default function JoinStreamPage() {
 
   // Поля формы регистрации.
   const [name, setName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Юридические согласия: без трёх обязательных кнопка регистрации заблокирована.
+  const [consents, setConsents] = useState<ConsentValues>(EMPTY_CONSENTS);
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +82,11 @@ export default function JoinStreamPage() {
     e.preventDefault();
     setError('');
 
+    const normalizedPhone = normalizePhone(phone);
+    if (!isValidPhone(normalizedPhone)) {
+      setError(PHONE_FORMAT_ERROR);
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Пароль должен быть не менее ${MIN_PASSWORD_LENGTH} символов`);
       return;
@@ -83,7 +101,10 @@ export default function JoinStreamPage() {
       const data = await joinStreamByToken(token, {
         email: email.trim(),
         name: name.trim(),
+        lastName: lastName.trim(),
+        phone: normalizedPhone,
         password,
+        consents: consentsToList(consents),
       });
       // Сервер уже выдал сессию (refresh-cookie) и accessToken — логиним сразу.
       setAccessToken(data.accessToken);
@@ -96,9 +117,10 @@ export default function JoinStreamPage() {
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
+    <div className="flex min-h-svh w-full flex-col">
+      <div className="flex w-full flex-1 items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <Card>
           {previewLoading ? (
             <CardContent className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -161,6 +183,31 @@ export default function JoinStreamPage() {
                       />
                     </Field>
                     <Field>
+                      <FieldLabel htmlFor="lastName">Фамилия</FieldLabel>
+                      <Input
+                        id="lastName"
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Иванов"
+                        autoComplete="family-name"
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="phone">Телефон</FieldLabel>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+79991234567"
+                        autoComplete="tel"
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">{PHONE_HINT}</p>
+                    </Field>
+                    <Field>
                       <FieldLabel htmlFor="email">Email</FieldLabel>
                       <Input
                         id="email"
@@ -214,8 +261,13 @@ export default function JoinStreamPage() {
                         required
                       />
                     </Field>
+                    <ConsentCheckboxes values={consents} onChange={setConsents} />
                     <Field>
-                      <Button type="submit" className="w-full" disabled={submitting}>
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        disabled={submitting || !requiredConsentsGiven(consents)}
+                      >
                         {submitting ? 'Регистрация...' : 'Зарегистрироваться'}
                       </Button>
                     </Field>
@@ -230,8 +282,10 @@ export default function JoinStreamPage() {
               </CardContent>
             </>
           )}
-        </Card>
+          </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

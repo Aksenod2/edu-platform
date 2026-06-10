@@ -58,6 +58,7 @@ vi.mock('web-push', () => ({
 import { authRoutes } from '../auth.js';
 import { streamRoutes } from '../streams.js';
 import { streamsPublicRoutes } from '../streams-public.js';
+import { legalPublicRoutes } from '../legal.js';
 import { userRoutes } from '../users.js';
 import { studentDynamicRoutes } from '../student-dynamic.js';
 import { studentsRoutes } from '../students.js';
@@ -107,6 +108,8 @@ const IGNORED = new Set<string>(
     ['POST', '/webhooks/zoom/:webhookId'],
     ['GET', '/public/streams/join/:token'],
     ['POST', '/public/streams/join/:token'],
+    ['GET', '/public/legal'],
+    ['GET', '/public/legal/:slug'],
     ['GET', '/health'],
     ['GET', '/readiness'],
   ].map(([m, p]) => key(m, p)),
@@ -131,6 +134,7 @@ async function collectActualRoutes(): Promise<Set<string>> {
   await app.register(authRoutes);
   await app.register(streamRoutes);
   await app.register(streamsPublicRoutes);
+  await app.register(legalPublicRoutes);
   await app.register(userRoutes);
   await app.register(studentDynamicRoutes);
   await app.register(studentsRoutes);

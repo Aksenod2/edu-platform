@@ -110,12 +110,36 @@ enum ChargeKind {
   monthly
 }
 
+// Тип согласия пользователя (Волна 1 «правовой минимум»): offer — акцепт оферты;
+// personalData — согласие на обработку ПДн; serviceNotifications — сервисные
+// уведомления; marketing — рекламно-информационные рассылки. Значения camelCase —
+// по утверждённому ТЗ (фиксируются в API при регистрации/входе).
+enum ConsentType {
+  offer
+  personalData
+  serviceNotifications
+  marketing
+}
+
+// Действие по согласию: granted — дано, revoked — отозвано. История append-only:
+// текущий статус согласия = последняя запись по (userId, consentType).
+enum ConsentAction {
+  granted
+  revoked
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
   passwordHash        String
   role                UserRole  @default(student)
   name                String
+  // Фамилия — НОВОЕ отдельное nullable-поле (Волна 1 «правовой минимум»).
+  // Существующее name НЕ трогаем и не мигрируем (там у старых пользователей
+  // может лежать что угодно: имя, имя+фамилия, ник).
+  lastName            String?
+  // Телефон — nullable строка; формат (международный) валидируется на уровне API.
+  phone               String?
   avatarKey           String?
   isActive            Boolean   @default(true)
   mustChangePassword  Boolean   @default(false)
@@ -165,6 +189,8 @@ model User {
   videoViews              VideoView[]
   // Лог активности студента: обращения к материалам урока (просмотр/скачивание).
   materialAccesses        MaterialAccess[]
+  // Юридические согласия пользователя (append-only история, Волна 1 «правовой минимум»).
+  consents                UserConsent[]
 }
 
 model ApiKey {
@@ -848,4 +874,65 @@ model StudentDynamicEntry {
   author  User? @relation("StudentDynamicEntryAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([studentId])
+}
+
+// ===== Волна 1 «правовой минимум»: юридические документы и согласия =====
+
+// Реестр юридических документов портала (карточки: оферта, политика ПДн и т.д.).
+// САМИ ТЕКСТЫ живут В КОДЕ (markdown) и публикуются через LegalDocumentVersion
+// разработчиком; здесь — только реестр. 8 базовых документов создаёт сид (upsert по
+// slug, идемпотентно). slug — латиница: offer, personal-data-policy, cookie-policy,
+// portal-rules, service-regulations, requisites, pd-consent, marketing-consent.
+model LegalDocument {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  title     String
+  createdAt DateTime @default(now())
+
+  versions LegalDocumentVersion[]
+}
+
+// Версия юридического документа: иммутабельный снимок markdown-текста (body) с номером
+// версии (уникален в рамках документа) и датой публикации. Неизменяемость обеспечивается
+// на уровне приложения: API на запись/правку версий НЕ даём. Версии выпускает
+// разработчик через prisma/legal-content/manifest.ts: publishLegalVersions() в seed.ts
+// создаёт НЕДОСТАЮЩИЕ версии из манифеста, существующие никогда не трогает.
+model LegalDocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  versionNumber Int
+  body          String // markdown-текст версии документа
+  publishedAt   DateTime @default(now())
+
+  document LegalDocument @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  consents UserConsent[]
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+}
+
+// Согласие пользователя с конкретной ВЕРСИЕЙ документа: append-only журнал (записи не
+// апдейтим и не удаляем — это юридическая история; текущий статус = последняя запись по
+// userId+consentType). ip/userAgent — снимок контекста на момент действия (userAgent
+// обрезается на API); nullable — на случай, если заголовки недоступны (прокси и т.п.).
+// Согласия старых пользователей появятся второй волной при входе — схема это позволяет
+// (записи просто добавятся позже).
+// onDelete: userId — Cascade (физическое удаление пользователя в проекте не практикуется,
+// удаление мягкое через deletedAt; при hard-delete ПДн вычищаются вместе с согласиями);
+// documentVersionId — Restrict (версию, на которую есть согласия, удалить нельзя).
+model UserConsent {
+  id                String        @id @default(uuid())
+  userId            String
+  documentVersionId String
+  consentType       ConsentType
+  action            ConsentAction
+  ip                String?
+  userAgent         String?
+  createdAt         DateTime      @default(now())
+
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentVersion LegalDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([documentVersionId])
 }

@@ -12,6 +12,7 @@ import {
   FileText,
   Loader2,
   RotateCcw,
+  ScrollText,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -61,12 +62,16 @@ import {
   debitWallet,
   getStudents,
   updateStudent,
+  getUserConsents,
   formatKopecks,
   fileDownloadUrl,
+  CONSENT_ACTION_LABELS,
+  CONSENT_TYPE_LABELS,
   type ProfileResponse,
   type TeacherNote,
   type StudentAssignment,
   type AssignmentsSummary,
+  type UserConsent,
   type WalletTransaction,
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
@@ -131,6 +136,12 @@ export default function StudentProfilePage() {
   const [debitNote, setDebitNote] = useState('');
   const [walletSubmitting, setWalletSubmitting] = useState(false);
 
+  // Юридические согласия участника (append-only журнал; грузим при открытии
+  // вкладки «Профиль»). Пустой список — норма для старых участников.
+  const [consents, setConsents] = useState<UserConsent[]>([]);
+  const [loadingConsents, setLoadingConsents] = useState(false);
+  const [consentsError, setConsentsError] = useState('');
+
   // Демо/служебный аккаунт. Профиль (getProfile) этот флаг не отдаёт, поэтому
   // начальное значение берём из списка студентов (getStudents отдаёт isDemo).
   // null = ещё не загружено (тумблер disabled до получения значения).
@@ -140,7 +151,7 @@ export default function StudentProfilePage() {
   // Отмечаем, что вкладка уже загружалась, чтобы не дёргать запрос повторно.
   // Раньше условием было `.length === 0`, и для пустого списка это
   // зацикливало загрузку (спиннер мигал поверх пустого состояния).
-  const fetchedRef = useRef({ assignments: false, summary: false });
+  const fetchedRef = useRef({ assignments: false, summary: false, consents: false });
 
   const fetchProfile = useCallback(async () => {
     if (!accessToken || !studentId) return;
@@ -196,6 +207,20 @@ export default function StudentProfilePage() {
     }
   };
 
+  const fetchConsents = useCallback(async () => {
+    if (!accessToken || !studentId) return;
+    setLoadingConsents(true);
+    try {
+      const result = await getUserConsents(accessToken, studentId);
+      setConsents(result.consents);
+      setConsentsError('');
+    } catch (err) {
+      setConsentsError(err instanceof Error ? err.message : 'Ошибка загрузки согласий');
+    } finally {
+      setLoadingConsents(false);
+    }
+  }, [accessToken, studentId]);
+
   const fetchAssignments = useCallback(async () => {
     if (!accessToken || !studentId) return;
     setLoadingAssignments(true);
@@ -233,11 +258,21 @@ export default function StudentProfilePage() {
   // При смене ученика сбрасываем «уже загружено» и устаревшие данные вкладок,
   // чтобы они перезагрузились для нового ученика.
   useEffect(() => {
-    fetchedRef.current = { assignments: false, summary: false };
+    fetchedRef.current = { assignments: false, summary: false, consents: false };
     setAssignments([]);
     setAssignmentsSummary(null);
+    setConsents([]);
+    setConsentsError('');
     setIsDemo(null);
   }, [studentId]);
+
+  // Согласия грузим лениво — при первом открытии вкладки «Профиль».
+  useEffect(() => {
+    if (accessToken && studentId && activeTab === 'profile' && !fetchedRef.current.consents) {
+      fetchedRef.current.consents = true;
+      fetchConsents();
+    }
+  }, [accessToken, studentId, activeTab, fetchConsents]);
 
   useEffect(() => {
     if (accessToken && studentId && activeTab === 'assignments') {
@@ -422,11 +457,16 @@ export default function StudentProfilePage() {
 
           <div className="mt-2 mb-1 min-w-0">
             <div className="mb-1 flex flex-wrap items-center gap-2">
-              <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">{student.name}</h1>
+              <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">
+                {student.name}
+                {student.lastName ? ` ${student.lastName}` : ''}
+              </h1>
               {isDemo && <Badge variant="secondary">Демо</Badge>}
             </div>
             <p className="text-muted-foreground m-0 text-sm break-words">
-              {student.email} · Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
+              {student.email}
+              {student.phone ? ` · ${student.phone}` : ''}
+              {' · '}Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
             </p>
           </div>
 
@@ -709,6 +749,80 @@ export default function StudentProfilePage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Юридические согласия (append-only журнал: документ+версия, тип, действие, дата, IP) */}
+              <section className="lg:col-span-2">
+                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3 flex items-center gap-2">
+                  <ScrollText className="size-5" /> Согласия
+                </h2>
+                <Card>
+                  <CardContent>
+                    {loadingConsents ? (
+                      <div className="flex justify-center p-4">
+                        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : consentsError ? (
+                      <Alert variant="destructive">
+                        <AlertDescription className="flex flex-col items-start gap-2">
+                          {consentsError}
+                          <Button variant="outline" size="sm" onClick={fetchConsents}>
+                            Повторить
+                          </Button>
+                        </AlertDescription>
+                      </Alert>
+                    ) : consents.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        Согласия не зафиксированы. Это нормально для участников,
+                        зарегистрированных до внедрения юридических документов.
+                      </p>
+                    ) : (
+                      <div className="rounded-lg border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Документ</TableHead>
+                              <TableHead>Тип</TableHead>
+                              <TableHead>Действие</TableHead>
+                              <TableHead>Дата и время</TableHead>
+                              <TableHead>IP</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {consents.map((consent) => (
+                              <TableRow key={consent.id}>
+                                <TableCell className="max-w-64 whitespace-normal">
+                                  <span className="block text-foreground">
+                                    {consent.document.title}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Редакция №{consent.document.versionNumber}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {CONSENT_TYPE_LABELS[consent.consentType] ?? consent.consentType}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={consent.action === 'granted' ? 'default' : 'destructive'}
+                                  >
+                                    {CONSENT_ACTION_LABELS[consent.action] ?? consent.action}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground tabular-nums">
+                                  {new Date(consent.createdAt).toLocaleString('ru-RU')}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                  {consent.ip || '—'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
             </div>
           )}
 

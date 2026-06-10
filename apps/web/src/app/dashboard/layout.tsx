@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { AppSidebar } from '@/components/app-sidebar';
+import { SiteFooter } from '@/components/site-footer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -48,7 +49,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             на мобилке: случайно широкий контент (длинные строки, неперенесённые
             flex-ряды) обрезается, а намеренно широкие таблицы скроллятся в своих
             внутренних overflow-x-auto обёртках, не растягивая контейнер. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto p-4 md:p-6">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto p-4 md:p-6">
+          {children}
+          <SiteFooter variant="compact" />
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

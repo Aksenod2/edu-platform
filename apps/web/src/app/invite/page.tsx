@@ -13,15 +13,29 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SiteFooter } from '@/components/site-footer';
+import {
+  ConsentCheckboxes,
+  EMPTY_CONSENTS,
+  consentsToList,
+  requiredConsentsGiven,
+  type ConsentValues,
+} from '@/components/consent-checkboxes';
 import { acceptInvite } from '@/lib/api';
+import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
 import { CheckCircle } from 'lucide-react';
 
 function InviteForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
 
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  // Юридические согласия даёт лично участник — без трёх обязательных
+  // кнопка регистрации заблокирована.
+  const [consents, setConsents] = useState<ConsentValues>(EMPTY_CONSENTS);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,6 +44,11 @@ function InviteForm() {
     e.preventDefault();
     setError('');
 
+    const normalizedPhone = normalizePhone(phone);
+    if (!isValidPhone(normalizedPhone)) {
+      setError(PHONE_FORMAT_ERROR);
+      return;
+    }
     if (password.length < 6) {
       setError('Пароль должен быть не менее 6 символов');
       return;
@@ -41,7 +60,11 @@ function InviteForm() {
 
     setLoading(true);
     try {
-      await acceptInvite(token, password);
+      await acceptInvite(token, password, {
+        lastName: lastName.trim(),
+        phone: normalizedPhone,
+        consents: consentsToList(consents),
+      });
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
@@ -51,9 +74,10 @@ function InviteForm() {
   };
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
+    <div className="flex min-h-svh w-full flex-col">
+      <div className="flex w-full flex-1 items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <Card>
           {!token ? (
             <>
               <CardHeader>
@@ -85,7 +109,9 @@ function InviteForm() {
             <>
               <CardHeader>
                 <CardTitle>Регистрация</CardTitle>
-                <CardDescription>Установите пароль для входа на платформу</CardDescription>
+                <CardDescription>
+                  Заполните данные и установите пароль для входа на платформу
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit}>
@@ -95,6 +121,31 @@ function InviteForm() {
                         <AlertDescription>{error}</AlertDescription>
                       </Alert>
                     )}
+                    <Field>
+                      <FieldLabel htmlFor="lastName">Фамилия</FieldLabel>
+                      <Input
+                        id="lastName"
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Иванов"
+                        autoComplete="family-name"
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="phone">Телефон</FieldLabel>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+79991234567"
+                        autoComplete="tel"
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">{PHONE_HINT}</p>
+                    </Field>
                     <Field>
                       <FieldLabel htmlFor="password">Пароль</FieldLabel>
                       <Input
@@ -120,8 +171,13 @@ function InviteForm() {
                         required
                       />
                     </Field>
+                    <ConsentCheckboxes values={consents} onChange={setConsents} />
                     <Field>
-                      <Button type="submit" className="w-full" disabled={loading}>
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        disabled={loading || !requiredConsentsGiven(consents)}
+                      >
                         {loading ? 'Регистрация...' : 'Зарегистрироваться'}
                       </Button>
                     </Field>
@@ -130,8 +186,10 @@ function InviteForm() {
               </CardContent>
             </>
           )}
-        </Card>
+          </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }
