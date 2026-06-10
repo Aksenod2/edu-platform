@@ -3,7 +3,38 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+// Реестр юридических документов (Волна 1 «правовой минимум»). Здесь ТОЛЬКО
+// карточки-документы: сами тексты живут в коде и публикуются версиями
+// (LegalDocumentVersion) отдельной задачей — сид версии НИКОГДА не создаёт и не
+// перетирает. upsert по slug с пустым update => повторный прогон ничего не меняет
+// (идемпотентно; сид гоняется на КАЖДОМ старте api в start.sh).
+const LEGAL_DOCUMENTS: ReadonlyArray<{ slug: string; title: string }> = [
+  { slug: 'offer', title: 'Договор-оферта' },
+  { slug: 'personal-data-policy', title: 'Политика обработки персональных данных' },
+  { slug: 'cookie-policy', title: 'Политика использования файлов cookie' },
+  { slug: 'portal-rules', title: 'Правила пользования порталом' },
+  { slug: 'service-regulations', title: 'Регламент оказания услуг' },
+  { slug: 'requisites', title: 'Реквизиты' },
+  { slug: 'pd-consent', title: 'Согласие на обработку персональных данных' },
+  { slug: 'marketing-consent', title: 'Согласие на получение рекламно-информационных рассылок' },
+];
+
+async function seedLegalDocuments() {
+  for (const doc of LEGAL_DOCUMENTS) {
+    await prisma.legalDocument.upsert({
+      where: { slug: doc.slug },
+      update: {}, // существующие карточки не трогаем (идемпотентность)
+      create: { slug: doc.slug, title: doc.title },
+    });
+  }
+  console.log(`Seed: юридические документы — ${LEGAL_DOCUMENTS.length} карточек (upsert по slug)`);
+}
+
 async function main() {
+  // Юридические документы сеем ВСЕГДА (и на проде с админами тоже) — поэтому
+  // ДО раннего выхода по adminCount ниже.
+  await seedLegalDocuments();
+
   // Сид создаёт дефолтные аккаунты ТОЛЬКО при первичной инициализации — когда в
   // БД ещё нет ни одного админа. На уже настроенной БД (есть реальные админы)
   // ничего не делаем, иначе дефолтные admin@/teacher@ с паролем admin123
