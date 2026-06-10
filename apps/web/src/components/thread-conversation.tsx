@@ -29,10 +29,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { FileLightbox } from '@/components/files/file-lightbox';
+import { ChatDateSeparator } from '@/components/chat-date-separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { isNewDay } from '@/lib/chat-date';
 import { getStatusMeta } from '@/lib/assignment-status';
 
 const POLL_INTERVAL_MS = 5000;
@@ -278,6 +280,9 @@ export function ThreadConversation({
 
               return (
                 <div key={entry.id}>
+                  {isNewDay(entries[i - 1]?.createdAt, entry.createdAt) && (
+                    <ChatDateSeparator dateIso={entry.createdAt} />
+                  )}
                   {showGroupHeader && (
                     <div className="my-3 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">

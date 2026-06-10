@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Loader2, Paperclip, Link2, Send, X, Eye } from 'lucide-react';
 import {
@@ -15,10 +15,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { FileLightbox } from '@/components/files/file-lightbox';
+import { ChatDateSeparator } from '@/components/chat-date-separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@platform/ui/lib/utils';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { isNewDay } from '@/lib/chat-date';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -247,12 +249,16 @@ export function StaffConversation({
         ) : (
           <div className="mt-auto flex flex-col gap-2">
             {entries.map((entry, i) => (
-              <StaffMessageBubble
-                key={entry.id}
-                entry={entry}
-                isOwn={entry.authorId === myId}
-                showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
-              />
+              <Fragment key={entry.id}>
+                {isNewDay(entries[i - 1]?.createdAt, entry.createdAt) && (
+                  <ChatDateSeparator dateIso={entry.createdAt} />
+                )}
+                <StaffMessageBubble
+                  entry={entry}
+                  isOwn={entry.authorId === myId}
+                  showAuthor={i === 0 || entries[i - 1]!.authorId !== entry.authorId}
+                />
+              </Fragment>
             ))}
           </div>
         )}

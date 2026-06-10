@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { FileLightbox } from '@/components/files/file-lightbox';
+import { ChatDateSeparator } from '@/components/chat-date-separator';
 import { cn } from '@platform/ui/lib/utils';
 import {
   getThread,
@@ -30,6 +31,7 @@ import {
   type ThreadEntry,
 } from '@/lib/api';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
+import { isNewDay } from '@/lib/chat-date';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -275,6 +277,9 @@ export function StudentThreadView() {
                 entry.assignmentId && entry.assignmentId !== entries[i - 1]?.assignmentId;
               return (
                 <div key={entry.id}>
+                  {isNewDay(entries[i - 1]?.createdAt, entry.createdAt) && (
+                    <ChatDateSeparator dateIso={entry.createdAt} />
+                  )}
                   {showGroupHeader && (
                     <div className="mb-2 mt-3 flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
                       <HelpCircle className="size-3.5 shrink-0 text-muted-foreground" />
