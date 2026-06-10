@@ -21,3 +21,26 @@ export function isValidPassword(password: string): boolean {
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
+
+// ─── Телефон (Волна 1 «правовой минимум») ───────────────────────────────────
+// Храним телефон в нормализованном виде: только цифры и (опционально) ведущий «+».
+// Формат международный, без привязки к стране: 10–15 цифр (E.164 допускает до 15).
+
+// Нормализованный телефон: опциональный «+», затем 10–15 цифр.
+export const PHONE_REGEX = /^\+?\d{10,15}$/;
+
+/**
+ * Нормализация телефона: убирает пробелы, скобки и дефисы (символы форматирования,
+ * которые обычно вводят люди: «+7 (999) 123-45-67»). Пустая строка (или строка из
+ * одних разделителей) трактуется как «телефон не указан» → null (так фронт может
+ * очистить поле, прислав "").
+ */
+export function normalizePhone(raw: string): string | null {
+  const normalized = raw.replace(/[\s()-]/g, '');
+  return normalized === '' ? null : normalized;
+}
+
+/** Проверка НОРМАЛИЗОВАННОГО телефона: опциональный «+» и 10–15 цифр. */
+export function isValidPhone(phone: string): boolean {
+  return PHONE_REGEX.test(phone);
+}

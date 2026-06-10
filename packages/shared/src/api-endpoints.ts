@@ -320,6 +320,13 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     body: [
       { name: 'email', type: 'string', required: true, note: 'Уникальный email (409 при дубле).' },
       { name: 'name', type: 'string', required: true, note: 'Имя ученика.' },
+      { name: 'lastName', type: 'string', required: false, note: 'Фамилия ученика.' },
+      {
+        name: 'phone',
+        type: 'string',
+        required: false,
+        note: 'Телефон (международный формат, 10–15 цифр, допускается ведущий «+»).',
+      },
     ],
     example:
       `curl -X POST <BASE>/users \\\n` +
@@ -336,6 +343,13 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     desc: 'Изменить ученика (имя, email, блокировка, демо-флаг)',
     body: [
       { name: 'name', type: 'string', required: false, note: 'Имя ученика.' },
+      { name: 'lastName', type: 'string', required: false, note: 'Фамилия (пустая строка очищает поле).' },
+      {
+        name: 'phone',
+        type: 'string',
+        required: false,
+        note: 'Телефон (международный формат; пустая строка очищает поле).',
+      },
       { name: 'email', type: 'string', required: false, note: 'Email (логин); проверяется уникальность.' },
       { name: 'isActive', type: 'boolean', required: false, note: 'false = заблокировать вход.' },
       {
@@ -350,6 +364,12 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Ученики', method: 'POST', path: '/users/:id/invite', desc: 'Сгенерировать ссылку-приглашение' },
   { group: 'Ученики', method: 'POST', path: '/users/:id/reset-password', desc: 'Сбросить пароль ученика' },
   { group: 'Ученики', method: 'GET', path: '/users/:id/export', desc: 'Выгрузить все данные ученика (профиль, задания, лента, файлы)' },
+  {
+    group: 'Ученики',
+    method: 'GET',
+    path: '/users/:id/consents',
+    desc: 'История юридических согласий ученика (тип, действие, дата, IP, документ+версия)',
+  },
   {
     group: 'Ученики',
     method: 'GET',
@@ -482,6 +502,16 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
 
   // ─── Профиль владельца ключа ─────────────────────────────────────────────
   { group: 'Профиль владельца ключа', method: 'PATCH', path: '/users/me', desc: 'Изменить свой профиль' },
+  { group: 'Профиль владельца ключа', method: 'GET', path: '/users/me/consents', desc: 'История своих юридических согласий' },
+  {
+    group: 'Профиль владельца ключа',
+    method: 'POST',
+    path: '/users/me/consents/marketing',
+    desc: 'Дать/отозвать согласие на рекламные рассылки (append-запись; 409, если документ ещё не опубликован)',
+    body: [
+      { name: 'granted', type: 'boolean', required: true, note: 'true — дать согласие, false — отозвать.' },
+    ],
+  },
   { group: 'Профиль владельца ключа', method: 'POST', path: '/users/me/avatar', desc: 'Загрузить свой аватар' },
   { group: 'Профиль владельца ключа', method: 'DELETE', path: '/users/me/avatar', desc: 'Удалить свой аватар' },
   { group: 'Профиль владельца ключа', method: 'POST', path: '/auth/change-password', desc: 'Сменить свой пароль' },

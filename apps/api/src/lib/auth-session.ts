@@ -28,6 +28,10 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  // Фамилия и телефон — nullable-поля профиля (Волна 1 «правовой минимум»);
+  // optional, чтобы не ломать вызовы, где эти поля не выбраны.
+  lastName?: string | null;
+  phone?: string | null;
   role: string;
   mustChangePassword: boolean;
   avatarKey: string | null;
@@ -40,6 +44,8 @@ export interface SessionResult {
     id: string;
     email: string;
     name: string;
+    lastName: string | null;
+    phone: string | null;
     role: string;
     mustChangePassword: boolean;
     avatarUrl: string | null;
@@ -85,6 +91,8 @@ export async function issueSession(
       id: user.id,
       email: user.email,
       name: user.name,
+      lastName: user.lastName ?? null,
+      phone: user.phone ?? null,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
       avatarUrl: await avatarUrlFor(user.avatarKey),

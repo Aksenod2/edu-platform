@@ -2,9 +2,17 @@ import bcrypt from 'bcryptjs';
 import type { FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { prisma, Prisma } from '@platform/db';
-import { isValidEmail, isValidPassword, MIN_PASSWORD_LENGTH, normalizeEmail } from '../lib/validation.js';
+import {
+  isValidEmail,
+  isValidPassword,
+  isValidPhone,
+  MIN_PASSWORD_LENGTH,
+  normalizeEmail,
+  normalizePhone,
+} from '../lib/validation.js';
 import { enrollStudentInStream } from '../lib/stream-enroll.js';
 import { issueSession } from '../lib/auth-session.js';
+import { parseConsentTypes, recordConsents } from '../lib/consents.js';
 
 /**
  * Публичные эндпоинты вступления в поток по инвайт-ссылке. БЕЗ JWT: доступ по
@@ -59,6 +67,9 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
         email?: unknown;
         name?: unknown;
         password?: unknown;
+        lastName?: unknown;
+        phone?: unknown;
+        consents?: unknown;
       };
 
       const email =
@@ -77,6 +88,29 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: `Пароль должен быть не менее ${MIN_PASSWORD_LENGTH} символов` });
+      }
+
+      // --- Опциональные фамилия и телефон (Волна 1 «правовой минимум») ---
+      if (body.lastName !== undefined && typeof body.lastName !== 'string') {
+        return reply.status(400).send({ error: 'Некорректный формат фамилии' });
+      }
+      const lastName =
+        typeof body.lastName === 'string' && body.lastName.trim() !== ''
+          ? body.lastName.trim()
+          : null;
+
+      if (body.phone !== undefined && typeof body.phone !== 'string') {
+        return reply.status(400).send({ error: 'Некорректный формат телефона' });
+      }
+      const phone = typeof body.phone === 'string' ? normalizePhone(body.phone) : null;
+      if (phone !== null && !isValidPhone(phone)) {
+        return reply.status(400).send({ error: 'Некорректный формат телефона' });
+      }
+
+      // --- Опциональные согласия: валидируем по enum (400 на неизвестные значения) ---
+      const consentTypes = parseConsentTypes(body.consents);
+      if (consentTypes === null) {
+        return reply.status(400).send({ error: 'Некорректное значение согласий' });
       }
 
       // --- Поиск потока по токену ---
@@ -100,6 +134,8 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
         id: string;
         email: string;
         name: string;
+        lastName: string | null;
+        phone: string | null;
         role: string;
         mustChangePassword: boolean;
         avatarKey: string | null;
@@ -110,6 +146,8 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
             data: {
               email,
               name,
+              lastName,
+              phone,
               passwordHash,
               role: 'student',
             },
@@ -117,6 +155,8 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
               id: true,
               email: true,
               name: true,
+              lastName: true,
+              phone: true,
               role: true,
               mustChangePassword: true,
               avatarKey: true,
@@ -135,6 +175,11 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
         }
         throw err;
       }
+
+      // Фиксируем переданные согласия ПОСЛЕ успешного создания пользователя.
+      // recordConsents не кидает: отсутствие опубликованной версии документа или
+      // ошибка журнала НЕ ломают регистрацию (мягкая деградация, warn/error в лог).
+      await recordConsents(user.id, consentTypes, request);
 
       // Сразу логиним только что зарегистрированного студента.
       const session = await issueSession(reply, {

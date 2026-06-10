@@ -19,6 +19,8 @@ export async function profileRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         createdAt: true,
       },
     });

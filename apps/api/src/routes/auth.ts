@@ -9,7 +9,14 @@ import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { issueSession } from '../lib/auth-session.js';
-import { normalizeEmail, isValidEmail } from '../lib/validation.js';
+import { normalizeEmail, isValidEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
+import {
+  latestVersionForSlug,
+  listUserConsents,
+  parseConsentTypes,
+  recordConsents,
+  requestUserAgent,
+} from '../lib/consents.js';
 
 // Подписанный временный URL аватара пользователя по avatarKey (или null).
 async function avatarUrlFor(avatarKey: string | null | undefined): Promise<string | null> {
@@ -120,6 +127,8 @@ export async function authRoutes(app: FastifyInstance) {
         id: storedToken.user.id,
         email: storedToken.user.email,
         name: storedToken.user.name,
+        lastName: storedToken.user.lastName,
+        phone: storedToken.user.phone,
         role: storedToken.user.role,
         mustChangePassword: storedToken.user.mustChangePassword,
         avatarUrl: await avatarUrlFor(storedToken.user.avatarKey),
@@ -267,7 +276,15 @@ export async function authRoutes(app: FastifyInstance) {
 
   // POST /auth/accept-invite — accept invite and set password
   app.post('/auth/accept-invite', async (request, reply) => {
-    const { token, password } = request.body as { token: string; password: string };
+    const body = (request.body ?? {}) as {
+      token?: unknown;
+      password?: unknown;
+      lastName?: unknown;
+      phone?: unknown;
+      consents?: unknown;
+    };
+    const token = typeof body.token === 'string' ? body.token : '';
+    const password = typeof body.password === 'string' ? body.password : '';
 
     if (!token || !password) {
       return reply.status(400).send({ error: 'Токен и пароль обязательны' });
@@ -275,6 +292,29 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (password.length < 6) {
       return reply.status(400).send({ error: 'Пароль должен быть не менее 6 символов' });
+    }
+
+    // --- Опциональные фамилия и телефон (Волна 1 «правовой минимум») ---
+    if (body.lastName !== undefined && typeof body.lastName !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат фамилии' });
+    }
+    const lastName =
+      typeof body.lastName === 'string' && body.lastName.trim() !== ''
+        ? body.lastName.trim()
+        : null;
+
+    if (body.phone !== undefined && typeof body.phone !== 'string') {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
+    }
+    const phone = typeof body.phone === 'string' ? normalizePhone(body.phone) : null;
+    if (phone !== null && !isValidPhone(phone)) {
+      return reply.status(400).send({ error: 'Некорректный формат телефона' });
+    }
+
+    // --- Опциональные согласия: валидируем по enum (400 на неизвестные значения) ---
+    const consentTypes = parseConsentTypes(body.consents);
+    if (consentTypes === null) {
+      return reply.status(400).send({ error: 'Некорректное значение согласий' });
     }
 
     const user = await prisma.user.findFirst({
@@ -296,8 +336,15 @@ export async function authRoutes(app: FastifyInstance) {
         inviteToken: null,
         inviteExpiresAt: null,
         mustChangePassword: false,
+        // Фамилию/телефон пишем только если переданы — иначе не трогаем поля.
+        ...(lastName !== null ? { lastName } : {}),
+        ...(phone !== null ? { phone } : {}),
       },
     });
+
+    // Фиксируем переданные согласия ПОСЛЕ успешной активации аккаунта.
+    // recordConsents не кидает (мягкая деградация — см. lib/consents.ts).
+    await recordConsents(user.id, consentTypes, request);
 
     return { message: 'Регистрация завершена. Теперь вы можете войти.' };
   });
@@ -310,6 +357,8 @@ export async function authRoutes(app: FastifyInstance) {
 
     const body = (request.body ?? {}) as {
       name?: string;
+      lastName?: unknown;
+      phone?: unknown;
       email?: string;
       currentPassword?: string;
       newPassword?: string;
@@ -329,6 +378,27 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Имя не может быть пустым' });
       }
       data.name = name;
+    }
+
+    // --- Фамилия (nullable: пустая строка очищает поле) ---
+    if (body.lastName !== undefined) {
+      if (typeof body.lastName !== 'string') {
+        return reply.status(400).send({ error: 'Некорректный формат фамилии' });
+      }
+      const lastName = body.lastName.trim();
+      data.lastName = lastName === '' ? null : lastName;
+    }
+
+    // --- Телефон (nullable: пустая строка очищает поле) ---
+    if (body.phone !== undefined) {
+      if (typeof body.phone !== 'string') {
+        return reply.status(400).send({ error: 'Некорректный формат телефона' });
+      }
+      const phone = normalizePhone(body.phone);
+      if (phone !== null && !isValidPhone(phone)) {
+        return reply.status(400).send({ error: 'Некорректный формат телефона' });
+      }
+      data.phone = phone;
     }
 
     // --- Email ---
@@ -381,6 +451,8 @@ export async function authRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         name: true,
+        lastName: true,
+        phone: true,
         role: true,
         isActive: true,
         mustChangePassword: true,
@@ -462,6 +534,48 @@ export async function authRoutes(app: FastifyInstance) {
     });
 
     return reply.status(201).send({ avatarUrl: await getFileUrl(uploaded.key) });
+  });
+
+  // GET /users/me/consents — история СВОИХ юридических согласий (любой
+  // аутентифицированный). Форма та же, что у админского GET /users/:id/consents:
+  // свои ip/userAgent пользователь видеть может.
+  app.get('/users/me/consents', { onRequest: authenticate }, async (request) => {
+    return { consents: await listUserConsents(request.user!.userId) };
+  });
+
+  // POST /users/me/consents/marketing — дать/отозвать согласие на рекламные
+  // рассылки из ЛК. Append-only: пишем НОВУЮ запись granted/revoked с актуальной
+  // версией marketing-consent (текущий статус = последняя запись). Если версий
+  // документа ещё нет — 409: фиксировать не к чему (documentVersionId NOT NULL).
+  app.post('/users/me/consents/marketing', { onRequest: authenticate }, async (request, reply) => {
+    const userId = request.user!.userId;
+    const body = (request.body ?? {}) as { granted?: unknown };
+
+    if (typeof body.granted !== 'boolean') {
+      return reply.status(400).send({ error: 'Поле granted (boolean) обязательно' });
+    }
+
+    const version = await latestVersionForSlug('marketing-consent');
+    if (!version) {
+      return reply.status(409).send({
+        error:
+          'Документ «Согласие на рекламные рассылки» ещё не опубликован — изменить согласие пока нельзя',
+      });
+    }
+
+    const consent = await prisma.userConsent.create({
+      data: {
+        userId,
+        documentVersionId: version.id,
+        consentType: 'marketing',
+        action: body.granted ? 'granted' : 'revoked',
+        ip: request.ip || null,
+        userAgent: requestUserAgent(request),
+      },
+      select: { id: true, consentType: true, action: true, createdAt: true },
+    });
+
+    return reply.status(201).send({ consent });
   });
 
   // DELETE /users/me/avatar — удаление аватара текущего пользователя.
