@@ -11,6 +11,8 @@ interface AuthResponse {
     id: string;
     email: string;
     name: string;
+    lastName?: string | null;
+    phone?: string | null;
     role: 'admin' | 'student';
     mustChangePassword: boolean;
     avatarUrl?: string | null;
@@ -169,6 +171,8 @@ export interface MeUser {
   id: string;
   email: string;
   name: string;
+  lastName: string | null;
+  phone: string | null;
   role: 'admin' | 'student';
   isActive: boolean;
   mustChangePassword: boolean;
@@ -178,10 +182,13 @@ export interface MeUser {
 
 // Самостоятельное обновление профиля текущего пользователя.
 // При смене пароля сервер возвращает новый accessToken (старые сессии инвалидируются).
+// lastName/phone — nullable: пустая строка очищает поле.
 export async function updateMe(
   accessToken: string,
   data: {
     name?: string;
+    lastName?: string;
+    phone?: string;
     email?: string;
     currentPassword?: string;
     newPassword?: string;
@@ -249,13 +256,16 @@ export async function resetPassword(
   });
 }
 
+// Активация аккаунта по инвайту. Вместе с паролем участник передаёт фамилию,
+// телефон и юридические согласия (фиксируются на сервере с IP и версией документа).
 export async function acceptInvite(
   token: string,
   password: string,
+  data?: { lastName?: string; phone?: string; consents?: ConsentType[] },
 ): Promise<{ message: string }> {
   return request('/auth/accept-invite', {
     method: 'POST',
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({ token, password, ...data }),
   });
 }
 
@@ -294,6 +304,68 @@ export async function getPublicLegalDocument(
   slug: string,
 ): Promise<{ document: PublicLegalDocument }> {
   return request(`/public/legal/${encodeURIComponent(slug)}`);
+}
+
+// --- Юридические согласия пользователя ---------------------------------------
+
+// Тип согласия — зеркало enum ConsentType бэкенда.
+export type ConsentType = 'offer' | 'personalData' | 'serviceNotifications' | 'marketing';
+export type ConsentAction = 'granted' | 'revoked';
+
+export const CONSENT_TYPE_LABELS: Record<ConsentType, string> = {
+  offer: 'Условия оферты',
+  personalData: 'Обработка персональных данных',
+  serviceNotifications: 'Сервисные уведомления',
+  marketing: 'Рекламно-информационные материалы',
+};
+
+export const CONSENT_ACTION_LABELS: Record<ConsentAction, string> = {
+  granted: 'Дано',
+  revoked: 'Отозвано',
+};
+
+// Запись append-only журнала согласий (новые сверху).
+export interface UserConsent {
+  id: string;
+  consentType: ConsentType;
+  action: ConsentAction;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  // Документ и номер его версии, к которым привязано согласие.
+  document: { slug: string; title: string; versionNumber: number };
+}
+
+// История СВОИХ согласий (любой аутентифицированный пользователь).
+export async function getMyConsents(
+  accessToken: string,
+): Promise<{ consents: UserConsent[] }> {
+  return request('/users/me/consents', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Дать/отозвать согласие на рекламные рассылки (append-запись;
+// 409, если документ marketing-consent ещё не опубликован).
+export async function setMarketingConsent(
+  accessToken: string,
+  granted: boolean,
+): Promise<{ consent: { id: string; consentType: ConsentType; action: ConsentAction; createdAt: string } }> {
+  return request('/users/me/consents/marketing', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ granted }),
+  });
+}
+
+// История согласий ученика (admin).
+export async function getUserConsents(
+  accessToken: string,
+  userId: string,
+): Promise<{ consents: UserConsent[] }> {
+  return request(`/users/${userId}/consents`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 }
 
 // Streams API
@@ -505,11 +577,19 @@ export async function getPublicJoinStream(
   return request(`/public/streams/join/${token}`);
 }
 
-// Регистрация студента по инвайт-ссылке (публично, без авторизации).
+// Регистрация участника по инвайт-ссылке (публично, без авторизации).
 // Создаёт аккаунт, зачисляет на поток и сразу выдаёт сессию (accessToken + cookie).
+// consents — юридические согласия; фиксируются на сервере с IP и версией документа.
 export async function joinStreamByToken(
   token: string,
-  data: { email: string; name: string; password: string },
+  data: {
+    email: string;
+    name: string;
+    password: string;
+    lastName?: string;
+    phone?: string;
+    consents?: ConsentType[];
+  },
 ): Promise<AuthResponse> {
   return request<AuthResponse>(`/public/streams/join/${token}`, {
     method: 'POST',
@@ -523,6 +603,8 @@ export interface Student {
   id: string;
   email: string;
   name: string;
+  lastName?: string | null;
+  phone?: string | null;
   role: 'student' | 'admin';
   isActive: boolean;
   createdAt: string;
@@ -551,11 +633,14 @@ export async function createStudent(
   accessToken: string,
   email: string,
   name: string,
+  // Опциональные фамилия и телефон (согласия при создании админом НЕ собираются —
+  // участник даст их сам при активации инвайта).
+  extra?: { lastName?: string; phone?: string },
 ): Promise<{ user: Student }> {
   return request('/users', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ email, name }),
+    body: JSON.stringify({ email, name, ...extra }),
   });
 }
 
@@ -563,7 +648,15 @@ export async function updateStudent(
   accessToken: string,
   id: string,
   // isDemo (admin): помечает аккаунт демо/служебным — он не платит и не в статистике.
-  data: { name?: string; email?: string; isActive?: boolean; isDemo?: boolean },
+  // lastName/phone — nullable: пустая строка очищает поле.
+  data: {
+    name?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+    isActive?: boolean;
+    isDemo?: boolean;
+  },
 ): Promise<{ user: Student }> {
   return request(`/users/${id}`, {
     method: 'PATCH',
@@ -2027,7 +2120,14 @@ export interface TeacherNote {
 }
 
 export interface ProfileResponse {
-  student: { id: string; email: string; name: string; createdAt: string };
+  student: {
+    id: string;
+    email: string;
+    name: string;
+    lastName: string | null;
+    phone: string | null;
+    createdAt: string;
+  };
   profile: StudentProfile | null;
   notes?: TeacherNote[];
 }

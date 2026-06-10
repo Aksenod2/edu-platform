@@ -4,13 +4,15 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getProfile, updateProfile, type StudentProfile } from '@/lib/api';
+import { getProfile, updateProfile, updateMe, type StudentProfile } from '@/lib/api';
+import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
+import { MyConsentsCard } from '@/components/my-consents-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfilePage() {
@@ -24,6 +26,11 @@ export default function ProfilePage() {
   const [resume, setResume] = useState('');
   const [contactTelegram, setContactTelegram] = useState('');
   const [direction, setDirection] = useState('');
+
+  // Личные данные (фамилия/телефон) — отдельная форма, сохраняется PATCH /users/me.
+  const [lastName, setLastName] = useState(user?.lastName ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [savingPersonal, setSavingPersonal] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -85,6 +92,34 @@ export default function ProfilePage() {
       toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePersonalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessToken || !user) return;
+
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone && !isValidPhone(normalizedPhone)) {
+      toast.error(PHONE_FORMAT_ERROR);
+      return;
+    }
+
+    setSavingPersonal(true);
+    try {
+      // Пустая строка очищает поле на сервере.
+      const result = await updateMe(accessToken, {
+        lastName: lastName.trim(),
+        phone: normalizedPhone,
+      });
+      setUser({ ...user, lastName: result.user.lastName, phone: result.user.phone });
+      setLastName(result.user.lastName ?? '');
+      setPhone(result.user.phone ?? '');
+      toast.success('Личные данные сохранены');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения');
+    } finally {
+      setSavingPersonal(false);
     }
   };
 
@@ -219,6 +254,54 @@ export default function ProfilePage() {
           )}
         </div>
       </form>
+
+      {/* Личные данные: фамилия и телефон (PATCH /users/me, отдельно от анкеты) */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Личные данные</CardTitle>
+          <CardDescription>Фамилия и телефон для связи</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handlePersonalSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="last-name">Фамилия</Label>
+              <Input
+                id="last-name"
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Иванов"
+                autoComplete="family-name"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="phone">Телефон</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+79991234567"
+                autoComplete="tel"
+              />
+              <p className="text-xs text-muted-foreground">{PHONE_HINT}</p>
+            </div>
+            <div>
+              <Button type="submit" disabled={savingPersonal}>
+                {savingPersonal && <Loader2 className="animate-spin" />}
+                {savingPersonal ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Мои согласия: история + тумблер рекламной рассылки */}
+      {accessToken && (
+        <div className="mt-6">
+          <MyConsentsCard accessToken={accessToken} />
+        </div>
+      )}
     </>
   );
 }

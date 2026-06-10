@@ -24,6 +24,13 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
   if (range) headers.set('range', range);
   const ifRange = request.headers.get('if-range');
   if (ifRange) headers.set('if-range', ifRange);
+  // Пробрасываем X-Forwarded-For (на проде его ставит Caddy) и User-Agent:
+  // API (trustProxy) использует их для юридической фиксации согласий
+  // (UserConsent.ip/userAgent) — без проброса там был бы IP веб-контейнера.
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
+  const userAgent = request.headers.get('user-agent');
+  if (userAgent) headers.set('user-agent', userAgent);
 
   const init: RequestInit = {
     method: request.method,

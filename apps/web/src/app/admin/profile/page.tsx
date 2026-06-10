@@ -5,6 +5,8 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { updateMe, purgeAllFiles, uploadMyAvatar, deleteMyAvatar } from '@/lib/api';
+import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
+import { MyConsentsCard } from '@/components/my-consents-card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,8 +44,10 @@ function initials(name: string) {
 export default function AdminProfilePage() {
   const { user, accessToken, setAccessToken, setUser } = useAuth();
 
-  // Форма «Личные данные» (имя + email).
+  // Форма «Личные данные» (имя + фамилия + телефон + email).
   const [name, setName] = useState(user?.name ?? '');
+  const [lastName, setLastName] = useState(user?.lastName ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [savingInfo, setSavingInfo] = useState(false);
 
@@ -98,7 +102,10 @@ export default function AdminProfilePage() {
   if (!user) return null;
 
   const infoChanged =
-    name.trim() !== user.name || email.trim().toLowerCase() !== user.email.toLowerCase();
+    name.trim() !== user.name ||
+    lastName.trim() !== (user.lastName ?? '') ||
+    normalizePhone(phone) !== (user.phone ?? '') ||
+    email.trim().toLowerCase() !== user.email.toLowerCase();
 
   async function handleInfoSubmit(e: FormEvent) {
     e.preventDefault();
@@ -114,17 +121,33 @@ export default function AdminProfilePage() {
       toast.error('Email не может быть пустым');
       return;
     }
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone && !isValidPhone(normalizedPhone)) {
+      toast.error(PHONE_FORMAT_ERROR);
+      return;
+    }
 
     setSavingInfo(true);
     try {
+      // Пустые фамилия/телефон очищают поля на сервере.
       const result = await updateMe(accessToken, {
         name: trimmedName,
+        lastName: lastName.trim(),
+        phone: normalizedPhone,
         email: trimmedEmail,
       });
       // Обновляем кэш пользователя в auth-context, чтобы UI (сайдбар и т.д.)
       // показывал актуальные имя и email сразу.
-      setUser({ ...user, name: result.user.name, email: result.user.email });
+      setUser({
+        ...user,
+        name: result.user.name,
+        lastName: result.user.lastName,
+        phone: result.user.phone,
+        email: result.user.email,
+      });
       setName(result.user.name);
+      setLastName(result.user.lastName ?? '');
+      setPhone(result.user.phone ?? '');
       setEmail(result.user.email);
       toast.success('Данные сохранены');
     } catch (err) {
@@ -283,7 +306,7 @@ export default function AdminProfilePage() {
         <Card>
           <CardHeader>
             <CardTitle>Личные данные</CardTitle>
-            <CardDescription>Ваше имя и email для входа</CardDescription>
+            <CardDescription>Имя, фамилия, телефон и email для входа</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleInfoSubmit} className="flex flex-col gap-4">
@@ -297,6 +320,29 @@ export default function AdminProfilePage() {
                   placeholder="Иван Иванов"
                   autoComplete="name"
                 />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="lastName">Фамилия</Label>
+                <Input
+                  id="lastName"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Иванов"
+                  autoComplete="family-name"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="phone">Телефон</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+79991234567"
+                  autoComplete="tel"
+                />
+                <p className="text-xs text-muted-foreground">{PHONE_HINT}</p>
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="email">Email</Label>
@@ -379,6 +425,9 @@ export default function AdminProfilePage() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Мои согласия: история + тумблер рекламной рассылки */}
+        {accessToken && <MyConsentsCard accessToken={accessToken} />}
 
         {/* Подсказки */}
         <Card>
