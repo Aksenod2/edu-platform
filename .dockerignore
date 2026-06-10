@@ -11,4 +11,8 @@ dist
 .git
 .gitignore
 .DS_Store
+# *.md без ** якорится к корню контекста (README и т.п.) и НЕ матчит вложенные пути,
+# но тексты юридических документов исключаем из игнора явно: они ОБЯЗАНЫ попадать
+# в образ api — их читает сид (publishLegalVersions).
 *.md
+!packages/db/prisma/legal-content/*.md
