@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { signAccessToken } from '../lib/jwt.js';
 import { authenticate } from '../middleware/auth.js';
+import { clearConsentGateCache } from '../middleware/consent-gate.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { issueSession, buildSessionUserPayload } from '../lib/auth-session.js';
@@ -562,6 +563,10 @@ export async function authRoutes(app: FastifyInstance) {
     const pendingBefore = await pendingRequiredConsents(userId);
     const toRecord = types.filter((type) => type === 'marketing' || pendingBefore.includes(type));
     await recordConsents(userId, toRecord, request);
+    // Сброс кэша серверного гейта согласий (issue #119): сейчас отрицательный
+    // результат там не кэшируется, так что это страховка инварианта «после
+    // выдачи согласий доступ открывается сразу» на случай будущих изменений.
+    clearConsentGateCache(userId);
 
     return reply.status(201).send({ pendingConsents: await pendingRequiredConsents(userId) });
   });

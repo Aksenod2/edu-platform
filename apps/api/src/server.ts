@@ -31,6 +31,7 @@ import { fileRoutes } from './routes/files.js';
 import { statsRoutes } from './routes/stats.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
+import { consentGateHook } from './middleware/consent-gate.js';
 import { startCronJobs } from './lib/cron.js';
 import { assertJwtSecret } from './lib/jwt.js';
 
@@ -66,6 +67,13 @@ await app.register(multipart, { limits: { fileSize: MAX_FILE_SIZE } });
 await app.register(rateLimit, {
   global: false,
 });
+
+// Серверный гейт обязательных согласий (issue #119): студент с недоданными
+// обязательными согласиями получает 403 CONSENTS_REQUIRED на всё, кроме
+// auth-флоу/досбора согласий/правовых документов/вебхуков/файлов.
+// ВАЖНО: addHook ДО регистрации роутов — корневые хуки наследуются только
+// плагинами, зарегистрированными ПОСЛЕ добавления хука.
+app.addHook('preHandler', consentGateHook);
 
 // Rate limit on auth endpoints
 await app.register(

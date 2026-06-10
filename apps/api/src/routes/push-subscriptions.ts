@@ -4,7 +4,9 @@ import { authenticate } from '../middleware/auth.js';
 import { getVapidPublicKey } from '../lib/webpush.js';
 
 export async function pushSubscriptionRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authenticate);
+  // onRequest (а не preHandler): request.user должен быть установлен ДО
+  // глобального preHandler-гейта согласий (consent-gate, issue #119).
+  app.addHook('onRequest', authenticate);
 
   // GET /push-subscriptions/vapid-public-key — return VAPID public key for SW registration
   app.get('/push-subscriptions/vapid-public-key', async () => {
