@@ -400,6 +400,19 @@ export async function getUserConsents(
   });
 }
 
+// Очистка журнала согласий ДЕМО-аккаунта (admin): при следующем входе студент
+// снова пройдёт экран обязательных согласий. Для реальных аккаунтов бэкенд
+// отвечает 403, для несуществующих — 404.
+export async function deleteUserConsents(
+  accessToken: string,
+  userId: string,
+): Promise<{ deleted: number }> {
+  return request(`/users/${userId}/consents`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // Streams API
 
 // Тип оплаты группы: разовая (priceKopecks) или ежемесячная менторская

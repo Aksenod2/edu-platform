@@ -7,6 +7,7 @@ import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
 import { normalizeEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import { listUserConsents } from '../lib/consents.js';
+import { clearConsentGateCache } from '../middleware/consent-gate.js';
 
 const INVITE_TOKEN_TTL_HOURS = 72;
 
@@ -185,6 +186,39 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     return { consents: await listUserConsents(id) };
+  });
+
+  // DELETE /users/:id/consents — сброс журнала согласий ДЕМО-аккаунта (issue #127).
+  //
+  // ПОЧЕМУ это исключение из append-only: журнал UserConsent — юридический,
+  // записи РЕАЛЬНЫХ людей не удаляются никогда. Но заказчику нужно повторно
+  // показывать механику гейта согласий (экран досбора при входе) — для этого
+  // у ДЕМО-аккаунта (User.isDemo) согласия сбрасываются целиком, и при
+  // следующем запросе студента гейт снова требует обязательные согласия.
+  app.delete('/users/:id/consents', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({ where: { id }, select: { isDemo: true } });
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    // Жёсткая серверная проверка: журнал реального человека не сбросить
+    // ни при каких условиях — только аккаунты с флагом isDemo.
+    if (!user.isDemo) {
+      return reply
+        .status(403)
+        .send({ error: 'Сброс согласий доступен только для демо-аккаунтов' });
+    }
+
+    const { count } = await prisma.userConsent.deleteMany({ where: { userId: id } });
+
+    // ОБЯЗАТЕЛЬНО чистим положительный кэш серверного гейта («долга нет»,
+    // TTL 60с): иначе гейт ещё до минуты считал бы согласия данными,
+    // и демонстрация механики смазалась бы.
+    clearConsentGateCache(id);
+
+    return { deleted: count };
   });
 
   // PATCH /users/:id — update student (block/unblock, edit name/email)

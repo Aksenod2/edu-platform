@@ -33,7 +33,7 @@ vi.mock('@platform/db', async () => {
       refreshToken: { create: vi.fn(), deleteMany: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
       legalDocument: { findMany: vi.fn() },
       legalDocumentVersion: { findMany: vi.fn(), findFirst: vi.fn() },
-      userConsent: { create: vi.fn(), createMany: vi.fn(), findMany: vi.fn() },
+      userConsent: { create: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
       // $transaction(callback) выполняет колбэк с tx-клиентом.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       $transaction: vi.fn((cb: any) => cb(tx)),
@@ -67,6 +67,8 @@ vi.mock('../../lib/email.js', () => ({
 import { streamsPublicRoutes } from '../streams-public.js';
 import { authRoutes } from '../auth.js';
 import { userRoutes } from '../users.js';
+import { authenticate } from '../../middleware/auth.js';
+import { consentGateHook, resetConsentGateCache } from '../../middleware/consent-gate.js';
 import { prisma } from '@platform/db';
 import { signAccessToken } from '../../lib/jwt.js';
 import { pendingRequiredConsents, REQUIRED_CONSENT_TYPES } from '../../lib/consents.js';
@@ -134,6 +136,8 @@ const joinBody = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Кэш серверного гейта — общий на модуль, между тестами сбрасываем обязательно.
+  resetConsentGateCache();
   // Дефолты для pendingRequiredConsents (issueSession/refresh зовут его для студентов):
   // «записей и опубликованных документов нет». Конкретные тесты переопределяют
   // через mockResolvedValueOnce. Дефолт legalDocumentVersion — для recordConsents.
@@ -775,5 +779,126 @@ describe('GET /users/:id/consents — история согласий учени
 
     expect(res.statusCode).toBe(403);
     expect(db.userConsent.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Issue #127: сброс согласий ДЕМО-аккаунта (admin) ─────────────
+// Журнал append-only; ЕДИНСТВЕННОЕ исключение — демо-аккаунты (User.isDemo),
+// чтобы заказчик мог повторно показывать механику гейта согласий.
+
+describe('DELETE /users/:id/consents — сброс согласий демо-аккаунта', () => {
+  it('демо-аккаунт: журнал удалён, ответ { deleted: count }', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ isDemo: true });
+    db.userConsent.deleteMany.mockResolvedValueOnce({ count: 4 });
+
+    const app = buildAdminApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/users/u-demo/consents',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deleted: 4 });
+    expect(db.userConsent.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u-demo' } });
+  });
+
+  it('несуществующий пользователь → 404, журнал не трогается', async () => {
+    db.user.findUnique.mockResolvedValueOnce(null);
+
+    const app = buildAdminApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/users/missing/consents',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(db.userConsent.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('НЕ-демо (реальный человек) → 403, журнал НЕ трогается ни при каких условиях', async () => {
+    db.user.findUnique.mockResolvedValueOnce({ isDemo: false });
+
+    const app = buildAdminApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/users/u-real/consents',
+      headers: authHeaders(adminToken),
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect((res.json() as { error: string }).error).toBe(
+      'Сброс согласий доступен только для демо-аккаунтов',
+    );
+    expect(db.userConsent.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('студент → 403 (requireRole admin), до проверок роута не доходит', async () => {
+    const app = buildAdminApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/users/u-demo/consents',
+      headers: authHeaders(studentToken),
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+    expect(db.userConsent.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('после сброса серверный гейт СРАЗУ требует согласия (кэш «долга нет» очищен, без ожидания TTL)', async () => {
+    // Приложение как server.ts: глобальный preHandler-гейт + админские роуты +
+    // /protected как представитель гейтуемых студенческих эндпоинтов.
+    const app = Fastify();
+    app.addHook('preHandler', consentGateHook);
+    app.register(userRoutes);
+    app.get('/protected', { onRequest: authenticate }, async () => ({ ok: true }));
+
+    // 1. Демо-студент без долга → гейт кэширует «долга нет» (TTL 60с).
+    db.userConsent.findMany.mockResolvedValue(
+      REQUIRED_CONSENT_TYPES.map((consentType) => ({ consentType })),
+    );
+    const before = await app.inject({
+      method: 'GET',
+      url: '/protected',
+      headers: authHeaders(studentToken),
+    });
+    expect(before.statusCode).toBe(200);
+    expect(db.userConsent.findMany).toHaveBeenCalledTimes(1);
+
+    // Контроль кэша: повторный запрос обслужен БЕЗ похода в БД.
+    const cached = await app.inject({
+      method: 'GET',
+      url: '/protected',
+      headers: authHeaders(studentToken),
+    });
+    expect(cached.statusCode).toBe(200);
+    expect(db.userConsent.findMany).toHaveBeenCalledTimes(1);
+
+    // 2. Админ сбрасывает согласия демо-аккаунта.
+    db.user.findUnique.mockResolvedValueOnce({ isDemo: true });
+    db.userConsent.deleteMany.mockResolvedValueOnce({ count: 3 });
+    const reset = await app.inject({
+      method: 'DELETE',
+      url: '/users/stu-1/consents',
+      headers: authHeaders(adminToken),
+    });
+    expect(reset.statusCode).toBe(200);
+
+    // 3. Состояние БД после сброса: granted-записей нет, версии опубликованы.
+    db.userConsent.findMany.mockResolvedValue([]);
+    db.legalDocument.findMany.mockResolvedValue(publishedRequiredDocuments);
+
+    // Гейт снова дёргает БД (кэш очищен clearConsentGateCache) и блокирует —
+    // без очистки кэша тут было бы 200 из кэша ещё до 60 секунд.
+    const after = await app.inject({
+      method: 'GET',
+      url: '/protected',
+      headers: authHeaders(studentToken),
+    });
+    expect(after.statusCode).toBe(403);
+    expect((after.json() as { code: string }).code).toBe('CONSENTS_REQUIRED');
+    expect(db.userConsent.findMany).toHaveBeenCalledTimes(2);
   });
 });
