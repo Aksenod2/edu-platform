@@ -57,7 +57,6 @@ vi.mock('bcryptjs', () => ({
 import { streamRoutes } from '../streams.js';
 import { streamsPublicRoutes } from '../streams-public.js';
 import { prisma, Prisma } from '@platform/db';
-import { FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -384,48 +383,6 @@ describe('POST /public/streams/join/:token — регистрация по сс�
 
     expect(res.statusCode).toBe(400);
     expect(db.stream.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('зарубежная почта (gmail) → 400 с сообщением для студента (149-ФЗ, issue #132)', async () => {
-    const app = buildPublicApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: '/public/streams/join/tok-1',
-      payload: { email: '  Student@GMail.com ', name: 'X', password: 'secret123' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect((res.json() as { error: string }).error).toBe(FOREIGN_EMAIL_STUDENT_MESSAGE);
-    // Проверка на границе: до поиска потока и создания пользователя.
-    expect(db.stream.findUnique).not.toHaveBeenCalled();
-    expect(tx.user.create).not.toHaveBeenCalled();
-  });
-
-  it('российская почта (yandex.ru) проходит проверку зарубежных доменов → 201', async () => {
-    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1', status: 'active' });
-    tx.user.create.mockResolvedValueOnce({
-      id: 'u-ru',
-      email: 'student@yandex.ru',
-      name: 'Студент',
-      role: 'student',
-      mustChangePassword: false,
-      avatarKey: null,
-    });
-    tx.streamEnrollment.create.mockResolvedValueOnce({ id: 'enr-2' });
-    tx.session.findMany.mockResolvedValueOnce([]);
-    tx.stream.findUnique.mockResolvedValueOnce({ priceKopecks: null, billingType: 'one_time' });
-    tx.user.findUnique.mockResolvedValueOnce({ isDemo: false });
-    db.refreshToken.create.mockResolvedValueOnce({ id: 'rt-2' });
-
-    const app = buildPublicApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: '/public/streams/join/tok-1',
-      payload: { email: 'Student@Yandex.ru', name: 'Студент', password: 'secret123' },
-    });
-
-    expect(res.statusCode).toBe(201);
-    expect(tx.user.create.mock.calls[0][0].data.email).toBe('student@yandex.ru');
   });
 
   it('короткий пароль → 400', async () => {

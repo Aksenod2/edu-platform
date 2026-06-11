@@ -5,10 +5,3 @@ export {
   API_ENDPOINT_GROUPS,
   type ApiEndpoint,
 } from './api-endpoints';
-
-export {
-  FOREIGN_EMAIL_DOMAINS,
-  isForeignEmail,
-  FOREIGN_EMAIL_STUDENT_MESSAGE,
-  FOREIGN_EMAIL_ADMIN_MESSAGE,
-} from './foreign-email';

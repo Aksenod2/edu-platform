@@ -10,7 +10,6 @@ import { clearConsentGateCache } from '../middleware/consent-gate.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { issueSession, buildSessionUserPayload } from '../lib/auth-session.js';
-import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared';
 import { normalizeEmail, isValidEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import {
   latestVersionForSlug,
@@ -405,12 +404,6 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Некорректный формат email' });
       }
       if (email !== user.email) {
-        // Зарубежная почта запрещена при смене email (ст. 10.7 149-ФЗ, issue #132).
-        // Проверяем только НОВЫЙ адрес: существующие аккаунты на зарубежной почте
-        // продолжают работать (вход/refresh/сброс пароля не трогаем).
-        if (isForeignEmail(email)) {
-          return reply.status(400).send({ error: FOREIGN_EMAIL_STUDENT_MESSAGE });
-        }
         const emailTaken = await prisma.user.findUnique({ where: { email } });
         if (emailTaken) {
           return reply.status(409).send({ error: 'Этот email уже используется' });
