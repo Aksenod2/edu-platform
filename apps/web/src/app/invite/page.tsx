@@ -33,7 +33,8 @@ function InviteForm() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  // Юридические согласия даёт лично участник — без трёх обязательных
+  // Юридические согласия даёт лично участник — без обязательных (см.
+  // REQUIRED_CONSENT_TYPES в consent-checkboxes)
   // кнопка регистрации заблокирована.
   const [consents, setConsents] = useState<ConsentValues>(EMPTY_CONSENTS);
   const [error, setError] = useState('');

@@ -48,7 +48,7 @@ export default function JoinStreamPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  // Юридические согласия: без трёх обязательных кнопка регистрации заблокирована.
+  // Юридические согласия: без обязательных (REQUIRED_CONSENT_TYPES) кнопка регистрации заблокирована.
   const [consents, setConsents] = useState<ConsentValues>(EMPTY_CONSENTS);
 
   const [error, setError] = useState('');

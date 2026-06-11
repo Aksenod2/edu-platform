@@ -523,7 +523,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     path: '/users/me/consents',
     desc: 'Дать юридические согласия (досбор у существующих пользователей; append-запись, в ответе — оставшиеся обязательные)',
     body: [
-      { name: 'consents', type: 'string[]', required: true, note: 'Типы согласий: offer, personalData, serviceNotifications, marketing.' },
+      { name: 'consents', type: 'string[]', required: true, note: 'Типы согласий: offer, personalData, personalDataPolicy (ознакомление с политикой обработки ПДн), serviceNotifications, marketing.' },
     ],
   },
   {
