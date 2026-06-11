@@ -5,7 +5,7 @@ import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
-import { isForeignEmail, FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared';
+import { isForeignEmail, FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared/foreign-email';
 import { normalizeEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import { listUserConsents } from '../lib/consents.js';
 import { clearConsentGateCache } from '../middleware/consent-gate.js';

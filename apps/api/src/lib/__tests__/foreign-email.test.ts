@@ -8,7 +8,7 @@ import {
   isForeignEmail,
   FOREIGN_EMAIL_STUDENT_MESSAGE,
   FOREIGN_EMAIL_ADMIN_MESSAGE,
-} from '@platform/shared';
+} from '@platform/shared/foreign-email';
 
 describe('isForeignEmail', () => {
   it('блокирует каждый домен из чёрного списка', () => {

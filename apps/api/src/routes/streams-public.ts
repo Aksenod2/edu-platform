@@ -10,7 +10,7 @@ import {
   normalizeEmail,
   normalizePhone,
 } from '../lib/validation.js';
-import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared';
+import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
 import { enrollStudentInStream } from '../lib/stream-enroll.js';
 import { issueSession } from '../lib/auth-session.js';
 import { parseConsentTypes, recordConsents } from '../lib/consents.js';

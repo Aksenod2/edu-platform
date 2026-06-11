@@ -57,7 +57,7 @@ vi.mock('bcryptjs', () => ({
 import { streamRoutes } from '../streams.js';
 import { streamsPublicRoutes } from '../streams-public.js';
 import { prisma, Prisma } from '@platform/db';
-import { FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared';
+import { FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

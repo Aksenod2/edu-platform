@@ -10,7 +10,7 @@ import { clearConsentGateCache } from '../middleware/consent-gate.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { issueSession, buildSessionUserPayload } from '../lib/auth-session.js';
-import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared';
+import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
 import { normalizeEmail, isValidEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import {
   latestVersionForSlug,

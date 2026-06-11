@@ -29,7 +29,7 @@ vi.mock('bcryptjs', () => ({
 
 import { userRoutes } from '../users.js';
 import { prisma } from '@platform/db';
-import { FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared';
+import { FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared/foreign-email';
 import { signAccessToken } from '../../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
