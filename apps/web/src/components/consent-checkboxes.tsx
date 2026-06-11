@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { LegalDocumentLightbox } from '@/components/legal-document-lightbox';
 import type { ConsentType } from '@/lib/api';
 
 /**
@@ -32,15 +34,28 @@ export function consentsToList(values: ConsentValues): ConsentType[] {
   return (Object.keys(values) as ConsentType[]).filter((type) => values[type]);
 }
 
-// Ссылка на документ открывается в новой вкладке, чтобы не потерять заполненную
-// форму. Клик по ссылке внутри <label> по спецификации НЕ переключает чекбокс.
-function LegalLink({ href, children }: { href: string; children: React.ReactNode }) {
+// Обычный клик открывает документ в полноэкранном лайтбоксе, чтобы не потерять
+// заполненную форму. Это настоящая <a href>, поэтому средняя кнопка, Ctrl/Cmd+клик
+// и контекстное меню работают как у обычной ссылки.
+// Клик по ссылке внутри <label> по спецификации НЕ переключает чекбокс.
+function LegalLink({
+  slug,
+  onOpen,
+  children,
+}: {
+  slug: string;
+  onOpen: (slug: string) => void;
+  children: React.ReactNode;
+}) {
   return (
     <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      href={`/legal/${slug}`}
       className="text-foreground underline underline-offset-4 hover:no-underline"
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onOpen(slug);
+      }}
     >
       {children}
     </a>
@@ -83,10 +98,22 @@ export function ConsentCheckboxes({
   const set = (key: keyof ConsentValues) => (checked: boolean) =>
     onChange({ ...values, [key]: checked });
 
+  // Один лайтбокс на блок; slug не сбрасываем при закрытии, чтобы документ
+  // не исчезал во время анимации закрытия.
+  const [docSlug, setDocSlug] = useState<string | null>(null);
+  const [docOpen, setDocOpen] = useState(false);
+  const openDoc = (slug: string) => {
+    setDocSlug(slug);
+    setDocOpen(true);
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <ConsentRow id="consent-offer" checked={values.offer} onCheckedChange={set('offer')}>
-        Принимаю условия <LegalLink href="/legal/offer">Договора-оферты</LegalLink>
+        Принимаю условия{' '}
+        <LegalLink slug="offer" onOpen={openDoc}>
+          Договора-оферты
+        </LegalLink>
       </ConsentRow>
       <ConsentRow
         id="consent-personal-data"
@@ -94,7 +121,9 @@ export function ConsentCheckboxes({
         onCheckedChange={set('personalData')}
       >
         Согласен(на) на{' '}
-        <LegalLink href="/legal/pd-consent">обработку персональных данных</LegalLink>
+        <LegalLink slug="pd-consent" onOpen={openDoc}>
+          обработку персональных данных
+        </LegalLink>
       </ConsentRow>
       <ConsentRow
         id="consent-service"
@@ -109,9 +138,12 @@ export function ConsentCheckboxes({
         onCheckedChange={set('marketing')}
       >
         Согласен(на) получать{' '}
-        <LegalLink href="/legal/marketing-consent">рекламно-информационные материалы</LegalLink>{' '}
+        <LegalLink slug="marketing-consent" onOpen={openDoc}>
+          рекламно-информационные материалы
+        </LegalLink>{' '}
         (необязательно)
       </ConsentRow>
+      <LegalDocumentLightbox slug={docSlug} open={docOpen} onOpenChange={setDocOpen} />
     </div>
   );
 }

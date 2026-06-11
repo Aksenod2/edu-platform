@@ -3,21 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, FileClock } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownContent } from '@/components/markdown/markdown-content';
+import {
+  formatLegalDate,
+  LegalDocumentBodySkeleton,
+  LegalDocumentPending,
+} from '@/components/legal-document-lightbox';
 import { ApiError, getPublicLegalDocument, type PublicLegalDocument } from '@/lib/api';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
 
 // Публичная страница юридического документа (без авторизации): актуальная
 // редакция markdown-текста; пока версий нет — заглушка «готовится к публикации».
@@ -64,11 +61,7 @@ export default function LegalDocumentPage() {
           <Skeleton className="h-4 w-1/3" />
         </div>
         <Separator />
-        <div className="flex flex-col gap-2.5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="h-4" style={{ width: `${100 - (i % 4) * 9}%` }} />
-          ))}
-        </div>
+        <LegalDocumentBodySkeleton />
       </div>
     );
   }
@@ -112,20 +105,13 @@ export default function LegalDocumentPage() {
         </h1>
         {doc.versionNumber !== null && doc.publishedAt !== null && (
           <p className="text-sm text-muted-foreground">
-            Редакция №{doc.versionNumber} от {formatDate(doc.publishedAt)}
+            Редакция №{doc.versionNumber} от {formatLegalDate(doc.publishedAt)}
           </p>
         )}
       </header>
       <Separator />
       {doc.body === null ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
-          <FileClock className="size-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Документ готовится к публикации</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Текст появится здесь после публикации. Загляните позже или посмотрите другие
-            документы.
-          </p>
-        </div>
+        <LegalDocumentPending />
       ) : (
         // text-[15px]/leading-7 — читаемая типографика длинного юридического текста.
         <MarkdownContent content={doc.body} className="text-[15px] leading-7" />
