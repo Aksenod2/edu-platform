@@ -378,6 +378,14 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   },
   {
     group: 'Ученики',
+    method: 'DELETE',
+    path: '/users/:id/consents',
+    desc:
+      'Сбросить журнал согласий ДЕМО-аккаунта (только isDemo, иначе 403): повторный показ ' +
+      'гейта согласий. Ответ: { deleted: число удалённых записей }',
+  },
+  {
+    group: 'Ученики',
     method: 'GET',
     path: '/students/:id/dynamic',
     desc: 'Динамика ученика: roadmap-шапка + лента записей (приватно, admin)',
