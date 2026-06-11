@@ -23,6 +23,11 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/apps/api/start.sh ./apps/api/
 COPY --from=build /app/packages/db ./packages/db
+# packages/shared нужен в рантайме: node_modules/@platform/shared — pnpm-симлинк
+# на эту папку; без неё сервер падает на старте с MODULE_NOT_FOUND (инцидент
+# с PR #133: деплой «зелёный», API в крашлупе). Node 22 исполняет .ts пакета
+# напрямую (type stripping), отдельная сборка не нужна.
+COPY --from=build /app/packages/shared ./packages/shared
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages/db/node_modules ./packages/db/node_modules

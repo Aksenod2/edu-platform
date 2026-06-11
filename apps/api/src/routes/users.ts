@@ -5,6 +5,7 @@ import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
+import { isForeignEmail, FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared/foreign-email';
 import { normalizeEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import { listUserConsents } from '../lib/consents.js';
 import { clearConsentGateCache } from '../middleware/consent-gate.js';
@@ -109,6 +110,11 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const email = normalizeEmail(rawEmail);
+
+    // Зарубежная почта запрещена при назначении email (ст. 10.7 149-ФЗ, issue #132).
+    if (isForeignEmail(email)) {
+      return reply.status(400).send({ error: FOREIGN_EMAIL_ADMIN_MESSAGE });
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -239,6 +245,12 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const normalizedEmail = body.email ? normalizeEmail(body.email) : undefined;
+    // Зарубежная почта запрещена при смене email (ст. 10.7 149-ФЗ, issue #132).
+    // Проверяем только НОВЫЙ email: существующий зарубежный адрес не блокирует
+    // правку остальных полей.
+    if (normalizedEmail && normalizedEmail !== existing.email && isForeignEmail(normalizedEmail)) {
+      return reply.status(400).send({ error: FOREIGN_EMAIL_ADMIN_MESSAGE });
+    }
     if (normalizedEmail && normalizedEmail !== existing.email) {
       const emailTaken = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (emailTaken) {

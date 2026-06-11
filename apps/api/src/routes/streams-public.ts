@@ -10,6 +10,7 @@ import {
   normalizeEmail,
   normalizePhone,
 } from '../lib/validation.js';
+import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
 import { enrollStudentInStream } from '../lib/stream-enroll.js';
 import { issueSession } from '../lib/auth-session.js';
 import { parseConsentTypes, recordConsents } from '../lib/consents.js';
@@ -83,6 +84,11 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
       }
       if (!isValidEmail(email)) {
         return reply.status(400).send({ error: 'Некорректный формат email' });
+      }
+      // Зарубежная почта запрещена при регистрации (ст. 10.7 149-ФЗ, issue #132).
+      // Проверка ПОСЛЕ нормализации email.
+      if (isForeignEmail(email)) {
+        return reply.status(400).send({ error: FOREIGN_EMAIL_STUDENT_MESSAGE });
       }
       if (!isValidPassword(password)) {
         return reply
