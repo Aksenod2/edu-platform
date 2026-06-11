@@ -1,19 +1,21 @@
 'use client';
 
 import { useState } from 'react';
+import { cn } from '@platform/ui/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LegalDocumentLightbox } from '@/components/legal-document-lightbox';
 import type { ConsentType } from '@/lib/api';
 
 /**
  * Блок юридических согласий в формах регистрации (join / invite).
- * Три согласия обязательны (без них кнопка регистрации заблокирована),
+ * Четыре согласия обязательны (без них кнопка регистрации заблокирована),
  * рекламно-информационные материалы — по желанию.
  */
 
 export interface ConsentValues {
   offer: boolean;
   personalData: boolean;
+  personalDataPolicy: boolean;
   serviceNotifications: boolean;
   marketing: boolean;
 }
@@ -21,12 +23,26 @@ export interface ConsentValues {
 export const EMPTY_CONSENTS: ConsentValues = {
   offer: false,
   personalData: false,
+  personalDataPolicy: false,
   serviceNotifications: false,
   marketing: false,
 };
 
+/**
+ * Обязательные согласия на фронте — ЕДИНСТВЕННОЕ место объявления (страница
+ * /consents импортирует отсюда). Зеркало REQUIRED_CONSENT_TYPES на сервере
+ * (apps/api/src/lib/consents.ts); источник истины в рантайме — серверный
+ * pendingConsents, этот список нужен только для UI (валидация формы, lockedTypes).
+ */
+export const REQUIRED_CONSENT_TYPES: ConsentType[] = [
+  'offer',
+  'personalData',
+  'personalDataPolicy',
+  'serviceNotifications',
+];
+
 export function requiredConsentsGiven(values: ConsentValues): boolean {
-  return values.offer && values.personalData && values.serviceNotifications;
+  return REQUIRED_CONSENT_TYPES.every((type) => values[type]);
 }
 
 /** Отмеченные согласия → массив для body.consents (включая marketing, если отмечен). */
@@ -65,11 +81,13 @@ function LegalLink({
 function ConsentRow({
   id,
   checked,
+  locked,
   onCheckedChange,
   children,
 }: {
   id: string;
   checked: boolean;
+  locked?: boolean;
   onCheckedChange: (checked: boolean) => void;
   children: React.ReactNode;
 }) {
@@ -77,11 +95,16 @@ function ConsentRow({
     <div className="flex items-start gap-3">
       <Checkbox
         id={id}
-        checked={checked}
+        checked={locked || checked}
+        disabled={locked}
+        aria-disabled={locked || undefined}
         onCheckedChange={(value) => onCheckedChange(value === true)}
         className="mt-0.5"
       />
-      <label htmlFor={id} className="text-sm leading-snug text-muted-foreground">
+      <label
+        htmlFor={id}
+        className={cn('text-sm leading-snug text-muted-foreground', locked && 'opacity-60')}
+      >
         {children}
       </label>
     </div>
@@ -91,12 +114,16 @@ function ConsentRow({
 export function ConsentCheckboxes({
   values,
   onChange,
+  lockedTypes = [],
 }: {
   values: ConsentValues;
   onChange: (values: ConsentValues) => void;
+  /** Уже данные согласия: рендерятся отмеченными и заблокированными (гейт /consents). */
+  lockedTypes?: ConsentType[];
 }) {
   const set = (key: keyof ConsentValues) => (checked: boolean) =>
     onChange({ ...values, [key]: checked });
+  const locked = (type: ConsentType) => lockedTypes.includes(type);
 
   // Один лайтбокс на блок; slug не сбрасываем при закрытии, чтобы документ
   // не исчезал во время анимации закрытия.
@@ -109,7 +136,12 @@ export function ConsentCheckboxes({
 
   return (
     <div className="flex flex-col gap-3">
-      <ConsentRow id="consent-offer" checked={values.offer} onCheckedChange={set('offer')}>
+      <ConsentRow
+        id="consent-offer"
+        checked={values.offer}
+        locked={locked('offer')}
+        onCheckedChange={set('offer')}
+      >
         Принимаю условия{' '}
         <LegalLink slug="offer" onOpen={openDoc}>
           Договора-оферты
@@ -118,6 +150,7 @@ export function ConsentCheckboxes({
       <ConsentRow
         id="consent-personal-data"
         checked={values.personalData}
+        locked={locked('personalData')}
         onCheckedChange={set('personalData')}
       >
         Согласен(на) на{' '}
@@ -126,8 +159,20 @@ export function ConsentCheckboxes({
         </LegalLink>
       </ConsentRow>
       <ConsentRow
+        id="consent-personal-data-policy"
+        checked={values.personalDataPolicy}
+        locked={locked('personalDataPolicy')}
+        onCheckedChange={set('personalDataPolicy')}
+      >
+        Ознакомлен(а) с{' '}
+        <LegalLink slug="personal-data-policy" onOpen={openDoc}>
+          Политикой обработки персональных данных
+        </LegalLink>
+      </ConsentRow>
+      <ConsentRow
         id="consent-service"
         checked={values.serviceNotifications}
+        locked={locked('serviceNotifications')}
         onCheckedChange={set('serviceNotifications')}
       >
         Согласен(на) получать сервисные уведомления
@@ -135,6 +180,7 @@ export function ConsentCheckboxes({
       <ConsentRow
         id="consent-marketing"
         checked={values.marketing}
+        locked={locked('marketing')}
         onCheckedChange={set('marketing')}
       >
         Согласен(на) получать{' '}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,12 +14,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   ConsentCheckboxes,
   EMPTY_CONSENTS,
+  REQUIRED_CONSENT_TYPES,
   consentsToList,
   requiredConsentsGiven,
   type ConsentValues,
 } from '@/components/consent-checkboxes';
 import { needsConsents, useAuth } from '@/lib/auth-context';
-import { grantMyConsents } from '@/lib/api';
+import { grantMyConsents, type ConsentType } from '@/lib/api';
 
 // Блокирующий гейт для студентов, зарегистрированных ДО появления согласий:
 // пока обязательные согласия не даны, в дашборд не пускаем.
@@ -29,6 +30,23 @@ export default function ConsentsPage() {
   const [values, setValues] = useState<ConsentValues>(EMPTY_CONSENTS);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Уже данные обязательные согласия (их нет в pendingConsents) показываем
+  // предотмеченными и заблокированными — студент добивает только недостающие.
+  // marketing не предотмечаем: его статус с этой страницы не меняется.
+  const lockedTypes = useMemo<ConsentType[]>(() => {
+    const pending = user?.pendingConsents ?? [];
+    return user ? REQUIRED_CONSENT_TYPES.filter((type) => !pending.includes(type)) : [];
+  }, [user]);
+
+  useEffect(() => {
+    if (lockedTypes.length === 0) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      for (const type of lockedTypes) next[type] = true;
+      return next;
+    });
+  }, [lockedTypes]);
 
   // Редиректы — side-effect, поэтому в useEffect (а не в теле рендера):
   // незалогиненных — на вход, смена пароля приоритетнее согласий, прямой
@@ -95,7 +113,7 @@ export default function ConsentsPage() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              <ConsentCheckboxes values={values} onChange={setValues} />
+              <ConsentCheckboxes values={values} onChange={setValues} lockedTypes={lockedTypes} />
               <Button
                 type="submit"
                 className="w-full"

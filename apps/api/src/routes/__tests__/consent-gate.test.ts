@@ -80,8 +80,13 @@ function buildGatedApp(): FastifyInstance {
   return app;
 }
 
-// Документы всех обязательных типов с опубликованными версиями.
-const publishedRequiredDocuments = [{ slug: 'offer' }, { slug: 'pd-consent' }];
+// Документы всех обязательных типов с опубликованными версиями
+// (включая personal-data-policy — обязательный personalDataPolicy, issue #130).
+const publishedRequiredDocuments = [
+  { slug: 'offer' },
+  { slug: 'pd-consent' },
+  { slug: 'personal-data-policy' },
+];
 
 // granted-записи по всем обязательным типам («долга нет»).
 const allRequiredGranted = REQUIRED_CONSENT_TYPES.map((consentType) => ({ consentType }));
@@ -180,8 +185,9 @@ describe('consentGateHook — студент с долгом по согласи
     db.legalDocumentVersion.findMany.mockResolvedValue([
       { id: 'ver-offer-1', document: { slug: 'offer' } },
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
+      { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 3 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 4 });
 
     const app = buildGatedApp();
     const res = await app.inject({
@@ -250,8 +256,9 @@ describe('consentGateHook — студент без долга и кэш', () =>
     db.legalDocumentVersion.findMany.mockResolvedValue([
       { id: 'ver-offer-1', document: { slug: 'offer' } },
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
+      { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 3 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 4 });
 
     const app = buildGatedApp();
 

@@ -10,7 +10,16 @@ import type { Prisma } from '@platform/db';
  */
 
 // Типы согласий — зеркало enum ConsentType из Prisma-схемы (camelCase по ТЗ).
-export const CONSENT_TYPES = ['offer', 'personalData', 'serviceNotifications', 'marketing'] as const;
+// personalDataPolicy — фиксация ОЗНАКОМЛЕНИЯ с «Политикой обработки персональных
+// данных»: отдельная запись по требованию юриста заказчика (issue #130);
+// action=granted трактуем как «подтвердил ознакомление».
+export const CONSENT_TYPES = [
+  'offer',
+  'personalData',
+  'personalDataPolicy',
+  'serviceNotifications',
+  'marketing',
+] as const;
 export type ConsentTypeValue = (typeof CONSENT_TYPES)[number];
 
 // userAgent в журнале согласий обрезаем: заголовок может быть произвольно длинным,
@@ -26,6 +35,7 @@ const USER_AGENT_MAX_LENGTH = 512;
 export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
   offer: 'offer',
   personalData: 'pd-consent',
+  personalDataPolicy: 'personal-data-policy',
   serviceNotifications: 'pd-consent',
   marketing: 'marketing-consent',
 };
@@ -33,9 +43,15 @@ export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
 // Обязательные юридические согласия: без них студент не может пользоваться
 // платформой (Волна 1.1 «досбор согласий у существующих пользователей»).
 // marketing — опциональное, в гейт не входит.
+//
+// personalDataPolicy добавлен в обязательные ОСОЗНАННО (issue #130, решение
+// заказчика): у ВСЕХ существующих студентов появляется «долг» по этому типу →
+// серверный гейт (consent-gate) и фронт-гейт потребуют новую галочку
+// «ознакомлен с Политикой обработки персональных данных» при следующем заходе.
 export const REQUIRED_CONSENT_TYPES: ConsentTypeValue[] = [
   'offer',
   'personalData',
+  'personalDataPolicy',
   'serviceNotifications',
 ];
 

@@ -112,13 +112,16 @@ enum ChargeKind {
 
 // Тип согласия пользователя (Волна 1 «правовой минимум»): offer — акцепт оферты;
 // personalData — согласие на обработку ПДн; serviceNotifications — сервисные
-// уведомления; marketing — рекламно-информационные рассылки. Значения camelCase —
-// по утверждённому ТЗ (фиксируются в API при регистрации/входе).
+// уведомления; marketing — рекламно-информационные рассылки;
+// personalDataPolicy — ознакомление с «Политикой обработки персональных данных»
+// (документ personal-data-policy). Значения camelCase — по утверждённому ТЗ
+// (фиксируются в API при регистрации/входе).
 enum ConsentType {
   offer
   personalData
   serviceNotifications
   marketing
+  personalDataPolicy
 }
 
 // Действие по согласию: granted — дано, revoked — отозвано. История append-only:

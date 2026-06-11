@@ -327,12 +327,18 @@ export async function getPublicLegalDocument(
 // --- Юридические согласия пользователя ---------------------------------------
 
 // Тип согласия — зеркало enum ConsentType бэкенда.
-export type ConsentType = 'offer' | 'personalData' | 'serviceNotifications' | 'marketing';
+export type ConsentType =
+  | 'offer'
+  | 'personalData'
+  | 'personalDataPolicy'
+  | 'serviceNotifications'
+  | 'marketing';
 export type ConsentAction = 'granted' | 'revoked';
 
 export const CONSENT_TYPE_LABELS: Record<ConsentType, string> = {
   offer: 'Условия оферты',
   personalData: 'Обработка персональных данных',
+  personalDataPolicy: 'Политика обработки персональных данных',
   serviceNotifications: 'Сервисные уведомления',
   marketing: 'Рекламно-информационные материалы',
 };
