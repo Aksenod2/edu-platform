@@ -1,5 +1,7 @@
 import { prisma, Prisma } from '@platform/db';
 import { createCharge, settleOutstandingCharges } from './charges.js';
+import { notifyMany } from './notifications.js';
+import { getStreamTeacherList } from './stream-teachers.js';
 
 // Клиент Prisma: либо обычный singleton, либо транзакционный (внутри $transaction).
 type PrismaLike = typeof prisma | Prisma.TransactionClient;
@@ -31,7 +33,11 @@ export async function enrollStudentInStream(
   userId: string,
   client: PrismaLike = prisma,
   createdById?: string | null,
-): Promise<void> {
+): Promise<boolean> {
+  // newlyEnrolled = студент именно сейчас добавлен в поток (а не повторное идемпотентное
+  // зачисление). По нему вызывающий решает, слать ли уведомление student_enrolled —
+  // чтобы преподаватели не получали дубль при повторном прогоне зачисления уже зачисленного.
+  let newlyEnrolled = true;
   try {
     await client.streamEnrollment.create({
       data: { streamId, userId },
@@ -43,6 +49,7 @@ export async function enrollStudentInStream(
     ) {
       throw err;
     }
+    newlyEnrolled = false;
   }
 
   const sessions = await client.session.findMany({
@@ -89,6 +96,38 @@ export async function enrollStudentInStream(
     });
     await settleOutstandingCharges(client, userId);
   }
+
+  return newlyEnrolled;
+}
+
+/**
+ * Уведомить преподавателей потока о зачислении нового студента (тип student_enrolled).
+ *
+ * ВЫЗЫВАТЬ ПОСЛЕ КОММИТА транзакции зачисления, а не внутри неё: createNotification
+ * пишет Notification глобальным prisma-клиентом и шлёт email/push fire-and-forget —
+ * внутри незакоммиченной tx это создало бы фантомные уведомления при откате.
+ * Получатели — дедуплицированный список преподавателей потока (getStreamTeacherList уже
+ * схлопывает преподавателя, ведущего несколько уроков потока). Если преподавателей нет,
+ * уведомлять некого — это не админское событие (для админов оно избыточно).
+ */
+export async function notifyStreamTeachersOfEnrollment(
+  streamId: string,
+  userId: string,
+): Promise<void> {
+  const [teachers, stream, student] = await Promise.all([
+    getStreamTeacherList(streamId),
+    prisma.stream.findUnique({ where: { id: streamId }, select: { name: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+  ]);
+  if (teachers.length === 0 || !stream || !student) return;
+
+  await notifyMany(
+    teachers.map((t) => t.id),
+    'student_enrolled',
+    'Новый студент в группе',
+    `В группу «${stream.name}» зачислен студент ${student.name}`,
+    { streamId, studentId: userId },
+  );
 }
 
 /**
@@ -101,5 +140,12 @@ export async function enrollStudentInStreamTx(
   userId: string,
   createdById?: string | null,
 ): Promise<void> {
-  await prisma.$transaction((tx) => enrollStudentInStream(streamId, userId, tx, createdById));
+  const newlyEnrolled = await prisma.$transaction((tx) =>
+    enrollStudentInStream(streamId, userId, tx, createdById),
+  );
+  // Уведомляем преподавателей потока только о НОВОМ зачислении и только после коммита tx
+  // (см. notifyStreamTeachersOfEnrollment). Fire-and-forget: сбой рассылки не валит зачисление.
+  if (newlyEnrolled) {
+    notifyStreamTeachersOfEnrollment(streamId, userId).catch(() => {});
+  }
 }

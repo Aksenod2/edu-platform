@@ -1,6 +1,14 @@
 import { prisma, type NotificationType, Prisma } from '@platform/db';
 import { sendNotificationEmail } from './email.js';
 import { sendWebPush } from './webpush.js';
+import { sendTelegramMessage } from './telegram.js';
+import { decryptSecret, isEncryptionKeySet } from './crypto.js';
+
+// Минимальный escape для HTML parse_mode Telegram: экранируем спецсимволы,
+// чтобы '<', '>', '&' в title/body не ломали разметку сообщения.
+function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 export interface CreateNotificationParams {
   userId: string;
@@ -29,6 +37,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
     const inAppEnabled = pref?.inAppEnabled ?? true;
     const emailEnabled = pref?.emailEnabled ?? true;
     const pushEnabled = pref?.pushEnabled ?? true;
+    const telegramEnabled = pref?.telegramEnabled ?? true;
 
     // Create in-app notification
     if (inAppEnabled) {
@@ -58,6 +67,28 @@ export async function createNotification(params: CreateNotificationParams): Prom
         sendWebPush(sub, { title, body, data: metadata }).catch((err) => {
           console.error('[notifications] push send error', err);
         });
+      }
+    }
+
+    // Send Telegram message (fire-and-forget). Канал нужен только если он включён в
+    // предпочтениях И настроено шифрование (без ключа токен не расшифровать) — лишний
+    // запрос за интеграцией делаем лишь при выполнении этих условий.
+    if (telegramEnabled && isEncryptionKeySet()) {
+      const integration = await prisma.telegramIntegration.findUnique({
+        where: { userId },
+        select: { botTokenEnc: true, chatId: true, enabled: true },
+      });
+      if (integration?.enabled && integration.botTokenEnc && integration.chatId) {
+        const { botTokenEnc, chatId } = integration;
+        try {
+          const botToken = decryptSecret(botTokenEnc);
+          const text = `<b>${escapeTelegramHtml(title)}</b>\n${escapeTelegramHtml(body)}`;
+          sendTelegramMessage(botToken, chatId, text).catch((err) => {
+            console.error('[notifications] telegram send error', err);
+          });
+        } catch (err) {
+          console.error('[notifications] telegram send error', err);
+        }
       }
     }
   } catch (err) {

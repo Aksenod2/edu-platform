@@ -30,6 +30,7 @@ import { apiKeyRoutes } from './routes/api-keys.js';
 import { fileRoutes } from './routes/files.js';
 import { statsRoutes } from './routes/stats.js';
 import { integrationRoutes } from './routes/integrations.js';
+import { telegramIntegrationRoutes } from './routes/telegram-integrations.js';
 import { zoomWebhookRoutes } from './routes/zoom-webhooks.js';
 import { consentGateHook } from './middleware/consent-gate.js';
 import { startCronJobs } from './lib/cron.js';
@@ -112,6 +113,7 @@ await app.register(apiKeyRoutes);
 await app.register(fileRoutes);
 await app.register(statsRoutes);
 await app.register(integrationRoutes);
+await app.register(telegramIntegrationRoutes);
 // Публичный приём вебхуков Zoom (аутентификация по HMAC-подписи, без JWT).
 // Регистрируется отдельным плагин-скоупом: внутри он подменяет content-type-parser
 // на сырой Buffer (для HMAC), и эта инкапсуляция НЕ затрагивает остальные роуты.

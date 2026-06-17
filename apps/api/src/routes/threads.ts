@@ -3,6 +3,52 @@ import { prisma, type ThreadEntryType } from '@platform/db';
 import { authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createNotification } from '../lib/notifications.js';
+import { deriveStreamTeachers, streamTeacherSourcesInclude } from '../lib/stream-teachers.js';
+
+/**
+ * Получатели уведомления о сообщении студента в его личном треде.
+ *
+ * Уведомление о сообщении студента адресуется ПРЕПОДАВАТЕЛЯМ его потоков (всех
+ * потоков, на которые студент зачислён), а НЕ всем админам. Список дедуплицируется
+ * по id (один препод, ведущий несколько потоков/уроков студента, получает одно
+ * уведомление) и фильтруется по активности.
+ *
+ * Фолбэк на админов — ТОЛЬКО если у потоков студента нет активных преподавателей
+ * (или у студента вовсе нет потоков), чтобы сообщение не осталось без адресата.
+ */
+async function recipientsForStudentThread(studentId: string): Promise<string[]> {
+  const enrollments = await prisma.streamEnrollment.findMany({
+    where: { userId: studentId },
+    select: { streamId: true },
+  });
+
+  const teacherIds = new Set<string>();
+  if (enrollments.length > 0) {
+    // Один запрос на все потоки студента вместо N тяжёлых запросов в цикле.
+    const streams = await prisma.stream.findMany({
+      where: { id: { in: enrollments.map((e) => e.streamId) } },
+      select: streamTeacherSourcesInclude,
+    });
+    for (const stream of streams) {
+      for (const t of deriveStreamTeachers(stream).teachers) teacherIds.add(t.id);
+    }
+  }
+
+  if (teacherIds.size > 0) {
+    // Отсеиваем неактивных/удалённых преподавателей (список их флагов не несёт).
+    const active = await prisma.user.findMany({
+      where: { id: { in: [...teacherIds] }, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (active.length > 0) return active.map((u) => u.id);
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  return admins.map((a) => a.id);
+}
 
 const ALLOWED_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link', 'comment', 'note'];
 const STUDENT_ENTRY_TYPES: ThreadEntryType[] = ['text', 'file', 'audio', 'link'];
@@ -342,15 +388,12 @@ export async function threadRoutes(app: FastifyInstance) {
         metadata: { conversationId: thread.id, entryId: entry.id },
       }).catch(() => {});
     } else {
-      // Student wrote — notify all admins
-      const admins = await prisma.user.findMany({
-        where: { role: 'admin', isActive: true, deletedAt: null },
-        select: { id: true, name: true },
-      });
+      // Student wrote — notify the teachers of the student's stream(s) (deduped).
+      const recipientIds = await recipientsForStudentThread(studentId);
       const authorName = entry.author.name;
-      for (const admin of admins) {
+      for (const recipientId of recipientIds) {
         createNotification({
-          userId: admin.id,
+          userId: recipientId,
           type: 'thread_entry',
           title: `Новое сообщение от ${authorName}`,
           body: body.type === 'text' ? body.content.slice(0, 200) : 'Новый файл в переписке',
@@ -449,13 +492,11 @@ async function handleMultipartEntry(
       metadata: { conversationId, entryId: entry.id },
     }).catch(() => {});
   } else {
-    const admins = await prisma.user.findMany({
-      where: { role: 'admin', isActive: true, deletedAt: null },
-      select: { id: true },
-    });
-    for (const admin of admins) {
+    // Student uploaded — notify the teachers of the student's stream(s) (deduped).
+    const recipientIds = await recipientsForStudentThread(studentId);
+    for (const recipientId of recipientIds) {
       createNotification({
-        userId: admin.id,
+        userId: recipientId,
         type: 'thread_entry',
         title: `Новый файл от ${entry.author.name}`,
         body: `Загружен файл: ${fileName}`,

@@ -3,6 +3,7 @@ import { prisma } from '@platform/db';
 import { requireRole, authenticate } from '../middleware/auth.js';
 import { isEnrolled } from '../lib/enrollment.js';
 import { createNotification, notifyMany } from '../lib/notifications.js';
+import { getStreamTeacherList } from '../lib/stream-teachers.js';
 import { uploadFile, getFileUrl, displayFileName } from '../lib/s3.js';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
@@ -670,16 +671,12 @@ export async function assignmentRoutes(app: FastifyInstance) {
     // Подгружаем сдачу с её Session и блоком урока (с преподавателями для уведомлений).
     const sa = await prisma.studentAssignment.findUnique({
       where: { id },
-      include: {
-        session: {
-          include: {
-            lesson: {
-              include: {
-                teachers: { include: { user: { select: { id: true, isActive: true, deletedAt: true } } } },
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        status: true,
+        studentId: true,
+        // streamId сдачи нужен для адресной рассылки уведомления преподавателям потока.
+        session: { select: { streamId: true } },
       },
     });
 
@@ -779,12 +776,28 @@ export async function assignmentRoutes(app: FastifyInstance) {
 
     // Notify relevant parties about status change
     if (status === 'submitted') {
-      // Адресно: уведомляем преподавателей урока задания (LessonTeacher).
-      // Если преподавателей нет — фолбэк на всех админов.
-      let recipientIds: string[] = sa.session.lesson.teachers
-        .filter((t) => t.user.isActive && t.user.deletedAt === null)
-        .map((t) => t.user.id);
+      // Адресно: уведомляем преподавателей ПОТОКА сдачи (а не только урока) —
+      // getStreamTeacherList собирает их по урокам потока (program + sessions) и уже
+      // дедуплицирует. Преподаватель урока задания входит в этот список, плюс могут
+      // быть преподаватели других уроков того же потока. Список не несёт флагов
+      // активности, поэтому отсеиваем неактивных/удалённых отдельным запросом —
+      // паритет с прежним поведением (раньше так фильтровались преподаватели урока).
+      const streamTeachers = await getStreamTeacherList(sa.session.streamId);
+      let recipientIds: string[] = [];
+      if (streamTeachers.length > 0) {
+        const active = await prisma.user.findMany({
+          where: {
+            id: { in: streamTeachers.map((t) => t.id) },
+            isActive: true,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        recipientIds = active.map((u) => u.id);
+      }
 
+      // Фолбэк на всех админов, если у потока нет (активных) преподавателей —
+      // чтобы сдача никогда не осталась без адресата (сохранение прежнего поведения).
       if (recipientIds.length === 0) {
         const admins = await prisma.user.findMany({
           where: { role: 'admin', isActive: true, deletedAt: null },

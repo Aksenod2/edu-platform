@@ -91,6 +91,10 @@ enum NotificationType {
   topup_requested
   mentorship_charge_upcoming
   mentorship_charge_debt
+  // Студент зачислен в группу (поток). Уведомление преподавателю/владельцу группы.
+  // Эпик «Уведомления преподавателю». События «сдал задание» и «сообщение в чате»
+  // переиспользуют существующие assignment_submitted / thread_entry — новые типы не нужны.
+  student_enrolled
 }
 
 // Тип биллинга группы (дискриминатор): one_time — разовая оплата за участие
@@ -177,6 +181,7 @@ model User {
   ownedPrograms           Program[]                @relation("ProgramOwner")
   walletTransactions      WalletTransaction[]      @relation("WalletTxUser")
   zoomIntegration         ZoomIntegration?
+  telegramIntegration     TelegramIntegration?
   topUpRequests           TopUpRequest[]           @relation("TopUpAuthor")
   reviewedTopUps          TopUpRequest[]           @relation("TopUpReviewer")
   sessionAttendance       SessionAttendance[]
@@ -665,6 +670,9 @@ model NotificationPreference {
   emailEnabled Boolean          @default(true)
   pushEnabled  Boolean          @default(true)
   inAppEnabled Boolean          @default(true)
+  // Канал Telegram. Дефолт true безопасен: отправка возможна только после привязки
+  // (TelegramIntegration.chatId заполнен и enabled); без привязки просто не отправится.
+  telegramEnabled Boolean       @default(true)
   updatedAt    DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -829,6 +837,35 @@ model ZoomIntegration {
   lastTestOk        Boolean?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Персональная интеграция пользователя с собственным Telegram-ботом. По образцу
+// ZoomIntegration: КАЖДЫЙ преподаватель сам создаёт бота в @BotFather и вводит его
+// токен в настройках; токен хранится зашифрованным (как Zoom clientSecretEnc).
+// Эпик «Уведомления преподавателю».
+// Сценарий: пользователь вводит botToken → платформа валидирует через getMe и
+// сохраняет botUsername → пользователь открывает t.me/<botUsername>, жмёт «Старт» →
+// платформа разово делает getUpdates по его токену, берёт chatId → дальше уведомления
+// шлются через ЕГО токен в ЕГО chatId.
+model TelegramIntegration {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  // Включён ли канал у пользователя. По умолчанию true; реальная отправка возможна
+  // только когда заданы botTokenEnc и chatId (бот введён и чат привязан).
+  enabled      Boolean   @default(true)
+  // Токен бота пользователя (из @BotFather), ЗАШИФРОВАН (lib/crypto, как Zoom). Наружу
+  // не отдаётся — только флаг наличия.
+  botTokenEnc  String?
+  // @username бота (из getMe) — для ссылки t.me/<botUsername> и подписи. Не секрет.
+  botUsername  String?
+  // Telegram chat id личного чата пользователя с его ботом. Заполняется после привязки.
+  chatId       String?
+  // Момент успешной привязки чата.
+  linkedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

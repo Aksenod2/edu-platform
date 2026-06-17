@@ -11,7 +11,7 @@ import {
   normalizePhone,
 } from '../lib/validation.js';
 import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
-import { enrollStudentInStream } from '../lib/stream-enroll.js';
+import { enrollStudentInStream, notifyStreamTeachersOfEnrollment } from '../lib/stream-enroll.js';
 import { issueSession } from '../lib/auth-session.js';
 import { parseConsentTypes, recordConsents } from '../lib/consents.js';
 
@@ -181,6 +181,11 @@ export async function streamsPublicRoutes(app: FastifyInstance) {
         }
         throw err;
       }
+
+      // Уведомляем преподавателей потока о новом студенте (student_enrolled). Студент
+      // здесь только что создан, поэтому зачисление всегда новое. Шлём ПОСЛЕ коммита tx,
+      // fire-and-forget: сбой рассылки не должен ломать регистрацию.
+      notifyStreamTeachersOfEnrollment(stream.id, user.id).catch(() => {});
 
       // Фиксируем переданные согласия ПОСЛЕ успешного создания пользователя.
       // recordConsents не кидает: отсутствие опубликованной версии документа или

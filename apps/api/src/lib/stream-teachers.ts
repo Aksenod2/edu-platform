@@ -89,7 +89,7 @@ export function deriveStreamTeachers(stream: {
     addTeachers(pl.lesson.teachers);
   }
   // Менторская/сессионная ветка: уроки сессий потока.
-  for (const session of stream.sessions) {
+  for (const session of stream.sessions ?? []) {
     addTeachers(session.lesson.teachers);
   }
 
