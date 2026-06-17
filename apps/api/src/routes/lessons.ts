@@ -94,6 +94,38 @@ function isVisibleForViewer(
   return itemStreamId === ctx.viewerStreamId;
 }
 
+// Нормализует входной streamId видимости для загрузки материала/видео (admin).
+// Возвращает:
+//   - undefined → поле не задано (общий контент, streamId не пишем / null);
+//   - null      → задано пустым → трактуем как общий (нормализуем к null);
+//   - string    → конкретный поток (требует валидации против сессий урока).
+// Для multipart streamId читается из query, для JSON — из тела (передаём raw).
+function normalizeVisibilityStreamId(raw: unknown): string | null | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return null; // явно пустая строка → общий
+  return trimmed;
+}
+
+// Допустимые потоки для материала/видео урока — это потоки, у которых ЕСТЬ Session
+// этого урока (источник тот же, что в GET /lessons/:id/sessions). Если streamId
+// задан, но урок не ведёт такой поток — бросаем StreamNotForLesson (→ 400 в роуте).
+class StreamNotForLessonError extends Error {}
+
+// Проверяет, что у урока есть Session с таким streamId. Возвращает streamId как есть.
+async function assertStreamRunsLesson(lessonId: string, streamId: string): Promise<void> {
+  const session = await prisma.session.findUnique({
+    where: { streamId_lessonId: { streamId, lessonId } },
+    select: { streamId: true },
+  });
+  if (!session) {
+    throw new StreamNotForLessonError(
+      'Указанный поток не ведёт этот урок — выберите поток из расписания урока или оставьте материал общим',
+    );
+  }
+}
+
 // Спроецированное видео урока для ответов фронту: kind различает файл/ссылку,
 // url — подписанный временный URL файла или внешняя ссылка как есть.
 type ProjectedVideo = { id: string; title: string | null; kind: 'file' | 'link'; url: string; sortOrder: number };
@@ -1346,6 +1378,26 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
     }
 
+    // Видимость материала. multipart-загрузка файла → доп. поле streamId читаем из
+    // QUERY (?streamId=...). Не задан/пуст → общий материал-метод (streamId=null,
+    // виден всем потокам, как раньше). Задан → валидируем против сессий урока.
+    const visibilityStreamId = normalizeVisibilityStreamId(
+      (request.query as { streamId?: string }).streamId,
+    );
+    if (typeof visibilityStreamId === 'string') {
+      try {
+        await assertStreamRunsLesson(id, visibilityStreamId);
+      } catch (err) {
+        if (err instanceof StreamNotForLessonError) {
+          return reply.status(400).send({ error: err.message });
+        }
+        throw err;
+      }
+    }
+    // Нормализуем к null для записи в дескриптор (undefined/'' → общий).
+    const materialStreamId: string | null =
+      typeof visibilityStreamId === 'string' ? visibilityStreamId : null;
+
     const data = await request.file();
     if (!data) {
       return reply.status(400).send({ error: 'Файл не найден в запросе' });
@@ -1398,19 +1450,27 @@ export async function lessonRoutes(app: FastifyInstance) {
       fileName: originalName,
       mimeType,
       size: uploaded.size,
+      // null = общий материал-метод; задан = виден только студентам этого потока.
+      streamId: materialStreamId,
     };
 
     // Перезалив файла с тем же именем ЗАМЕНЯЕТ прежний материал, а не плодит дубль
     // (иначе в уроке копятся «старый битый + новый» с одинаковым именем). Старые
     // объекты с тем же именем подчищаем в хранилище best-effort.
+    //
+    // Матч по ПАРЕ (fileName, streamId): общий и пер-потоковый материал с одинаковым
+    // именем — РАЗНЫЕ материалы и НЕ затирают друг друга. Старые данные без поля
+    // streamId трактуем как общие (streamId=null), поэтому сравниваем нормализованно.
     const current = sanitizeLessonMaterials(lesson.materials);
-    const replaced = current.filter((m) => m.fileName === originalName);
+    const sameSlot = (m: LessonMaterial) =>
+      m.fileName === originalName && (m.streamId ?? null) === materialStreamId;
+    const replaced = current.filter(sameSlot);
     for (const old of replaced) {
       if (old.s3Key && old.s3Key !== uploaded.key) {
         deleteFile(old.s3Key).catch(() => {});
       }
     }
-    const nextMaterials = [...current.filter((m) => m.fileName !== originalName), material];
+    const nextMaterials = [...current.filter((m) => !sameSlot(m)), material];
 
     await prisma.lesson.update({
       where: { id },
@@ -1456,6 +1516,10 @@ export async function lessonRoutes(app: FastifyInstance) {
   // POST /lessons/:id/video — загрузка видеозаписи урока (admin).
   // Работает с БЛОКОМ урока (lesson.videoKey) — поведение без изменений.
   // Принимается ОДИН видеофайл (mp4/webm/mov/m4v, mime video/*).
+  //
+  // ИЗОЛЯЦИЯ ПО ПОТОКАМ: легаси одиночное видео блока (Lesson.videoKey) НЕ несёт
+  // streamId — это всегда ОБЩЕЕ видео-метод (видно всем потокам). Пер-потоковое
+  // видео заводится через POST /lessons/:id/videos (LessonVideo.streamId).
   //
   // Видео грузится ПОТОКОМ в S3 через uploadLargeFile с per-route лимитом
   // VIDEO_MAX_FILE_SIZE (5 ГБ) — общий multipart-лимит MAX_FILE_SIZE (50МБ) из
@@ -1601,17 +1665,55 @@ export async function lessonRoutes(app: FastifyInstance) {
       const rawTitle = (request.query as { title?: string }).title;
       const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : null;
 
+      // Видимость видео: multipart → streamId из QUERY (?streamId=...). Не задан →
+      // общее видео-метод (streamId=null, видно всем). Задан → валидируем против сессий.
+      const streamId = normalizeVisibilityStreamId(
+        (request.query as { streamId?: string }).streamId,
+      );
+      if (typeof streamId === 'string') {
+        try {
+          await assertStreamRunsLesson(id, streamId);
+        } catch (err) {
+          if (err instanceof StreamNotForLessonError) {
+            // Загруженный объект уже в S3 — подчищаем, чтобы не оставить сирот.
+            await deleteFile(uploaded.key).catch(() => {});
+            return reply.status(400).send({ error: err.message });
+          }
+          throw err;
+        }
+      }
+
       await prisma.lessonVideo.create({
-        data: { lessonId: id, videoKey: uploaded.key, title, sortOrder },
+        data: {
+          lessonId: id,
+          videoKey: uploaded.key,
+          title,
+          sortOrder,
+          // null = общее видео-метод; задан = видно только студентам этого потока.
+          streamId: typeof streamId === 'string' ? streamId : null,
+        },
       });
 
       return reply.status(201).send(await lessonVideosResponse(id));
     }
 
     // ── Видео-ССЫЛКА (JSON) ─────────────────────────────────────────────────
-    const body = request.body as { url?: string; title?: string };
+    const body = request.body as { url?: string; title?: string; streamId?: string | null };
     if (!body || typeof body.url !== 'string' || !body.url.trim()) {
       return reply.status(400).send({ error: 'Ссылка на видео обязательна' });
+    }
+
+    // Видимость видео-ссылки: streamId из ТЕЛА JSON. Не задан → общее (null).
+    const linkStreamId = normalizeVisibilityStreamId(body.streamId);
+    if (typeof linkStreamId === 'string') {
+      try {
+        await assertStreamRunsLesson(id, linkStreamId);
+      } catch (err) {
+        if (err instanceof StreamNotForLessonError) {
+          return reply.status(400).send({ error: err.message });
+        }
+        throw err;
+      }
     }
 
     await prisma.lessonVideo.create({
@@ -1620,6 +1722,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         videoUrl: body.url.trim(),
         title: body.title?.trim() || null,
         sortOrder,
+        streamId: typeof linkStreamId === 'string' ? linkStreamId : null,
       },
     });
 
@@ -1627,7 +1730,11 @@ export async function lessonRoutes(app: FastifyInstance) {
   });
 
   // PATCH /lessons/:id/videos/:videoId — обновить видео урока (admin).
-  // Меняем title и/или url (url — только у видео-ССЫЛКИ; у файла url игнорируем).
+  // Меняем title и/или url (url — только у видео-ССЫЛКИ; у файла url игнорируем) и/или
+  // ВИДИМОСТЬ (streamId: общий ↔ поток, в т.ч. сброс в общий). streamId читаем из
+  // ТЕЛА JSON (видео правится JSON-запросом, без перезаливки файла); если запрос
+  // multipart — из QUERY. Чтобы отличить «не трогаем» от «сбросить в общий», streamId
+  // меняем только когда поле ПЕРЕДАНО (присутствует в теле/query).
   app.patch('/lessons/:id/videos/:videoId', { onRequest: adminOnly }, async (request, reply) => {
     const { id, videoId } = request.params as { id: string; videoId: string };
 
@@ -1636,7 +1743,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Видео не найдено' });
     }
 
-    const body = request.body as { title?: string | null; url?: string };
+    const body = (request.body ?? {}) as { title?: string | null; url?: string; streamId?: string | null };
 
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) {
@@ -1649,6 +1756,31 @@ export async function lessonRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Ссылка не может быть пустой' });
       }
       data.videoUrl = trimmed;
+    }
+
+    // Видимость: меняем, только если streamId ПЕРЕДАН (в теле JSON или query). Пустая
+    // строка/отсутствующее значение в переданном поле → сброс в общий (null). Задан
+    // непустой поток → валидируем против сессий урока. Поле не передано → не трогаем.
+    const rawStreamId =
+      body.streamId !== undefined ? body.streamId : (request.query as { streamId?: string }).streamId;
+    const hasStreamIdField =
+      body.streamId !== undefined || (request.query as { streamId?: string }).streamId !== undefined;
+    if (hasStreamIdField) {
+      const nextStreamId = normalizeVisibilityStreamId(rawStreamId);
+      if (typeof nextStreamId === 'string') {
+        try {
+          await assertStreamRunsLesson(id, nextStreamId);
+        } catch (err) {
+          if (err instanceof StreamNotForLessonError) {
+            return reply.status(400).send({ error: err.message });
+          }
+          throw err;
+        }
+        data.streamId = nextStreamId;
+      } else {
+        // undefined (поле = null) или '' → сброс в общий.
+        data.streamId = null;
+      }
     }
 
     await prisma.lessonVideo.update({ where: { id: videoId }, data });
