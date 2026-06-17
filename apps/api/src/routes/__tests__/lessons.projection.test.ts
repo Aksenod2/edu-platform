@@ -10,14 +10,23 @@ vi.mock('../../middleware/auth.js', () => ({
 }));
 vi.mock('../../lib/notifications.js', () => ({ notifyMany: vi.fn() }));
 vi.mock('../../lib/enrollment.js', () => ({ isEnrolled: vi.fn() }));
-vi.mock('../../lib/s3.js', () => ({ uploadFile: vi.fn(), getFileUrl: vi.fn() }));
+vi.mock('../../lib/s3.js', () => ({
+  uploadFile: vi.fn(),
+  // Подписываем как `signed:<key>` — так в тестах видно, какие ключи подписывались.
+  getFileUrl: vi.fn((key: string) => Promise.resolve(`signed:${key}`)),
+}));
 vi.mock('../../lib/zoom.js', () => ({
   createZoomMeeting: vi.fn(),
   shouldAutoCreate: vi.fn(),
   canCreateMeeting: vi.fn(),
 }));
 
-import { projectLesson } from '../lessons.js';
+import {
+  projectLesson,
+  sanitizeLessonMaterials,
+  regenerateLessonMaterialUrls,
+} from '../lessons.js';
+import { getFileUrl } from '../../lib/s3.js';
 
 // Минимальный блок урока (поля, не относящиеся к тесту, заполнены пустышками).
 function block() {
@@ -313,5 +322,62 @@ describe('projectLesson — развод учебного видео и запи
     expect(p.videoUrl).toBe('https://cdn.example/learning-video.mp4');
     expect(p.recordingVideoKey).toBeNull();
     expect(p.recordingVideoUrl).toBeNull();
+  });
+});
+
+describe('sanitizeLessonMaterials — признак видимости streamId (изоляция по группам)', () => {
+  it('строковый streamId сохраняется; отсутствие/невалидный → null (общий материал-метод)', () => {
+    const out = sanitizeLessonMaterials([
+      { s3Key: 'a', fileName: 'a.pdf', streamId: 'stream-A' },
+      { s3Key: 'b', fileName: 'b.pdf' }, // без поля → null
+      { s3Key: 'c', fileName: 'c.pdf', streamId: null }, // явный null → null
+      { s3Key: 'd', fileName: 'd.pdf', streamId: 123 }, // невалидный тип → null
+    ]);
+    expect(out.map((m) => [m.s3Key, m.streamId])).toEqual([
+      ['a', 'stream-A'],
+      ['b', null],
+      ['c', null],
+      ['d', null],
+    ]);
+  });
+});
+
+describe('regenerateLessonMaterialUrls — фильтрация материалов по контексту получателя', () => {
+  const materials = [
+    { s3Key: 'mat-common', fileName: 'общий.pdf', mimeType: 'application/pdf', size: 1, streamId: null },
+    { s3Key: 'mat-A', fileName: 'A.pdf', mimeType: 'application/pdf', size: 1, streamId: 'stream-A' },
+    { s3Key: 'mat-B', fileName: 'B.pdf', mimeType: 'application/pdf', size: 1, streamId: 'stream-B' },
+    // legacy без поля — общий
+    { s3Key: 'mat-legacy', fileName: 'старый.pdf', mimeType: 'application/pdf', size: 1 },
+  ];
+
+  it('студент потока A: только общие + поток A; чужой ключ потока B НЕ подписывается', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (getFileUrl as any).mockClear();
+    const out = await regenerateLessonMaterialUrls(materials, {
+      viewerStreamId: 'stream-A',
+      isAdmin: false,
+    });
+    const keys = out.map((m) => m.s3Key).sort();
+    expect(keys).toEqual(['mat-A', 'mat-common', 'mat-legacy']);
+    expect(keys).not.toContain('mat-B');
+    // Чужой ключ не подписывался (фильтрация ДО подписи).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const signed = (getFileUrl as any).mock.calls.map((c: unknown[]) => c[0]);
+    expect(signed).not.toContain('mat-B');
+    expect(signed).toContain('mat-A');
+  });
+
+  it('админ: видит все материалы (включая поток B), без сужения', async () => {
+    const out = await regenerateLessonMaterialUrls(materials, {
+      viewerStreamId: null,
+      isAdmin: true,
+    });
+    expect(out.map((m) => m.s3Key).sort()).toEqual(['mat-A', 'mat-B', 'mat-common', 'mat-legacy']);
+  });
+
+  it('по умолчанию (без ctx) — админский режим: все материалы (мутации POST/PATCH не сужаются)', async () => {
+    const out = await regenerateLessonMaterialUrls(materials);
+    expect(out.length).toBe(4);
   });
 });
