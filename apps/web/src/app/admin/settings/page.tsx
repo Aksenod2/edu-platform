@@ -383,6 +383,28 @@ export default function AdminSettingsPage() {
         }
       />
 
+      <SettingsSection
+        title="Интеграции"
+        description="Внешние сервисы преподавателя — у каждого свои ключи"
+        rows={[
+          { label: 'Zoom', value: 'Создание ссылок на занятия, записи и итоги' },
+          { label: 'Telegram', value: 'Уведомления преподавателю в чат бота' },
+        ]}
+        footer={
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              Настроить интеграции
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/system/zoom')}>
+              Zoom
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/system/telegram')}>
+              Telegram
+            </Button>
+          </div>
+        }
+      />
+
       <PaymentSettingsSection />
 
       {/* Danger zone */}

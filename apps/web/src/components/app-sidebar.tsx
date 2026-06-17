@@ -20,6 +20,7 @@ import {
   User,
   Settings,
   Video,
+  Send,
   LogOut,
   ChevronsUpDown,
   type LucideIcon,
@@ -111,6 +112,7 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
       { label: 'Интеграция Zoom', href: '/admin/system/zoom', icon: Video },
+      { label: 'Уведомления в Telegram', href: '/admin/system/telegram', icon: Send },
     ],
   },
 ];

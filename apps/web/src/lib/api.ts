@@ -2655,7 +2655,8 @@ export type NotificationType =
   | 'assignment_submitted'
   | 'assignment_reviewed'
   | 'schedule_entry_created'
-  | 'topup_requested';
+  | 'topup_requested'
+  | 'student_enrolled';
 
 export interface Notification {
   id: string;
@@ -2744,6 +2745,11 @@ export function getNotificationLink(
       return role === 'student' ? '/dashboard/schedule' : '/admin/lessons';
     case 'topup_requested':
       return '/admin/topups';
+    case 'student_enrolled':
+      // Уведомление приходит преподавателю: ведём в карточку зачисленного
+      // студента, иначе — в список групп. У студента ссылки нет.
+      if (role !== 'admin') return null;
+      return m.studentId ? `/admin/students/${m.studentId}` : '/admin/streams';
     default:
       return null;
   }
@@ -3133,6 +3139,85 @@ export async function testZoomIntegration(
 ): Promise<{ ok: boolean; message: string }> {
   return request('/admin/integrations/zoom/test', {
     method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// --- Интеграция Telegram (уведомления преподавателю) -------------------------
+// Каждый преподаватель сам создаёт бота в @BotFather и вводит токен СВОЕГО бота
+// (как секреты Zoom). tokenSet — токен сохранён; botUsername — @username бота
+// (известен после сохранения токена); connected — чат привязан (преподаватель
+// нажал «Старт» боту и привязал чат); enabled — доставка уведомлений включена;
+// encryptionKeySet=false — на сервере нет ключа шифрования, токен сохранить нельзя.
+export interface TelegramIntegrationConfig {
+  tokenSet: boolean;
+  botUsername: string | null;
+  connected: boolean;
+  enabled: boolean;
+  linkedAt: string | null;
+  encryptionKeySet: boolean;
+}
+
+// Получить текущие настройки Telegram.
+export async function getTelegramIntegration(
+  accessToken: string,
+): Promise<TelegramIntegrationConfig> {
+  return request('/admin/integrations/telegram', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Сохранить токен бота. 400 — токен неверный или нет ключа шифрования.
+export async function saveTelegramToken(
+  accessToken: string,
+  botToken: string,
+): Promise<TelegramIntegrationConfig> {
+  return request('/admin/integrations/telegram/token', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ botToken }),
+  });
+}
+
+// Привязать чат к боту. 409 (ApiError) — преподаватель ещё не написал боту
+// (нет сообщений): нужно открыть бота, нажать «Старт» и повторить.
+export async function linkTelegramChat(
+  accessToken: string,
+): Promise<TelegramIntegrationConfig> {
+  return request('/admin/integrations/telegram/link', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Отправить тестовое сообщение в привязанный чат.
+export async function testTelegram(
+  accessToken: string,
+): Promise<{ ok: boolean }> {
+  return request('/admin/integrations/telegram/test', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Включить/выключить доставку уведомлений в Telegram.
+export async function setTelegramEnabled(
+  accessToken: string,
+  enabled: boolean,
+): Promise<TelegramIntegrationConfig> {
+  return request('/admin/integrations/telegram', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// Отключить интеграцию: удаляет токен и привязку чата.
+export async function unlinkTelegram(
+  accessToken: string,
+): Promise<{ ok: true }> {
+  return request('/admin/integrations/telegram', {
+    method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
