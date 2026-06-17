@@ -91,6 +91,10 @@ enum NotificationType {
   topup_requested
   mentorship_charge_upcoming
   mentorship_charge_debt
+  // Студент зачислен в группу (поток). Уведомление преподавателю/владельцу группы.
+  // Эпик «Уведомления преподавателю». События «сдал задание» и «сообщение в чате»
+  // переиспользуют существующие assignment_submitted / thread_entry — новые типы не нужны.
+  student_enrolled
 }
 
 // Тип биллинга группы (дискриминатор): one_time — разовая оплата за участие
@@ -174,6 +178,7 @@ model User {
   ownedPrograms           Program[]                @relation("ProgramOwner")
   walletTransactions      WalletTransaction[]      @relation("WalletTxUser")
   zoomIntegration         ZoomIntegration?
+  telegramIntegration     TelegramIntegration?
   topUpRequests           TopUpRequest[]           @relation("TopUpAuthor")
   reviewedTopUps          TopUpRequest[]           @relation("TopUpReviewer")
   sessionAttendance       SessionAttendance[]
@@ -662,6 +667,9 @@ model NotificationPreference {
   emailEnabled Boolean          @default(true)
   pushEnabled  Boolean          @default(true)
   inAppEnabled Boolean          @default(true)
+  // Канал Telegram. Дефолт true безопасен: отправка возможна только после привязки
+  // (TelegramIntegration.chatId заполнен и enabled); без привязки просто не отправится.
+  telegramEnabled Boolean       @default(true)
   updatedAt    DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -828,6 +836,35 @@ model ZoomIntegration {
   updatedAt         DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Привязка пользователя к Telegram-боту платформы (бот один на всю платформу,
+// секреты/токены бота — в env приложения, пользователь ничего не вводит). По образцу
+// ZoomIntegration, но проще. Эпик «Уведомления преподавателю».
+// Сценарий привязки: приложение генерит одноразовый linkToken (+ срок), пользователь
+// жмёт «Привязать» → открывает t.me/<bot>?start=<token> → бот по /start <token> находит
+// строку, проставляет chatId и linkedAt, токен гасит. Дальше уведомления шлются в chatId.
+model TelegramIntegration {
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  // Включён ли канал у пользователя. По умолчанию true; реальная отправка возможна
+  // только когда заполнен chatId (привязка завершена).
+  enabled            Boolean   @default(true)
+  // Telegram chat id (личный чат с ботом). Заполняется после успешной привязки.
+  chatId             String?
+  // Момент успешной привязки.
+  linkedAt           DateTime?
+  // Одноразовый токен привязки и его срок жизни. Держим в этой же таблице: данные
+  // короткоживущие и однозначно относятся к привязке пользователя, отдельная таблица
+  // избыточна. unique — чтобы бот находил пользователя по /start <token>.
+  linkToken          String?   @unique
+  linkTokenExpiresAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
 }
 
 // Идемпотентность обработки входящих вебхуков Zoom: каждое событие
