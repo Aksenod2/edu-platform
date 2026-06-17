@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PushToggle } from '@/components/push-toggle';
 
 interface CategoryRow {
   category: NotificationCategory;
@@ -195,19 +195,18 @@ export default function NotificationSettingsPage() {
         </Button>
       </div>
 
-      {/* Web Push status banner */}
-      {pushStatus === 'denied' && (
-        <Alert className="mb-6 mt-4">
-          <AlertDescription className="flex flex-col gap-1">
-            <span className="font-mono text-xs font-bold uppercase tracking-wider">
-              Push-уведомления заблокированы браузером
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Вы ранее отклонили разрешение на push-уведомления. Чтобы включить их, зайдите в настройки браузера → сайт → Уведомления → «Разрешить».
-            </span>
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Web Push: статус + кнопка включения (важно для iOS — подписка по жесту) */}
+      <Card className="mb-6 mt-4">
+        <CardContent>
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold tracking-tight">Push на этом устройстве</h3>
+            <p className="text-sm text-muted-foreground">
+              Уведомления приходят, даже когда платформа закрыта
+            </p>
+          </div>
+          <PushToggle />
+        </CardContent>
+      </Card>
 
       {/* Global toggle */}
       <Card className="mb-6 mt-4">
