@@ -838,33 +838,33 @@ model ZoomIntegration {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Привязка пользователя к Telegram-боту платформы (бот один на всю платформу,
-// секреты/токены бота — в env приложения, пользователь ничего не вводит). По образцу
-// ZoomIntegration, но проще. Эпик «Уведомления преподавателю».
-// Сценарий привязки: приложение генерит одноразовый linkToken (+ срок), пользователь
-// жмёт «Привязать» → открывает t.me/<bot>?start=<token> → бот по /start <token> находит
-// строку, проставляет chatId и linkedAt, токен гасит. Дальше уведомления шлются в chatId.
+// Персональная интеграция пользователя с собственным Telegram-ботом. По образцу
+// ZoomIntegration: КАЖДЫЙ преподаватель сам создаёт бота в @BotFather и вводит его
+// токен в настройках; токен хранится зашифрованным (как Zoom clientSecretEnc).
+// Эпик «Уведомления преподавателю».
+// Сценарий: пользователь вводит botToken → платформа валидирует через getMe и
+// сохраняет botUsername → пользователь открывает t.me/<botUsername>, жмёт «Старт» →
+// платформа разово делает getUpdates по его токену, берёт chatId → дальше уведомления
+// шлются через ЕГО токен в ЕГО chatId.
 model TelegramIntegration {
-  id                 String    @id @default(uuid())
-  userId             String    @unique
+  id           String    @id @default(uuid())
+  userId       String    @unique
   // Включён ли канал у пользователя. По умолчанию true; реальная отправка возможна
-  // только когда заполнен chatId (привязка завершена).
-  enabled            Boolean   @default(true)
-  // Telegram chat id (личный чат с ботом). Заполняется после успешной привязки.
-  chatId             String?
-  // Момент успешной привязки.
-  linkedAt           DateTime?
-  // Одноразовый токен привязки и его срок жизни. Держим в этой же таблице: данные
-  // короткоживущие и однозначно относятся к привязке пользователя, отдельная таблица
-  // избыточна. unique — чтобы бот находил пользователя по /start <token>.
-  linkToken          String?   @unique
-  linkTokenExpiresAt DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  // только когда заданы botTokenEnc и chatId (бот введён и чат привязан).
+  enabled      Boolean   @default(true)
+  // Токен бота пользователя (из @BotFather), ЗАШИФРОВАН (lib/crypto, как Zoom). Наружу
+  // не отдаётся — только флаг наличия.
+  botTokenEnc  String?
+  // @username бота (из getMe) — для ссылки t.me/<botUsername> и подписи. Не секрет.
+  botUsername  String?
+  // Telegram chat id личного чата пользователя с его ботом. Заполняется после привязки.
+  chatId       String?
+  // Момент успешной привязки чата.
+  linkedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([chatId])
 }
 
 // Идемпотентность обработки входящих вебхуков Zoom: каждое событие
