@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { prisma, type TelegramIntegration } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { encryptSecret, decryptSecret, isEncryptionKeySet } from '../lib/crypto.js';
@@ -32,6 +33,19 @@ function toPublic(integration: TelegramIntegration | null): TelegramIntegrationP
 }
 
 export async function telegramIntegrationRoutes(app: FastifyInstance) {
+  // Локальный rate-limit на этот скоуп: чувствительные роуты (PUT /token, POST /link,
+  // POST /test) дёргают внешний Telegram API. Глобальный лимит отключён (server.ts
+  // global:false), поэтому регистрируем @fastify/rate-limit здесь и навешиваем
+  // per-route config.rateLimit точечно (global:false → лимитируются только роуты с
+  // config.rateLimit). Ключ — по userId, если он уже проставлен к моменту счёта, иначе
+  // по IP (rate-limit считает на onRequest, до preHandler-аутентификации, поэтому
+  // фактически ключ — IP; для admin-only раздела этого достаточно). По образцу
+  // streams-public/legal-public.
+  await app.register(rateLimit, {
+    global: false,
+    keyGenerator: (request) => request.user?.userId ?? request.ip,
+  });
+
   // Весь раздел — только администраторам (преподаватели).
   app.addHook('preHandler', requireRole('admin'));
 
@@ -44,7 +58,10 @@ export async function telegramIntegrationRoutes(app: FastifyInstance) {
   });
 
   // PUT /admin/integrations/telegram/token — сохранить токен бота (валидируем через getMe).
-  app.put('/admin/integrations/telegram/token', async (request, reply) => {
+  app.put(
+    '/admin/integrations/telegram/token',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const body = (request.body ?? {}) as { botToken?: unknown };
     const botToken = typeof body.botToken === 'string' ? body.botToken.trim() : '';
     if (!botToken) {
@@ -82,10 +99,14 @@ export async function telegramIntegrationRoutes(app: FastifyInstance) {
     });
 
     return toPublic(integration);
-  });
+    },
+  );
 
   // POST /admin/integrations/telegram/link — разовая привязка личного чата.
-  app.post('/admin/integrations/telegram/link', async (request, reply) => {
+  app.post(
+    '/admin/integrations/telegram/link',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const userId = request.user!.userId;
     const integration = await prisma.telegramIntegration.findUnique({ where: { userId } });
 
@@ -110,10 +131,14 @@ export async function telegramIntegrationRoutes(app: FastifyInstance) {
     });
 
     return toPublic(updated);
-  });
+    },
+  );
 
   // POST /admin/integrations/telegram/test — отправить тестовое уведомление.
-  app.post('/admin/integrations/telegram/test', async (request, reply) => {
+  app.post(
+    '/admin/integrations/telegram/test',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const userId = request.user!.userId;
     const integration = await prisma.telegramIntegration.findUnique({ where: { userId } });
 
@@ -134,7 +159,8 @@ export async function telegramIntegrationRoutes(app: FastifyInstance) {
       '✅ Тестовое уведомление с платформы',
     );
     return { ok };
-  });
+    },
+  );
 
   // PATCH /admin/integrations/telegram — включить/выключить канал.
   app.patch('/admin/integrations/telegram', async (request, reply) => {

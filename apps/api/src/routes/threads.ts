@@ -3,17 +3,18 @@ import { prisma, type ThreadEntryType } from '@platform/db';
 import { authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createNotification } from '../lib/notifications.js';
-import { getStreamTeacherList } from '../lib/stream-teachers.js';
+import { deriveStreamTeachers, streamTeacherSourcesInclude } from '../lib/stream-teachers.js';
 
 /**
- * Получатели уведомления о сообщении студента в его личном треде — преподаватели
- * ВСЕХ потоков, на которые студент зачислён (личный тред студента → преподаватели
- * его потоков). Список дедуплицируется по id (один препод, ведущий несколько
- * потоков/уроков студента, получает одно уведомление).
+ * Получатели уведомления о сообщении студента в его личном треде.
  *
- * Фолбэк: если у студента нет потоков с преподавателями — уведомляем всех активных
- * админов, чтобы сообщение студента не осталось без адресата (сохранение прежнего
- * поведения, когда уведомление уходило всем админам).
+ * Уведомление о сообщении студента адресуется ПРЕПОДАВАТЕЛЯМ его потоков (всех
+ * потоков, на которые студент зачислён), а НЕ всем админам. Список дедуплицируется
+ * по id (один препод, ведущий несколько потоков/уроков студента, получает одно
+ * уведомление) и фильтруется по активности.
+ *
+ * Фолбэк на админов — ТОЛЬКО если у потоков студента нет активных преподавателей
+ * (или у студента вовсе нет потоков), чтобы сообщение не осталось без адресата.
  */
 async function recipientsForStudentThread(studentId: string): Promise<string[]> {
   const enrollments = await prisma.streamEnrollment.findMany({
@@ -22,9 +23,15 @@ async function recipientsForStudentThread(studentId: string): Promise<string[]> 
   });
 
   const teacherIds = new Set<string>();
-  for (const { streamId } of enrollments) {
-    const teachers = await getStreamTeacherList(streamId);
-    for (const t of teachers) teacherIds.add(t.id);
+  if (enrollments.length > 0) {
+    // Один запрос на все потоки студента вместо N тяжёлых запросов в цикле.
+    const streams = await prisma.stream.findMany({
+      where: { id: { in: enrollments.map((e) => e.streamId) } },
+      select: streamTeacherSourcesInclude,
+    });
+    for (const stream of streams) {
+      for (const t of deriveStreamTeachers(stream).teachers) teacherIds.add(t.id);
+    }
   }
 
   if (teacherIds.size > 0) {

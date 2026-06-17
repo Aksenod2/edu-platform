@@ -7,9 +7,19 @@
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
+// Таймаут на все запросы к Telegram: сеть может зависнуть и заблокировать ответ
+// роута. AbortSignal.timeout прервёт fetch через 10 с → ловится как обычная ошибка.
+const TELEGRAM_TIMEOUT_MS = 10_000;
+
 // Базовый URL метода Bot API для конкретного токена.
 function methodUrl(botToken: string, method: string): string {
   return `${TELEGRAM_API_BASE}/bot${botToken}/${method}`;
+}
+
+// Сообщение ошибки для логов БЕЗ сырого объекта: URL запроса содержит токен бота
+// в path (/bot<TOKEN>/...), а cause/объект ошибки могут его протащить в логи.
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 // getMe — проверка валидности токена и получение @username бота.
@@ -17,7 +27,9 @@ function methodUrl(botToken: string, method: string): string {
 // (используется для валидации при сохранении токена — без броска).
 export async function getBotInfo(botToken: string): Promise<{ username: string } | null> {
   try {
-    const res = await fetch(methodUrl(botToken, 'getMe'));
+    const res = await fetch(methodUrl(botToken, 'getMe'), {
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const body = (await res.json()) as {
       ok?: boolean;
@@ -26,7 +38,7 @@ export async function getBotInfo(botToken: string): Promise<{ username: string }
     if (!body.ok || !body.result?.username) return null;
     return { username: body.result.username };
   } catch (err) {
-    console.warn('[telegram] getMe failed', err);
+    console.warn('[telegram] getMe failed:', errMessage(err));
     return null;
   }
 }
@@ -36,7 +48,10 @@ export async function getBotInfo(botToken: string): Promise<{ username: string }
 // (пользователь ещё не открыл бота / не нажал Старт) либо при ошибке.
 export async function fetchChatIdFromUpdates(botToken: string): Promise<string | null> {
   try {
-    const res = await fetch(methodUrl(botToken, 'getUpdates'));
+    // timeout=0 — короткий poll без long-poll-блокировки на стороне Telegram.
+    const res = await fetch(`${methodUrl(botToken, 'getUpdates')}?timeout=0`, {
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const body = (await res.json()) as {
       ok?: boolean;
@@ -54,7 +69,7 @@ export async function fetchChatIdFromUpdates(botToken: string): Promise<string |
     }
     return null;
   } catch (err) {
-    console.warn('[telegram] getUpdates failed', err);
+    console.warn('[telegram] getUpdates failed:', errMessage(err));
     return null;
   }
 }
@@ -79,6 +94,7 @@ export async function sendTelegramMessage(
         parse_mode: opts?.parseMode ?? 'HTML',
         disable_web_page_preview: opts?.disableWebPagePreview ?? true,
       }),
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     });
     if (!res.ok) {
       let detail = '';
@@ -93,7 +109,7 @@ export async function sendTelegramMessage(
     }
     return true;
   } catch (err) {
-    console.warn('[telegram] sendMessage error', err);
+    console.warn('[telegram] sendMessage error:', errMessage(err));
     return false;
   }
 }
