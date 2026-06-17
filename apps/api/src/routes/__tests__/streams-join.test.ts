@@ -179,8 +179,11 @@ describe('DELETE /streams/:id/join-link — перевыпуск ссылки', 
   });
 
   it('два последовательных перевыпуска дают РАЗНЫЕ токены', async () => {
-    db.stream.findUnique.mockResolvedValue({ id: 's-1' });
-    db.stream.update.mockResolvedValue({ id: 's-1' });
+    // Two Once-mocks (по одному на запрос) вместо постоянного mockResolvedValue —
+    // vi.clearAllMocks() в beforeEach НЕ сбрасывает реализацию, и постоянный мок
+    // протекал в соседние тесты (ломал новый путь getStreamTeacherList).
+    db.stream.findUnique.mockResolvedValueOnce({ id: 's-1' }).mockResolvedValueOnce({ id: 's-1' });
+    db.stream.update.mockResolvedValueOnce({ id: 's-1' }).mockResolvedValueOnce({ id: 's-1' });
 
     const app = buildAdminApp();
     const res1 = await app.inject({

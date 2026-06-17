@@ -396,7 +396,7 @@ describe('PATCH /student-assignments/:id — сдача студентом (subm
     });
     db.conversation.findUnique.mockResolvedValueOnce({ id: 'conv-1' });
     db.conversationEntry.create.mockResolvedValueOnce({ id: 'ce-1' });
-    // Преподавателей у урока нет → фолбэк на админов (notifyMany).
+    // stream.findUnique не замокан → у потока нет преподавателей → фолбэк на админов (notifyMany).
     db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
     db.studentAssignment.update.mockResolvedValueOnce({
       id: 'sa-1',
@@ -441,7 +441,7 @@ describe('PATCH /student-assignments/:id — сдача студентом (subm
     });
     db.conversation.findUnique.mockResolvedValueOnce({ id: 'conv-1' });
     db.conversationEntry.create.mockResolvedValueOnce({ id: 'ce-1' });
-    // Преподавателей у урока нет → фолбэк на админов (notifyMany).
+    // stream.findUnique не замокан → у потока нет преподавателей → фолбэк на админов (notifyMany).
     db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
     db.studentAssignment.update.mockResolvedValueOnce({
       id: 'sa-1',
@@ -464,6 +464,67 @@ describe('PATCH /student-assignments/:id — сдача студентом (subm
 
     expect(res.statusCode).toBe(200);
     expect(db.studentAssignment.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('сдача → уведомление получают преподаватели ПОТОКА (а не все админы)', async () => {
+    db.studentAssignment.findUnique.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'assigned',
+      studentId: 'stu-1',
+      session: { streamId: 'stream-1' },
+    });
+    // getStreamTeacherList(stream-1): поток с двумя преподавателями (program + sessions),
+    // один из них дублируется между источниками — на выходе ожидаем дедуп.
+    db.stream.findUnique.mockResolvedValueOnce({
+      program: {
+        id: 'prog-1',
+        name: 'Программа',
+        type: 'course',
+        programLessons: [
+          { lesson: { teachers: [{ user: { id: 'teach-1', name: 'Препод 1' } }] } },
+        ],
+      },
+      sessions: [
+        {
+          lesson: {
+            teachers: [
+              { user: { id: 'teach-1', name: 'Препод 1' } },
+              { user: { id: 'teach-2', name: 'Препод 2' } },
+            ],
+          },
+        },
+      ],
+    });
+    // Фильтр активности преподавателей: оба активны.
+    db.user.findMany.mockResolvedValueOnce([{ id: 'teach-1' }, { id: 'teach-2' }]);
+    db.studentAssignment.update.mockResolvedValueOnce({
+      id: 'sa-1',
+      status: 'submitted',
+      studentId: 'stu-1',
+      sessionId: 'session-1',
+      content: 'ответ',
+      fileUrl: null,
+      session: sessionWithLesson(),
+      student: { id: 'stu-1', name: 'Студент', email: 's@e.ru' },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/student-assignments/sa-1',
+      headers: authHeaders(studentToken('stu-1')),
+      payload: { status: 'submitted', answerText: 'ответ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(notifyMany).toHaveBeenCalledTimes(1);
+    const calls = (notifyMany as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls[0][0]).toEqual(['teach-1', 'teach-2']);
+    expect(calls[0][1]).toBe('assignment_submitted');
+    // Админский фолбэк НЕ запрашивался: единственный user.findMany — фильтр активности преподавателей.
+    expect(db.user.findMany).toHaveBeenCalledTimes(1);
+    const findManyArg = db.user.findMany.mock.calls[0][0];
+    expect(findManyArg.where.id).toEqual({ in: ['teach-1', 'teach-2'] });
   });
 
   it('студент НЕ может переотправить из reviewed → 400 (заморожено)', async () => {
