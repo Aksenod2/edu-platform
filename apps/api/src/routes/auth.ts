@@ -6,14 +6,17 @@ import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { signAccessToken } from '../lib/jwt.js';
 import { authenticate } from '../middleware/auth.js';
+import { clearConsentGateCache } from '../middleware/consent-gate.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
-import { issueSession } from '../lib/auth-session.js';
+import { issueSession, buildSessionUserPayload } from '../lib/auth-session.js';
+import { isForeignEmail, FOREIGN_EMAIL_STUDENT_MESSAGE } from '@platform/shared/foreign-email';
 import { normalizeEmail, isValidEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import {
   latestVersionForSlug,
   listUserConsents,
   parseConsentTypes,
+  pendingRequiredConsents,
   recordConsents,
   requestUserAgent,
 } from '../lib/consents.js';
@@ -123,19 +126,9 @@ export async function authRoutes(app: FastifyInstance) {
 
     return {
       accessToken,
-      user: {
-        id: storedToken.user.id,
-        email: storedToken.user.email,
-        name: storedToken.user.name,
-        lastName: storedToken.user.lastName,
-        phone: storedToken.user.phone,
-        role: storedToken.user.role,
-        mustChangePassword: storedToken.user.mustChangePassword,
-        avatarUrl: await avatarUrlFor(storedToken.user.avatarKey),
-        questionnaireCompleted: storedToken.user.role === 'student'
-          ? !!storedToken.user.studentProfile?.questionnaireCompletedAt
-          : undefined,
-      },
+      // User-объект собирается общим хелпером (тот же, что в issueSession/login):
+      // avatarUrl, questionnaireCompleted и pendingConsents — в одном месте.
+      user: await buildSessionUserPayload(storedToken.user),
     };
   });
 
@@ -412,6 +405,12 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Некорректный формат email' });
       }
       if (email !== user.email) {
+        // Зарубежная почта запрещена при смене email (ст. 10.7 149-ФЗ, issue #132).
+        // Проверяем только НОВЫЙ адрес: существующие аккаунты на зарубежной почте
+        // продолжают работать (вход/refresh/сброс пароля не трогаем).
+        if (isForeignEmail(email)) {
+          return reply.status(400).send({ error: FOREIGN_EMAIL_STUDENT_MESSAGE });
+        }
         const emailTaken = await prisma.user.findUnique({ where: { email } });
         if (emailTaken) {
           return reply.status(409).send({ error: 'Этот email уже используется' });
@@ -545,6 +544,38 @@ export async function authRoutes(app: FastifyInstance) {
   // свои ip/userAgent пользователь видеть может.
   app.get('/users/me/consents', { onRequest: authenticate }, async (request) => {
     return { consents: await listUserConsents(request.user!.userId) };
+  });
+
+  // POST /users/me/consents — досбор согласий у СУЩЕСТВУЮЩИХ пользователей
+  // (Волна 1.1): студенты, зарегистрированные ДО появления согласий, дают
+  // обязательные при следующем заходе на платформу. Журнал append-only через
+  // recordConsents (ip/userAgent фиксируются автоматически); marketing можно
+  // передавать вместе с обязательными. В ответе — оставшиеся обязательные
+  // согласия: по пустому массиву фронт понимает, что гейт снят.
+  app.post('/users/me/consents', { onRequest: authenticate }, async (request, reply) => {
+    const userId = request.user!.userId;
+    const body = (request.body ?? {}) as { consents?: unknown };
+
+    const types = parseConsentTypes(body.consents);
+    if (types === null) {
+      return reply.status(400).send({ error: 'Некорректный формат согласий' });
+    }
+    if (types.length === 0) {
+      return reply.status(400).send({ error: 'Не передано ни одного согласия' });
+    }
+
+    // Уже данные обязательные согласия повторно не журналируем (повторный POST
+    // не должен плодить дубли в append-only журнале); marketing — append by design:
+    // granted-запись = актуальный статус подписки, пишем как передали.
+    const pendingBefore = await pendingRequiredConsents(userId);
+    const toRecord = types.filter((type) => type === 'marketing' || pendingBefore.includes(type));
+    await recordConsents(userId, toRecord, request);
+    // Сброс кэша серверного гейта согласий (issue #119): сейчас отрицательный
+    // результат там не кэшируется, так что это страховка инварианта «после
+    // выдачи согласий доступ открывается сразу» на случай будущих изменений.
+    clearConsentGateCache(userId);
+
+    return reply.status(201).send({ pendingConsents: await pendingRequiredConsents(userId) });
   });
 
   // POST /users/me/consents/marketing — дать/отозвать согласие на рекламные

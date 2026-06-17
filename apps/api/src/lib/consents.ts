@@ -10,7 +10,16 @@ import type { Prisma } from '@platform/db';
  */
 
 // Типы согласий — зеркало enum ConsentType из Prisma-схемы (camelCase по ТЗ).
-export const CONSENT_TYPES = ['offer', 'personalData', 'serviceNotifications', 'marketing'] as const;
+// personalDataPolicy — фиксация ОЗНАКОМЛЕНИЯ с «Политикой обработки персональных
+// данных»: отдельная запись по требованию юриста заказчика (issue #130);
+// action=granted трактуем как «подтвердил ознакомление».
+export const CONSENT_TYPES = [
+  'offer',
+  'personalData',
+  'personalDataPolicy',
+  'serviceNotifications',
+  'marketing',
+] as const;
 export type ConsentTypeValue = (typeof CONSENT_TYPES)[number];
 
 // userAgent в журнале согласий обрезаем: заголовок может быть произвольно длинным,
@@ -26,9 +35,25 @@ const USER_AGENT_MAX_LENGTH = 512;
 export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
   offer: 'offer',
   personalData: 'pd-consent',
+  personalDataPolicy: 'personal-data-policy',
   serviceNotifications: 'pd-consent',
   marketing: 'marketing-consent',
 };
+
+// Обязательные юридические согласия: без них студент не может пользоваться
+// платформой (Волна 1.1 «досбор согласий у существующих пользователей»).
+// marketing — опциональное, в гейт не входит.
+//
+// personalDataPolicy добавлен в обязательные ОСОЗНАННО (issue #130, решение
+// заказчика): у ВСЕХ существующих студентов появляется «долг» по этому типу →
+// серверный гейт (consent-gate) и фронт-гейт потребуют новую галочку
+// «ознакомлен с Политикой обработки персональных данных» при следующем заходе.
+export const REQUIRED_CONSENT_TYPES: ConsentTypeValue[] = [
+  'offer',
+  'personalData',
+  'personalDataPolicy',
+  'serviceNotifications',
+];
 
 export function isConsentType(value: unknown): value is ConsentTypeValue {
   return typeof value === 'string' && (CONSENT_TYPES as readonly string[]).includes(value);
@@ -70,6 +95,39 @@ export async function latestVersionForSlug(
     orderBy: { versionNumber: 'desc' },
     select: { id: true, versionNumber: true },
   });
+}
+
+/**
+ * Недостающие ОБЯЗАТЕЛЬНЫЕ согласия пользователя: типы из REQUIRED_CONSENT_TYPES,
+ * по которым нет НИ ОДНОЙ записи action=granted (любой версии документа).
+ *
+ * Тип считается недостающим, только если у его документа ЕСТЬ опубликованная
+ * версия: пока версий нет, фиксировать согласие не к чему — вход не блокируем
+ * (та же мягкая деградация, что в recordConsents).
+ */
+export async function pendingRequiredConsents(userId: string): Promise<ConsentTypeValue[]> {
+  // Один запрос за granted-записями пользователя по обязательным типам.
+  const granted = await prisma.userConsent.findMany({
+    where: { userId, consentType: { in: REQUIRED_CONSENT_TYPES }, action: 'granted' },
+    select: { consentType: true },
+    distinct: ['consentType'],
+  });
+  const grantedTypes = new Set<string>(granted.map((c) => c.consentType));
+
+  const missing = REQUIRED_CONSENT_TYPES.filter((type) => !grantedTypes.has(type));
+  if (missing.length === 0) return [];
+
+  // И один — за наличием опубликованных версий у документов недостающих типов.
+  // Запрашиваем сами ДОКУМЕНТЫ с фильтром versions: { some: {} } — по строке на
+  // документ, а не на каждую версию (число редакций со временем растёт).
+  const slugs = [...new Set(missing.map((type) => CONSENT_TYPE_TO_SLUG[type]))];
+  const documents = await prisma.legalDocument.findMany({
+    where: { slug: { in: slugs }, versions: { some: {} } },
+    select: { slug: true },
+  });
+  const publishedSlugs = new Set(documents.map((d) => d.slug));
+
+  return missing.filter((type) => publishedSlugs.has(CONSENT_TYPE_TO_SLUG[type]));
 }
 
 /**

@@ -17,6 +17,9 @@ interface AuthResponse {
     mustChangePassword: boolean;
     avatarUrl?: string | null;
     questionnaireCompleted?: boolean;
+    // Только у студента: недостающие ОБЯЗАТЕЛЬНЫЕ согласия (зарегистрирован до
+    // их появления). Пусто/нет поля = всё дано, гейт /consents не нужен.
+    pendingConsents?: ConsentType[];
   };
 }
 
@@ -133,6 +136,21 @@ async function request<T>(
   }
 
   if (!res.ok) {
+    // Серверный гейт согласий (issue #119): студент с недоданными обязательными
+    // согласиями получает 403 CONSENTS_REQUIRED на любой «рабочий» запрос.
+    // Ловит старые вкладки, где user в контексте ещё без pendingConsents:
+    // уводим на /consents жёсткой навигацией (страница сама перечитает user
+    // через /auth/refresh). Ошибку всё равно бросаем — вызывающий код не должен
+    // получить undefined вместо данных.
+    if (
+      res.status === 403 &&
+      data.code === 'CONSENTS_REQUIRED' &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/consents') &&
+      !window.location.pathname.startsWith('/login')
+    ) {
+      window.location.assign('/consents');
+    }
     const serverMsg = typeof data.error === 'string' ? data.error : null;
     const fallback = HTTP_STATUS_MESSAGES[res.status] || `Ошибка запроса (${res.status})`;
     throw new ApiError(serverMsg || fallback, res.status);
@@ -309,12 +327,18 @@ export async function getPublicLegalDocument(
 // --- Юридические согласия пользователя ---------------------------------------
 
 // Тип согласия — зеркало enum ConsentType бэкенда.
-export type ConsentType = 'offer' | 'personalData' | 'serviceNotifications' | 'marketing';
+export type ConsentType =
+  | 'offer'
+  | 'personalData'
+  | 'personalDataPolicy'
+  | 'serviceNotifications'
+  | 'marketing';
 export type ConsentAction = 'granted' | 'revoked';
 
 export const CONSENT_TYPE_LABELS: Record<ConsentType, string> = {
   offer: 'Условия оферты',
   personalData: 'Обработка персональных данных',
+  personalDataPolicy: 'Политика обработки персональных данных',
   serviceNotifications: 'Сервисные уведомления',
   marketing: 'Рекламно-информационные материалы',
 };
@@ -358,12 +382,39 @@ export async function setMarketingConsent(
   });
 }
 
+// Зафиксировать согласия текущего пользователя (гейт /consents для студентов,
+// зарегистрированных до появления согласий; можно включить опциональный marketing).
+// Возвращает список оставшихся недоданных обязательных согласий (в норме []).
+export async function grantMyConsents(
+  accessToken: string,
+  consents: ConsentType[],
+): Promise<{ pendingConsents: ConsentType[] }> {
+  return request('/users/me/consents', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ consents }),
+  });
+}
+
 // История согласий ученика (admin).
 export async function getUserConsents(
   accessToken: string,
   userId: string,
 ): Promise<{ consents: UserConsent[] }> {
   return request(`/users/${userId}/consents`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Очистка журнала согласий ДЕМО-аккаунта (admin): при следующем входе студент
+// снова пройдёт экран обязательных согласий. Для реальных аккаунтов бэкенд
+// отвечает 403, для несуществующих — 404.
+export async function deleteUserConsents(
+  accessToken: string,
+  userId: string,
+): Promise<{ deleted: number }> {
+  return request(`/users/${userId}/consents`, {
+    method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

@@ -25,6 +25,11 @@ import {
 } from '@/components/consent-checkboxes';
 import { getPublicJoinStream, joinStreamByToken } from '@/lib/api';
 import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
+import {
+  FOREIGN_EMAIL_STUDENT_MESSAGE,
+  isEmailSyntaxComplete,
+  isForeignEmail,
+} from '@/lib/foreign-email';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -48,11 +53,15 @@ export default function JoinStreamPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  // Юридические согласия: без трёх обязательных кнопка регистрации заблокирована.
+  // Юридические согласия: без обязательных (REQUIRED_CONSENT_TYPES) кнопка регистрации заблокирована.
   const [consents, setConsents] = useState<ConsentValues>(EMPTY_CONSENTS);
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Подсказку показываем только когда email синтаксически полон,
+  // чтобы не ругаться, пока человек ещё печатает адрес.
+  const foreignEmail = isEmailSyntaxComplete(email) && isForeignEmail(email.trim());
 
   useEffect(() => {
     if (!token) {
@@ -85,6 +94,11 @@ export default function JoinStreamPage() {
     const normalizedPhone = normalizePhone(phone);
     if (!isValidPhone(normalizedPhone)) {
       setError(PHONE_FORMAT_ERROR);
+      return;
+    }
+    // Страховка на случай обхода disabled-кнопки (как с телефоном).
+    if (isForeignEmail(email.trim())) {
+      setError(FOREIGN_EMAIL_STUDENT_MESSAGE);
       return;
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -177,8 +191,8 @@ export default function JoinStreamPage() {
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Иван Иванов"
-                        autoComplete="name"
+                        placeholder="Иван"
+                        autoComplete="given-name"
                         required
                       />
                     </Field>
@@ -217,7 +231,33 @@ export default function JoinStreamPage() {
                         placeholder="name@example.com"
                         autoComplete="email"
                         required
+                        aria-invalid={foreignEmail || undefined}
                       />
+                      {foreignEmail && (
+                        <div className="flex flex-col gap-1 text-xs text-destructive">
+                          <p>{FOREIGN_EMAIL_STUDENT_MESSAGE}</p>
+                          <p>
+                            Создать почту:{' '}
+                            <a
+                              href="https://mail.yandex.ru"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium underline underline-offset-4"
+                            >
+                              Яндекс
+                            </a>
+                            {' · '}
+                            <a
+                              href="https://mail.ru"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium underline underline-offset-4"
+                            >
+                              Mail.ru
+                            </a>
+                          </p>
+                        </div>
+                      )}
                     </Field>
                     <Field>
                       <FieldLabel htmlFor="password">Пароль</FieldLabel>
@@ -266,7 +306,7 @@ export default function JoinStreamPage() {
                       <Button
                         type="submit"
                         className="w-full"
-                        disabled={submitting || !requiredConsentsGiven(consents)}
+                        disabled={submitting || foreignEmail || !requiredConsentsGiven(consents)}
                       >
                         {submitting ? 'Регистрация...' : 'Зарегистрироваться'}
                       </Button>

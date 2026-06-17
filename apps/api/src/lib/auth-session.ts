@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify';
 import { prisma } from '@platform/db';
 import { signAccessToken } from './jwt.js';
 import { getFileUrl } from './s3.js';
+import { pendingRequiredConsents } from './consents.js';
 
 // Срок жизни refresh-токена (в днях). Должен совпадать с тем, что было в auth.ts.
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -50,6 +51,40 @@ export interface SessionResult {
     mustChangePassword: boolean;
     avatarUrl: string | null;
     questionnaireCompleted?: boolean;
+    // Недостающие обязательные согласия (Волна 1.1): только для студентов,
+    // по непустому массиву фронт показывает гейт досбора согласий.
+    pendingConsents?: string[];
+  };
+}
+
+/**
+ * Собирает user-объект ответа login/refresh из полей пользователя: подписанный
+ * avatarUrl, флаг questionnaireCompleted и pendingConsents (оба — только для
+ * студентов, у остальных ролей поля undefined → в JSON отсутствуют).
+ *
+ * Единственное место сборки: используется и в issueSession (login/регистрация
+ * по инвайт-ссылке), и в POST /auth/refresh — новые поля добавляем только здесь.
+ */
+export async function buildSessionUserPayload(
+  user: SessionUser,
+): Promise<SessionResult['user']> {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    lastName: user.lastName ?? null,
+    phone: user.phone ?? null,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+    avatarUrl: await avatarUrlFor(user.avatarKey),
+    questionnaireCompleted:
+      user.role === 'student'
+        ? !!user.studentProfile?.questionnaireCompletedAt
+        : undefined,
+    // Гейтим только студентов: админ — владелец платформы, ему согласия
+    // давать не нужно (поле undefined → в JSON отсутствует).
+    pendingConsents:
+      user.role === 'student' ? await pendingRequiredConsents(user.id) : undefined,
   };
 }
 
@@ -87,19 +122,6 @@ export async function issueSession(
 
   return {
     accessToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      lastName: user.lastName ?? null,
-      phone: user.phone ?? null,
-      role: user.role,
-      mustChangePassword: user.mustChangePassword,
-      avatarUrl: await avatarUrlFor(user.avatarKey),
-      questionnaireCompleted:
-        user.role === 'student'
-          ? !!user.studentProfile?.questionnaireCompletedAt
-          : undefined,
-    },
+    user: await buildSessionUserPayload(user),
   };
 }

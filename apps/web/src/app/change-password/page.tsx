@@ -13,7 +13,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useAuth } from '@/lib/auth-context';
+import { needsConsents, useAuth } from '@/lib/auth-context';
 import { changePassword } from '@/lib/api';
 
 export default function ChangePasswordPage() {
@@ -56,7 +56,12 @@ export default function ChangePasswordPage() {
       const result = await changePassword(accessToken!, currentPassword, newPassword);
       setAccessToken(result.accessToken);
       setUser({ ...user!, mustChangePassword: false });
-      router.push(user!.role === 'admin' ? '/admin' : '/dashboard');
+      // Пароль сменён, но у студента может остаться долг по обязательным согласиям.
+      if (needsConsents(user)) {
+        router.push('/consents');
+      } else {
+        router.push(user!.role === 'admin' ? '/admin' : '/dashboard');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка смены пароля');
     } finally {

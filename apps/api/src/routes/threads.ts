@@ -110,7 +110,9 @@ function previewForEntry(type: ThreadEntryType, content: string): string {
 }
 
 export async function threadRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authenticate);
+  // onRequest (а не preHandler): request.user должен быть установлен ДО
+  // глобального preHandler-гейта согласий (consent-gate, issue #119).
+  app.addHook('onRequest', authenticate);
 
   // GET /threads — admin inbox: one item per student conversation with activity.
   // Sorted: unanswered (latest entry by student) first, then by lastEntryAt desc.

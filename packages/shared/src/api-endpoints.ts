@@ -17,6 +17,12 @@
 //
 // Пути параметризованы в стиле Fastify (`:id`, `:studentId`). Метод — в верхнем
 // регистре.
+//
+// Общее замечание (issue #119): запросы от имени СТУДЕНТА (в т.ч. по ключу
+// `sk_…` студента) с недоданными обязательными согласиями получают на любой
+// эндпоинт ответ 403 `{ code: 'CONSENTS_REQUIRED', pendingConsents: [...] }` —
+// кроме `/auth/*`, `/users/me/consents*`, `/public/*`, `/files/*`, вебхуков и
+// health-check. Снимается досбором согласий через `POST /users/me/consents`.
 
 /** Описание одного поля тела запроса (body) для документации. */
 export type ApiBodyField = {
@@ -372,6 +378,14 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   },
   {
     group: 'Ученики',
+    method: 'DELETE',
+    path: '/users/:id/consents',
+    desc:
+      'Сбросить журнал согласий ДЕМО-аккаунта (только isDemo, иначе 403): повторный показ ' +
+      'гейта согласий. Ответ: { deleted: число удалённых записей }',
+  },
+  {
+    group: 'Ученики',
     method: 'GET',
     path: '/students/:id/dynamic',
     desc: 'Динамика ученика: roadmap-шапка + лента записей (приватно, admin)',
@@ -503,6 +517,15 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   // ─── Профиль владельца ключа ─────────────────────────────────────────────
   { group: 'Профиль владельца ключа', method: 'PATCH', path: '/users/me', desc: 'Изменить свой профиль' },
   { group: 'Профиль владельца ключа', method: 'GET', path: '/users/me/consents', desc: 'История своих юридических согласий' },
+  {
+    group: 'Профиль владельца ключа',
+    method: 'POST',
+    path: '/users/me/consents',
+    desc: 'Дать юридические согласия (досбор у существующих пользователей; append-запись, в ответе — оставшиеся обязательные)',
+    body: [
+      { name: 'consents', type: 'string[]', required: true, note: 'Типы согласий: offer, personalData, personalDataPolicy (ознакомление с политикой обработки ПДн), serviceNotifications, marketing.' },
+    ],
+  },
   {
     group: 'Профиль владельца ключа',
     method: 'POST',

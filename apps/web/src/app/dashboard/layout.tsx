@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { needsConsents, useAuth } from '@/lib/auth-context';
 import { NotificationBell } from '@/lib/notification-bell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SiteFooter } from '@/components/site-footer';
@@ -23,6 +23,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     if (!user) router.push('/login');
     else if (user.role === 'admin') router.push('/admin');
     else if (user.mustChangePassword) router.push('/change-password');
+    else if (needsConsents(user))
+      router.push('/consents'); // студент должен сначала дать обязательные согласия
   }, [user, loading, router]);
 
   if (loading || !user || user.role === 'admin') {

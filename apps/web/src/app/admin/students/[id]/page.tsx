@@ -63,6 +63,7 @@ import {
   getStudents,
   updateStudent,
   getUserConsents,
+  deleteUserConsents,
   formatKopecks,
   fileDownloadUrl,
   CONSENT_ACTION_LABELS,
@@ -141,6 +142,9 @@ export default function StudentProfilePage() {
   const [consents, setConsents] = useState<UserConsent[]>([]);
   const [loadingConsents, setLoadingConsents] = useState(false);
   const [consentsError, setConsentsError] = useState('');
+  // Сброс журнала согласий — только для демо-аккаунтов (подтверждение + запрос).
+  const [resetConsentsOpen, setResetConsentsOpen] = useState(false);
+  const [resettingConsents, setResettingConsents] = useState(false);
 
   // Демо/служебный аккаунт. Профиль (getProfile) этот флаг не отдаёт, поэтому
   // начальное значение берём из списка студентов (getStudents отдаёт isDemo).
@@ -220,6 +224,27 @@ export default function StudentProfilePage() {
       setLoadingConsents(false);
     }
   }, [accessToken, studentId]);
+
+  // Сброс журнала согласий демо-аккаунта. Сообщения 403 («не демо») и 404
+  // приходят с бэкенда уже человекочитаемыми — показываем их как есть.
+  const handleResetConsents = async () => {
+    if (!accessToken) return;
+    setResettingConsents(true);
+    try {
+      const { deleted } = await deleteUserConsents(accessToken, studentId);
+      setConsents([]);
+      setConsentsError('');
+      toast.success(
+        deleted > 0
+          ? `Журнал согласий очищен (удалено записей: ${deleted})`
+          : 'Журнал согласий уже пуст',
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось сбросить согласия');
+    } finally {
+      setResettingConsents(false);
+    }
+  };
 
   const fetchAssignments = useCallback(async () => {
     if (!accessToken || !studentId) return;
@@ -752,9 +777,27 @@ export default function StudentProfilePage() {
 
               {/* Юридические согласия (append-only журнал: документ+версия, тип, действие, дата, IP) */}
               <section className="lg:col-span-2">
-                <h2 className="text-xl font-bold tracking-tight text-foreground mb-3 flex items-center gap-2">
-                  <ScrollText className="size-5" /> Согласия
-                </h2>
+                {/* flex-wrap: на узких экранах кнопка сброса переносится под заголовок */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="m-0 flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
+                    <ScrollText className="size-5" /> Согласия
+                  </h2>
+                  {isDemo === true && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loadingConsents || resettingConsents}
+                      onClick={() => setResetConsentsOpen(true)}
+                    >
+                      {resettingConsents ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-4" />
+                      )}
+                      Сбросить согласия
+                    </Button>
+                  )}
+                </div>
                 <Card>
                   <CardContent>
                     {loadingConsents ? (
@@ -963,6 +1006,32 @@ export default function StudentProfilePage() {
               }}
             >
               На доработку
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Подтверждение сброса согласий демо-аккаунта */}
+      <AlertDialog open={resetConsentsOpen} onOpenChange={setResetConsentsOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Сбросить согласия?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Журнал согласий демо-аккаунта будет очищен; при следующем входе студент
+              снова увидит экран обязательных согласий. Для реальных аккаунтов сброс
+              невозможен.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setResetConsentsOpen(false);
+                handleResetConsents();
+              }}
+            >
+              Сбросить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

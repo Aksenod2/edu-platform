@@ -5,8 +5,10 @@ import { prisma } from '@platform/db';
 import { requireRole } from '../middleware/auth.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { getFileUrl } from '../lib/s3.js';
+import { isForeignEmail, FOREIGN_EMAIL_ADMIN_MESSAGE } from '@platform/shared/foreign-email';
 import { normalizeEmail, normalizePhone, isValidPhone } from '../lib/validation.js';
 import { listUserConsents } from '../lib/consents.js';
+import { clearConsentGateCache } from '../middleware/consent-gate.js';
 
 const INVITE_TOKEN_TTL_HOURS = 72;
 
@@ -109,6 +111,11 @@ export async function userRoutes(app: FastifyInstance) {
 
     const email = normalizeEmail(rawEmail);
 
+    // Зарубежная почта запрещена при назначении email (ст. 10.7 149-ФЗ, issue #132).
+    if (isForeignEmail(email)) {
+      return reply.status(400).send({ error: FOREIGN_EMAIL_ADMIN_MESSAGE });
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return reply.status(409).send({ error: 'Пользователь с таким email уже существует' });
@@ -187,6 +194,39 @@ export async function userRoutes(app: FastifyInstance) {
     return { consents: await listUserConsents(id) };
   });
 
+  // DELETE /users/:id/consents — сброс журнала согласий ДЕМО-аккаунта (issue #127).
+  //
+  // ПОЧЕМУ это исключение из append-only: журнал UserConsent — юридический,
+  // записи РЕАЛЬНЫХ людей не удаляются никогда. Но заказчику нужно повторно
+  // показывать механику гейта согласий (экран досбора при входе) — для этого
+  // у ДЕМО-аккаунта (User.isDemo) согласия сбрасываются целиком, и при
+  // следующем запросе студента гейт снова требует обязательные согласия.
+  app.delete('/users/:id/consents', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const user = await prisma.user.findUnique({ where: { id }, select: { isDemo: true } });
+    if (!user) {
+      return reply.status(404).send({ error: 'Пользователь не найден' });
+    }
+
+    // Жёсткая серверная проверка: журнал реального человека не сбросить
+    // ни при каких условиях — только аккаунты с флагом isDemo.
+    if (!user.isDemo) {
+      return reply
+        .status(403)
+        .send({ error: 'Сброс согласий доступен только для демо-аккаунтов' });
+    }
+
+    const { count } = await prisma.userConsent.deleteMany({ where: { userId: id } });
+
+    // ОБЯЗАТЕЛЬНО чистим положительный кэш серверного гейта («долга нет»,
+    // TTL 60с): иначе гейт ещё до минуты считал бы согласия данными,
+    // и демонстрация механики смазалась бы.
+    clearConsentGateCache(id);
+
+    return { deleted: count };
+  });
+
   // PATCH /users/:id — update student (block/unblock, edit name/email)
   app.patch('/users/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -205,6 +245,12 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const normalizedEmail = body.email ? normalizeEmail(body.email) : undefined;
+    // Зарубежная почта запрещена при смене email (ст. 10.7 149-ФЗ, issue #132).
+    // Проверяем только НОВЫЙ email: существующий зарубежный адрес не блокирует
+    // правку остальных полей.
+    if (normalizedEmail && normalizedEmail !== existing.email && isForeignEmail(normalizedEmail)) {
+      return reply.status(400).send({ error: FOREIGN_EMAIL_ADMIN_MESSAGE });
+    }
     if (normalizedEmail && normalizedEmail !== existing.email) {
       const emailTaken = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (emailTaken) {

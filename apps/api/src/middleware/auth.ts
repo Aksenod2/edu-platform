@@ -9,6 +9,14 @@ declare module 'fastify' {
   }
 }
 
+/**
+ * ИНВАРИАНТ (issue #119): authenticate подключается ТОЛЬКО в фазе onRequest
+ * ({ onRequest: authenticate } на роуте или addHook('onRequest', ...) в плагине),
+ * НЕ в preHandler. Глобальный preHandler-гейт согласий (middleware/consent-gate.ts)
+ * полагается на то, что request.user уже установлен; authenticate в preHandler
+ * выполнился бы ПОЗЖЕ гейта, и студент с недоданными согласиями молча обошёл бы
+ * его. Инвариант закреплён тестом в __tests__/consent-gate.test.ts.
+ */
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
