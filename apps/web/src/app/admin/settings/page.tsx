@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { PushToggle } from '@/components/push-toggle';
+import { InstallAppButton } from '@/components/install-instructions';
 import { cn } from '@platform/ui/lib/utils';
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -351,6 +353,25 @@ export default function AdminSettingsPage() {
           </div>
         }
       />
+
+      <section className="mb-8">
+        <div className="mb-4">
+          <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
+            Push-уведомления
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Включите push на этом устройстве, чтобы получать оповещения вне платформы
+          </p>
+        </div>
+        <Card>
+          <CardContent>
+            <PushToggle />
+            <div className="mt-3">
+              <InstallAppButton />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
 
       <SettingsSection
         title="Хранилище"
