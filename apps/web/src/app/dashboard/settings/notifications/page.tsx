@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PushToggle } from '@/components/push-toggle';
+import { InstallAppButton } from '@/components/install-instructions';
 
 interface CategoryRow {
   category: NotificationCategory;
@@ -205,6 +206,9 @@ export default function NotificationSettingsPage() {
             </p>
           </div>
           <PushToggle />
+          <div className="mt-3">
+            <InstallAppButton />
+          </div>
         </CardContent>
       </Card>
 

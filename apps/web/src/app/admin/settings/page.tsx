@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PushToggle } from '@/components/push-toggle';
+import { InstallAppButton } from '@/components/install-instructions';
 import { cn } from '@platform/ui/lib/utils';
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -365,6 +366,9 @@ export default function AdminSettingsPage() {
         <Card>
           <CardContent>
             <PushToggle />
+            <div className="mt-3">
+              <InstallAppButton />
+            </div>
           </CardContent>
         </Card>
       </section>
