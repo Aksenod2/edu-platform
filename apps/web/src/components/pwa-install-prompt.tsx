@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Share, Download, SquarePlus } from 'lucide-react';
+import { Download } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -23,6 +23,7 @@ import {
   SheetClose,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { IosInstallSteps } from '@/components/install-instructions';
 
 const DISMISSED_KEY = 'pwa_install_dismissed';
 // Чуть позже монтирования, но раньше push-prompt (30с), чтобы не наслаивались.
@@ -156,18 +157,8 @@ export function PwaInstallPrompt() {
         </SheetHeader>
 
         {showIosHint ? (
-          <div className="space-y-3 px-4 text-sm text-foreground">
-            <p className="flex items-center gap-2">
-              <span>1. Нажмите</span>
-              <Share className="size-4 shrink-0" aria-hidden />
-              <span>«Поделиться» в нижней панели Safari.</span>
-            </p>
-            <p className="flex items-center gap-2">
-              <span>2. Выберите</span>
-              <SquarePlus className="size-4 shrink-0" aria-hidden />
-              <span>«На экран „Домой“».</span>
-            </p>
-            <p>3. Подтвердите кнопкой «Добавить».</p>
+          <div className="px-4">
+            <IosInstallSteps />
           </div>
         ) : (
           <div className="px-4">

@@ -112,7 +112,6 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: 'API-доступ', href: '/admin/api-access', icon: KeyRound },
       { label: 'Интеграция Zoom', href: '/admin/system/zoom', icon: Video },
-      { label: 'Уведомления в Telegram', href: '/admin/system/telegram', icon: Send },
     ],
   },
 ];
@@ -354,7 +353,10 @@ function NavUser() {
   // основной навигации.
   const accountItems: NavItem[] =
     user.role === 'admin'
-      ? [{ label: 'Профиль', href: '/admin/profile', icon: User }]
+      ? [
+          { label: 'Профиль', href: '/admin/profile', icon: User },
+          { label: 'Настройки', href: '/admin/settings', icon: Settings },
+        ]
       : [
           { label: 'Профиль', href: '/dashboard/profile', icon: User },
           { label: 'Настройки', href: '/dashboard/settings', icon: Settings },

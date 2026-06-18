@@ -2857,6 +2857,15 @@ export async function savePushSubscription(
   });
 }
 
+/** VAPID public key с сервера (рантайм-env), а не из build-time NEXT_PUBLIC_*. */
+export async function getVapidPublicKey(accessToken: string): Promise<string | null> {
+  const { vapidPublicKey } = await request<{ vapidPublicKey: string | null }>(
+    '/push-subscriptions/vapid-public-key',
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return vapidPublicKey;
+}
+
 // ─── API Keys ─────────────────────────────────────────────────────────────────
 
 export interface ApiKey {

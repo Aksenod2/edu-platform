@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { updateMe, purgeAllFiles, uploadMyAvatar, deleteMyAvatar } from '@/lib/api';
+import { updateMe, uploadMyAvatar, deleteMyAvatar } from '@/lib/api';
 import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
 import { MyConsentsCard } from '@/components/my-consents-card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,18 +19,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-
 function initials(name: string) {
   return name
     .split(' ')
@@ -56,9 +44,6 @@ export default function AdminProfilePage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
-
-  // Обслуживание: удаление всех загруженных файлов (сброс тестовых данных).
-  const [purging, setPurging] = useState(false);
 
   // Аватар.
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -192,19 +177,6 @@ export default function AdminProfilePage() {
       toast.error(err instanceof Error ? err.message : 'Ошибка смены пароля');
     } finally {
       setSavingPassword(false);
-    }
-  }
-
-  async function handlePurgeFiles() {
-    if (!accessToken) return;
-    setPurging(true);
-    try {
-      const r = await purgeAllFiles(accessToken);
-      toast.success(`Удалено файлов: ${r.deletedFiles}. Ссылки очищены.`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка удаления файлов');
-    } finally {
-      setPurging(false);
     }
   }
 
@@ -449,42 +421,6 @@ export default function AdminProfilePage() {
                 onCheckedChange={handleHintsToggle}
               />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Обслуживание */}
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle>Обслуживание</CardTitle>
-            <CardDescription>
-              Удалить все загруженные файлы (видео уроков, материалы, вложения и
-              сдачи). Полезно для сброса тестовых данных. Действие необратимо.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={purging}>
-                  {purging && <Loader2 className="animate-spin" />}
-                  {purging ? 'Удаление...' : 'Удалить все файлы'}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Удалить все загруженные файлы?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Будут безвозвратно удалены все файлы и очищены ссылки на них в
-                    уроках, заданиях, сдачах и чатах. Это нельзя отменить.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Отмена</AlertDialogCancel>
-                  <AlertDialogAction onClick={handlePurgeFiles}>
-                    Удалить всё
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </CardContent>
         </Card>
       </div>

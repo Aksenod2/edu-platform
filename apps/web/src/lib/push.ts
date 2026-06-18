@@ -1,6 +1,5 @@
 /**
  * Web Push subscription helpers.
- * Requires NEXT_PUBLIC_VAPID_PUBLIC_KEY env var for push to work.
  */
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -22,9 +21,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export async function subscribeToPush(
   registration: ServiceWorkerRegistration,
+  vapidKey: string,
 ): Promise<PushSubscription | null> {
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  if (!vapidKey) return null;
   try {
     const existing = await registration.pushManager.getSubscription();
     if (existing) return existing;
@@ -42,4 +40,123 @@ export async function subscribeToPush(
 export function getPushPermissionStatus(): NotificationPermission | 'unsupported' {
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
   return Notification.permission;
+}
+
+/** Push поддерживается, только если есть и Notification, и serviceWorker, и PushManager. */
+export function isPushSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window
+  );
+}
+
+/** iOS (iPhone/iPad) по userAgent. iPadOS 13+ маскируется под Mac — ловим по maxTouchPoints. */
+export function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+/** Приложение запущено как standalone PWA (добавлено на домашний экран). */
+export function isStandalonePwa(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+export const PUSH_DENIED_KEY = 'push_permission_denied';
+
+export type EnablePushResult = 'subscribed' | 'denied' | 'unsupported' | 'error';
+
+/** Сетевой шаг не должен висеть вечно — гонка с таймаутом ~15с. */
+const NETWORK_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+/**
+ * Полная цепочка включения web-push: запрос разрешения → регистрация SW →
+ * подписка → сохранение на сервере. Запрос разрешения делается СИНХРОННО в
+ * начале (до любого await), чтобы iOS WebKit принял его как реакцию на жест
+ * пользователя — поэтому функцию нужно вызывать прямо из обработчика клика.
+ *
+ * Используется и кнопкой PushToggle, и автопромптом PushManager.
+ */
+export async function enablePush(accessToken: string): Promise<EnablePushResult> {
+  if (!isPushSupported()) return 'unsupported';
+
+  // ВАЖНО для iOS: requestPermission вызывается синхронно по жесту, до await.
+  let permission: NotificationPermission;
+  try {
+    permission = await Notification.requestPermission();
+  } catch {
+    return 'error';
+  }
+
+  if (permission === 'denied') {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(PUSH_DENIED_KEY, 'true');
+    }
+    return 'denied';
+  }
+  if (permission !== 'granted') return 'error';
+
+  // VAPID public key берём с сервера (рантайм-env), а не из build-time NEXT_PUBLIC_*.
+  let vapidKey: string | null;
+  try {
+    const { getVapidPublicKey } = await import('./api');
+    vapidKey = await withTimeout(getVapidPublicKey(accessToken));
+  } catch {
+    return 'error';
+  }
+  if (!vapidKey) {
+    console.error('Push: VAPID public key не настроен на сервере');
+    return 'error';
+  }
+
+  const registration = await registerServiceWorker();
+  if (!registration) return 'error';
+
+  // Ждём активации SW — иначе первая подписка может не создаться.
+  await navigator.serviceWorker.ready;
+
+  const subscription = await subscribeToPush(registration, vapidKey);
+  if (!subscription) {
+    if (typeof window !== 'undefined' && Notification.permission === 'denied') {
+      window.localStorage.setItem(PUSH_DENIED_KEY, 'true');
+      return 'denied';
+    }
+    return 'error';
+  }
+
+  const raw = subscription.toJSON();
+  if (!raw.endpoint || !raw.keys?.p256dh || !raw.keys?.auth) return 'error';
+
+  try {
+    const { savePushSubscription } = await import('./api');
+    await withTimeout(
+      savePushSubscription(accessToken, {
+        endpoint: raw.endpoint,
+        keys: { p256dh: raw.keys.p256dh, auth: raw.keys.auth },
+      }),
+    );
+  } catch {
+    return 'error';
+  }
+
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(PUSH_DENIED_KEY);
+  }
+  return 'subscribed';
 }
