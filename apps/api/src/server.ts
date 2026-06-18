@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 dotenv.config({ path: resolve(import.meta.dirname!, '..', '..', '..', '.env') });
 import Fastify from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -57,6 +58,14 @@ const app = Fastify({
     ],
   },
 });
+
+// Глобальные zod-компиляторы валидации/сериализации (fastify-type-provider-zod,
+// epic #174). Безопасно глобально: кастомного Ajv в проекте нет, а роуты БЕЗ
+// `schema` продолжают работать как раньше (компилятор вызывается только когда у
+// роута есть schema). Роуты, переведённые на общий контракт (zod-схема в
+// `schema.body`/`schema.response`), получают валидацию входа и сериализацию выхода.
+app.setValidatorCompiler(validatorCompiler);
+app.setSerializerCompiler(serializerCompiler);
 
 await app.register(cors, {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',

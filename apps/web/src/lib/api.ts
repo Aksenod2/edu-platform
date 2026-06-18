@@ -2746,22 +2746,20 @@ export interface Notification {
   createdAt: string;
 }
 
-export type NotificationCategory =
-  | 'learning'
-  | 'deadlines'
-  | 'feedback'
-  | 'schedule'
-  | 'student_activity'
-  | 'system';
-
-export interface NotificationPreference {
-  id: string;
-  userId: string;
-  category: NotificationCategory;
-  channelEmail: boolean;
-  channelPush: boolean;
-  updatedAt: string;
-}
+// Контракт матрицы уведомлений — ЕДИНЫЙ источник в @platform/shared/contracts
+// (zod-схема), его же валидирует/сериализует бэк. Типы фронта — из `z.infer`
+// этой схемы (см. NotificationPreference / NotificationPreferencesResponse).
+// Расхождение формы перёд↔зад теперь = ошибка компиляции/теста (epic #174, #172).
+export type {
+  NotificationCategory,
+  NotificationPreference,
+  NotificationPreferencesResponse,
+  UpdateNotificationPreferencesBody,
+} from '@platform/shared/contracts';
+import type {
+  NotificationPreferencesResponse,
+  UpdateNotificationPreferencesBody,
+} from '@platform/shared/contracts';
 
 export async function getNotifications(
   accessToken: string,
@@ -2834,7 +2832,7 @@ export function getNotificationLink(
 
 export async function getNotificationPreferences(
   accessToken: string,
-): Promise<{ preferences: NotificationPreference[] }> {
+): Promise<NotificationPreferencesResponse> {
   return request('/notification-preferences', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -2842,12 +2840,12 @@ export async function getNotificationPreferences(
 
 export async function updateNotificationPreferences(
   accessToken: string,
-  preferences: Array<{ category: NotificationCategory; channelEmail?: boolean; channelPush?: boolean }>,
-): Promise<{ preferences: NotificationPreference[] }> {
+  body: UpdateNotificationPreferencesBody,
+): Promise<NotificationPreferencesResponse> {
   return request('/notification-preferences', {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ preferences }),
+    body: JSON.stringify(body),
   });
 }
 

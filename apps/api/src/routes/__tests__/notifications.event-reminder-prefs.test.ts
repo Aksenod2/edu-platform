@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
 
@@ -22,6 +23,10 @@ const db = prisma as any;
 
 function buildApp(): FastifyInstance {
   const app = Fastify();
+  // Как в server.ts: zod-компиляторы нужны, т.к. в notificationRoutes есть роуты
+  // матрицы с zod schema.body/response (без компиляторов их регистрация падает).
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
   app.register(notificationRoutes);
   return app;
 }
