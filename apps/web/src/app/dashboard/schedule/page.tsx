@@ -58,7 +58,7 @@ export default function StudentSchedulePage() {
         setMeetings(
           mtgs
             .filter((m) => m.date)
-            .map((m) => meetingToCalendarLesson(m, '/dashboard/meetings')),
+            .map((m) => meetingToCalendarLesson(m, '/dashboard/meetings', 'student')),
         );
       } catch {
         setMeetings([]);

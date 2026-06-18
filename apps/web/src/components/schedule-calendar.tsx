@@ -62,6 +62,9 @@ export type CalendarLesson = Lesson & {
   meeting?: boolean;
   /** Куда вести «Открыть встречу» (роль-зависимый путь). */
   meetingHref?: string;
+  /** Имя ВТОРОЙ стороны встречи 1-на-1 (с кем встреча): преподавателю — студент,
+   *  студенту — преподаватель. Зависит от роли смотрящего. */
+  meetingCounterpart?: string | null;
 };
 
 /** Поля для обновления урока из календаря. */
@@ -260,7 +263,11 @@ export function ScheduleCalendar({
                       </span>
                       <span className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
                         {lesson.meeting ? (
-                          <span className="truncate font-medium text-primary">1-на-1</span>
+                          // Акцентный фон уже помечает встречу 1-на-1 — в тесной
+                          // ячейке показываем, С КЕМ встреча (имя студента), а не «1-на-1».
+                          <span className="truncate font-medium text-primary">
+                            {lesson.meetingCounterpart || '1-на-1'}
+                          </span>
                         ) : lesson.streamName ? (
                           <span className="truncate">{lesson.streamName}</span>
                         ) : (

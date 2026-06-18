@@ -90,6 +90,13 @@ export function LessonItem({
         )}
       </div>
 
+      {/* Встреча 1-на-1 — показываем, с кем встреча (преподу — студент, студенту — препод). */}
+      {isMeeting && lesson.meetingCounterpart && (
+        <p className={cn('min-w-0 truncate text-sm text-muted-foreground', compact && 'text-xs')}>
+          с {lesson.meetingCounterpart}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-1.5">
         <LessonStatusBadge status={lesson.status} />
         {isMeeting ? (

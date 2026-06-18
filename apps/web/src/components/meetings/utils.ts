@@ -26,8 +26,14 @@ function meetingStatus(status: string): LessonStatus {
  *
  * basePath — роль-зависимый префикс детали встречи:
  *   admin → '/admin/meetings', student → '/dashboard/meetings'.
+ * viewer — роль смотрящего: для преподавателя «вторая сторона» = студент,
+ *   для студента = преподаватель (показываем, С КЕМ встреча, а не себя самого).
  */
-export function meetingToCalendarLesson(meeting: Meeting, basePath: string): CalendarLesson {
+export function meetingToCalendarLesson(
+  meeting: Meeting,
+  basePath: string,
+  viewer: 'teacher' | 'student' = 'teacher',
+): CalendarLesson {
   return {
     id: meeting.id,
     title: meeting.title?.trim() || MEETING_FALLBACK_TITLE,
@@ -48,5 +54,7 @@ export function meetingToCalendarLesson(meeting: Meeting, basePath: string): Cal
     // Маркеры встречи для календаря/недели.
     meeting: true,
     meetingHref: `${basePath}/${meeting.id}`,
+    meetingCounterpart:
+      (viewer === 'teacher' ? meeting.student?.name : meeting.teacher?.name) ?? null,
   };
 }

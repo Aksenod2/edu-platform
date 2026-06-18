@@ -89,7 +89,7 @@ export default function AdminSchedulePage() {
         setMeetings(
           mtgs
             .filter((m) => m.date)
-            .map((m) => meetingToCalendarLesson(m, '/admin/meetings')),
+            .map((m) => meetingToCalendarLesson(m, '/admin/meetings', 'teacher')),
         );
       } catch {
         setMeetings([]);
