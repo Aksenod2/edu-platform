@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { MeetingLinkField } from '@/components/schedule/meeting-link-field';
 import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
@@ -370,12 +370,19 @@ export function LessonScheduleSection({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
-      <div className="flex items-center justify-between gap-2">
-        <FieldLabel>Расписание</FieldLabel>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <FieldLabel>Расписание и запись занятия</FieldLabel>
+          <FieldDescription>
+            Когда урок проходит в группах. Запись прошедшего созвона («Запись
+            занятия») подтягивается сюда автоматически из Zoom после занятия.
+          </FieldDescription>
+        </div>
         <Button
           type="button"
           size="sm"
           variant="outline"
+          className="shrink-0"
           onClick={openAdd}
           disabled={loading || availableStreams.length === 0}
         >
@@ -497,7 +504,14 @@ export function LessonScheduleSection({
                     Файл → VideoFileFrame, распознанный embed → VideoEmbedFrame,
                     иначе кнопка-ссылка. Компактно, под бейджами/статусом записи. */}
                 {hasRecording && (
-                  <div className="rounded-md bg-muted p-2">
+                  <div className="flex flex-col gap-1.5 rounded-md bg-muted p-2">
+                    <div className="flex items-center gap-1.5">
+                      <Video className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="text-xs font-medium">Запись занятия</span>
+                      <span className="text-xs text-muted-foreground">
+                        · запись прошедшего созвона (из Zoom)
+                      </span>
+                    </div>
                     {s.recordingFileUrl ? (
                       <VideoFileFrame
                         src={s.recordingFileUrl}

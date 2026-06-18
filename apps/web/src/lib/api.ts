@@ -936,8 +936,14 @@ export async function getLessons(
 export async function getLesson(
   accessToken: string,
   id: string,
+  // Поток, чей контент урока вернуть (студент может состоять в нескольких потоках —
+  // без явного streamId бэк брал случайный поток, отсюда баг #158).
+  streamId?: string,
 ): Promise<{ lesson: Lesson & { assignments?: Assignment[] } }> {
-  return request(`/lessons/${id}`, {
+  const params = new URLSearchParams();
+  if (streamId) params.set('streamId', streamId);
+  const qs = params.toString();
+  return request(`/lessons/${id}${qs ? `?${qs}` : ''}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }

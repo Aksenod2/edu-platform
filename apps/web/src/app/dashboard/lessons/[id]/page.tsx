@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Loader2,
@@ -19,11 +19,14 @@ import { useAuth } from '@/lib/auth-context';
 import {
   getLesson,
   getLessons,
+  getStreams,
   getStudentAssignments,
   type Lesson,
   type Assignment,
+  type Stream,
   type StudentAssignment,
 } from '@/lib/api';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   canJoinMeeting,
   parseLocalDate,
@@ -51,10 +54,14 @@ import { parseVideoEmbed } from '@/lib/video-embed';
 
 type LessonWithAssignments = Lesson & { assignments?: Assignment[] };
 
-export default function StudentLessonPage() {
+function StudentLessonContent() {
   const { accessToken, user } = useAuth();
   const params = useParams();
+  const searchParams = useSearchParams();
   const lessonId = params.id as string;
+  // Поток, с которого студент пришёл на урок (передаёт страница списка/расписание).
+  // Используем как начальный выбор таба до того, как загрузим список потоков.
+  const streamIdParam = searchParams.get('streamId');
 
   // Актуальный токен держим в ref и используем его внутри загрузки урока, но НЕ
   // перезапускаем загрузку при «тихом» обновлении токена (авто-refresh на 401
@@ -65,6 +72,16 @@ export default function StudentLessonPage() {
   accessTokenRef.current = accessToken;
 
   const [lesson, setLesson] = useState<LessonWithAssignments | null>(null);
+  // Потоки студента и активный таб. Урок может быть общим для нескольких потоков
+  // (студент состоит в двух) — без явного streamId бэк отдавал контент случайного
+  // потока (баг #158). Активный таб задаёт streamId, который шлём в getLesson.
+  const [streams, setStreams] = useState<Stream[]>([]);
+  const [activeStreamId, setActiveStreamId] = useState<string | null>(streamIdParam);
+  // Список потоков ещё не подгрузили — ждём его перед первой загрузкой урока,
+  // чтобы сразу запросить контент нужного потока (без лишнего запроса со
+  // «случайным» потоком и мигания контента). Если URL уже принёс streamId —
+  // ждать не обязательно: можем грузить сразу.
+  const [streamsLoaded, setStreamsLoaded] = useState(false);
   const [prev, setPrev] = useState<Lesson | null>(null);
   const [next, setNext] = useState<Lesson | null>(null);
   // Карта assignmentId → studentAssignmentId (детальная страница задания
@@ -73,62 +90,106 @@ export default function StudentLessonPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchLesson = useCallback(async () => {
-    const token = accessTokenRef.current;
-    if (!token || !lessonId) return;
-    setLoading(true);
-    try {
-      const { lesson: data } = await getLesson(token, lessonId);
-      setLesson(data);
-      setError('');
-
-      // Соседние уроки потока для навигации prev/next
+  // streamId передаём ПАРАМЕТРОМ (а не из стейта в deps), чтобы при «тихом»
+  // обновлении токена ссылка на fetchLesson не пересоздавалась и урок не
+  // перезагружался (иначе сбрасывался бы прогресс в плеере записи занятия).
+  const fetchLesson = useCallback(
+    async (streamId: string | null) => {
+      const token = accessTokenRef.current;
+      if (!token || !lessonId) return;
+      setLoading(true);
       try {
-        const { lessons } = await getLessons(token, data.streamId);
-        const sorted = [...lessons].sort((a, b) => a.sortOrder - b.sortOrder);
-        const idx = sorted.findIndex((l) => l.id === data.id);
-        setPrev(idx > 0 ? sorted[idx - 1] : null);
-        setNext(idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null);
-      } catch {
-        setPrev(null);
-        setNext(null);
-      }
+        const { lesson: data } = await getLesson(token, lessonId, streamId ?? undefined);
+        setLesson(data);
+        setError('');
 
-      // Сопоставляем задания урока с назначениями текущего студента,
-      // чтобы ссылка вела на корректную детальную страницу.
-      if (data.assignments && data.assignments.length > 0) {
+        // Поток для соседних уроков и сопоставления заданий: явно выбранный таб
+        // (если задан и валиден), иначе поток из ответа бэка.
+        const effectiveStreamId = streamId ?? data.streamId;
+
+        // Соседние уроки потока для навигации prev/next
         try {
-          const { studentAssignments } = await getStudentAssignments(token, {
-            streamId: data.streamId,
-          });
-          const map: Record<string, string> = {};
-          for (const sa of studentAssignments as StudentAssignment[]) {
-            if (!(sa.assignmentId in map)) map[sa.assignmentId] = sa.id;
-          }
-          setSaByAssignment(map);
+          const { lessons } = await getLessons(token, effectiveStreamId);
+          const sorted = [...lessons].sort((a, b) => a.sortOrder - b.sortOrder);
+          const idx = sorted.findIndex((l) => l.id === data.id);
+          setPrev(idx > 0 ? sorted[idx - 1] : null);
+          setNext(idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null);
         } catch {
+          setPrev(null);
+          setNext(null);
+        }
+
+        // Сопоставляем задания урока с назначениями текущего студента,
+        // чтобы ссылка вела на корректную детальную страницу.
+        if (data.assignments && data.assignments.length > 0) {
+          try {
+            const { studentAssignments } = await getStudentAssignments(token, {
+              streamId: effectiveStreamId,
+            });
+            const map: Record<string, string> = {};
+            for (const sa of studentAssignments as StudentAssignment[]) {
+              if (!(sa.assignmentId in map)) map[sa.assignmentId] = sa.id;
+            }
+            setSaByAssignment(map);
+          } catch {
+            setSaByAssignment({});
+          }
+        } else {
           setSaByAssignment({});
         }
-      } else {
-        setSaByAssignment({});
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Ошибка загрузки урока');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки урока');
-    } finally {
-      setLoading(false);
-    }
-    // Зависимость только от lessonId: при «тихом» обновлении токена ссылку на
-    // функцию не пересоздаём, поэтому эффект ниже не перезапускает загрузку.
-  }, [lessonId]);
+      // Зависимость только от lessonId: при «тихом» обновлении токена ссылку на
+      // функцию не пересоздаём, поэтому эффект ниже не перезапускает загрузку.
+    },
+    [lessonId],
+  );
 
-  // Грузим урок при смене урока или при ПЕРВОМ появлении токена (hasToken: false
-  // → true один раз). Последующие обновления значения токена (refresh) hasToken
-  // не меняют → перезагрузки урока (и сброса видео) не происходит.
+  // Список потоков студента — нужен для таб-переключателя и для выбора streamId
+  // при первой загрузке. Грузим один раз при появлении токена; админ/препод тоже
+  // получит список (свои потоки), но таб показываем только при двух и более.
   const hasToken = Boolean(accessToken);
   useEffect(() => {
     if (!hasToken) return;
-    fetchLesson();
-  }, [fetchLesson, hasToken]);
+    const token = accessTokenRef.current;
+    if (!token) return;
+    let cancelled = false;
+    getStreams(token)
+      .then(({ streams: list }) => {
+        if (cancelled) return;
+        setStreams(list);
+        // Активный таб: URL-подсказка (если поток валиден), иначе первый поток.
+        setActiveStreamId((current) => {
+          if (current && list.some((s) => s.id === current)) return current;
+          return list.length > 0 ? list[0].id : current;
+        });
+      })
+      .catch(() => {
+        // Падение списка потоков не должно ломать страницу: ниже урок всё равно
+        // грузится (без streamId — поведение как было).
+        if (!cancelled) setStreams([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStreamsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasToken]);
+
+  // Грузим урок при смене урока, при ПЕРВОМ появлении токена или при смене
+  // активного таба-потока. Смена таба → новый запрос getLesson с его streamId
+  // → контент (видео/материалы/конспект) меняется под выбранный поток.
+  // Ждём загрузки списка потоков (streamsLoaded), кроме случая, когда streamId
+  // уже пришёл из URL — тогда грузим сразу, не дожидаясь списка.
+  useEffect(() => {
+    if (!hasToken) return;
+    if (!streamsLoaded && !activeStreamId) return;
+    fetchLesson(activeStreamId);
+  }, [fetchLesson, hasToken, activeStreamId, streamsLoaded]);
 
   const embedUrl = lesson?.videoUrl ? parseVideoEmbed(lesson.videoUrl) : null;
   // Показываем только задания, назначенные этому студенту (есть studentAssignment).
@@ -182,9 +243,37 @@ export default function StudentLessonPage() {
     lesson?.status !== 'cancelled' &&
     (hasRecordingMedia || recordingPending || recordingStale || recordingUnavailable);
 
+  // Ссылка на урок с сохранением выбранного потока (для prev/next).
+  const lessonHref = (id: string) =>
+    activeStreamId
+      ? `/dashboard/lessons/${id}?streamId=${encodeURIComponent(activeStreamId)}`
+      : `/dashboard/lessons/${id}`;
+
   return (
     <div className="flex flex-col gap-6">
       <BackButton fallbackHref="/dashboard/lessons">К урокам</BackButton>
+
+      {/* Переключатель потоков: вкладки показываем только если потоков больше
+          одного (студент состоит в нескольких группах с этим уроком). Смена
+          таба перезапрашивает урок под выбранный поток. Оставляем переключатель
+          видимым и во время загрузки — чтобы не мигал при переключении. */}
+      {streams.length > 1 && (
+        <Tabs
+          value={activeStreamId ?? ''}
+          onValueChange={(value) => setActiveStreamId(value)}
+        >
+          {/* Горизонтальная прокрутка вкладок на узких экранах без слома вёрстки */}
+          <div className="-mx-1 overflow-x-auto px-1">
+            <TabsList className="w-max">
+              {streams.map((s) => (
+                <TabsTrigger key={s.id} value={s.id} className="flex-none shrink-0">
+                  {s.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        </Tabs>
+      )}
 
       {error && (
         <Alert variant="destructive">
@@ -524,12 +613,13 @@ export default function StudentLessonPage() {
               <p className="text-sm italic text-muted-foreground">Контент пока не добавлен.</p>
             )}
 
-          {/* Навигация prev/next */}
+          {/* Навигация prev/next. Переносим выбранный поток (streamId) в ссылку,
+              чтобы соседний урок открылся в том же потоке. */}
           {(prev || next) && (
             <div className="flex items-center justify-between gap-3 border-t pt-4">
               {prev ? (
                 <Button variant="outline" asChild className="min-w-0 flex-1 justify-start">
-                  <Link href={`/dashboard/lessons/${prev.id}`} className="min-w-0">
+                  <Link href={lessonHref(prev.id)} className="min-w-0">
                     <ArrowLeft className="shrink-0" />
                     <span className="min-w-0 truncate">{prev.title}</span>
                   </Link>
@@ -539,7 +629,7 @@ export default function StudentLessonPage() {
               )}
               {next ? (
                 <Button variant="outline" asChild className="min-w-0 flex-1 justify-end">
-                  <Link href={`/dashboard/lessons/${next.id}`} className="min-w-0">
+                  <Link href={lessonHref(next.id)} className="min-w-0">
                     <span className="min-w-0 truncate">{next.title}</span>
                     <ArrowRight className="shrink-0" />
                   </Link>
@@ -552,5 +642,20 @@ export default function StudentLessonPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function StudentLessonPage() {
+  // useSearchParams требует Suspense-границы в App Router (как на странице списка).
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-12">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <StudentLessonContent />
+    </Suspense>
   );
 }
