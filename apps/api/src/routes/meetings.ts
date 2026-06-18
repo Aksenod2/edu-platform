@@ -7,6 +7,12 @@ import {
   canCreateMeeting,
   deleteZoomMeeting,
 } from '../lib/zoom.js';
+import {
+  processRecordingForSession,
+  processSummaryForSession,
+  processTranscriptForSession,
+  type ProcessOutcome,
+} from '../lib/zoom-recording.js';
 import { getFileUrl, readFileText } from '../lib/s3.js';
 
 // ─── Встречи 1-на-1 (эпик «Встречи 1-на-1», #154) ───────────────────────────
@@ -69,6 +75,37 @@ async function maybeCreateZoomForMeeting(
     app.log.warn({ err, userId }, 'Не удалось создать встречу Zoom 1-на-1 — продолжаем без ссылки');
     return null;
   }
+}
+
+// Допустимые статусы встречи (зеркало enum MeetingStatus в schema.prisma).
+const MEETING_STATUSES = ['planned', 'live', 'done', 'cancelled'] as const;
+type MeetingStatusValue = (typeof MEETING_STATUSES)[number];
+
+function isMeetingStatus(value: unknown): value is MeetingStatusValue {
+  return typeof value === 'string' && (MEETING_STATUSES as readonly string[]).includes(value);
+}
+
+// Разрешённые переходы статуса встречи 1-на-1 (зеркало логики занятия:
+// session-status-control «Провести» гонит planned/live→done). Принцип:
+//   - planned → live | done | cancelled (запланировали → идёт / провели / отменили);
+//   - live    → done | cancelled        (идёт → провели / отменили);
+//   - done / cancelled — ТЕРМИНАЛЬНЫ (обратных переходов нет).
+// Обратные переходы (done→planned, cancelled→planned) НЕ разрешаем осознанно (#170):
+// отмена удаляет Zoom-созвон (PATCH /cancel → deleteZoomMeeting), поэтому переоткрытие
+// оставило бы мёртвый zoomMeetingId/meetingUrl; откат «провели» спрятал бы уже
+// подтянутую запись. Требования «распровести/переоткрыть» нет — нужна новая встреча.
+// Переход в тот же статус — допускаем (идемпотентно). Прочие — 409 как нелогичные.
+const MEETING_STATUS_TRANSITIONS: Record<MeetingStatusValue, readonly MeetingStatusValue[]> = {
+  planned: ['live', 'done', 'cancelled'],
+  live: ['done', 'cancelled'],
+  done: [],
+  cancelled: [],
+};
+
+function canTransitionMeeting(from: string, to: MeetingStatusValue): boolean {
+  if (from === to) return true; // идемпотентно
+  const allowed = MEETING_STATUS_TRANSITIONS[from as MeetingStatusValue];
+  return !!allowed && allowed.includes(to);
 }
 
 // Поля Meeting, нужные для ПОЛНОЙ проекции (админ/преподаватель). Транскрипт-ключи
@@ -388,4 +425,184 @@ export async function meetingRoutes(app: FastifyInstance) {
     const url = await getFileUrl(key);
     return { format: fmt, url, status: meeting.transcriptStatus ?? null };
   });
+
+  // PATCH /meetings/:id/status — смена статуса встречи 1-на-1 (admin, только своей:
+  // teacherId=me). Зеркало смены Session.status у занятия (PATCH /lessons/:id +
+  // session-status-control «Провести»: planned/live→done). Студент статус НЕ меняет
+  // (роут admin-only). Допустимые переходы — см. MEETING_STATUS_TRANSITIONS.
+  // Body: { status: 'planned'|'live'|'done'|'cancelled' } → { meeting }.
+  //
+  // ВАЖНО: авто-переходы (live на meeting.started, done на meeting.ended) делает
+  // вебхук Zoom — это РУЧНОЙ контрол на случай отсутствия Zoom / расхождения. Забор
+  // записи тут НЕ дёргаем (ручной добор — отдельный POST /refresh): на meeting.ended
+  // вебхук уже пометил запись/итоги/транскрипт «готовится» и инициирует забор; этот
+  // роут лишь меняет статус.
+  app.patch('/meetings/:id/status', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const teacherId = request.user!.userId;
+    const body = (request.body ?? {}) as { status?: unknown };
+
+    if (!isMeetingStatus(body.status)) {
+      return reply.status(400).send({
+        error: 'Недопустимый статус (planned|live|done|cancelled)',
+      });
+    }
+    const nextStatus = body.status;
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { id },
+      select: { id: true, teacherId: true, status: true },
+    });
+    // Чужую/несуществующую встречу не раскрываем — 404.
+    if (!meeting || meeting.teacherId !== teacherId) {
+      return reply.status(404).send({ error: 'Встреча не найдена' });
+    }
+
+    if (!canTransitionMeeting(meeting.status, nextStatus)) {
+      return reply.status(409).send({
+        error: `Недопустимый переход статуса: ${meeting.status} → ${nextStatus}`,
+      });
+    }
+
+    const updated = await prisma.meeting.update({
+      where: { id },
+      data: { status: nextStatus },
+      select: meetingSelect,
+    });
+
+    return { meeting: await projectMeeting(updated as MeetingRow, false) };
+  });
+
+  // POST /meetings/:id/refresh — ручная подтяжка из Zoom («Обновить из Zoom»):
+  // запись + итоги + транскрипт. Право: admin-преподаватель встречи (teacherId=me).
+  // Зеркало POST /lessons/:id/sessions/:streamId/refresh, но без посещаемости (для
+  // 1-на-1 её не забираем). teacherUserId — владелец встречи (Meeting.teacherId), под
+  // его OAuth-токеном Zoom скачиваются файлы (в отличие от Session, у Meeting реальный
+  // владелец хранится в БД, каскад resolveTeacherForZoom не нужен).
+  //
+  // Требует zoomMeetingId (без него нет id для API Zoom) — иначе 400. Каждый шаг
+  // best-effort (ошибка одного не валит остальные); по итогу возвращаем ОБНОВЛЁННУЮ
+  // проекцию { meeting } (статусы полей в ней отражают исход подтяжки).
+  app.post('/meetings/:id/refresh', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const teacherId = request.user!.userId;
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { id },
+      select: { id: true, teacherId: true, zoomMeetingId: true, zoomMeetingUuid: true },
+    });
+    // Чужую/несуществующую встречу не раскрываем — 404.
+    if (!meeting || meeting.teacherId !== teacherId) {
+      return reply.status(404).send({ error: 'Встреча не найдена' });
+    }
+
+    if (!meeting.zoomMeetingId) {
+      return reply.status(400).send({ error: 'Zoom-встреча не создана' });
+    }
+    const meetingId = meeting.zoomMeetingId;
+
+    // Шаг best-effort: запускает работу, ошибку/«формируется» гасит (refresh не должен
+    // падать целиком из-за одного источника). Исход не возвращаем наружу — финальная
+    // проекция и так несёт актуальные статусы полей. Ошибку лишь логируем.
+    const step = async (fn: () => Promise<ProcessOutcome>, what: string) => {
+      try {
+        await fn();
+      } catch (err) {
+        app.log.error({ err, meetingId: meeting.id }, `refresh встречи: ${what}`);
+      }
+    };
+
+    // Параллельно — шаги независимы (разные поля Meeting). kind='meeting' переключает
+    // общие обработчики на Prisma-делегат Meeting.
+    await Promise.all([
+      step(
+        () =>
+          processRecordingForSession({
+            sessionId: meeting.id,
+            meetingId,
+            teacherUserId: teacherId,
+            kind: 'meeting',
+          }),
+        'не удалось обновить запись',
+      ),
+      step(
+        () =>
+          processSummaryForSession({
+            sessionId: meeting.id,
+            meetingId,
+            teacherUserId: teacherId,
+            meetingUuid: meeting.zoomMeetingUuid,
+            kind: 'meeting',
+          }),
+        'не удалось обновить итоги',
+      ),
+      step(
+        () =>
+          processTranscriptForSession({
+            sessionId: meeting.id,
+            meetingId,
+            teacherUserId: teacherId,
+            kind: 'meeting',
+          }),
+        'не удалось обновить транскрипт',
+      ),
+    ]);
+
+    // Перечитываем встречу — отдаём актуальную проекцию (статусы полей обновлены).
+    const updated = await prisma.meeting.findUnique({ where: { id }, select: meetingSelect });
+    if (!updated) {
+      return reply.status(404).send({ error: 'Встреча не найдена' });
+    }
+    return { meeting: await projectMeeting(updated as MeetingRow, false) };
+  });
+
+  // POST /meetings/:id/recording/retry — повторная попытка забора записи Zoom
+  // (admin-преподаватель встречи, teacherId=me). Зеркало
+  // POST /lessons/:id/sessions/:streamId/recording/retry. Идемпотентность встроена в
+  // processRecordingForSession (claim не пустит двойное скачивание). Требует
+  // zoomMeetingId — иначе 400. Запуск fire-and-forget (тяжёлое скачивание не держим в
+  // запросе); возвращаем ОБНОВЛЁННУЮ проекцию { meeting } (claim уже мог перевести
+  // failed→processing).
+  app.post(
+    '/meetings/:id/recording/retry',
+    { onRequest: adminOnly },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const teacherId = request.user!.userId;
+
+      const meeting = await prisma.meeting.findUnique({
+        where: { id },
+        select: { id: true, teacherId: true, zoomMeetingId: true },
+      });
+      // Чужую/несуществующую встречу не раскрываем — 404.
+      if (!meeting || meeting.teacherId !== teacherId) {
+        return reply.status(404).send({ error: 'Встреча не найдена' });
+      }
+
+      if (!meeting.zoomMeetingId) {
+        return reply.status(400).send({ error: 'Zoom-встреча не создана' });
+      }
+
+      // fire-and-forget: повтор скачивания/заливки в фоне (как у занятия). Под
+      // OAuth-токеном владельца встречи (Meeting.teacherId), kind='meeting'.
+      void processRecordingForSession({
+        sessionId: meeting.id,
+        meetingId: meeting.zoomMeetingId,
+        teacherUserId: teacherId,
+        kind: 'meeting',
+      }).catch((err) => {
+        app.log.error(
+          { err, meetingId: meeting.id },
+          'Ошибка ручного ретрая записи Zoom (1-на-1)',
+        );
+      });
+
+      // Перечитываем — claim в processRecordingForSession уже мог перевести статус.
+      const updated = await prisma.meeting.findUnique({ where: { id }, select: meetingSelect });
+      if (!updated) {
+        return reply.status(404).send({ error: 'Встреча не найдена' });
+      }
+      return { meeting: await projectMeeting(updated as MeetingRow, false) };
+    },
+  );
 }

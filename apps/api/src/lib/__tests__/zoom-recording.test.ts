@@ -15,6 +15,7 @@ vi.mock('@platform/db', () => ({
     // должны писать сюда, а не в session. Те же методы.
     meeting: {
       findUnique: vi.fn(),
+      findMany: vi.fn(() => Promise.resolve([])),
       update: vi.fn(() => Promise.resolve({})),
       updateMany: vi.fn(),
     },
@@ -922,6 +923,103 @@ describe('sweepFailedRecordings — фоновый свипер недокача
 
     // Первое глотнули, второе обработали.
     expect(started).toBe(1);
+  });
+
+  // ── Проход по встречам 1-на-1 (Meeting) ──────────────────────────────────────
+  it('встречи: выборка тем же WHERE, что и занятия (zoomMeetingId/videoKey/статусы)', async () => {
+    db.session.findMany.mockResolvedValue([]);
+    db.meeting.findMany.mockResolvedValue([]);
+
+    await sweepFailedRecordings({ now: new Date('2026-05-23T12:00:00Z'), ...sweepOpts });
+
+    expect(db.meeting.findMany).toHaveBeenCalledTimes(1);
+    const arg = db.meeting.findMany.mock.calls[0][0];
+    expect(arg.where.zoomMeetingId).toEqual({ not: null });
+    expect(arg.where.videoKey).toBeNull();
+    expect(arg.where.OR).toHaveLength(2);
+    expect(arg.where.OR[0].recordingStatus).toEqual({ in: ['failed', 'pending'] });
+    expect(arg.where.OR[1].recordingStatus).toBe('processing');
+    expect(arg.take).toBe(20);
+  });
+
+  it('встреча failed: забор записи под Meeting.teacherId (без каскада lessonTeacher), kind=meeting', async () => {
+    db.session.findMany.mockResolvedValue([]);
+    db.meeting.findMany.mockResolvedValue([
+      { id: 'm-1', teacherId: 'owner-1', zoomMeetingId: 'mtg-99', recordingStatus: 'failed' },
+    ]);
+    db.meeting.findUnique.mockResolvedValue({ id: 'm-1', videoKey: null });
+    db.meeting.updateMany.mockResolvedValue({ count: 1 });
+    db.meeting.update.mockResolvedValue({});
+
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, body: { fake: 'stream' } }),
+    ) as never;
+
+    let started: number;
+    try {
+      started = await sweepFailedRecordings({ now: new Date(), ...sweepOpts });
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    expect(started).toBe(1);
+    // teacherUserId взят напрямую из встречи — каскад lessonTeacher НЕ задействован
+    // для встреч (вызовы были только при наличии занятий — тут их нет).
+    expect(db.lessonTeacher.findMany).not.toHaveBeenCalled();
+    // Запись писалась в модель meeting (claim через updateMany).
+    expect(db.meeting.updateMany).toHaveBeenCalled();
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('встреча с зависшим processing → сброс в failed (атомарно) перед повтором', async () => {
+    db.session.findMany.mockResolvedValue([]);
+    db.meeting.findMany.mockResolvedValue([
+      { id: 'm-stuck', teacherId: 'owner-1', zoomMeetingId: 'mtg-99', recordingStatus: 'processing' },
+    ]);
+    db.meeting.findUnique.mockResolvedValue({ id: 'm-stuck', videoKey: null });
+    db.meeting.updateMany.mockResolvedValue({ count: 1 });
+    db.meeting.update.mockResolvedValue({});
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, body: { fake: 'stream' } }),
+    ) as never;
+
+    try {
+      await sweepFailedRecordings({ now: new Date(), ...sweepOpts });
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    const resetCall = db.meeting.updateMany.mock.calls.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (c: any) =>
+        c[0]?.where?.recordingStatus === 'processing' &&
+        c[0]?.data?.recordingStatus === 'failed',
+    );
+    expect(resetCall).toBeTruthy();
+    expect(resetCall[0].where.videoKey).toBeNull();
+  });
+
+  it('проход по занятиям не ломается из-за встреч (Session по-прежнему обрабатывается)', async () => {
+    db.session.findMany.mockResolvedValue([
+      { id: 'sess-1', streamId: 'str-1', lessonId: 'les-1', zoomMeetingId: 'mtg-1', recordingStatus: 'failed' },
+    ]);
+    db.meeting.findMany.mockResolvedValue([]);
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, body: { fake: 'stream' } }),
+    ) as never;
+
+    let started: number;
+    try {
+      started = await sweepFailedRecordings({ now: new Date(), ...sweepOpts });
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    expect(started).toBe(1);
+    expect(db.lessonTeacher.findMany).toHaveBeenCalled();
   });
 });
 

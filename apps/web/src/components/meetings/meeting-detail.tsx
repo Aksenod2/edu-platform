@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Calendar,
+  CheckCircle2,
   Clock,
   Download,
   ExternalLink,
   Loader2,
+  PlayCircle,
+  RefreshCw,
   ScrollText,
   Video,
   XCircle,
@@ -19,6 +22,9 @@ import {
   fileDownloadUrl,
   getMeeting,
   getMeetingTranscript,
+  refreshMeetingFromZoom,
+  retryMeetingRecording,
+  updateMeetingStatus,
   type Meeting,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -79,6 +85,10 @@ export function MeetingDetail({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  // Смена статуса (Начать/Провести) и подтяжка из Zoom — действия владельца-препода.
+  const [statusPending, setStatusPending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const fetchMeeting = useCallback(async () => {
     if (!accessToken || !meetingId) return;
@@ -112,6 +122,56 @@ export function MeetingDetail({
     }
   };
 
+  // Смена статуса встречи (Начать planned→live / Провести planned|live→done).
+  // После успеха рефетчим встречу: от «Проведена» зависит подтяжка записи/итогов.
+  const handleStatus = useCallback(
+    async (next: 'live' | 'done') => {
+      if (!accessToken || !meeting || statusPending) return;
+      setStatusPending(true);
+      try {
+        const updated = await updateMeetingStatus(accessToken, meeting.id, next);
+        setMeeting(updated);
+        toast.success(next === 'done' ? 'Встреча проведена' : 'Встреча начата');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Не удалось изменить статус');
+      } finally {
+        setStatusPending(false);
+      }
+    },
+    [accessToken, meeting, statusPending],
+  );
+
+  // Ручная подтяжка записи/итогов/транскрипта из Zoom (синхронно). Полезна, когда
+  // автосбор по вебхуку завис/не сработал. Возвращает обновлённую встречу.
+  const handleRefresh = useCallback(async () => {
+    if (!accessToken || !meeting || refreshing) return;
+    setRefreshing(true);
+    try {
+      const updated = await refreshMeetingFromZoom(accessToken, meeting.id);
+      setMeeting(updated);
+      toast.success('Обновили данные встречи из Zoom');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [accessToken, meeting, refreshing]);
+
+  // Повторить автозагрузку записи Zoom, когда recordingStatus = 'failed'/завис.
+  const handleRetryRecording = useCallback(async () => {
+    if (!accessToken || !meeting || retrying) return;
+    setRetrying(true);
+    try {
+      const updated = await retryMeetingRecording(accessToken, meeting.id);
+      setMeeting(updated);
+      toast.success('Перезапустили загрузку записи');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось перезапустить загрузку');
+    } finally {
+      setRetrying(false);
+    }
+  }, [accessToken, meeting, retrying]);
+
   const title = meeting?.title?.trim() || MEETING_FALLBACK_TITLE;
   const dateLabel = meeting?.date
     ? parseLocalDate(meeting.date).toLocaleDateString('ru-RU', {
@@ -140,11 +200,16 @@ export function MeetingDetail({
   });
   const recordingPending = !recordingUrl && (recKind === 'processing' || recKind === 'ready');
   const recordingStale = !recordingUrl && recKind === 'stale';
-  const recordingUnavailable =
-    !recordingUrl && meeting?.status === 'done' && recKind === 'failed';
+  // Признак реальной ошибки записи — для кнопки «Повторить» (как у занятия).
+  const recordingFailed = !recordingUrl && recKind === 'failed';
+  // Админу показываем секцию записи и для проведённой/идущей встречи без данных —
+  // чтобы был доступ к «Обновить из Zoom» (подтянуть запись/итоги/транскрипт вручную).
+  const adminCanRefresh =
+    isAdmin && (meeting?.status === 'done' || meeting?.status === 'live');
   const showRecordingSection =
     meeting?.status !== 'cancelled' &&
-    (!!recordingUrl || recordingPending || recordingStale || recordingUnavailable);
+    (!!recordingUrl || recordingPending || recordingStale || recordingFailed ||
+      adminCanRefresh);
 
   return (
     <div className="flex flex-col gap-6">
@@ -225,6 +290,40 @@ export function MeetingDetail({
                   </a>
                 </Button>
               )}
+              {/* Проведение встречи — только владелец-препод. «Начать» (planned→live)
+                  и «Провести» (planned|live→done). От «Проведена» зависит подтяжка
+                  записи/итогов/транскрипта. Студенту этих кнопок не показываем. */}
+              {isAdmin && meeting.status === 'planned' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleStatus('live')}
+                  disabled={statusPending}
+                  className="min-h-11"
+                >
+                  {statusPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <PlayCircle aria-hidden="true" />
+                  )}
+                  Начать
+                </Button>
+              )}
+              {isAdmin && (meeting.status === 'planned' || meeting.status === 'live') && (
+                <Button
+                  type="button"
+                  onClick={() => void handleStatus('done')}
+                  disabled={statusPending}
+                  className="min-h-11"
+                >
+                  {statusPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <CheckCircle2 aria-hidden="true" />
+                  )}
+                  Провести
+                </Button>
+              )}
               {/* Отмена — только админ-преподаватель, только для запланированной встречи. */}
               {isAdmin && meeting.status === 'planned' && (
                 <AlertDialog>
@@ -262,11 +361,33 @@ export function MeetingDetail({
           {showRecordingSection && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Video className="size-5 shrink-0 text-muted-foreground" />
-                  Запись встречи
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Запись прошедшего созвона</p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex flex-col gap-1.5">
+                    <CardTitle className="flex items-center gap-2">
+                      <Video className="size-5 shrink-0 text-muted-foreground" />
+                      Запись встречи
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">Запись прошедшего созвона</p>
+                  </div>
+                  {/* Ручная подтяжка из Zoom (запись/итоги/транскрипт). Только владелец-
+                      препод — полезна, когда автосбор по вебхуку завис/не сработал. */}
+                  {adminCanRefresh && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="min-h-9"
+                    >
+                      {refreshing ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      Обновить из Zoom
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 {recordingUrl ? (
@@ -285,14 +406,40 @@ export function MeetingDetail({
                     <Clock className="size-5 shrink-0" />
                     <span>Запись встречи пока недоступна.</span>
                   </div>
-                ) : (
-                  <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-                    <Video className="size-5 shrink-0" />
-                    <span>Запись встречи не получена.</span>
-                    {/* recordingError виден только админу (студенту бэк его не отдаёт). */}
-                    {isAdmin && meeting.recordingError?.trim() && (
-                      <span className="text-xs">({meeting.recordingError.trim()})</span>
+                ) : recordingFailed ? (
+                  <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                    <div className="flex items-center gap-3">
+                      <Video className="size-5 shrink-0" />
+                      <span>Запись встречи не получена.</span>
+                      {/* recordingError виден только админу (студенту бэк его не отдаёт). */}
+                      {isAdmin && meeting.recordingError?.trim() && (
+                        <span className="text-xs">({meeting.recordingError.trim()})</span>
+                      )}
+                    </div>
+                    {/* Повторить автозагрузку записи — только владелец-препод. */}
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRetryRecording}
+                        disabled={retrying}
+                        className="min-h-9 w-fit"
+                      >
+                        {retrying ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        Повторить
+                      </Button>
                     )}
+                  </div>
+                ) : (
+                  // Встреча проведена/идёт, но запись ещё не пришла (recKind none/ready
+                  // без файла). Нейтральная подсказка + «Обновить из Zoom» в шапке.
+                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                    <Clock className="size-5 shrink-0" />
+                    <span>Запись пока не подтянута. Обновите из Zoom или зайдите позже.</span>
                   </div>
                 )}
               </CardContent>

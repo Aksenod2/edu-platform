@@ -3400,6 +3400,48 @@ export async function cancelMeeting(accessToken: string, id: string): Promise<Me
   });
 }
 
+// Сменить статус встречи (admin-teacher своей встречи): planned/live → done и т.п.
+// 'live' выставляет бэк по вебхуку Zoom, но «Провести/Начать» вручную доступны.
+// Отмену делаем отдельным cancelMeeting (там бэк ещё и удаляет созвон Zoom).
+export async function updateMeetingStatus(
+  accessToken: string,
+  id: string,
+  status: MeetingStatus,
+): Promise<Meeting> {
+  const res = await request<{ meeting: Meeting }>(`/meetings/${id}/status`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ status }),
+  });
+  return res.meeting;
+}
+
+// Единая ручная подтяжка встречи из Zoom (запись/итоги/транскрипт) — синхронно,
+// возвращает обновлённую встречу с уже подтянутыми артефактами. Только teacher.
+export async function refreshMeetingFromZoom(
+  accessToken: string,
+  id: string,
+): Promise<Meeting> {
+  const res = await request<{ meeting: Meeting }>(`/meetings/${id}/refresh`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return res.meeting;
+}
+
+// Повторить автозагрузку записи Zoom для встречи (teacher): когда recordingStatus
+// = 'failed' или процесс завис. Возвращает обновлённую встречу.
+export async function retryMeetingRecording(
+  accessToken: string,
+  id: string,
+): Promise<Meeting> {
+  const res = await request<{ meeting: Meeting }>(`/meetings/${id}/recording/retry`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return res.meeting;
+}
+
 // Транскрипт встречи (только teacher). Возвращает подписанную ссылку на тело + статус
 // (зеркало fetchTranscript для занятий). Студенту бэк отвечает 404.
 export async function getMeetingTranscript(

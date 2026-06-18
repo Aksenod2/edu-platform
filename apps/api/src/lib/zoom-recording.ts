@@ -851,23 +851,30 @@ export async function sweepFailedRecordings(params?: {
   const windowStart = new Date(now.getTime() - RECORDING_SWEEP_WINDOW_HOURS * 60 * 60 * 1000);
   const stuckCutoff = new Date(now.getTime() - STUCK_PROCESSING_HOURS * 60 * 60 * 1000);
 
-  const candidates = await prisma.session.findMany({
-    where: {
-      zoomMeetingId: { not: null },
-      videoKey: null,
-      OR: [
-        // Транзиентные сбои/ожидание в окне — добираем повтором.
-        {
-          recordingStatus: { in: ['failed', 'pending'] },
-          updatedAt: { gte: windowStart },
-        },
-        // «Зависший» processing — реанимируем (claim снова сможет взять).
-        {
-          recordingStatus: 'processing',
-          updatedAt: { lt: stuckCutoff },
-        },
-      ],
-    },
+  // Общий WHERE-отбор кандидатов на досбор записи (одинаков для Session и Meeting —
+  // поля zoomMeetingId/videoKey/recordingStatus/updatedAt у обеих моделей идентичны).
+  const sweepWhere = {
+    zoomMeetingId: { not: null },
+    videoKey: null,
+    OR: [
+      // Транзиентные сбои/ожидание в окне — добираем повтором.
+      {
+        recordingStatus: { in: ['failed', 'pending'] },
+        updatedAt: { gte: windowStart },
+      },
+      // «Зависший» processing — реанимируем (claim снова сможет взять).
+      {
+        recordingStatus: 'processing',
+        updatedAt: { lt: stuckCutoff },
+      },
+    ],
+  };
+
+  let started = 0;
+
+  // ── Проход по занятиям потока (Session) ──────────────────────────────────────
+  const sessions = await prisma.session.findMany({
+    where: sweepWhere,
     select: {
       id: true,
       streamId: true,
@@ -879,8 +886,7 @@ export async function sweepFailedRecordings(params?: {
     take: RECORDING_SWEEP_BATCH,
   });
 
-  let started = 0;
-  for (const s of candidates) {
+  for (const s of sessions) {
     try {
       if (!s.zoomMeetingId) continue; // защита от гонки (поле могли обнулить)
 
@@ -914,6 +920,55 @@ export async function sweepFailedRecordings(params?: {
     } catch (err) {
       // Глотаем: один проблемный сессион не должен валить весь проход свипера.
       console.error('[sweep] ошибка обработки записи занятия', s.id, err);
+    }
+  }
+
+  // ── Проход по встречам 1-на-1 (Meeting, эпик #154) ───────────────────────────
+  // Зеркало прохода по Session, но teacherUserId берём напрямую из Meeting.teacherId
+  // (реальный владелец встречи хранится в БД — каскад resolveTeacherUserIdForSweep,
+  // нужный занятиям, тут не требуется). Обработка — теми же функциями с kind='meeting'.
+  const meetings = await prisma.meeting.findMany({
+    where: sweepWhere,
+    select: {
+      id: true,
+      teacherId: true,
+      zoomMeetingId: true,
+      recordingStatus: true,
+    },
+    orderBy: { updatedAt: 'asc' },
+    take: RECORDING_SWEEP_BATCH,
+  });
+
+  for (const m of meetings) {
+    try {
+      if (!m.zoomMeetingId) continue; // защита от гонки (поле могли обнулить)
+
+      // Зависший processing → failed (атомарно через WHERE), чтобы claim снова прошёл.
+      if (m.recordingStatus === 'processing') {
+        const reset = await prisma.meeting.updateMany({
+          where: {
+            id: m.id,
+            videoKey: null,
+            recordingStatus: 'processing',
+            updatedAt: { lt: stuckCutoff },
+          },
+          data: { recordingStatus: 'failed' },
+        });
+        if (reset.count === 0) continue; // уже не «зависший» — пропускаем
+      }
+
+      await processRecordingForSession({
+        sessionId: m.id,
+        meetingId: m.zoomMeetingId,
+        teacherUserId: m.teacherId,
+        retryDelaysMs: params?.retryDelaysMs,
+        sleep: params?.sleep,
+        kind: 'meeting',
+      });
+      started += 1;
+    } catch (err) {
+      // Глотаем: одна проблемная встреча не должна валить весь проход свипера.
+      console.error('[sweep] ошибка обработки записи встречи 1-на-1', m.id, err);
     }
   }
 
