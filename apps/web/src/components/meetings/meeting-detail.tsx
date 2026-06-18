@@ -120,8 +120,11 @@ export function MeetingDetail({
         month: 'long',
       })
     : null;
+  // Присоединиться можно к запланированной И к идущей встрече ('live' выставляет
+  // бэк по вебхуку Zoom meeting.started) — кнопка не должна пропадать на старте.
   const canJoin =
-    meeting?.status === 'planned' && Boolean(meeting?.meetingUrl);
+    (meeting?.status === 'planned' || meeting?.status === 'live') &&
+    Boolean(meeting?.meetingUrl);
 
   // Запись созвона: приоритетно подписанный S3-URL (recordingFileUrl) по videoKey,
   // фолбэк — внешняя ссылка videoUrl. Подписанный S3-URL — всегда прямой файл
@@ -169,7 +172,7 @@ export function MeetingDetail({
           {/* Шапка */}
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              {/* Встреча знает planned/done/cancelled — все валидны как LessonStatus. */}
+              {/* Встреча знает planned/live/done/cancelled — все валидны как LessonStatus. */}
               <LessonStatusBadge status={meeting.status as LessonStatus} />
               <Badge>1-на-1</Badge>
             </div>
@@ -186,7 +189,9 @@ export function MeetingDetail({
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-x-2 gap-y-1 text-sm',
-                  meeting.status === 'planned' ? 'text-foreground' : 'text-muted-foreground',
+                  meeting.status === 'planned' || meeting.status === 'live'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground',
                 )}
               >
                 <Calendar className="size-4 shrink-0" aria-hidden="true" />
@@ -214,7 +219,9 @@ export function MeetingDetail({
                 <Button asChild className="min-h-11 w-full sm:w-fit">
                   <a href={meeting.meetingUrl!} target="_blank" rel="noopener noreferrer">
                     <Video aria-hidden="true" />
-                    Присоединиться к встрече
+                    {meeting.status === 'live'
+                      ? 'Присоединиться — встреча идёт'
+                      : 'Присоединиться к встрече'}
                   </a>
                 </Button>
               )}

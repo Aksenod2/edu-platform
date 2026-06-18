@@ -8,7 +8,7 @@ import type { ConsentType } from '@/lib/api';
 
 /**
  * Блок юридических согласий в формах регистрации (join / invite).
- * Четыре согласия обязательны (без них кнопка регистрации заблокирована),
+ * Пять согласий обязательны (без них кнопка регистрации заблокирована),
  * рекламно-информационные материалы — по желанию.
  */
 
@@ -17,6 +17,7 @@ export interface ConsentValues {
   personalData: boolean;
   personalDataPolicy: boolean;
   serviceNotifications: boolean;
+  meetingRecording: boolean;
   marketing: boolean;
 }
 
@@ -25,6 +26,7 @@ export const EMPTY_CONSENTS: ConsentValues = {
   personalData: false,
   personalDataPolicy: false,
   serviceNotifications: false,
+  meetingRecording: false,
   marketing: false,
 };
 
@@ -39,6 +41,7 @@ export const REQUIRED_CONSENT_TYPES: ConsentType[] = [
   'personalData',
   'personalDataPolicy',
   'serviceNotifications',
+  'meetingRecording',
 ];
 
 export function requiredConsentsGiven(values: ConsentValues): boolean {
@@ -176,6 +179,17 @@ export function ConsentCheckboxes({
         onCheckedChange={set('serviceNotifications')}
       >
         Согласен(на) получать сервисные уведомления
+      </ConsentRow>
+      <ConsentRow
+        id="consent-meeting-recording"
+        checked={values.meetingRecording}
+        locked={locked('meetingRecording')}
+        onCheckedChange={set('meetingRecording')}
+      >
+        Согласен(на) на{' '}
+        <LegalLink slug="meeting-recording-consent" onOpen={openDoc}>
+          запись и транскрибацию встреч
+        </LegalLink>
       </ConsentRow>
       <ConsentRow
         id="consent-marketing"

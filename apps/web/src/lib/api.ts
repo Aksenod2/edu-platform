@@ -332,6 +332,7 @@ export type ConsentType =
   | 'personalData'
   | 'personalDataPolicy'
   | 'serviceNotifications'
+  | 'meetingRecording'
   | 'marketing';
 export type ConsentAction = 'granted' | 'revoked';
 
@@ -340,6 +341,7 @@ export const CONSENT_TYPE_LABELS: Record<ConsentType, string> = {
   personalData: 'Обработка персональных данных',
   personalDataPolicy: 'Политика обработки персональных данных',
   serviceNotifications: 'Сервисные уведомления',
+  meetingRecording: 'Запись и транскрибация встреч',
   marketing: 'Рекламно-информационные материалы',
 };
 
@@ -3316,9 +3318,10 @@ export async function unlinkTelegram(
 // транскрипта (transcriptStatus/transcriptError/transcriptRequestedAt) — эти
 // ключи в объекте отсутствуют (отмечены опциональными ниже).
 
-// Статус встречи: planned | done | cancelled (зеркало Session.status, но без
-// draft/live — встречу 1-на-1 не «ведут» как урок-блок).
-export type MeetingStatus = 'planned' | 'done' | 'cancelled' | string;
+// Статус встречи: planned | live | done | cancelled (зеркало Session.status,
+// но без draft — встречу 1-на-1 не «ведут» как урок-блок). 'live' выставляет
+// бэк по вебхуку Zoom meeting.started, пока созвон идёт.
+export type MeetingStatus = 'planned' | 'live' | 'done' | 'cancelled' | string;
 
 export interface Meeting {
   id: string;

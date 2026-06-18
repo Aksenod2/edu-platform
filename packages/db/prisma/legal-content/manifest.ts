@@ -34,11 +34,16 @@ export const LEGAL_VERSIONS_MANIFEST: ReadonlyArray<LegalVersionManifestEntry> =
   { slug: 'requisites', versionNumber: 1, file: 'requisites.v1.md' },
   { slug: 'pd-consent', versionNumber: 1, file: 'pd-consent.v1.md' },
   { slug: 'marketing-consent', versionNumber: 1, file: 'marketing-consent.v1.md' },
-  {
-    slug: 'meeting-recording-consent',
-    versionNumber: 1,
-    file: 'meeting-recording-consent.v1.md',
-  },
+  // НЕ публикуем до утверждения реального текста заказчиком (#154): иначе обязательное
+  // согласие meetingRecording заблокирует всех студентов окном согласий с ЗАГЛУШКОЙ.
+  // Пока документ не опубликован, meetingRecording в REQUIRED_CONSENT_TYPES «спит»
+  // (pendingRequiredConsents требует только опубликованные версии — мягкая деградация).
+  // Активировать: раскомментировать после замены текста в meeting-recording-consent.v1.md.
+  // {
+  //   slug: 'meeting-recording-consent',
+  //   versionNumber: 1,
+  //   file: 'meeting-recording-consent.v1.md',
+  // },
 ];
 
 // Каталог с md-файлами — относительно ЭТОГО модуля (а не process.cwd()), чтобы сид

@@ -6,11 +6,15 @@ import type { LessonStatus } from '@/lib/api';
 export const MEETING_FALLBACK_TITLE = 'Встреча 1-на-1';
 
 /**
- * Статус встречи → LessonStatus календаря. Встреча знает только planned/done/
- * cancelled — все они валидны для LessonStatus, прочее трактуем как planned.
+ * Статус встречи → LessonStatus календаря. Встреча знает planned/live/done/
+ * cancelled — все они валидны для LessonStatus (в т.ч. 'live', чтобы идущая
+ * встреча показывалась как «идёт»), прочее трактуем как planned.
  */
 function meetingStatus(status: string): LessonStatus {
-  return status === 'done' || status === 'cancelled' || status === 'planned'
+  return status === 'done' ||
+    status === 'cancelled' ||
+    status === 'planned' ||
+    status === 'live'
     ? (status as LessonStatus)
     : 'planned';
 }

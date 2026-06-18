@@ -86,6 +86,7 @@ const publishedRequiredDocuments = [
   { slug: 'offer' },
   { slug: 'pd-consent' },
   { slug: 'personal-data-policy' },
+  { slug: 'meeting-recording-consent' },
 ];
 
 // granted-записи по всем обязательным типам («долга нет»).
@@ -186,8 +187,9 @@ describe('consentGateHook — студент с долгом по согласи
       { id: 'ver-offer-1', document: { slug: 'offer' } },
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
       { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
+      { id: 'ver-mr-1', document: { slug: 'meeting-recording-consent' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 4 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 5 });
 
     const app = buildGatedApp();
     const res = await app.inject({
@@ -257,8 +259,9 @@ describe('consentGateHook — студент без долга и кэш', () =>
       { id: 'ver-offer-1', document: { slug: 'offer' } },
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
       { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
+      { id: 'ver-mr-1', document: { slug: 'meeting-recording-consent' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 4 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 5 });
 
     const app = buildGatedApp();
 
