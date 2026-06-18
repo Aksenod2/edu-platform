@@ -3305,3 +3305,103 @@ export async function unlinkTelegram(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
+
+// ─── Встречи 1-на-1 (эпик #154) ─────────────────────────────────────────────
+//
+// Meeting — лёгкая отдельная сущность (НЕ Session): преподаватель + студент +
+// дата/время + опц. тема. Поля записи/итогов/транскрипта зеркалят Session.
+//
+// ИЗОЛЯЦИЯ two-party: встречу видит только её teacher и student (бэк фильтрует).
+// Студенту отдаётся УРЕЗАННАЯ проекция: БЕЗ recordingError и без полей
+// транскрипта (transcriptStatus/transcriptError/transcriptRequestedAt) — эти
+// ключи в объекте отсутствуют (отмечены опциональными ниже).
+
+// Статус встречи: planned | done | cancelled (зеркало Session.status, но без
+// draft/live — встречу 1-на-1 не «ведут» как урок-блок).
+export type MeetingStatus = 'planned' | 'done' | 'cancelled' | string;
+
+export interface Meeting {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  // Тема встречи (или null — тогда показываем дефолт «Встреча 1-на-1»).
+  title: string | null;
+  status: MeetingStatus;
+  // Дата "YYYY-MM-DD" (или null).
+  date: string | null;
+  // Время начала "HH:MM" (или null).
+  startTime: string | null;
+  // Ссылка на созвон Zoom (best-effort, может быть null).
+  meetingUrl: string | null;
+  // Запись Zoom-созвона (подтягивается ПОСЛЕ встречи). videoUrl — внешняя ссылка
+  // на запись; videoKey — ключ файла в хранилище (на фронте показываем videoUrl).
+  videoUrl: string | null;
+  videoKey: string | null;
+  // recordingStatus: none | pending | processing | ready | failed.
+  recordingStatus?: string | null;
+  recordingRequestedAt?: string | null;
+  // Итоги встречи (отдаются обоим). summarySource: 'zoom_ai' | 'manual' | null.
+  summary: string | null;
+  summarySource?: string | null;
+  summaryStatus?: string | null;
+  summaryRequestedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  teacher: { id: string; name: string };
+  student: { id: string; name: string };
+  // Только в админ/препод-проекции (у студента полей нет вовсе).
+  recordingError?: string | null;
+  transcriptStatus?: string | null;
+  transcriptError?: string | null;
+  transcriptRequestedAt?: string | null;
+}
+
+// Список встреч (бэк фильтрует по роли: admin → свои как teacher, student → свои).
+export async function getMeetings(
+  accessToken: string,
+): Promise<{ meetings: Meeting[] }> {
+  return request('/meetings', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Деталь встречи. Чужая/несуществующая → 404 (бэк проверяет участие).
+export async function getMeeting(accessToken: string, id: string): Promise<Meeting> {
+  return request(`/meetings/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Создать встречу 1-на-1 (admin). teacherId = текущий админ (бэк). date — YYYY-MM-DD,
+// startTime — HH:MM (опц.), title — опц. тема. Бэк best-effort создаёт Zoom-встречу.
+export async function createMeeting(
+  accessToken: string,
+  data: { studentId: string; date: string; startTime?: string | null; title?: string | null },
+): Promise<Meeting> {
+  return request('/meetings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(data),
+  });
+}
+
+// Отмена встречи (admin-teacher своей встречи). status → cancelled.
+export async function cancelMeeting(accessToken: string, id: string): Promise<Meeting> {
+  return request(`/meetings/${id}/cancel`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// Транскрипт встречи (только teacher). Возвращает подписанную ссылку на тело + статус
+// (зеркало fetchTranscript для занятий). Студенту бэк отвечает 404.
+export async function getMeetingTranscript(
+  accessToken: string,
+  id: string,
+  format: 'vtt' | 'txt',
+): Promise<TranscriptResponse> {
+  const qs = new URLSearchParams({ format }).toString();
+  return request(`/meetings/${id}/transcript?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}

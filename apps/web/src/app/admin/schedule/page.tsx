@@ -8,10 +8,12 @@ import {
   createLesson,
   unscheduleLesson,
   getLessons,
+  getMeetings,
   getStreams,
   updateLesson,
   type Stream,
 } from '@/lib/api';
+import { meetingToCalendarLesson } from '@/components/meetings/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -47,6 +49,9 @@ export default function AdminSchedulePage() {
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
   const [view, setView] = useState<ViewMode>('week');
   const [lessons, setLessons] = useState<ScheduleLesson[]>([]);
+  // Встречи 1-на-1 текущего преподавателя (эпик #154). Показываем только в режиме
+  // «Все группы» — у встречи нет потока, под фильтром по группе её прятать логично.
+  const [meetings, setMeetings] = useState<ScheduleLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -78,6 +83,19 @@ export default function AdminSchedulePage() {
         ),
       );
       setLessons(results.flat());
+
+      // Встречи 1-на-1 — отдельный запрос (не валит расписание при ошибке).
+      try {
+        const { meetings: mtgs } = await getMeetings(accessToken);
+        setMeetings(
+          mtgs
+            .filter((m) => m.date)
+            .map((m) => meetingToCalendarLesson(m, '/admin/meetings')),
+        );
+      } catch {
+        setMeetings([]);
+      }
+
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
@@ -96,8 +114,9 @@ export default function AdminSchedulePage() {
     () =>
       selectedStreamId
         ? lessons.filter((l) => l.streamId === selectedStreamId)
-        : lessons,
-    [lessons, selectedStreamId],
+        : // «Все группы»: показываем занятия + встречи 1-на-1 (у встречи нет потока).
+          [...lessons, ...meetings],
+    [lessons, meetings, selectedStreamId],
   );
 
   // «Отметить проведённым» из списочных видов (Сегодня/Неделя): статус занятия

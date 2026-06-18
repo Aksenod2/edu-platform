@@ -49,8 +49,20 @@ import {
 } from '@/components/schedule/utils';
 import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
-/** Урок для отображения в календаре (с опциональным именем потока). */
-export type CalendarLesson = Lesson & { streamName?: string };
+/**
+ * Урок для отображения в календаре (с опциональным именем потока).
+ *
+ * `meeting`/`meetingHref` — пометка встречи 1-на-1 (эпик #154). Встречи мапятся в
+ * эту же форму, но рендерятся read-only с бейджем «1-на-1» и ссылкой на деталь
+ * встречи (meetingHref), без редактирования/смены статуса/снятия с расписания.
+ */
+export type CalendarLesson = Lesson & {
+  streamName?: string;
+  /** true — это встреча 1-на-1, а не занятие группы (read-only в календаре). */
+  meeting?: boolean;
+  /** Куда вести «Открыть встречу» (роль-зависимый путь). */
+  meetingHref?: string;
+};
 
 /** Данные для создания урока из календаря. */
 export interface CalendarCreateData {
@@ -239,7 +251,12 @@ export function ScheduleCalendar({
                         setSelectedKey(key);
                       }}
                       className={cn(
-                        'flex flex-col rounded-sm bg-secondary px-1.5 py-1 text-left text-secondary-foreground',
+                        'flex flex-col rounded-sm px-1.5 py-1 text-left',
+                        // Встреча 1-на-1 визуально отличается: акцентный фон вместо
+                        // нейтрального secondary, чтобы не путать с занятием группы.
+                        lesson.meeting
+                          ? 'border-l-2 border-primary bg-primary/10 text-foreground'
+                          : 'bg-secondary text-secondary-foreground',
                         lesson.status === 'cancelled' && 'opacity-50',
                       )}
                     >
@@ -252,8 +269,12 @@ export function ScheduleCalendar({
                         {lesson.title}
                       </span>
                       <span className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
-                        {lesson.streamName && (
+                        {lesson.meeting ? (
+                          <span className="truncate font-medium text-primary">1-на-1</span>
+                        ) : lesson.streamName ? (
                           <span className="truncate">{lesson.streamName}</span>
+                        ) : (
+                          <span />
                         )}
                         {lesson.startTime && (
                           <span className="shrink-0 font-mono">{lesson.startTime}</span>
@@ -343,14 +364,16 @@ function DayDetail({
         <SheetTitle className="capitalize">{formatDayTitle(dayKey)}</SheetTitle>
         <SheetDescription>
           {lessons.length > 0
-            ? `Уроков: ${lessons.length}`
-            : 'На этот день уроков нет'}
+            ? `Событий: ${lessons.length}`
+            : 'На этот день событий нет'}
         </SheetDescription>
       </SheetHeader>
 
       <div className="flex flex-col gap-3 px-4 pb-4">
         {lessons.map((lesson) =>
-          editable && editingId === lesson.id ? (
+          // Встречи 1-на-1 — read-only: их не редактируют/не снимают с расписания
+          // в общем календаре (отмена — на детальной странице встречи).
+          editable && !lesson.meeting && editingId === lesson.id ? (
             <EditForm
               key={lessonKey(lesson)}
               lesson={lesson}
@@ -363,6 +386,8 @@ function DayDetail({
               key={lessonKey(lesson)}
               className={cn(
                 'rounded-lg border bg-card p-3',
+                // Встреча 1-на-1 — акцентная левая граница (визуальное отличие).
+                lesson.meeting && 'border-l-4 border-l-primary',
                 lesson.status === 'cancelled' && 'opacity-60',
               )}
             >
@@ -377,13 +402,15 @@ function DayDetail({
                     {lesson.title}
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {/* В редактируемом календаре статус меняется контролом
-                        (дропдаун + «Провести»). PATCH идёт по streamId занятия,
-                        поэтому контрол только при наличии streamId; иначе и в
-                        студентском режиме — read-only бейдж. Контрол живёт внутри
-                        Sheet, поэтому клики не доходят до ячейки — stopPropagation
-                        не нужен. */}
-                    {editable && lesson.streamId ? (
+                    {/* Встреча 1-на-1 — read-only бейдж статуса + метка «1-на-1».
+                        Занятие группы: статус меняется контролом (PATCH по streamId).
+                        Контрол живёт внутри Sheet — stopPropagation не нужен. */}
+                    {lesson.meeting ? (
+                      <>
+                        <LessonStatusBadge status={lesson.status} />
+                        <Badge className="w-fit">1-на-1</Badge>
+                      </>
+                    ) : editable && lesson.streamId ? (
                       <SessionStatusControl
                         lessonId={lesson.id}
                         streamId={lesson.streamId}
@@ -395,7 +422,7 @@ function DayDetail({
                     ) : (
                       <LessonStatusBadge status={lesson.status} />
                     )}
-                    {lesson.streamName && (
+                    {!lesson.meeting && lesson.streamName && (
                       <Badge variant="secondary" className="w-fit">
                         {lesson.streamName}
                       </Badge>
@@ -408,7 +435,7 @@ function DayDetail({
                   </span>
                 )}
               </div>
-              {lesson.notes && (
+              {!lesson.meeting && lesson.notes && (
                 <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
                   {lesson.notes}
                 </p>
@@ -425,19 +452,27 @@ function DayDetail({
                   </a>
                 )}
                 <Button asChild size="sm" variant="outline">
-                  <Link
-                    href={
-                      lessonBasePath === '/admin/lessons' && lesson.streamId
-                        ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
-                        : `${lessonBasePath}/${lesson.id}`
-                    }
-                  >
-                    <ExternalLink />
-                    Открыть урок
-                  </Link>
+                  {lesson.meeting ? (
+                    <Link href={lesson.meetingHref ?? '#'}>
+                      <ExternalLink />
+                      Открыть встречу
+                    </Link>
+                  ) : (
+                    <Link
+                      href={
+                        lessonBasePath === '/admin/lessons' && lesson.streamId
+                          ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
+                          : `${lessonBasePath}/${lesson.id}`
+                      }
+                    >
+                      <ExternalLink />
+                      Открыть урок
+                    </Link>
+                  )}
                 </Button>
               </div>
-              {editable && (
+              {/* Редактирование/снятие — только для занятий группы, не для встреч. */}
+              {editable && !lesson.meeting && (
                 <>
                   <Separator className="my-3" />
                   <div className="flex items-center gap-2">
