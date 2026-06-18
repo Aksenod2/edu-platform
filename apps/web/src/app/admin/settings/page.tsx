@@ -410,39 +410,16 @@ export default function AdminSettingsPage() {
         </Card>
       </section>
 
-      {/* Telegram-бот */}
-      <section className="mb-8">
-        <SectionHeading
-          title="Telegram-бот"
-          description="Дублирование уведомлений преподавателю в чат бота"
-        />
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Подключение и настройка бота — в отдельном разделе.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push('/admin/system/telegram')}
-            >
-              Настроить Telegram-бота
-              <ArrowRight />
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
       {/* ── Оплата (функционально) ── */}
       <PaymentSettingsSection />
 
-      {/* Указатель на интеграции (Zoom/Telegram/API) — они в разделе «Система» */}
+      {/* Указатель на интеграции (Zoom/API) — они в разделе «Система» */}
       <section className="mb-8">
         <SectionHeading title="Интеграции" />
         <Card>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Внешние сервисы (Zoom, Telegram, API-ключи) настраиваются в разделе «Система»
+              Внешние сервисы (Zoom, API-ключи) настраиваются в разделе «Система»
               в боковом меню.
             </p>
           </CardContent>
