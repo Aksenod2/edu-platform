@@ -50,6 +50,12 @@ export interface LessonMaterial {
   mimeType: string;
   size: number;
   url?: string;
+  // Изоляция материалов по потокам (Волна «Изоляция материалов урока по группам»).
+  // Признак ВИДИМОСТИ в JSON-дескрипторе (без миграции схемы):
+  //   null/undefined = общий материал-метод (виден студентам ВСЕХ потоков);
+  //   задан          = материал виден ТОЛЬКО студентам этого потока.
+  // Старые материалы (без поля) трактуются как общие.
+  streamId?: string | null;
 }
 
 // Подписанный временный URL загруженного видео урока по videoKey (или null).
@@ -63,6 +69,63 @@ async function videoFileUrlFor(videoKey: string | null | undefined): Promise<str
   }
 }
 
+// Контекст получателя для фильтрации материалов/видео по потоку.
+//   - isAdmin=true  → видит ВСЁ (управление контентом, «копилка» без streamId);
+//   - isAdmin=false → видит только streamId == null ИЛИ streamId == viewerStreamId.
+// Используется в projectVideos / regenerateLessonMaterialUrls / finalizeLesson.
+export interface MaterialVisibilityContext {
+  viewerStreamId: string | null;
+  isAdmin: boolean;
+}
+
+// По умолчанию (admin-only роуты POST/PATCH) — админский контекст без сужения,
+// чтобы прежнее поведение мутаций не менялось.
+const ADMIN_VISIBILITY: MaterialVisibilityContext = { viewerStreamId: null, isAdmin: true };
+
+// Виден ли материал/видео получателю по признаку streamId.
+//   - админ — всё;
+//   - студент — общий (null/undefined) ИЛИ ровно своего потока.
+function isVisibleForViewer(
+  itemStreamId: string | null | undefined,
+  ctx: MaterialVisibilityContext,
+): boolean {
+  if (ctx.isAdmin) return true;
+  if (itemStreamId == null) return true; // общий метод
+  return itemStreamId === ctx.viewerStreamId;
+}
+
+// Нормализует входной streamId видимости для загрузки материала/видео (admin).
+// Возвращает:
+//   - undefined → поле не задано (общий контент, streamId не пишем / null);
+//   - null      → задано пустым → трактуем как общий (нормализуем к null);
+//   - string    → конкретный поток (требует валидации против сессий урока).
+// Для multipart streamId читается из query, для JSON — из тела (передаём raw).
+function normalizeVisibilityStreamId(raw: unknown): string | null | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return null; // явно пустая строка → общий
+  return trimmed;
+}
+
+// Допустимые потоки для материала/видео урока — это потоки, у которых ЕСТЬ Session
+// этого урока (источник тот же, что в GET /lessons/:id/sessions). Если streamId
+// задан, но урок не ведёт такой поток — бросаем StreamNotForLesson (→ 400 в роуте).
+class StreamNotForLessonError extends Error {}
+
+// Проверяет, что у урока есть Session с таким streamId. Возвращает streamId как есть.
+async function assertStreamRunsLesson(lessonId: string, streamId: string): Promise<void> {
+  const session = await prisma.session.findUnique({
+    where: { streamId_lessonId: { streamId, lessonId } },
+    select: { streamId: true },
+  });
+  if (!session) {
+    throw new StreamNotForLessonError(
+      'Указанный поток не ведёт этот урок — выберите поток из расписания урока или оставьте материал общим',
+    );
+  }
+}
+
 // Спроецированное видео урока для ответов фронту: kind различает файл/ссылку,
 // url — подписанный временный URL файла или внешняя ссылка как есть.
 type ProjectedVideo = { id: string; title: string | null; kind: 'file' | 'link'; url: string; sortOrder: number };
@@ -70,10 +133,17 @@ type ProjectedVideo = { id: string; title: string | null; kind: 'file' | 'link';
 // Проецирует список видео урока: для файлов подписываем временный URL по videoKey,
 // для ссылок берём videoUrl напрямую. Видео без url/key и файлы без валидной подписи
 // отбрасываем (как одиночное видео в videoFileUrlFor).
-async function projectVideos(videos: LessonBlock['videos']): Promise<ProjectedVideo[]> {
+// ctx ограничивает выдачу студенту его потоком: чужие видео отбрасываем ДО подписи
+// URL (не подписываем чужие ключи — это и утечка доступа, и лишняя работа). Админ —
+// без сужения. Видео без streamId — общий метод, видно всем.
+async function projectVideos(
+  videos: LessonBlock['videos'],
+  ctx: MaterialVisibilityContext = ADMIN_VISIBILITY,
+): Promise<ProjectedVideo[]> {
   if (!videos?.length) return [];
+  const visible = videos.filter((v) => isVisibleForViewer(v.streamId, ctx));
   const out = await Promise.all(
-    videos.map(async (v) => {
+    visible.map(async (v) => {
       if (v.videoKey) {
         const url = await videoFileUrlFor(v.videoKey);
         return url ? { id: v.id, title: v.title, kind: 'file' as const, url, sortOrder: v.sortOrder } : null;
@@ -96,12 +166,17 @@ async function lessonVideosResponse(lessonId: string): Promise<{ videos: Project
   return { videos: await projectVideos(videos) };
 }
 
-// Ре-подписывает временные url по s3Key для всех материалов урока.
-async function regenerateLessonMaterialUrls(
+// Ре-подписывает временные url по s3Key для материалов урока.
+// ctx ограничивает выдачу студенту его потоком: чужие материалы отбрасываем ДО
+// подписи URL (не подписываем чужие ключи — утечка доступа + лишняя работа). Админ —
+// без сужения. Материал без streamId — общий метод, виден всем.
+export async function regenerateLessonMaterialUrls(
   materials: LessonMaterial[],
+  ctx: MaterialVisibilityContext = ADMIN_VISIBILITY,
 ): Promise<LessonMaterial[]> {
+  const visible = materials.filter((m) => isVisibleForViewer(m.streamId, ctx));
   return Promise.all(
-    materials.map(async (m) => {
+    visible.map(async (m) => {
       if (m.s3Key) {
         try {
           return { ...m, url: await getFileUrl(m.s3Key) };
@@ -116,7 +191,7 @@ async function regenerateLessonMaterialUrls(
 
 // Нормализует входной массив дескрипторов материалов (из POST/PATCH):
 // храним только s3Key/fileName/mimeType/size, url не сохраняем (он временный).
-function sanitizeLessonMaterials(input: unknown): LessonMaterial[] {
+export function sanitizeLessonMaterials(input: unknown): LessonMaterial[] {
   if (!Array.isArray(input)) return [];
   return input
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
@@ -126,6 +201,9 @@ function sanitizeLessonMaterials(input: unknown): LessonMaterial[] {
       fileName: m.fileName as string,
       mimeType: typeof m.mimeType === 'string' ? m.mimeType : 'application/octet-stream',
       size: typeof m.size === 'number' ? m.size : 0,
+      // Признак видимости: только строка → иначе null (общий материал-метод).
+      // Отсутствие поля = общий материал (как старые данные).
+      streamId: typeof m.streamId === 'string' ? m.streamId : null,
     }));
 }
 
@@ -254,6 +332,29 @@ const teacherInclude = {
   videos: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
 } satisfies Prisma.LessonInclude;
 
+// where-фильтр видимости видео урока на уровне SQL-выборки (опирается на индекс
+// [lessonId, streamId]). Для студента: только общие (streamId IS NULL) ИЛИ его
+// потока — чужие видео НЕ попадают в выборку (не тянем в память, не подписываем).
+// Для админа — undefined (без сужения, видит всё). Используется в include видео,
+// чтобы Prisma делал один батч-запрос по всем урокам выборки (без N+1).
+function videoWhereFor(ctx: MaterialVisibilityContext): Prisma.LessonVideoWhereInput | undefined {
+  if (ctx.isAdmin) return undefined;
+  return { OR: [{ streamId: null }, { streamId: ctx.viewerStreamId }] };
+}
+
+// Фабрика include блока урока с учётом контекста получателя: для студента видео
+// фильтруются на уровне SQL (videoWhereFor). teacherInclude — частный случай (админ).
+function teacherIncludeFor(ctx: MaterialVisibilityContext) {
+  const where = videoWhereFor(ctx);
+  return {
+    teachers: { include: { user: { select: { id: true, name: true } } } },
+    videos: {
+      ...(where ? { where } : {}),
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    },
+  } satisfies Prisma.LessonInclude;
+}
+
 // Тип блока урока с подгруженными преподавателями (минимум, который проецируем).
 type LessonBlock = {
   id: string;
@@ -275,7 +376,8 @@ type LessonBlock = {
   updatedAt: Date;
   teachers?: { user: { id: string; name: string } }[];
   // Несколько видео урока: каждое — ЛИБО файл (videoKey) ЛИБО внешняя ссылка (videoUrl).
-  videos?: { id: string; title: string | null; videoKey: string | null; videoUrl: string | null; sortOrder: number }[];
+  // streamId: null = общее видео-метод (видно всем), задан = только своего потока.
+  videos?: { id: string; title: string | null; videoKey: string | null; videoUrl: string | null; sortOrder: number; streamId?: string | null }[];
 };
 
 // Минимальные поля Session, которые проецируются в форму урока.
@@ -452,16 +554,22 @@ export function projectLesson(
 async function finalizeLesson(
   projected: ReturnType<typeof projectLesson>,
   block: LessonBlock,
+  // Контекст получателя для изоляции материалов/видео по потоку. По умолчанию —
+  // админский (без сужения), чтобы admin-only роуты POST/PATCH не менялись.
+  ctx: MaterialVisibilityContext = ADMIN_VISIBILITY,
 ): Promise<Record<string, unknown> & { recordingFileUrl: string | null }> {
-  // Учебное видео урока (block.videoKey).
+  // Учебное видео урока (block.videoKey) — легаси-метод, общий, отдаём как раньше.
   const videoFileUrl = await videoFileUrlFor(projected.videoKey);
   // Запись Zoom-занятия (Session.videoKey) — отдельная подпись.
   const recordingFileUrl = await videoFileUrlFor(projected.recordingVideoKey);
+  // Материалы: студенту — только общие + своего потока (чужие отброшены до подписи).
   const materials = await regenerateLessonMaterialUrls(
     (block.materials as unknown as LessonMaterial[]) || [],
+    ctx,
   );
   // Аддитивно: список из нескольких видео урока (одиночные videoUrl/videoFileUrl сохранены).
-  const videos = await projectVideos(block.videos);
+  // Студенту — только общие + своего потока.
+  const videos = await projectVideos(block.videos, ctx);
   return { ...projected, videoFileUrl, recordingFileUrl, materials, videos };
 }
 
@@ -612,6 +720,12 @@ export async function lessonRoutes(app: FastifyInstance) {
 
     const isMine = isAdmin && mine === 'true';
 
+    // Контекст изоляции материалов/видео: streamId известен заранее. Для студента
+    // видео фильтруются на уровне SQL (where в include видео опирается на индекс
+    // [lessonId, streamId]; Prisma делает один батч-запрос по всем урокам — без N+1).
+    const ctx: MaterialVisibilityContext = { viewerStreamId: streamId, isAdmin };
+    const blockInclude = teacherIncludeFor(ctx);
+
     // Загружаем все Session потока разом → карта lessonId → Session.
     const sessions = await prisma.session.findMany({
       where: { streamId },
@@ -628,14 +742,14 @@ export async function lessonRoutes(app: FastifyInstance) {
       const programLessons = await prisma.programLesson.findMany({
         where: { programId: stream.programId },
         orderBy: { sortOrder: 'asc' },
-        include: { lesson: { include: teacherInclude } },
+        include: { lesson: { include: blockInclude } },
       });
       orderedBlocks = programLessons.map((pl) => pl.lesson as unknown as LessonBlock);
     } else {
       // Менторский поток: уроки = уроки его Session.
       const sessionLessons = await prisma.session.findMany({
         where: { streamId },
-        include: { lesson: { include: teacherInclude } },
+        include: { lesson: { include: blockInclude } },
         orderBy: { lesson: { sortOrder: 'asc' } },
       });
       orderedBlocks = sessionLessons.map((s) => s.lesson as unknown as LessonBlock);
@@ -673,7 +787,7 @@ export async function lessonRoutes(app: FastifyInstance) {
           isAdmin,
           canSeeTranscript,
         );
-        return finalizeLesson(projected, block).then((full) => ({
+        return finalizeLesson(projected, block, ctx).then((full) => ({
           ...full,
           // Контекст потока для режима «Все потоки» / бейджей.
           stream: { id: stream.id, name: stream.name },
@@ -768,8 +882,21 @@ export async function lessonRoutes(app: FastifyInstance) {
       isAdmin ||
       (block.teachers ?? []).some((t) => t.user.id === request.user?.userId);
 
+    // Контекст изоляции: для студента — его поток-контекст (contextStreamId), для
+    // админа — без сужения. block грузился с видео через teacherInclude (все видео).
+    // Для студента перевыбираем видео на уровне SQL по индексу [lessonId, streamId]
+    // (общие + своего потока), чтобы чужие видео не попадали в выборку/проекцию.
+    const ctx: MaterialVisibilityContext = { viewerStreamId: contextStreamId, isAdmin };
+    if (!isAdmin) {
+      const where = videoWhereFor(ctx);
+      block.videos = (await prisma.lessonVideo.findMany({
+        where: { lessonId: id, ...(where ?? {}) },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      })) as unknown as LessonBlock['videos'];
+    }
+
     const projected = projectLesson(block, contextStreamId, session, isAdmin, canSeeTranscript);
-    const full = await finalizeLesson(projected, block);
+    const full = await finalizeLesson(projected, block, ctx);
 
     // Старый ответ включал lesson.assignments (массив). В новой модели у блока —
     // folded assignment*-поля (уже в full), а отдельной сущности Assignment нет.
@@ -1251,6 +1378,26 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Ожидается multipart/form-data' });
     }
 
+    // Видимость материала. multipart-загрузка файла → доп. поле streamId читаем из
+    // QUERY (?streamId=...). Не задан/пуст → общий материал-метод (streamId=null,
+    // виден всем потокам, как раньше). Задан → валидируем против сессий урока.
+    const visibilityStreamId = normalizeVisibilityStreamId(
+      (request.query as { streamId?: string }).streamId,
+    );
+    if (typeof visibilityStreamId === 'string') {
+      try {
+        await assertStreamRunsLesson(id, visibilityStreamId);
+      } catch (err) {
+        if (err instanceof StreamNotForLessonError) {
+          return reply.status(400).send({ error: err.message });
+        }
+        throw err;
+      }
+    }
+    // Нормализуем к null для записи в дескриптор (undefined/'' → общий).
+    const materialStreamId: string | null =
+      typeof visibilityStreamId === 'string' ? visibilityStreamId : null;
+
     const data = await request.file();
     if (!data) {
       return reply.status(400).send({ error: 'Файл не найден в запросе' });
@@ -1303,19 +1450,27 @@ export async function lessonRoutes(app: FastifyInstance) {
       fileName: originalName,
       mimeType,
       size: uploaded.size,
+      // null = общий материал-метод; задан = виден только студентам этого потока.
+      streamId: materialStreamId,
     };
 
     // Перезалив файла с тем же именем ЗАМЕНЯЕТ прежний материал, а не плодит дубль
     // (иначе в уроке копятся «старый битый + новый» с одинаковым именем). Старые
     // объекты с тем же именем подчищаем в хранилище best-effort.
+    //
+    // Матч по ПАРЕ (fileName, streamId): общий и пер-потоковый материал с одинаковым
+    // именем — РАЗНЫЕ материалы и НЕ затирают друг друга. Старые данные без поля
+    // streamId трактуем как общие (streamId=null), поэтому сравниваем нормализованно.
     const current = sanitizeLessonMaterials(lesson.materials);
-    const replaced = current.filter((m) => m.fileName === originalName);
+    const sameSlot = (m: LessonMaterial) =>
+      m.fileName === originalName && (m.streamId ?? null) === materialStreamId;
+    const replaced = current.filter(sameSlot);
     for (const old of replaced) {
       if (old.s3Key && old.s3Key !== uploaded.key) {
         deleteFile(old.s3Key).catch(() => {});
       }
     }
-    const nextMaterials = [...current.filter((m) => m.fileName !== originalName), material];
+    const nextMaterials = [...current.filter((m) => !sameSlot(m)), material];
 
     await prisma.lesson.update({
       where: { id },
@@ -1361,6 +1516,10 @@ export async function lessonRoutes(app: FastifyInstance) {
   // POST /lessons/:id/video — загрузка видеозаписи урока (admin).
   // Работает с БЛОКОМ урока (lesson.videoKey) — поведение без изменений.
   // Принимается ОДИН видеофайл (mp4/webm/mov/m4v, mime video/*).
+  //
+  // ИЗОЛЯЦИЯ ПО ПОТОКАМ: легаси одиночное видео блока (Lesson.videoKey) НЕ несёт
+  // streamId — это всегда ОБЩЕЕ видео-метод (видно всем потокам). Пер-потоковое
+  // видео заводится через POST /lessons/:id/videos (LessonVideo.streamId).
   //
   // Видео грузится ПОТОКОМ в S3 через uploadLargeFile с per-route лимитом
   // VIDEO_MAX_FILE_SIZE (5 ГБ) — общий multipart-лимит MAX_FILE_SIZE (50МБ) из
@@ -1506,17 +1665,55 @@ export async function lessonRoutes(app: FastifyInstance) {
       const rawTitle = (request.query as { title?: string }).title;
       const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : null;
 
+      // Видимость видео: multipart → streamId из QUERY (?streamId=...). Не задан →
+      // общее видео-метод (streamId=null, видно всем). Задан → валидируем против сессий.
+      const streamId = normalizeVisibilityStreamId(
+        (request.query as { streamId?: string }).streamId,
+      );
+      if (typeof streamId === 'string') {
+        try {
+          await assertStreamRunsLesson(id, streamId);
+        } catch (err) {
+          if (err instanceof StreamNotForLessonError) {
+            // Загруженный объект уже в S3 — подчищаем, чтобы не оставить сирот.
+            await deleteFile(uploaded.key).catch(() => {});
+            return reply.status(400).send({ error: err.message });
+          }
+          throw err;
+        }
+      }
+
       await prisma.lessonVideo.create({
-        data: { lessonId: id, videoKey: uploaded.key, title, sortOrder },
+        data: {
+          lessonId: id,
+          videoKey: uploaded.key,
+          title,
+          sortOrder,
+          // null = общее видео-метод; задан = видно только студентам этого потока.
+          streamId: typeof streamId === 'string' ? streamId : null,
+        },
       });
 
       return reply.status(201).send(await lessonVideosResponse(id));
     }
 
     // ── Видео-ССЫЛКА (JSON) ─────────────────────────────────────────────────
-    const body = request.body as { url?: string; title?: string };
+    const body = request.body as { url?: string; title?: string; streamId?: string | null };
     if (!body || typeof body.url !== 'string' || !body.url.trim()) {
       return reply.status(400).send({ error: 'Ссылка на видео обязательна' });
+    }
+
+    // Видимость видео-ссылки: streamId из ТЕЛА JSON. Не задан → общее (null).
+    const linkStreamId = normalizeVisibilityStreamId(body.streamId);
+    if (typeof linkStreamId === 'string') {
+      try {
+        await assertStreamRunsLesson(id, linkStreamId);
+      } catch (err) {
+        if (err instanceof StreamNotForLessonError) {
+          return reply.status(400).send({ error: err.message });
+        }
+        throw err;
+      }
     }
 
     await prisma.lessonVideo.create({
@@ -1525,6 +1722,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         videoUrl: body.url.trim(),
         title: body.title?.trim() || null,
         sortOrder,
+        streamId: typeof linkStreamId === 'string' ? linkStreamId : null,
       },
     });
 
@@ -1532,7 +1730,11 @@ export async function lessonRoutes(app: FastifyInstance) {
   });
 
   // PATCH /lessons/:id/videos/:videoId — обновить видео урока (admin).
-  // Меняем title и/или url (url — только у видео-ССЫЛКИ; у файла url игнорируем).
+  // Меняем title и/или url (url — только у видео-ССЫЛКИ; у файла url игнорируем) и/или
+  // ВИДИМОСТЬ (streamId: общий ↔ поток, в т.ч. сброс в общий). streamId читаем из
+  // ТЕЛА JSON (видео правится JSON-запросом, без перезаливки файла); если запрос
+  // multipart — из QUERY. Чтобы отличить «не трогаем» от «сбросить в общий», streamId
+  // меняем только когда поле ПЕРЕДАНО (присутствует в теле/query).
   app.patch('/lessons/:id/videos/:videoId', { onRequest: adminOnly }, async (request, reply) => {
     const { id, videoId } = request.params as { id: string; videoId: string };
 
@@ -1541,7 +1743,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Видео не найдено' });
     }
 
-    const body = request.body as { title?: string | null; url?: string };
+    const body = (request.body ?? {}) as { title?: string | null; url?: string; streamId?: string | null };
 
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) {
@@ -1554,6 +1756,31 @@ export async function lessonRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Ссылка не может быть пустой' });
       }
       data.videoUrl = trimmed;
+    }
+
+    // Видимость: меняем, только если streamId ПЕРЕДАН (в теле JSON или query). Пустая
+    // строка/отсутствующее значение в переданном поле → сброс в общий (null). Задан
+    // непустой поток → валидируем против сессий урока. Поле не передано → не трогаем.
+    const rawStreamId =
+      body.streamId !== undefined ? body.streamId : (request.query as { streamId?: string }).streamId;
+    const hasStreamIdField =
+      body.streamId !== undefined || (request.query as { streamId?: string }).streamId !== undefined;
+    if (hasStreamIdField) {
+      const nextStreamId = normalizeVisibilityStreamId(rawStreamId);
+      if (typeof nextStreamId === 'string') {
+        try {
+          await assertStreamRunsLesson(id, nextStreamId);
+        } catch (err) {
+          if (err instanceof StreamNotForLessonError) {
+            return reply.status(400).send({ error: err.message });
+          }
+          throw err;
+        }
+        data.streamId = nextStreamId;
+      } else {
+        // undefined (поле = null) или '' → сброс в общий.
+        data.streamId = null;
+      }
     }
 
     await prisma.lessonVideo.update({ where: { id: videoId }, data });

@@ -772,6 +772,9 @@ export interface LessonMaterial {
   mimeType: string;
   size: number;
   url?: string;
+  // Видимость по потокам: null/отсутствует = общий метод (виден всем потокам),
+  // задан = только студентам этого потока.
+  streamId?: string | null;
 }
 
 // Одно видео урока: kind различает загруженный файл и внешнюю ссылку,
@@ -782,6 +785,9 @@ export interface LessonVideo {
   kind: 'file' | 'link';
   url: string;
   sortOrder: number;
+  // Видимость по потокам: null/отсутствует = общий метод (виден всем потокам),
+  // задан = только студентам этого потока.
+  streamId?: string | null;
 }
 
 /** Добавляет download=1 к подписанному URL файла для форс-скачивания (вложением). */
@@ -1006,13 +1012,17 @@ export async function uploadLessonMaterial(
   accessToken: string,
   lessonId: string,
   file: File,
+  // Видимость: задан streamId = только этому потоку; не задан = общий метод.
+  streamId?: string | null,
 ): Promise<{ materials: LessonMaterial[] }> {
   const formData = new FormData();
   formData.append('file', file);
 
+  const qs = streamId ? `?streamId=${encodeURIComponent(streamId)}` : '';
+
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/lessons/${lessonId}/materials`, {
+    res = await fetch(`${API_URL}/lessons/${lessonId}/materials${qs}`, {
       method: 'POST',
       credentials: 'include',
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -1105,11 +1115,16 @@ export async function addLessonVideoFile(
   lessonId: string,
   file: File,
   title?: string,
+  // Видимость: задан streamId = только этому потоку; не задан = общий метод.
+  streamId?: string | null,
 ): Promise<{ videos: LessonVideo[] }> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const qs = title ? `?title=${encodeURIComponent(title)}` : '';
+  const params = new URLSearchParams();
+  if (title) params.set('title', title);
+  if (streamId) params.set('streamId', streamId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
 
   let res: Response;
   try {
@@ -1143,20 +1158,23 @@ export async function addLessonVideoLink(
   lessonId: string,
   url: string,
   title?: string,
+  // Видимость: задан streamId = только этому потоку; не задан = общий метод.
+  streamId?: string | null,
 ): Promise<{ videos: LessonVideo[] }> {
   return request(`/lessons/${lessonId}/videos`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ url, title }),
+    body: JSON.stringify({ url, title, ...(streamId ? { streamId } : {}) }),
   });
 }
 
-// Обновить видео урока: title и/или url (url — только у видео-ссылки).
+// Обновить видео урока: title и/или url (url — только у видео-ссылки) и/или
+// видимость streamId (строка = поток, null/'' = сброс в общий, не передан = не менять).
 export async function updateLessonVideoItem(
   accessToken: string,
   lessonId: string,
   videoId: string,
-  patch: { title?: string | null; url?: string },
+  patch: { title?: string | null; url?: string; streamId?: string | null },
 ): Promise<{ videos: LessonVideo[] }> {
   return request(`/lessons/${lessonId}/videos/${videoId}`, {
     method: 'PATCH',

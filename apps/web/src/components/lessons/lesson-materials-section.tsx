@@ -22,6 +22,11 @@ import {
   fileDownloadUrl,
   type LessonMaterial,
 } from '@/lib/api';
+import {
+  useLessonStreams,
+  VisibilityBadge,
+  VisibilitySelect,
+} from '@/components/lessons/lesson-stream-visibility';
 
 // Человекочитаемый размер файла материала.
 export function formatSize(bytes?: number): string {
@@ -45,6 +50,9 @@ export function LessonMaterialsSection({
 }) {
   const [uploading, setUploading] = useState(false);
   const [toDelete, setToDelete] = useState<LessonMaterial | null>(null);
+  // Видимость следующего загружаемого материала (undefined = общий метод).
+  const [uploadStreamId, setUploadStreamId] = useState<string | undefined>(undefined);
+  const sessions = useLessonStreams(accessToken, lessonId);
 
   const handleUpload = async (file: File) => {
     // Проверка формата на фронте (строго PDF/MD). Главная валидация — на бэке.
@@ -56,7 +64,12 @@ export function LessonMaterialsSection({
     }
     setUploading(true);
     try {
-      const { materials: updated } = await uploadLessonMaterial(accessToken, lessonId, file);
+      const { materials: updated } = await uploadLessonMaterial(
+        accessToken,
+        lessonId,
+        file,
+        uploadStreamId,
+      );
       onChange(updated);
       toast.success('Материал добавлен');
     } catch (err) {
@@ -112,6 +125,7 @@ export function LessonMaterialsSection({
               {m.size ? (
                 <span className="shrink-0 text-xs text-muted-foreground">{formatSize(m.size)}</span>
               ) : null}
+              <VisibilityBadge streamId={m.streamId} sessions={sessions} />
               {m.url && (
                 <Button
                   asChild
@@ -143,34 +157,43 @@ export function LessonMaterialsSection({
         <p className="text-xs text-muted-foreground">Материалы не добавлены.</p>
       )}
 
-      <label
-        className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm ${uploading ? 'cursor-not-allowed opacity-60' : ''}`}
-      >
-        {uploading ? (
-          <>
-            <Loader2 className="size-4 animate-spin" />
-            Загрузка...
-          </>
-        ) : (
-          <>
-            <Paperclip className="size-4" />
-            Выбрать файл (PDF/MD)
-          </>
-        )}
-        <input
-          type="file"
-          accept=".pdf,.md,.markdown,application/pdf,text/markdown"
-          className="hidden"
+      {/* На мобилке селектор и кнопка — в столбик, на десктопе — в строку. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <VisibilitySelect
+          value={uploadStreamId}
+          onChange={setUploadStreamId}
+          sessions={sessions}
           disabled={uploading}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              handleUpload(file);
-              e.target.value = '';
-            }
-          }}
         />
-      </label>
+        <label
+          className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-dashed bg-card px-3 py-1.5 text-sm ${uploading ? 'cursor-not-allowed opacity-60' : ''}`}
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Загрузка...
+            </>
+          ) : (
+            <>
+              <Paperclip className="size-4" />
+              Выбрать файл (PDF/MD)
+            </>
+          )}
+          <input
+            type="file"
+            accept=".pdf,.md,.markdown,application/pdf,text/markdown"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleUpload(file);
+                e.target.value = '';
+              }
+            }}
+          />
+        </label>
+      </div>
 
       <AlertDialog open={!!toDelete} onOpenChange={(open) => { if (!open) setToDelete(null); }}>
         <AlertDialogContent>

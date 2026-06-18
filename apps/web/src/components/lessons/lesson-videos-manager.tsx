@@ -31,8 +31,14 @@ import {
   deleteLessonVideoItem,
   reorderLessonVideos,
   type LessonVideo,
+  type LessonSession,
 } from '@/lib/api';
 import { parseVideoEmbed } from '@/lib/video-embed';
+import {
+  useLessonStreams,
+  VisibilityBadge,
+  VisibilitySelect,
+} from '@/components/lessons/lesson-stream-visibility';
 
 // Менеджер НЕСКОЛЬКИХ видео урока: список с превью (файл — встроенный плеер,
 // ссылка — iframe или кнопка), редактирование названия/url, порядок, удаление,
@@ -51,9 +57,12 @@ export function LessonVideosManager({
   // Глобальная блокировка кнопок на время любого запроса (порядок/удаление/добавление).
   const [busy, setBusy] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadStreamId, setUploadStreamId] = useState<string | undefined>(undefined);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
+  const [linkStreamId, setLinkStreamId] = useState<string | undefined>(undefined);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const sessions = useLessonStreams(accessToken, lessonId);
 
   // Загрузка видео-ФАЙЛА.
   const handleUploadFile = async (file: File) => {
@@ -64,9 +73,11 @@ export function LessonVideosManager({
         lessonId,
         file,
         uploadTitle.trim() || undefined,
+        uploadStreamId,
       );
       onChange(next);
       setUploadTitle('');
+      setUploadStreamId(undefined);
       toast.success('Видео загружено');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка загрузки видео');
@@ -89,10 +100,12 @@ export function LessonVideosManager({
         lessonId,
         url,
         linkTitle.trim() || undefined,
+        linkStreamId,
       );
       onChange(next);
       setLinkUrl('');
       setLinkTitle('');
+      setLinkStreamId(undefined);
       toast.success('Ссылка добавлена');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка добавления ссылки');
@@ -104,7 +117,7 @@ export function LessonVideosManager({
   // Сохранение поля (title/url) видео по onBlur, если значение изменилось.
   const handlePatch = async (
     videoId: string,
-    patch: { title?: string | null; url?: string },
+    patch: { title?: string | null; url?: string; streamId?: string | null },
   ) => {
     setBusy(true);
     try {
@@ -165,6 +178,7 @@ export function LessonVideosManager({
             <VideoCard
               key={video.id}
               video={video}
+              sessions={sessions}
               isFirst={index === 0}
               isLast={index === videos.length - 1}
               busy={busy}
@@ -213,6 +227,13 @@ export function LessonVideosManager({
             disabled={busy}
             className="w-full"
           />
+          <VisibilitySelect
+            value={uploadStreamId}
+            onChange={setUploadStreamId}
+            sessions={sessions}
+            disabled={busy}
+            className="w-full sm:w-48 sm:shrink-0"
+          />
         </div>
         <p className="text-xs text-muted-foreground">
           Только MP4 (H.264) или WebM — другие форматы (.mov, HEVC) браузеры не
@@ -235,6 +256,13 @@ export function LessonVideosManager({
             placeholder="Название (необязательно)"
             disabled={busy}
             className="w-full"
+          />
+          <VisibilitySelect
+            value={linkStreamId}
+            onChange={setLinkStreamId}
+            sessions={sessions}
+            disabled={busy}
+            className="w-full sm:w-48 sm:shrink-0"
           />
           <Button
             type="button"
@@ -285,6 +313,7 @@ export function LessonVideosManager({
 // Карточка одного видео: превью + поля + кнопки управления.
 function VideoCard({
   video,
+  sessions,
   isFirst,
   isLast,
   busy,
@@ -294,13 +323,14 @@ function VideoCard({
   onPatch,
 }: {
   video: LessonVideo;
+  sessions: LessonSession[];
   isFirst: boolean;
   isLast: boolean;
   busy: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDelete: () => void;
-  onPatch: (patch: { title?: string | null; url?: string }) => void;
+  onPatch: (patch: { title?: string | null; url?: string; streamId?: string | null }) => void;
 }) {
   // Локальное состояние полей, чтобы редактировать без дёрганья при каждом запросе.
   const [title, setTitle] = useState(video.title ?? '');
@@ -369,6 +399,19 @@ function VideoCard({
           className="w-full"
         />
       )}
+
+      {/* Видимость: бейдж текущего состояния + смена через PATCH */}
+      <div className="flex flex-wrap items-center gap-2">
+        <VisibilityBadge streamId={video.streamId} sessions={sessions} />
+        <VisibilitySelect
+          value={video.streamId ?? undefined}
+          // undefined (Общий) → null: PATCH трактует null как сброс в общий метод.
+          onChange={(streamId) => onPatch({ streamId: streamId ?? null })}
+          sessions={sessions}
+          disabled={busy}
+          className="h-8 w-full sm:w-48"
+        />
+      </div>
 
       {/* Кнопки управления */}
       <div className="flex items-center gap-1">

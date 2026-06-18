@@ -360,11 +360,15 @@ describe('DELETE /lessons/:id/materials?s3Key= — удаление матери
       headers: authHeaders(adminToken),
     });
     expect(res.statusCode).toBe(200);
-    // В update ушёл список без удалённого ключа.
+    // В update ушёл список без удалённого ключа. sanitizeLessonMaterials аддитивно
+    // нормализует материалы признаком видимости streamId (null = общий материал-метод),
+    // поэтому сверяем по содержимому оставшегося ключа.
     expect(db.lesson.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'les-1' },
-        data: { materials: [materials[1]] },
+        data: {
+          materials: [expect.objectContaining({ s3Key: 'lesson-materials/2-b.pdf', streamId: null })],
+        },
       }),
     );
     expect(res.json().materials).toEqual([
