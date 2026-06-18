@@ -14,18 +14,22 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
+import { BellRing, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { getPushPermissionStatus } from '@/lib/push';
 import {
   getNotificationPreferences,
   updateNotificationPreferences,
+  getEventReminderPreferences,
+  updateEventReminderPreferences,
   type NotificationPreference,
   type NotificationCategory,
+  type EventReminderPreferences,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@platform/ui/lib/utils';
@@ -96,6 +100,10 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
   const { user, accessToken } = useAuth();
 
   const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
+  const [reminders, setReminders] = useState<EventReminderPreferences>({
+    remind60: true,
+    remind15: true,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pushStatus, setPushStatus] = useState<NotificationPermission | 'unsupported'>('default');
@@ -107,9 +115,14 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
   useEffect(() => {
     if (!accessToken) return;
     setLoading(true);
-    getNotificationPreferences(accessToken)
-      .then((data) => setPrefs(data.preferences))
-      .catch(() => setPrefs([]))
+    Promise.all([
+      getNotificationPreferences(accessToken).then((data) => setPrefs(data.preferences)),
+      getEventReminderPreferences(accessToken).then((data) => setReminders(data)),
+    ])
+      .catch(() => {
+        // Дефолты остаются: пустая матрица + оба напоминания ВКЛ.
+        setPrefs([]);
+      })
       .finally(() => setLoading(false));
   }, [accessToken]);
 
@@ -175,15 +188,19 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
           channelEmail: p.channelEmail,
           channelPush: p.channelPush,
         }));
-      const data = await updateNotificationPreferences(accessToken, updates);
+      const [data, savedReminders] = await Promise.all([
+        updateNotificationPreferences(accessToken, updates),
+        updateEventReminderPreferences(accessToken, reminders),
+      ]);
       setPrefs(data.preferences);
+      setReminders(savedReminders);
       toast.success('Настройки сохранены');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
     }
-  }, [accessToken, prefs]);
+  }, [accessToken, prefs, reminders]);
 
   const saveButton = (
     <Button onClick={handleSave} disabled={saving || loading}>
@@ -336,6 +353,54 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
           </Card>
         ))}
       </div>
+
+      {/* Напоминания о занятиях и встречах — отдельный блок (только push-канал) */}
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4">
+          <div className="flex items-start gap-3">
+            <BellRing className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Напоминания о занятиях и встречах
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Заранее напомним о начале занятия или встречи push-уведомлением на это
+                устройство.
+              </p>
+            </div>
+          </div>
+
+          {pushStatus !== 'granted' && (
+            <Alert>
+              <AlertTitle>Push на этом устройстве не включён</AlertTitle>
+              <AlertDescription>
+                Без push-уведомлений напоминания не придут. Включите push в блоке «Push на
+                этом устройстве». Сами тумблеры можно настроить здесь — настройка
+                переносится между устройствами.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="-my-1 flex flex-col">
+            <label className="flex h-11 items-center justify-between gap-4">
+              <span className="text-sm text-foreground">За 1 час до начала</span>
+              <Switch
+                checked={reminders.remind60}
+                onCheckedChange={(v) => setReminders((r) => ({ ...r, remind60: v }))}
+                aria-label="Напоминание за 1 час до начала"
+              />
+            </label>
+            <label className="flex h-11 items-center justify-between gap-4">
+              <span className="text-sm text-foreground">За 15 минут до начала</span>
+              <Switch
+                checked={reminders.remind15}
+                onCheckedChange={(v) => setReminders((r) => ({ ...r, remind15: v }))}
+                aria-label="Напоминание за 15 минут до начала"
+              />
+            </label>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* In-app note */}
       <div className="rounded-md border bg-card px-4 py-3">

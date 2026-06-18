@@ -249,13 +249,16 @@ export async function meetingRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Некорректная дата' });
     }
 
-    let startTime: string | null = null;
-    if (body.startTime !== undefined && body.startTime !== null && body.startTime !== '') {
-      if (typeof body.startTime !== 'string' || !/^\d{2}:\d{2}$/.test(body.startTime.trim())) {
-        return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
-      }
-      startTime = body.startTime.trim();
+    // Встреча 1-на-1 всегда с временем начала: оно обязательно (issue #169) — момент
+    // старта нужен и для Zoom-созвона, и для напоминаний за 60/15 мин.
+    const startTimeRaw = typeof body.startTime === 'string' ? body.startTime.trim() : '';
+    if (!startTimeRaw) {
+      return reply.status(400).send({ error: 'Встрече нужно время начала' });
     }
+    if (!/^\d{2}:\d{2}$/.test(startTimeRaw)) {
+      return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
+    }
+    const startTime: string = startTimeRaw;
 
     let title: string | null = null;
     if (body.title !== undefined && body.title !== null) {

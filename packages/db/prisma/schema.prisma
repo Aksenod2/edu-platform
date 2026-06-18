@@ -104,6 +104,13 @@ enum NotificationType {
   // Эпик «Уведомления преподавателю». События «сдал задание» и «сообщение в чате»
   // переиспользуют существующие assignment_submitted / thread_entry — новые типы не нужны.
   student_enrolled
+  // Push-напоминания о предстоящих событиях (занятие/встреча), эпик #169. Два значения
+  // = два независимых тумблера в NotificationPreference (за 1 час / за 15 минут).
+  // У этих типов НЕТ email/in-app канала (только push), поэтому в матрицу настроек не
+  // входят — управляются отдельным узким эндпоинтом. NotificationPreference.pushEnabled
+  // (дефолт true) хранит состояние тумблера per-user.
+  event_reminder_60
+  event_reminder_15
 }
 
 // Тип биллинга группы (дискриминатор): one_time — разовая оплата за участие
@@ -215,6 +222,9 @@ model User {
   // Встречи 1-на-1 (эпик «Встречи 1-на-1», #154): как преподаватель и как студент.
   meetingsAsTeacher       Meeting[]                @relation("MeetingTeacher")
   meetingsAsStudent       Meeting[]                @relation("MeetingStudent")
+  // Метки об отправленных push-напоминаниях о событиях (идемпотентность), эпик #169.
+  // Чистятся каскадом при удалении пользователя.
+  eventRemindersSent      EventReminderSent[]
 }
 
 model ApiKey {
@@ -1046,4 +1056,41 @@ model UserConsent {
 
   @@index([userId])
   @@index([documentVersionId])
+}
+
+// Метка об уже отправленном push-напоминании о событии — механизм идемпотентности
+// планировщика (эпик #169). Тик cron каждую минуту находит занятия/встречи, чей старт
+// попадает в окно «через 60/15 минут», и шлёт push ещё не уведомлённым получателям;
+// ПЕРЕД отправкой создаёт ряд здесь — гонка/двойной тик ловится unique-индексом (P2002 →
+// пропуск). Один ряд = «этому пользователю по этому событию для этого оффсета уже слали».
+//
+//   eventType    — тип события строкой: 'session' (занятие потока) | 'meeting' (встреча
+//                  1-на-1). Полиморфная связь (eventId указывает в Session ИЛИ Meeting),
+//                  поэтому БЕЗ enum и БЕЗ FK на событие — намеренно.
+//   eventId      — id события (Session.id или Meeting.id), без FK (полиморфизм).
+//   offsetMinutes — оффсет напоминания: 60 (за час) | 15 (за 15 минут).
+//   userId       — получатель напоминания (препод или студент).
+//   sentAt       — когда отправлено (для диагностики/ретеншн-чистки сирот).
+//
+// При переносе события (смена date/startTime) планировщик делает deleteMany по
+// (eventId, eventType) — метки сбрасываются, напоминания переназначаются заново; для
+// этого нужен индекс по (eventId, eventType).
+//
+// onDelete: userId → Cascade — метки чистятся при удалении пользователя. На Session/
+// Meeting FK нет (полиморфизм); осиротевшие после удаления события метки безвредны
+// (idempotency-журнал) и подчищаются ретеншн-свипером.
+model EventReminderSent {
+  id            String   @id @default(uuid())
+  eventType     String
+  eventId       String
+  offsetMinutes Int
+  userId        String
+  sentAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Идемпотентность: одно напоминание на (тип события, событие, оффсет, пользователь).
+  @@unique([eventType, eventId, offsetMinutes, userId], name: "event_reminder_uniq")
+  // Быстрый deleteMany при переносе события (сброс меток).
+  @@index([eventId, eventType])
 }

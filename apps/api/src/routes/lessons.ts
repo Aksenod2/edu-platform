@@ -1031,6 +1031,18 @@ export async function lessonRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Запланированному уроку нужна дата' });
     }
 
+    // «Запланирован» требует и время начала — без момента старта планировщик не
+    // соберёт UTC-инстант для напоминаний за 60/15 мин (issue #169, техдизайн §6).
+    if (status === 'planned' && !body.startTime?.trim()) {
+      return reply.status(400).send({ error: 'Запланированному занятию нужно время начала' });
+    }
+    // Формат времени строго HH:MM (00:00–23:59): кривое значение (напр. "9 утра",
+    // "25:99") иначе пройдёт проверку непустоты, а планировщик напоминаний не
+    // соберёт момент старта → напоминание тихо не уйдёт (issue #169, находка ревью).
+    if (body.startTime?.trim() && !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.startTime.trim())) {
+      return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
+    }
+
     const stream = await prisma.stream.findUnique({
       where: { id: body.streamId },
       select: { id: true, status: true, programId: true },
@@ -1221,6 +1233,24 @@ export async function lessonRoutes(app: FastifyInstance) {
       if (nextStatus === 'planned' && !nextDate) {
         return reply.status(400).send({ error: 'Запланированному уроку нужна дата' });
       }
+      // Время начала тоже обязательно для запланированного занятия (issue #169):
+      // момент старта нужен планировщику напоминаний (date + startTime → UTC-инстант).
+      const nextStartTimeForCheck =
+        body.startTime !== undefined
+          ? body.startTime?.trim() || null
+          : existingSession?.startTime ?? null;
+      if (nextStatus === 'planned' && !nextStartTimeForCheck) {
+        return reply.status(400).send({ error: 'Запланированному занятию нужно время начала' });
+      }
+      // Формат HH:MM (если время передаётся в этом PATCH) — иначе планировщик
+      // напоминаний не соберёт момент старта (issue #169, находка ревью).
+      if (
+        body.startTime !== undefined &&
+        body.startTime?.trim() &&
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.startTime.trim())
+      ) {
+        return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
+      }
     }
 
     // ── Обновление полей блока ──────────────────────────────────────────────
@@ -1335,6 +1365,35 @@ export async function lessonRoutes(app: FastifyInstance) {
         select: sessionSelect,
       });
       session = created as SessionProjection;
+
+      // Перенос занятия (issue #169): если фактически сместился момент старта —
+      // date ИЛИ startTime — сбрасываем метки «напоминание отправлено», чтобы
+      // напоминания за 60/15 мин переназначились на новое время. Сравниваем СТАРОЕ
+      // (existingSession) с НОВЫМ (nextDate/nextStartTime), а не делаем на каждый PATCH.
+      // date — @db.Date (Date|null), сравниваем по нормализованному YYYY-MM-DD.
+      const prevDateStr = existingSession?.date
+        ? existingSession.date.toISOString().slice(0, 10)
+        : null;
+      const nextDateStr = nextDate ? nextDate.toISOString().slice(0, 10) : null;
+      const momentChanged =
+        prevDateStr !== nextDateStr ||
+        (existingSession?.startTime ?? null) !== nextStartTime;
+      // Возврат статуса в planned тоже чистим (дёшево): свежие напоминания на занятие,
+      // которое снова станет «запланированным», должны переотправиться.
+      const reopenedToPlanned =
+        body.status === 'planned' && (existingSession?.status ?? 'draft') !== 'planned';
+      if (momentChanged || reopenedToPlanned) {
+        // sessionSelect не несёт id — берём id отдельным узким запросом по unique-ключу.
+        const sessRow = await prisma.session.findUnique({
+          where: { streamId_lessonId: { streamId, lessonId: id } },
+          select: { id: true },
+        });
+        if (sessRow) {
+          await prisma.eventReminderSent.deleteMany({
+            where: { eventType: 'session', eventId: sessRow.id },
+          });
+        }
+      }
 
       // Уведомляем учеников, когда урок становится видимым (черновик → не черновик).
       const wasDraft = (existingSession?.status ?? 'draft') === 'draft';

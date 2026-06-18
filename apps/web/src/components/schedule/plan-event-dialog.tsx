@@ -37,7 +37,7 @@ import {
   type Meeting,
   type Stream,
 } from '@/lib/api';
-import { dateKey } from '@/components/schedule/utils';
+import { dateKey, nextRoundHour } from '@/components/schedule/utils';
 import { LessonFields, NEW_BLOCK } from '@/components/schedule/lesson-fields';
 import { MeetingFields } from '@/components/schedule/meeting-fields';
 
@@ -150,7 +150,8 @@ export function PlanEventDialog({
     if (!open) return;
     setMode(lockedToMeeting ? 'meeting' : 'lesson');
     setDate(defaultDate ?? dateKey(new Date()));
-    setStartTime('');
+    // Время обязательно для напоминаний — предзаполняем ближайшим круглым часом.
+    setStartTime(nextRoundHour());
     setTitle('');
     setStreamId(defaultStreamId ?? '');
     setBlockId(NEW_BLOCK);
@@ -209,12 +210,15 @@ export function PlanEventDialog({
   const effectiveLessonTitle = isNewBlock
     ? title.trim()
     : (blocks.find((b) => b.id === blockId)?.title ?? '');
+  // Запланированному занятию нужны дата И время начала — иначе не отправить
+  // напоминания (push за час / за 15 минут). Встрече — всегда.
+  const plannedNeedsTime = status === 'planned';
   const lessonValid =
     !!streamId &&
     !!effectiveLessonTitle &&
-    !(status === 'planned' && !date) &&
+    !(plannedNeedsTime && (!date || !startTime)) &&
     activeStreams.length > 0;
-  const meetingValid = !!studentId && !!date && !noStudents;
+  const meetingValid = !!studentId && !!date && !!startTime && !noStudents;
   const valid = mode === 'lesson' ? lessonValid : meetingValid;
 
   // Генерацию запрашиваем, только если ручную ссылку не вводили.
@@ -223,6 +227,9 @@ export function PlanEventDialog({
   // Поле темы/названия: всегда для встречи; для занятия — только при новом уроке
   // (у существующего блока название берётся из самого урока).
   const showTitleField = mode === 'meeting' || isNewBlock;
+
+  // Время начала обязательно: для встречи — всегда, для занятия — при «Запланировано».
+  const timeRequired = mode === 'meeting' || (mode === 'lesson' && status === 'planned');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -316,15 +323,24 @@ export function PlanEventDialog({
           <DatePicker id="plan-date" value={date} onChange={(v) => setDate(v ?? '')} />
         </Field>
         <Field>
-          <FieldLabel htmlFor="plan-time">Время начала</FieldLabel>
+          <FieldLabel htmlFor="plan-time">
+            Время начала
+            {timeRequired && <span className="text-destructive"> *</span>}
+          </FieldLabel>
           <Input
             id="plan-time"
             type="time"
             value={startTime}
             onChange={(e) => setStartTime(e.target.value)}
+            required={timeRequired}
           />
         </Field>
       </div>
+      {timeRequired && (
+        <p className="-mt-2 text-xs text-muted-foreground">
+          Нужно для напоминаний — пришлём push за час и за 15 минут до начала.
+        </p>
+      )}
 
       {/* Тема/название. В режиме «Группе» для существующего блока название берётся
           из урока — поле скрываем; для нового урока это его название (обязательно). */}

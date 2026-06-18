@@ -1,6 +1,17 @@
 import { prisma, type Stream } from '@platform/db';
 import { createCharge, settleOutstandingCharges } from './charges.js';
 import { createNotification } from './notifications.js';
+import {
+  type MoscowParts,
+  moscowParts,
+  moscowMidnightUtc,
+  moscowOffsetMinutes,
+} from './moscow-time.js';
+
+// Реэкспорт московских хелперов: историческая часть публичного API этого модуля
+// (используется тестами через __testing). Сами реализации вынесены в moscow-time.ts.
+export { moscowParts, moscowMidnightUtc, moscowOffsetMinutes };
+export type { MoscowParts };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Эпик «Авто-списание за менторские группы».
@@ -21,8 +32,6 @@ import { createNotification } from './notifications.js';
 // вычисляем фактический offset зоны для конкретного момента.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MOSCOW_TZ = 'Europe/Moscow';
-
 // За сколько дней до списания предупреждать студента о возможной нехватке средств.
 const MENTORSHIP_REMINDER_DAYS = Number(process.env.MENTORSHIP_REMINDER_DAYS) || 7;
 
@@ -34,27 +43,6 @@ const MENTORSHIP_BILLING_BACKFILL_MONTHS =
 // Сколько студентов обрабатывать за раз (батчинг — не держим всё в памяти/одной пачкой).
 const ENROLLMENT_BATCH_SIZE = 200;
 
-// Компоненты «настенных» даты/времени в зоне Москвы для заданного момента.
-interface MoscowParts {
-  year: number;
-  month: number; // 1–12
-  day: number; // 1–31
-}
-
-// Разбирает момент `date` на год/месяц/день по календарю Москвы (Intl, en-CA даёт ISO-порядок).
-function moscowParts(date: Date): MoscowParts {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: MOSCOW_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = fmt.formatToParts(date);
-  const get = (type: string): number =>
-    Number(parts.find((p) => p.type === type)?.value ?? '0');
-  return { year: get('year'), month: get('month'), day: get('day') };
-}
-
 // periodKey 'YYYY-MM' для момента по календарю Москвы (напр. 2026-05).
 export function moscowPeriodKey(date: Date): string {
   const { year, month } = moscowParts(date);
@@ -65,51 +53,6 @@ export function moscowPeriodKey(date: Date): string {
 // месяца = последний день текущего (от часового пояса это число не зависит).
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/**
- * Момент (UTC instant), которому соответствует ПОЛНОЧЬ в Москве для даты year-month-day.
- * Смещение зоны не хардкодим: берём UTC-полночь этой даты, узнаём фактический offset
- * Москвы в этот момент и сдвигаем назад. Для постоянного UTC+3 даёт 21:00 UTC прошлых суток.
- */
-function moscowMidnightUtc(year: number, month: number, day: number): Date {
-  // Базовый момент: эти же «цифры» как будто они в UTC.
-  const asUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
-  // Фактический offset Москвы (в минутах) для этого момента.
-  const offsetMin = moscowOffsetMinutes(new Date(asUtc));
-  // Настенное время Москвы = UTC + offset ⇒ нужный instant = asUtc − offset.
-  return new Date(asUtc - offsetMin * 60_000);
-}
-
-// Смещение зоны Москвы относительно UTC (в минутах) для конкретного момента.
-// Считаем как разницу между «настенным» временем Москвы и UTC для одного и того же instant.
-function moscowOffsetMinutes(date: Date): number {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOSCOW_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-  const parts = fmt.formatToParts(date);
-  const get = (type: string): number =>
-    Number(parts.find((p) => p.type === type)?.value ?? '0');
-  let hour = get('hour');
-  // Intl может вернуть час 24 для полуночи в некоторых средах — нормализуем к 0.
-  if (hour === 24) hour = 0;
-  const asIfUtc = Date.UTC(
-    get('year'),
-    get('month') - 1,
-    get('day'),
-    hour,
-    get('minute'),
-    get('second'),
-  );
-  // Разница округлена до минут.
-  return Math.round((asIfUtc - date.getTime()) / 60_000);
 }
 
 // Эффективный день списания месяца: billingDayOfMonth с CLAMP к последнему дню месяца

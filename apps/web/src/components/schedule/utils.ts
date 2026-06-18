@@ -74,6 +74,15 @@ export function dateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Ближайший круглый час в формате "HH:MM" для предзаполнения времени начала
+ * (для напоминаний время обязательно — даём разумный дефолт вместо пустого).
+ */
+export function nextRoundHour(now: Date = new Date()): string {
+  const hour = (now.getHours() + 1) % 24;
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
 export function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&

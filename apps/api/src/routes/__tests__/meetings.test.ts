@@ -158,7 +158,7 @@ describe('POST /meetings — создание встречи 1-на-1 (admin)', 
       method: 'POST',
       url: '/meetings',
       headers: authHeaders(adminToken),
-      payload: { studentId: STUDENT_A, date: '2026-07-01' },
+      payload: { studentId: STUDENT_A, date: '2026-07-01', startTime: '10:00' },
     });
 
     expect(res.statusCode).toBe(201);
@@ -206,9 +206,23 @@ describe('POST /meetings — создание встречи 1-на-1 (admin)', 
       method: 'POST',
       url: '/meetings',
       headers: authHeaders(adminToken),
-      payload: { studentId: 'nope', date: '2026-07-01' },
+      payload: { studentId: 'nope', date: '2026-07-01', startTime: '10:00' },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('400 если не указано время начала (startTime обязателен для встречи)', async () => {
+    db.user.findFirst.mockResolvedValue({ id: STUDENT_A, name: 'Студент А' });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/meetings',
+      headers: authHeaders(adminToken),
+      payload: { studentId: STUDENT_A, date: '2026-07-01' },
+    });
+    expect(res.statusCode).toBe(400);
+    // БД не трогаем — встречу без времени не создаём.
+    expect(db.meeting.create).not.toHaveBeenCalled();
   });
 });
 

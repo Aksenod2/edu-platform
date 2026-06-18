@@ -491,6 +491,8 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Уведомления', method: 'DELETE', path: '/notifications/:id', desc: 'Удалить уведомление' },
   { group: 'Уведомления', method: 'GET', path: '/notification-preferences', desc: 'Настройки уведомлений' },
   { group: 'Уведомления', method: 'PATCH', path: '/notification-preferences', desc: 'Изменить настройки уведомлений' },
+  { group: 'Уведомления', method: 'GET', path: '/event-reminder-preferences', desc: 'Настройки напоминаний о занятиях/встречах (за 60/15 мин)' },
+  { group: 'Уведомления', method: 'PATCH', path: '/event-reminder-preferences', desc: 'Изменить настройки напоминаний о занятиях/встречах' },
 
   // ─── Интеграции (Zoom) ───────────────────────────────────────────────────
   { group: 'Интеграции (Zoom)', method: 'GET', path: '/admin/integrations/zoom', desc: 'Текущие настройки Zoom' },

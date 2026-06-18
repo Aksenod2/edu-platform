@@ -209,3 +209,55 @@ describe('POST /lessons — folded assignment* (паритет с PATCH)', () =>
     expect(db.lesson.create).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /lessons — обязательное время начала для planned (issue #169)', () => {
+  it('planned со streamId без startTime → 400, блок не создаём', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons',
+      headers: authHeaders(adminToken),
+      // дата есть, статус planned, но времени начала нет
+      payload: { streamId: 'stream-1', title: 'Урок', status: 'planned', date: '2026-07-01' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('время начала');
+    expect(db.lesson.create).not.toHaveBeenCalled();
+  });
+
+  it('planned со streamId с датой и startTime → 201', async () => {
+    db.lesson.create.mockImplementationOnce((args: { data: Record<string, unknown> }) =>
+      Promise.resolve(lessonBlock({ ...args.data })),
+    );
+    db.stream.findUnique.mockResolvedValueOnce({ id: 'stream-1', status: 'active', programId: null });
+    db.session.upsert.mockResolvedValueOnce({
+      status: 'planned',
+      date: new Date('2026-07-01'),
+      startTime: '10:00',
+      meetingUrl: null,
+      videoUrl: null,
+      videoKey: null,
+      summary: null,
+      summarySource: null,
+      recordingStatus: null,
+      recordingError: null,
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/lessons',
+      headers: authHeaders(adminToken),
+      payload: {
+        streamId: 'stream-1',
+        title: 'Урок',
+        status: 'planned',
+        date: '2026-07-01',
+        startTime: '10:00',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+});

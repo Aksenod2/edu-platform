@@ -77,6 +77,7 @@ import {
   LESSON_STATUS_LABELS,
   MANUAL_STATUS_ORDER,
   dateKey,
+  nextRoundHour,
 } from '@/components/schedule/utils';
 import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
 
@@ -197,7 +198,8 @@ export function LessonScheduleSection({
     setEditStreamId(null);
     setStreamId(availableStreams.length === 1 ? availableStreams[0].id : '');
     setDate(dateKey(new Date()));
-    setStartTime('');
+    // Время обязательно для напоминаний — предзаполняем ближайшим круглым часом.
+    setStartTime(nextRoundHour());
     setMeetingUrl('');
     setStatus('planned');
     resetGeneration();
@@ -216,7 +218,9 @@ export function LessonScheduleSection({
   }
 
   const plannedWithoutDate = status === 'planned' && !date;
-  const valid = !!streamId && !plannedWithoutDate;
+  // Запланированному занятию нужно и время начала — иначе не отправить напоминания.
+  const plannedWithoutTime = status === 'planned' && !startTime;
+  const valid = !!streamId && !plannedWithoutDate && !plannedWithoutTime;
 
   // Генерацию запрашиваем только если ручную ссылку не вводили (бэк её не перезатирает).
   const wantGenerate = generateMeeting && !meetingUrl.trim();
@@ -688,15 +692,24 @@ export function LessonScheduleSection({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="sched-time">Время</FieldLabel>
+                <FieldLabel htmlFor="sched-time">
+                  Время
+                  {status === 'planned' && <span className="text-destructive"> *</span>}
+                </FieldLabel>
                 <Input
                   id="sched-time"
                   type="time"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
+                  required={status === 'planned'}
                 />
               </Field>
             </div>
+            {status === 'planned' && (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                Нужно для напоминаний — пришлём push за час и за 15 минут до начала.
+              </p>
+            )}
 
             <Field>
               <FieldLabel htmlFor="sched-status">Статус</FieldLabel>
@@ -715,6 +728,11 @@ export function LessonScheduleSection({
               {plannedWithoutDate && (
                 <p className="text-xs text-destructive">
                   Для статуса «Запланирован» нужно указать дату.
+                </p>
+              )}
+              {!plannedWithoutDate && plannedWithoutTime && (
+                <p className="text-xs text-destructive">
+                  Для статуса «Запланирован» нужно указать время начала.
                 </p>
               )}
             </Field>

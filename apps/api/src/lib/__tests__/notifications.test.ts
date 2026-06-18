@@ -50,7 +50,7 @@ vi.mock('../crypto.js', () => ({
   isEncryptionKeySet: isEncryptionKeySetMock,
 }));
 
-import { createNotification } from '../notifications.js';
+import { createNotification, sendPushToUser } from '../notifications.js';
 
 const baseParams = {
   userId: 'user-1',
@@ -201,5 +201,46 @@ describe('createNotification — Telegram-ветка', () => {
 
     expect(prismaMock.notification.create).toHaveBeenCalled();
     expect(sendNotificationEmailMock).toHaveBeenCalled();
+  });
+});
+
+describe('sendPushToUser — push без создания записи Notification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('шлёт web-push на все подписки пользователя и НЕ создаёт Notification', async () => {
+    prismaMock.pushSubscription.findMany.mockResolvedValue([
+      { id: 's1', endpoint: 'e1', p256dh: 'p1', auth: 'a1' },
+      { id: 's2', endpoint: 'e2', p256dh: 'p2', auth: 'a2' },
+    ]);
+
+    await sendPushToUser('user-1', { title: 'T', body: 'B', data: { url: '/x' } });
+    await flush();
+
+    expect(prismaMock.pushSubscription.findMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+    expect(sendWebPushMock).toHaveBeenCalledTimes(2);
+    expect(sendWebPushMock).toHaveBeenCalledWith(
+      { id: 's1', endpoint: 'e1', p256dh: 'p1', auth: 'a1' },
+      { title: 'T', body: 'B', data: { url: '/x' } },
+    );
+    // Лента НЕ затрагивается — это «только push».
+    expect(prismaMock.notification.create).not.toHaveBeenCalled();
+  });
+
+  it('нет подписок → тихо выходит, ничего не шлёт', async () => {
+    prismaMock.pushSubscription.findMany.mockResolvedValue([]);
+    await sendPushToUser('user-1', { title: 'T', body: 'B' });
+    await flush();
+    expect(sendWebPushMock).not.toHaveBeenCalled();
+  });
+
+  it('сбой одной подписки не валит метод (fire-and-forget)', async () => {
+    prismaMock.pushSubscription.findMany.mockResolvedValue([
+      { id: 's1', endpoint: 'e1', p256dh: 'p1', auth: 'a1' },
+    ]);
+    sendWebPushMock.mockRejectedValue(new Error('boom'));
+    await expect(sendPushToUser('user-1', { title: 'T', body: 'B' })).resolves.toBeUndefined();
+    await flush();
   });
 });

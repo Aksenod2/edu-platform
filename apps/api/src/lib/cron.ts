@@ -5,6 +5,7 @@ import { sweepFailedRecordings } from './zoom-recording.js';
 import { sweepSessionAttendance } from './zoom-attendance.js';
 import { sweepAutoDoneSessions } from './session-status.js';
 import { sweepMentorshipCharges, sweepMentorshipWarnings } from './mentorship-billing.js';
+import { sweepEventReminders, cleanupOldEventReminders } from './event-reminders.js';
 
 // Минимальный логгер (форма Fastify-логгера) для свиперов, работающих вне
 // HTTP-контекста (нет request/app в cron). Пишем в console, как остальные задачи.
@@ -33,6 +34,13 @@ const NOTIFICATION_RETENTION_DAYS = Number(process.env.NOTIFICATION_RETENTION_DA
  */
 const ZOOM_WEBHOOK_EVENT_RETENTION_DAYS =
   Number(process.env.ZOOM_WEBHOOK_EVENT_RETENTION_DAYS) || 30;
+
+/**
+ * Сколько дней хранить метки EventReminderSent (идемпотентность напоминаний о
+ * событиях). Метки нужны лишь для дедупа недавних тиков — старые чистим (default: 7).
+ */
+const EVENT_REMINDER_RETENTION_DAYS =
+  Number(process.env.EVENT_REMINDER_RETENTION_DAYS) || 7;
 
 let cronStarted = false;
 
@@ -133,7 +141,39 @@ export function startCronJobs(): void {
     }
   });
 
+  // Свипер напоминаний о событиях (#169) — КАЖДУЮ МИНУТУ. Для оффсетов 60/15 берёт
+  // planned Session+Meeting с непустым startTime, чей собранный UTC-старт попал в окно
+  // now+off, и шлёт push активным получателям (препод(ы)/студенты), кому ещё не слали.
+  // Идемпотентность по unique-метке EventReminderSent (catch P2002): двойной тик не
+  // двоит push. Ошибки на каждом получателе/оффсете sweepEventReminders глотает — cron
+  // не падает. NB: инстанс ОДИН, распределённый лок не нужен.
+  cron.schedule('* * * * *', async () => {
+    try {
+      await sweepEventReminders({});
+    } catch (err) {
+      console.error('[cron] sweep event reminders error', err);
+    }
+  });
+
+  // Чистка старых меток напоминаний о событиях — каждый день в 03:40.
+  cron.schedule('40 3 * * *', async () => {
+    try {
+      await cleanupOldEventRemindersJob();
+    } catch (err) {
+      console.error('[cron] cleanup event reminders error', err);
+    }
+  });
+
   console.log('[cron] jobs started');
+}
+
+async function cleanupOldEventRemindersJob(): Promise<void> {
+  const count = await cleanupOldEventReminders(EVENT_REMINDER_RETENTION_DAYS);
+  if (count > 0) {
+    console.log(
+      `[cron] deleted ${count} old event reminder markers (older than ${EVENT_REMINDER_RETENTION_DAYS} days)`,
+    );
+  }
 }
 
 async function sendDeadlineReminders(): Promise<void> {

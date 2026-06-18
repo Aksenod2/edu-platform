@@ -10,6 +10,33 @@ function escapeTelegramHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+export interface PushPayload {
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Рассылает web-push на ВСЕ активные подписки пользователя БЕЗ создания записи
+ * Notification (нужно для каналов «только push, без ленты» — напр. напоминания о
+ * событиях). Нет подписок → тихо выходим. Каждую отправку делаем fire-and-forget:
+ * сбой одной подписки (включая чистку 410 внутри sendWebPush) не валит остальные.
+ * Сам метод не бросает.
+ */
+export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  try {
+    const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+    if (subs.length === 0) return;
+    for (const sub of subs) {
+      sendWebPush(sub, payload).catch((err) => {
+        console.error('[notifications] push send error', err);
+      });
+    }
+  } catch (err) {
+    console.error('[notifications] sendPushToUser error', err);
+  }
+}
+
 export interface CreateNotificationParams {
   userId: string;
   type: NotificationType;
@@ -60,14 +87,9 @@ export async function createNotification(params: CreateNotificationParams): Prom
       });
     }
 
-    // Send web push (fire-and-forget)
+    // Send web push (fire-and-forget) — общий хелпер рассылки на подписки (DRY).
     if (pushEnabled) {
-      const subs = await prisma.pushSubscription.findMany({ where: { userId } });
-      for (const sub of subs) {
-        sendWebPush(sub, { title, body, data: metadata }).catch((err) => {
-          console.error('[notifications] push send error', err);
-        });
-      }
+      await sendPushToUser(userId, { title, body, data: metadata });
     }
 
     // Send Telegram message (fire-and-forget). Канал нужен только если он включён в

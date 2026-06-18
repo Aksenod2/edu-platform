@@ -2851,6 +2851,30 @@ export async function updateNotificationPreferences(
   });
 }
 
+export interface EventReminderPreferences {
+  remind60: boolean;
+  remind15: boolean;
+}
+
+export async function getEventReminderPreferences(
+  accessToken: string,
+): Promise<EventReminderPreferences> {
+  return request('/event-reminder-preferences', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function updateEventReminderPreferences(
+  accessToken: string,
+  preferences: { remind60?: boolean; remind15?: boolean },
+): Promise<EventReminderPreferences> {
+  return request('/event-reminder-preferences', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(preferences),
+  });
+}
+
 export async function savePushSubscription(
   accessToken: string,
   subscription: {
