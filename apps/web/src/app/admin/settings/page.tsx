@@ -336,10 +336,8 @@ export default function AdminSettingsPage() {
 
       <SettingsSection
         title="Уведомления"
-        description="Каналы доставки уведомлений"
+        description="Категории уведомлений и персональные настройки"
         rows={[
-          { label: 'Email-уведомления', value: 'Включено' },
-          { label: 'Push-уведомления', value: 'Включено (Web Push)' },
           { label: 'Категории', value: 'урок / задание / дедлайн / сообщение', mono: true },
         ]}
         footer={
