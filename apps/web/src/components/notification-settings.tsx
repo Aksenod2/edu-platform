@@ -145,37 +145,25 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
         return [
           ...prev,
           {
-            id: `local-${category}`,
-            userId: user?.id ?? '',
             category,
             channelEmail: channel === 'channelEmail' ? value : true,
             channelPush: channel === 'channelPush' ? value : true,
-            updatedAt: new Date().toISOString(),
           },
         ];
       });
     },
-    [user],
+    [],
   );
 
-  const handleGlobalToggle = useCallback(
-    (enabled: boolean) => {
-      setPrefs((prev) =>
-        CATEGORY_ROWS.filter((r) => !r.system).map((r) => {
-          const existing = prev.find((p) => p.category === r.category);
-          return {
-            id: existing?.id ?? `local-${r.category}`,
-            userId: user?.id ?? '',
-            category: r.category,
-            channelEmail: enabled,
-            channelPush: enabled,
-            updatedAt: new Date().toISOString(),
-          };
-        }),
-      );
-    },
-    [user],
-  );
+  const handleGlobalToggle = useCallback((enabled: boolean) => {
+    setPrefs(() =>
+      CATEGORY_ROWS.filter((r) => !r.system).map((r) => ({
+        category: r.category,
+        channelEmail: enabled,
+        channelPush: enabled,
+      })),
+    );
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!accessToken) return;

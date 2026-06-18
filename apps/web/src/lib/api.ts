@@ -2754,13 +2754,13 @@ export type NotificationCategory =
   | 'student_activity'
   | 'system';
 
+// Реальная форма ответа бэка (PATCH/GET /notification-preferences): категория +
+// флаги каналов. Псевдо-категория `system` (UI-only, «всегда вкл») в контракт НЕ
+// входит — бэк отдаёт только реальные категории матрицы.
 export interface NotificationPreference {
-  id: string;
-  userId: string;
   category: NotificationCategory;
   channelEmail: boolean;
   channelPush: boolean;
-  updatedAt: string;
 }
 
 export async function getNotifications(
