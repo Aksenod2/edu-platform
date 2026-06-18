@@ -25,6 +25,15 @@ enum SessionStatus {
   cancelled
 }
 
+// Статус встречи 1-на-1 (эпик «Встречи 1-на-1», #154). Зеркало SessionStatus
+// без draft — у встречи нет черновика (создаётся сразу запланированной).
+enum MeetingStatus {
+  planned
+  live
+  done
+  cancelled
+}
+
 enum ProgramType {
   course
   intensive
@@ -126,6 +135,10 @@ enum ConsentType {
   serviceNotifications
   marketing
   personalDataPolicy
+  // Согласие на запись/транскрибацию созвонов (эпик «Встречи 1-на-1», #154).
+  // РАЗОВОЕ (решение заказчика): фиксируется один раз, не блокирует вход (не входит
+  // в REQUIRED_CONSENT_TYPES). Привязано к документу meeting-recording-consent.
+  meetingRecording
 }
 
 // Действие по согласию: granted — дано, revoked — отозвано. История append-only:
@@ -199,6 +212,9 @@ model User {
   materialAccesses        MaterialAccess[]
   // Юридические согласия пользователя (append-only история, Волна 1 «правовой минимум»).
   consents                UserConsent[]
+  // Встречи 1-на-1 (эпик «Встречи 1-на-1», #154): как преподаватель и как студент.
+  meetingsAsTeacher       Meeting[]                @relation("MeetingTeacher")
+  meetingsAsStudent       Meeting[]                @relation("MeetingStudent")
 }
 
 model ApiKey {
@@ -505,6 +521,52 @@ model Session {
   @@unique([streamId, lessonId])
   @@index([streamId])
   @@index([lessonId])
+  @@index([status, date])
+  @@index([zoomMeetingId])
+}
+
+// Встреча 1-на-1 преподавателя со студентом (эпик «Встречи 1-на-1», #154).
+// Лёгкая отдельная сущность (НЕ Session): у 1-на-1 нет stream/lesson. Zoom/запись/
+// итоги/транскрипт-поля ЗЕРКАЛЯТ Session — те же имена/типы, чтобы переиспользовать
+// обработчики (lib/zoom-recording.ts, zoom-webhooks). Все Zoom-поля nullable —
+// фича аддитивна. Изоляция two-party: видят только teacher и student.
+model Meeting {
+  id         String        @id @default(uuid())
+  teacherId  String
+  studentId  String
+  title      String?
+  status     MeetingStatus @default(planned)
+  date       DateTime?     @db.Date
+  startTime  String?
+  meetingUrl String?
+  videoUrl   String?
+  videoKey   String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  // Zoom-созвоны — те же имена полей, что у Session, для общих обработчиков.
+  zoomMeetingId   String? @unique // id встречи Zoom для сопоставления входящего вебхука с встречей
+  zoomMeetingUuid String? // UUID встречи Zoom — нужен для meeting_summary API (числовой id он не принимает)
+  recordingStatus String? // статус записи: none | pending | processing | ready | failed (строкой, без enum)
+  recordingError  String? // текст ошибки автозагрузки записи (для UI)
+  summary         String? // итоги/конспект встречи
+  summarySource   String? // источник summary: 'zoom_ai' | 'manual'
+
+  // Итоги + Транскрипт встречи — зеркало Session. Все поля nullable — фича аддитивна.
+  summaryStatus         String? // статус итогов: none | pending | processing | ready | failed
+  transcriptStatus      String? // статус транскрипта: none | pending | processing | ready | failed
+  transcriptVttKey      String? // ключ S3 для сырого .vtt транскрипта
+  transcriptTxtKey      String? // ключ S3 для очищенного .txt транскрипта
+  transcriptError       String? // текст ошибки забора транскрипта
+  transcriptRequestedAt DateTime? // когда запросили транскрипт
+  recordingRequestedAt  DateTime? // когда запись запрошена/ожидается (на meeting.ended)
+  summaryRequestedAt    DateTime? // когда итоги запрошены/ожидаются (на meeting.ended)
+
+  teacher User @relation("MeetingTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  student User @relation("MeetingStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+  @@index([studentId])
   @@index([status, date])
   @@index([zoomMeetingId])
 }

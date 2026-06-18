@@ -484,6 +484,7 @@ const publishedRequiredDocuments = [
   { slug: 'offer' },
   { slug: 'pd-consent' },
   { slug: 'personal-data-policy' },
+  { slug: 'meeting-recording-consent' },
 ];
 
 describe('pendingRequiredConsents — недостающие обязательные согласия', () => {
@@ -519,6 +520,7 @@ describe('pendingRequiredConsents — недостающие обязатель�
       'personalData',
       'personalDataPolicy',
       'serviceNotifications',
+      'meetingRecording',
     ]);
   });
 
@@ -529,9 +531,10 @@ describe('pendingRequiredConsents — недостающие обязатель�
     await expect(pendingRequiredConsents('stu-1')).resolves.toEqual([]);
   });
 
-  // Issue #130: ровно сценарий СУЩЕСТВУЮЩИХ студентов после деплоя — старые
-  // 3 обязательных уже granted, политика опубликована → долг только по новому типу.
-  it('granted по старым 3 обязательным, политика опубликована → ровно [personalDataPolicy]', async () => {
+  // Issue #130/#154: ровно сценарий СУЩЕСТВУЮЩИХ студентов после деплоя — старые
+  // 3 обязательных уже granted, новые документы (политика ПДн, согласие на запись
+  // встреч) опубликованы → долг только по новым типам.
+  it('granted по старым 3 обязательным, новые документы опубликованы → [personalDataPolicy, meetingRecording]', async () => {
     db.userConsent.findMany.mockResolvedValueOnce([
       { consentType: 'offer' },
       { consentType: 'personalData' },
@@ -539,7 +542,10 @@ describe('pendingRequiredConsents — недостающие обязатель�
     ]);
     db.legalDocument.findMany.mockResolvedValueOnce(publishedRequiredDocuments);
 
-    await expect(pendingRequiredConsents('stu-1')).resolves.toEqual(['personalDataPolicy']);
+    await expect(pendingRequiredConsents('stu-1')).resolves.toEqual([
+      'personalDataPolicy',
+      'meetingRecording',
+    ]);
   });
 });
 
@@ -556,9 +562,10 @@ describe('POST /users/me/consents — досбор согласий', () => {
       { id: 'ver-offer-1', document: { slug: 'offer' } },
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
       { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
+      { id: 'ver-mr-1', document: { slug: 'meeting-recording-consent' } },
       { id: 'ver-mk-1', document: { slug: 'marketing-consent' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 5 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 6 });
     // pendingRequiredConsents ПОСЛЕ записи: все обязательные уже granted.
     db.userConsent.findMany.mockResolvedValueOnce(
       REQUIRED_CONSENT_TYPES.map((consentType) => ({ consentType })),
@@ -583,6 +590,7 @@ describe('POST /users/me/consents — досбор согласий', () => {
       'personalData',
       'personalDataPolicy',
       'serviceNotifications',
+      'meetingRecording',
       'marketing',
     ]);
     expect(rows[0]).toMatchObject({
@@ -601,9 +609,10 @@ describe('POST /users/me/consents — досбор согласий', () => {
     db.legalDocumentVersion.findMany.mockResolvedValueOnce([
       { id: 'ver-pd-1', document: { slug: 'pd-consent' } },
       { id: 'ver-pdp-1', document: { slug: 'personal-data-policy' } },
+      { id: 'ver-mr-1', document: { slug: 'meeting-recording-consent' } },
       { id: 'ver-mk-1', document: { slug: 'marketing-consent' } },
     ]);
-    db.userConsent.createMany.mockResolvedValueOnce({ count: 4 });
+    db.userConsent.createMany.mockResolvedValueOnce({ count: 5 });
     // ПОСЛЕ записи: все обязательные granted.
     db.userConsent.findMany.mockResolvedValueOnce(
       REQUIRED_CONSENT_TYPES.map((consentType) => ({ consentType })),
@@ -626,6 +635,7 @@ describe('POST /users/me/consents — досбор согласий', () => {
       'personalData',
       'personalDataPolicy',
       'serviceNotifications',
+      'meetingRecording',
       'marketing',
     ]);
   });

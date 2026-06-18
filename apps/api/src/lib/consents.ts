@@ -19,6 +19,10 @@ export const CONSENT_TYPES = [
   'personalDataPolicy',
   'serviceNotifications',
   'marketing',
+  // Согласие на запись/транскрибацию созвонов (эпик «Встречи 1-на-1», #154).
+  // ОБЯЗАТЕЛЬНОЕ (решение заказчика): входит в REQUIRED_CONSENT_TYPES, запрашивается
+  // у ВСЕХ студентов на старте/входе через consent-gate (как offer/personalData).
+  'meetingRecording',
 ] as const;
 export type ConsentTypeValue = (typeof CONSENT_TYPES)[number];
 
@@ -38,6 +42,7 @@ export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
   personalDataPolicy: 'personal-data-policy',
   serviceNotifications: 'pd-consent',
   marketing: 'marketing-consent',
+  meetingRecording: 'meeting-recording-consent',
 };
 
 // Обязательные юридические согласия: без них студент не может пользоваться
@@ -48,11 +53,19 @@ export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
 // заказчика): у ВСЕХ существующих студентов появляется «долг» по этому типу →
 // серверный гейт (consent-gate) и фронт-гейт потребуют новую галочку
 // «ознакомлен с Политикой обработки персональных данных» при следующем заходе.
+//
+// meetingRecording добавлен в обязательные по решению заказчика (issue #154):
+// согласие на запись/транскрибацию созвонов запрашивается у ВСЕХ студентов на
+// старте вместе с остальными обязательными. Механика — та же досборочная
+// (pendingConsents): у существующих студентов появляется «долг» по этому типу,
+// гейт потребует новую галочку при следующем заходе. Долг возникает только
+// после публикации версии документа meeting-recording-consent (мягкая деградация).
 export const REQUIRED_CONSENT_TYPES: ConsentTypeValue[] = [
   'offer',
   'personalData',
   'personalDataPolicy',
   'serviceNotifications',
+  'meetingRecording',
 ];
 
 export function isConsentType(value: unknown): value is ConsentTypeValue {

@@ -10,12 +10,13 @@ import {
   Trash2,
   ExternalLink,
   Link as LinkIcon,
+  GraduationCap,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { GraduationCap, Info } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,

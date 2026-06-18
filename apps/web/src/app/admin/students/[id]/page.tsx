@@ -76,6 +76,7 @@ import {
   type WalletTransaction,
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
+import { PlanMeetingDialog } from '@/components/meetings/plan-meeting-dialog';
 
 type Tab = 'profile' | 'dynamic' | 'activity' | 'assignments' | 'thread';
 
@@ -480,19 +481,38 @@ export default function StudentProfilePage() {
             К списку студентов
           </BackButton>
 
-          <div className="mt-2 mb-1 min-w-0">
-            <div className="mb-1 flex flex-wrap items-center gap-2">
-              <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">
-                {student.name}
-                {student.lastName ? ` ${student.lastName}` : ''}
-              </h1>
-              {isDemo && <Badge variant="secondary">Демо</Badge>}
+          <div className="mt-2 mb-1 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">
+                  {student.name}
+                  {student.lastName ? ` ${student.lastName}` : ''}
+                </h1>
+                {isDemo && <Badge variant="secondary">Демо</Badge>}
+              </div>
+              <p className="text-muted-foreground m-0 text-sm break-words">
+                {student.email}
+                {student.phone ? ` · ${student.phone}` : ''}
+                {' · '}Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
+              </p>
             </div>
-            <p className="text-muted-foreground m-0 text-sm break-words">
-              {student.email}
-              {student.phone ? ` · ${student.phone}` : ''}
-              {' · '}Зарегистрирован: {new Date(student.createdAt).toLocaleDateString('ru-RU')}
-            </p>
+            {accessToken && (
+              <PlanMeetingDialog
+                accessToken={accessToken}
+                studentId={studentId}
+                studentName={`${student.name}${student.lastName ? ` ${student.lastName}` : ''}`}
+                triggerVariant="outline"
+                triggerClassName="w-full shrink-0 sm:w-auto"
+                onCreated={(meeting) => {
+                  toast.success('Встреча запланирована', {
+                    action: {
+                      label: 'Открыть',
+                      onClick: () => router.push(`/admin/meetings/${meeting.id}`),
+                    },
+                  });
+                }}
+              />
+            )}
           </div>
 
           {/* Tabs */}

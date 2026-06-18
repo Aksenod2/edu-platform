@@ -79,6 +79,100 @@ function extractSummaryFromPayload(
   };
 }
 
+// FALLBACK-обработка события Zoom для встречи 1-на-1 (Meeting, эпик #154), когда
+// под meetingId нет Session. Ищем Meeting по zoomMeetingId; если нашли — выполняем
+// тот же набор действий, что для занятия, но с kind='meeting' и БЕЗ забора
+// посещаемости (pullSessionAttendance для 1-на-1 не нужен). Поля моделей идентичны.
+async function processMeetingEvent(
+  app: FastifyInstance,
+  event: string,
+  meetingId: string,
+  teacherUserId: string,
+  obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+  downloadToken: string | null,
+): Promise<void> {
+  const meeting = await prisma.meeting.findFirst({
+    where: { zoomMeetingId: meetingId },
+    select: { id: true },
+  });
+  if (!meeting) return; // не наша встреча — выходим, событие пометится обработанным
+
+  // Идемпотентно фиксируем UUID встречи (нужен для meeting_summary API).
+  if (obj?.uuid) {
+    await prisma.meeting.updateMany({
+      where: { id: meeting.id, zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: obj.uuid },
+    });
+  }
+
+  if (event === 'meeting.started') {
+    // Созвон начался → встреча «Идёт» (live). Только из 'planned' (идемпотентно).
+    const { count } = await prisma.meeting.updateMany({
+      where: { id: meeting.id, status: 'planned' },
+      data: { status: 'live' },
+    });
+    app.log.info(
+      { meetingId: meeting.id, zoomMeetingId: meetingId, updated: count },
+      'meeting.started: встреча 1-на-1 переведена в live (из planned)',
+    );
+  } else if (event === 'meeting.ended') {
+    // Помечаем запись/итоги/транскрипт «готовится» (kind='meeting'). Посещаемость
+    // для 1-на-1 НЕ забираем.
+    await markRecordingPending({ sessionId: meeting.id, kind: 'meeting' });
+    await markSummaryPending({ sessionId: meeting.id, kind: 'meeting' });
+    await markTranscriptPending({ sessionId: meeting.id, kind: 'meeting' });
+
+    // Авто-перевод встречи в «Проведена»: из 'planned' ИЛИ 'live' (идемпотентно).
+    await prisma.meeting.updateMany({
+      where: { id: meeting.id, status: { in: ['planned', 'live'] } },
+      data: { status: 'done' },
+    });
+  } else if (event === 'recording.completed') {
+    await processRecordingForSession({
+      sessionId: meeting.id,
+      meetingId,
+      teacherUserId,
+      payloadFiles: obj?.recording_files ?? null,
+      downloadToken,
+      kind: 'meeting',
+    });
+    // Фолбэк-забор транскрипта (best-effort) — как у занятия.
+    try {
+      await processTranscriptForSession({
+        sessionId: meeting.id,
+        meetingId,
+        teacherUserId,
+        payloadFiles: obj?.recording_files ?? null,
+        downloadToken,
+        kind: 'meeting',
+      });
+    } catch (err) {
+      app.log.error(
+        { err, meetingId: meeting.id },
+        'recording.completed (1-на-1): ошибка фолбэк-забора транскрипта (добёрёт transcript_completed)',
+      );
+    }
+  } else if (event === 'recording.transcript_completed') {
+    await processTranscriptForSession({
+      sessionId: meeting.id,
+      meetingId,
+      teacherUserId,
+      payloadFiles: obj?.recording_files ?? null,
+      downloadToken,
+      kind: 'meeting',
+    });
+  } else if (event === 'meeting.summary_completed') {
+    await processSummaryForSession({
+      sessionId: meeting.id,
+      meetingId,
+      teacherUserId,
+      payloadSummary: obj ? extractSummaryFromPayload(obj) : null,
+      meetingUuid: obj?.uuid ?? null,
+      kind: 'meeting',
+    });
+  }
+}
+
 // Фоновая обработка события (fire-and-forget). Сама ловит ошибки и проставляет
 // ZoomWebhookEvent.status processed/failed + processedAt. Никогда не бросает.
 async function processEventAsync(
@@ -213,9 +307,14 @@ async function processEventAsync(
             meetingUuid: obj?.uuid ?? null,
           });
         }
+      } else {
+        // FALLBACK: Session нет — возможно, это встреча 1-на-1 (Meeting, эпик #154).
+        // Те же поля Zoom/записи/итогов/транскрипта → те же обработчики с
+        // kind='meeting'. Посещаемость (pullSessionAttendance) для Meeting НЕ нужна.
+        await processMeetingEvent(app, event, meetingId, teacherUserId, obj, downloadToken);
       }
-      // Нет Session под этот meetingId — это нормально (встреча не наша): просто
-      // помечаем событие обработанным ниже.
+      // Нет ни Session, ни Meeting под этот meetingId — это нормально (встреча
+      // не наша): просто помечаем событие обработанным ниже.
     }
 
     await prisma.zoomWebhookEvent.update({

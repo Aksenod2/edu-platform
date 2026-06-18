@@ -30,16 +30,18 @@ export function LessonItem({
   lessonBasePath?: string;
 }) {
   const cancelled = lesson.status === 'cancelled';
+  const isMeeting = !!lesson.meeting;
   const [marking, setMarking] = useState(false);
   const router = useRouter();
 
-  const canMarkDone = !!onMarkDone && lesson.status === 'planned';
+  // «Провести» — только для занятий группы (PATCH занятия). Встречу так не закрывают.
+  const canMarkDone = !isMeeting && !!onMarkDone && lesson.status === 'planned';
 
-  // Путь на страницу урока. Для админа добавляем ?streamId — чтобы View Mode урока
-  // открылся в контексте конкретного занятия (статус/запись/итоги/статистика по
-  // потоку). Для студента ('/dashboard/lessons') контекст потока не нужен — не трогаем.
-  const href =
-    lessonBasePath === '/admin/lessons' && lesson.streamId
+  // Путь по клику: встреча → её деталь (meetingHref), занятие → страница урока.
+  // Для админ-урока добавляем ?streamId — чтобы открыть в контексте занятия потока.
+  const href = isMeeting
+    ? (lesson.meetingHref ?? '#')
+    : lessonBasePath === '/admin/lessons' && lesson.streamId
       ? `${lessonBasePath}/${lesson.id}?streamId=${lesson.streamId}`
       : `${lessonBasePath}/${lesson.id}`;
 
@@ -66,6 +68,8 @@ export function LessonItem({
       }}
       className={cn(
         'flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        // Встреча 1-на-1 — акцентная левая граница (визуальное отличие).
+        isMeeting && 'border-l-4 border-l-primary',
         cancelled && 'opacity-60',
       )}
     >
@@ -88,10 +92,14 @@ export function LessonItem({
 
       <div className="flex flex-wrap items-center gap-1.5">
         <LessonStatusBadge status={lesson.status} />
-        {lesson.streamName && (
-          <Badge variant="secondary" className="w-fit max-w-full truncate">
-            {lesson.streamName}
-          </Badge>
+        {isMeeting ? (
+          <Badge className="w-fit">1-на-1</Badge>
+        ) : (
+          lesson.streamName && (
+            <Badge variant="secondary" className="w-fit max-w-full truncate">
+              {lesson.streamName}
+            </Badge>
+          )
         )}
         {/* Статус записи Zoom — только для прошедших занятий. У «готово» бейдж
             скрываем (showReady=false): видео и так открывается в плеере урока. */}

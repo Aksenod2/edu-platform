@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getStreams, getLessons, type Stream } from '@/lib/api';
+import { getStreams, getLessons, getMeetings, type Stream } from '@/lib/api';
+import { meetingToCalendarLesson } from '@/components/meetings/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
@@ -22,6 +23,9 @@ export default function StudentSchedulePage() {
   const [streams, setStreams] = useState<Stream[]>([]);
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
   const [lessons, setLessons] = useState<CalendarLesson[]>([]);
+  // Встречи 1-на-1 студента (эпик #154). У встречи нет потока, поэтому фильтр по
+  // группе на них не действует — показываем всегда.
+  const [meetings, setMeetings] = useState<CalendarLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -47,6 +51,19 @@ export default function StudentSchedulePage() {
           }));
       });
       setLessons(merged);
+
+      // Встречи 1-на-1 — отдельный запрос (не валит расписание при ошибке).
+      try {
+        const { meetings: mtgs } = await getMeetings(accessToken);
+        setMeetings(
+          mtgs
+            .filter((m) => m.date)
+            .map((m) => meetingToCalendarLesson(m, '/dashboard/meetings')),
+        );
+      } catch {
+        setMeetings([]);
+      }
+
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки расписания');
@@ -61,8 +78,8 @@ export default function StudentSchedulePage() {
 
   const visibleLessons =
     filterStreamId === ALL_STREAMS
-      ? lessons
-      : lessons.filter((l) => l.streamId === filterStreamId);
+      ? [...lessons, ...meetings]
+      : [...lessons.filter((l) => l.streamId === filterStreamId), ...meetings];
 
   return (
     <>

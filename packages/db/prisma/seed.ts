@@ -20,6 +20,7 @@ const LEGAL_DOCUMENTS: ReadonlyArray<{ slug: string; title: string }> = [
   { slug: 'requisites', title: 'Реквизиты' },
   { slug: 'pd-consent', title: 'Согласие на обработку персональных данных' },
   { slug: 'marketing-consent', title: 'Согласие на получение рекламно-информационных рассылок' },
+  { slug: 'meeting-recording-consent', title: 'Согласие на запись и транскрибацию встреч' },
 ];
 
 async function seedLegalDocuments() {
