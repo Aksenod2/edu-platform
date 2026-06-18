@@ -39,12 +39,14 @@ import {
   canCreateMeeting,
   deleteZoomMeeting,
 } from '../../lib/zoom.js';
+import { getFileUrl } from '../../lib/s3.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = prisma as any;
 const mockCreateZoom = vi.mocked(createZoomMeeting);
 const mockCanCreate = vi.mocked(canCreateMeeting);
 const mockDeleteZoom = vi.mocked(deleteZoomMeeting);
+const mockGetFileUrl = vi.mocked(getFileUrl);
 
 const TEACHER_ID = 'teacher-1';
 const STUDENT_A = 'student-a';
@@ -307,6 +309,53 @@ describe('GET /meetings/:id — деталь, изоляция и проекци
       headers: authHeaders(adminToken),
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('Проекция записи — recordingFileUrl (подписанный S3-URL по videoKey)', () => {
+  it('videoKey задан → recordingFileUrl = подписанный URL (admin)', async () => {
+    db.meeting.findUnique.mockResolvedValue(meetingRow({ videoKey: 'meetings/m-1/rec.mp4' }));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const m = res.json();
+    // Подписание делегировано getFileUrl (замокан) — URL приходит наружу.
+    expect(m.recordingFileUrl).toBe('https://files.example/url');
+    expect(mockGetFileUrl).toHaveBeenCalledWith('meetings/m-1/rec.mp4');
+  });
+
+  it('videoKey пуст → recordingFileUrl = null (подписание не вызывается)', async () => {
+    db.meeting.findUnique.mockResolvedValue(meetingRow({ videoKey: null }));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const m = res.json();
+    expect(m.recordingFileUrl).toBeNull();
+    expect(mockGetFileUrl).not.toHaveBeenCalled();
+  });
+
+  it('запись отдаётся и студенту-участнику (recordingFileUrl присутствует)', async () => {
+    db.meeting.findUnique.mockResolvedValue(meetingRow({ videoKey: 'meetings/m-1/rec.mp4' }));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/meetings/m-1',
+      headers: authHeaders(studentAToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const m = res.json();
+    expect(m.recordingFileUrl).toBe('https://files.example/url');
+    // Изоляция сохранена: студенту по-прежнему не отдаём recordingError/транскрипт.
+    expect(m).not.toHaveProperty('recordingError');
+    expect(m).not.toHaveProperty('transcriptStatus');
   });
 });
 

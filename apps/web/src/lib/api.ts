@@ -3334,9 +3334,13 @@ export interface Meeting {
   // Ссылка на созвон Zoom (best-effort, может быть null).
   meetingUrl: string | null;
   // Запись Zoom-созвона (подтягивается ПОСЛЕ встречи). videoUrl — внешняя ссылка
-  // на запись; videoKey — ключ файла в хранилище (на фронте показываем videoUrl).
+  // на запись; videoKey — ключ файла в хранилище. recordingFileUrl — подписанный
+  // временный S3-URL по videoKey (приоритетен для плеера; null если файла нет).
   videoUrl: string | null;
   videoKey: string | null;
+  // Подписанный временный URL загруженной записи в S3 (или null). На фронте
+  // используем recordingFileUrl ?? videoUrl (S3-файл приоритетно, внешняя ссылка фолбэк).
+  recordingFileUrl: string | null;
   // recordingStatus: none | pending | processing | ready | failed.
   recordingStatus?: string | null;
   recordingRequestedAt?: string | null;

@@ -123,10 +123,12 @@ export function MeetingDetail({
   const canJoin =
     meeting?.status === 'planned' && Boolean(meeting?.meetingUrl);
 
-  // Запись созвона: внешняя ссылка videoUrl (на фронт ключ videoKey не отдаётся
-  // подписанной ссылкой — показываем по videoUrl, если есть).
-  const recordingUrl = meeting?.videoUrl ?? null;
-  const recordingEmbed = recordingUrl ? parseVideoEmbed(recordingUrl) : null;
+  // Запись созвона: приоритетно подписанный S3-URL (recordingFileUrl) по videoKey,
+  // фолбэк — внешняя ссылка videoUrl. Подписанный S3-URL — всегда прямой файл
+  // (embed-парсинг применяем ТОЛЬКО к внешней videoUrl: YouTube/Vimeo и т.п.).
+  const recordingFileUrl = meeting?.recordingFileUrl ?? null;
+  const recordingUrl = recordingFileUrl ?? meeting?.videoUrl ?? null;
+  const recordingEmbed = recordingFileUrl ? null : recordingUrl ? parseVideoEmbed(recordingUrl) : null;
   const recKind = resolveProcessingKind({
     status: meeting?.recordingStatus,
     hasData: !!recordingUrl,

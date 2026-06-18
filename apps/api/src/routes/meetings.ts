@@ -22,6 +22,18 @@ import { getFileUrl, readFileText } from '../lib/s3.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Подписанный временный URL записи встречи по videoKey (или null). Зеркало
+// videoFileUrlFor из lessons.ts: если videoKey пуст — запись в S3 не выгружена
+// (есть только внешняя ссылка videoUrl). Ошибки подписания гасим в null.
+async function recordingFileUrlFor(videoKey: string | null | undefined): Promise<string | null> {
+  if (!videoKey) return null;
+  try {
+    return await getFileUrl(videoKey);
+  } catch {
+    return null;
+  }
+}
+
 // Строит ISO-строку начала встречи для Zoom из даты (YYYY-MM-DD) и времени HH:MM.
 // Без времени — null (Zoom создаст встречу без явного старта). Зеркало
 // buildZoomStartTime из lessons.ts (та же форма даты у Session/Meeting).
@@ -120,8 +132,15 @@ type MeetingRow = {
 // Проекция встречи в API. forStudent=true → УРЕЗАННАЯ форма: БЕЗ recordingError и
 // БЕЗ полей транскрипта (transcriptStatus/transcriptError/transcriptRequestedAt) —
 // эти ключи ОТСУТСТВУЮТ в объекте (исключены, а не занулены). summary отдаётся
-// обоим (итоги встречи полезны студенту). Запись (videoUrl/videoKey/статус) — обоим.
-function projectMeeting(m: MeetingRow, forStudent: boolean) {
+// обоим (итоги встречи полезны студенту). Запись (videoUrl/videoKey/статус +
+// подписанный recordingFileUrl) — обоим.
+//
+// ASYNC: подписание S3-URL записи (recordingFileUrl) — await, поэтому проекция
+// асинхронная. Зеркало lessons.ts (recordingFileUrl по Session.videoKey).
+async function projectMeeting(m: MeetingRow, forStudent: boolean) {
+  // Подписанный временный URL записи (приоритетно для плеера); внешний videoUrl —
+  // фолбэк на фронте. Если videoKey пуст → null.
+  const recordingFileUrl = await recordingFileUrlFor(m.videoKey);
   const base = {
     id: m.id,
     teacherId: m.teacherId,
@@ -133,6 +152,7 @@ function projectMeeting(m: MeetingRow, forStudent: boolean) {
     meetingUrl: m.meetingUrl,
     videoUrl: m.videoUrl,
     videoKey: m.videoKey,
+    recordingFileUrl,
     recordingStatus: m.recordingStatus,
     recordingRequestedAt: m.recordingRequestedAt
       ? m.recordingRequestedAt.toISOString()
@@ -237,7 +257,7 @@ export async function meetingRoutes(app: FastifyInstance) {
       select: meetingSelect,
     });
 
-    return reply.status(201).send(projectMeeting(created as MeetingRow, false));
+    return reply.status(201).send(await projectMeeting(created as MeetingRow, false));
   });
 
   // GET /meetings — список встреч с ИЗОЛЯЦИЕЙ: admin видит свои (teacherId=me),
@@ -255,7 +275,9 @@ export async function meetingRoutes(app: FastifyInstance) {
 
     const forStudent = role !== 'admin';
     return {
-      meetings: meetings.map((m) => projectMeeting(m as MeetingRow, forStudent)),
+      meetings: await Promise.all(
+        meetings.map((m) => projectMeeting(m as MeetingRow, forStudent)),
+      ),
     };
   });
 
@@ -279,7 +301,7 @@ export async function meetingRoutes(app: FastifyInstance) {
     }
 
     const forStudent = role !== 'admin' || meeting.teacherId !== userId;
-    return projectMeeting(meeting as MeetingRow, forStudent);
+    return await projectMeeting(meeting as MeetingRow, forStudent);
   });
 
   // PATCH /meetings/:id/cancel — отмена встречи (admin, только своей: teacherId=me).
@@ -315,7 +337,7 @@ export async function meetingRoutes(app: FastifyInstance) {
       select: meetingSelect,
     });
 
-    return projectMeeting(updated as MeetingRow, false);
+    return await projectMeeting(updated as MeetingRow, false);
   });
 
   // GET /meetings/:id/transcript?format=vtt|txt — тело транскрипта встречи.
