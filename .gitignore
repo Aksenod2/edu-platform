@@ -28,3 +28,7 @@ apps/web/e2e/.auth
 
 # Эфемерные worktree субагентов (харнесс) — никогда не коммитим
 .claude/worktrees/
+
+# Локальный штамп гейта сборки (пишет post-build-stamp.sh) — не коммитим
+.claude/.build-ok-stamp
+.claude/settings.local.json
