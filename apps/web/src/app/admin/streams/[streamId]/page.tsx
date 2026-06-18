@@ -10,6 +10,7 @@ import {
   BookOpen,
   ClipboardList,
   CalendarDays,
+  CalendarPlus,
   Plus,
   Trash2,
   Search,
@@ -78,7 +79,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   ScheduleCalendar,
   type CalendarLesson,
-  type CalendarCreateData,
   type CalendarUpdateData,
 } from '@/components/schedule-calendar';
 import {
@@ -88,7 +88,6 @@ import {
   unenrollStudent,
   getStudents,
   getLessons,
-  createLesson,
   updateLesson,
   unscheduleLesson,
   getAssignments,
@@ -113,7 +112,7 @@ import {
 } from '@/lib/api';
 import { HintCallout } from '@/components/hint-callout';
 import { InviteLinkDialog } from '@/components/invite-link-dialog';
-import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
+import { PlanEventDialog } from '@/components/schedule/plan-event-dialog';
 import { SessionStatusControl } from '@/components/schedule/session-status-control';
 
 // Допустимые значения вкладок (для синхронизации с ?tab= в URL).
@@ -268,24 +267,6 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
     fetchAll();
   }, [fetchAll]);
 
-  const handleCreate = async (data: CalendarCreateData) => {
-    if (!accessToken) return;
-    try {
-      await createLesson(accessToken, {
-        streamId: stream.id,
-        title: data.title,
-        date: data.date || null,
-        startTime: data.startTime,
-        status: data.status,
-        meetingUrl: data.meetingUrl,
-        notes: data.notes ?? undefined,
-      });
-      await fetchAll();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка создания урока');
-    }
-  };
-
   const handleUpdate = async (id: string, data: CalendarUpdateData) => {
     if (!accessToken) return;
     try {
@@ -342,12 +323,35 @@ function ScheduleTab({ stream }: { stream: StreamWithCounts }) {
       <ScheduleCalendar
         editable
         lessons={lessons}
-        streams={[stream]}
         lessonBasePath="/admin/lessons"
-        onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onChanged={fetchAll}
+        renderCreate={
+          accessToken
+            ? (defaultDate) => (
+                <PlanEventDialog
+                  accessToken={accessToken}
+                  lockedMode="lesson"
+                  streams={[stream]}
+                  defaultStreamId={stream.id}
+                  defaultDate={defaultDate}
+                  onPlanned={fetchAll}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={stream.status !== 'active'}
+                    >
+                      <CalendarPlus />
+                      Новое событие
+                    </Button>
+                  }
+                />
+              )
+            : undefined
+        }
       />
     </div>
   );
@@ -422,12 +426,14 @@ function LessonsTab({ stream }: { stream: StreamWithCounts }) {
         {/* Планируем урок прямо здесь с предвыбранной текущей группой. Для архивной
             группы кнопка диалога задизейблена (нет активных потоков для планирования). */}
         {accessToken && (
-          <PlanLessonDialog
+          <PlanEventDialog
             accessToken={accessToken}
+            lockedMode="lesson"
             streams={[stream]}
             defaultStreamId={stream.id}
             onPlanned={fetchLessons}
             triggerClassName="w-full sm:w-auto"
+            triggerDisabled={stream.status !== 'active'}
           />
         )}
       </div>

@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CalendarPlus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { Button } from '@/components/ui/button';
 import {
-  createLesson,
   unscheduleLesson,
   getLessons,
   getMeetings,
@@ -25,12 +25,11 @@ import {
 } from '@/components/ui/select';
 import {
   ScheduleCalendar,
-  type CalendarCreateData,
   type CalendarLesson,
   type CalendarUpdateData,
 } from '@/components/schedule-calendar';
 import { WeekView } from '@/components/schedule/week-view';
-import { PlanLessonDialog } from '@/components/schedule/plan-lesson-dialog';
+import { PlanEventDialog } from '@/components/schedule/plan-event-dialog';
 import type { ScheduleLesson } from '@/components/schedule/utils';
 import { HintCallout } from '@/components/hint-callout';
 
@@ -49,8 +48,8 @@ export default function AdminSchedulePage() {
   const [filterStreamId, setFilterStreamId] = useState<string>(ALL_STREAMS);
   const [view, setView] = useState<ViewMode>('week');
   const [lessons, setLessons] = useState<ScheduleLesson[]>([]);
-  // Встречи 1-на-1 текущего преподавателя (эпик #154). Показываем только в режиме
-  // «Все группы» — у встречи нет потока, под фильтром по группе её прятать логично.
+  // Встречи 1-на-1 текущего преподавателя (эпик #154). Показываем ВСЕГДА, в т.ч.
+  // под фильтром по группе (issue #168) — у встречи нет потока, прятать её нельзя.
   const [meetings, setMeetings] = useState<ScheduleLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -112,10 +111,11 @@ export default function AdminSchedulePage() {
 
   const visibleLessons = useMemo(
     () =>
+      // Встречи 1-на-1 показываем ВСЕГДА (issue #168): у встречи нет потока, поэтому
+      // фильтр по группе её не касается — иначе «создал встречу при фильтре и не вижу».
       selectedStreamId
-        ? lessons.filter((l) => l.streamId === selectedStreamId)
-        : // «Все группы»: показываем занятия + встречи 1-на-1 (у встречи нет потока).
-          [...lessons, ...meetings],
+        ? [...lessons.filter((l) => l.streamId === selectedStreamId), ...meetings]
+        : [...lessons, ...meetings],
     [lessons, meetings, selectedStreamId],
   );
 
@@ -179,7 +179,7 @@ export default function AdminSchedulePage() {
             </Select>
           )}
           {accessToken && (
-            <PlanLessonDialog
+            <PlanEventDialog
               accessToken={accessToken}
               streams={streams}
               defaultStreamId={selectedStreamId || undefined}
@@ -255,28 +255,6 @@ function MonthView({
   const [error, setError] = useState('');
 
   const editable = !!selectedStreamId;
-  const createStreams = selectedStreamId
-    ? streams.filter((s) => s.id === selectedStreamId)
-    : streams;
-
-  const handleCreate = async (data: CalendarCreateData) => {
-    if (!accessToken) return;
-    setError('');
-    try {
-      await createLesson(accessToken, {
-        streamId: data.streamId,
-        title: data.title,
-        date: data.date || null,
-        startTime: data.startTime,
-        status: data.status,
-        meetingUrl: data.meetingUrl,
-        notes: data.notes ?? undefined,
-      });
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка создания занятия');
-    }
-  };
 
   const handleUpdate = async (id: string, data: CalendarUpdateData) => {
     if (!accessToken) return;
@@ -329,12 +307,29 @@ function MonthView({
       <ScheduleCalendar
         editable={editable}
         lessons={lessons}
-        streams={createStreams}
         lessonBasePath="/admin/lessons"
-        onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onChanged={onChanged}
+        renderCreate={
+          accessToken
+            ? (defaultDate) => (
+                <PlanEventDialog
+                  accessToken={accessToken}
+                  streams={streams}
+                  defaultDate={defaultDate}
+                  defaultStreamId={selectedStreamId || undefined}
+                  onPlanned={onChanged}
+                  trigger={
+                    <Button variant="outline" size="sm" className="w-full">
+                      <CalendarPlus />
+                      Новое событие
+                    </Button>
+                  }
+                />
+              )
+            : undefined
+        }
       />
     </div>
   );

@@ -16,6 +16,7 @@
     "@platform/ui": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "class-variance-authority": "^0.7.1",
+    "cmdk": "^1.1.1",
     "date-fns": "^4.2.1",
     "lucide-react": "^1.16.0",
     "next": "^15.3.0",

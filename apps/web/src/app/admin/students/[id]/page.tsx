@@ -76,7 +76,7 @@ import {
   type WalletTransaction,
 } from '@/lib/api';
 import { STATUS_LABELS, STATUS_VARIANT } from '@/lib/assignment-status';
-import { PlanMeetingDialog } from '@/components/meetings/plan-meeting-dialog';
+import { PlanEventDialog } from '@/components/schedule/plan-event-dialog';
 
 type Tab = 'profile' | 'dynamic' | 'activity' | 'assignments' | 'thread';
 
@@ -497,13 +497,18 @@ export default function StudentProfilePage() {
               </p>
             </div>
             {accessToken && (
-              <PlanMeetingDialog
+              <PlanEventDialog
                 accessToken={accessToken}
-                studentId={studentId}
-                studentName={`${student.name}${student.lastName ? ` ${student.lastName}` : ''}`}
-                triggerVariant="outline"
-                triggerClassName="w-full shrink-0 sm:w-auto"
-                onCreated={(meeting) => {
+                lockedMode="meeting"
+                defaultStudentId={studentId}
+                defaultStudentName={`${student.name}${student.lastName ? ` ${student.lastName}` : ''}`}
+                trigger={
+                  <Button variant="outline" className="w-full shrink-0 sm:w-auto">
+                    <CalendarPlus />
+                    Новое событие
+                  </Button>
+                }
+                onMeetingCreated={(meeting) => {
                   toast.success('Встреча запланирована', {
                     action: {
                       label: 'Открыть',

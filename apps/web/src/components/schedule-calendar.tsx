@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus, type Stream } from '@/lib/api';
+import { LESSON_STATUS_LABELS, type Lesson, type LessonStatus } from '@/lib/api';
 import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import {
   parseLocalDate,
@@ -64,17 +64,6 @@ export type CalendarLesson = Lesson & {
   meetingHref?: string;
 };
 
-/** Данные для создания урока из календаря. */
-export interface CalendarCreateData {
-  streamId: string;
-  title: string;
-  date: string;
-  startTime: string | null;
-  status: LessonStatus;
-  meetingUrl: string | null;
-  notes: string | null;
-}
-
 /** Поля для обновления урока из календаря. */
 export interface CalendarUpdateData {
   title?: string;
@@ -89,15 +78,17 @@ export interface ScheduleCalendarProps {
   /** Уроки. На календаре рисуются только те, у кого есть `date`. */
   lessons: CalendarLesson[];
   editable?: boolean;
-  /** Потоки — нужны при создании урока (выбор потока). */
-  streams?: Stream[];
   /** Базовый путь страницы урока — зависит от роли (студент vs админ). */
   lessonBasePath?: string;
-  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
   /** Ре-фетч списка после смены статуса занятия из контрола (SessionStatusControl). */
   onChanged?: () => void;
+  /**
+   * Рендер кнопки создания события из дня (единый PlanEventDialog с предзаполненной
+   * датой, issue #168). Если задан — заменяет инлайн-форму создания урока.
+   */
+  renderCreate?: (defaultDate: string) => ReactNode;
 }
 
 const MONTHS = [
@@ -108,12 +99,11 @@ const MONTHS = [
 export function ScheduleCalendar({
   lessons,
   editable = false,
-  streams = [],
   lessonBasePath = '/admin/lessons',
-  onCreate,
   onUpdate,
   onDelete,
   onChanged,
+  renderCreate,
 }: ScheduleCalendarProps) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -308,12 +298,11 @@ export function ScheduleCalendar({
               dayKey={selectedKey}
               lessons={selectedLessons}
               editable={editable}
-              streams={streams}
               lessonBasePath={lessonBasePath}
-              onCreate={onCreate}
               onUpdate={onUpdate}
               onDelete={onDelete}
               onChanged={onChanged}
+              renderCreate={renderCreate}
             />
           )}
         </SheetContent>
@@ -336,27 +325,24 @@ interface DayDetailProps {
   dayKey: string;
   lessons: CalendarLesson[];
   editable: boolean;
-  streams: Stream[];
   lessonBasePath: string;
-  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
   onUpdate?: (id: string, data: CalendarUpdateData) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
   onChanged?: () => void;
+  renderCreate?: (defaultDate: string) => ReactNode;
 }
 
 function DayDetail({
   dayKey,
   lessons,
   editable,
-  streams,
   lessonBasePath,
-  onCreate,
   onUpdate,
   onDelete,
   onChanged,
+  renderCreate,
 }: DayDetailProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
 
   return (
     <>
@@ -491,28 +477,9 @@ function DayDetail({
           ),
         )}
 
-        {editable && (
-          <div>
-            {showCreate ? (
-              <CreateForm
-                defaultDate={dayKey}
-                streams={streams}
-                onCreate={onCreate}
-                onCancel={() => setShowCreate(false)}
-                onCreated={() => setShowCreate(false)}
-              />
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => setShowCreate(true)}
-              >
-                Добавить урок
-              </Button>
-            )}
-          </div>
-        )}
+        {/* Создание события из дня — единый PlanEventDialog с предзаполненной датой
+            (issue #168). Триггер/диалог рендерит точка входа через renderCreate. */}
+        {renderCreate && <div>{renderCreate(dayKey)}</div>}
       </div>
     </>
   );
@@ -684,150 +651,6 @@ function EditForm({ lesson, onCancel, onSaved, onUpdate }: EditFormProps) {
         <Button type="submit" size="sm" disabled={saving || !valid}>
           {saving && <Loader2 className="animate-spin" />}
           Сохранить
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          Отмена
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-interface CreateFormProps {
-  defaultDate: string;
-  streams: Stream[];
-  onCreate?: (data: CalendarCreateData) => Promise<void> | void;
-  onCancel: () => void;
-  onCreated: () => void;
-}
-
-function CreateForm({ defaultDate, streams, onCreate, onCancel, onCreated }: CreateFormProps) {
-  const [streamId, setStreamId] = useState(streams[0]?.id ?? '');
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState(defaultDate);
-  const [startTime, setStartTime] = useState('');
-  const [status, setStatus] = useState<LessonStatus>('planned');
-  const [notes, setNotes] = useState('');
-  const [meetingUrl, setMeetingUrl] = useState('');
-  const [creating, setCreating] = useState(false);
-
-  // «Запланирован» требует даты.
-  const plannedWithoutDate = status === 'planned' && !date;
-  const valid = streamId && title.trim() && !plannedWithoutDate;
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!onCreate || !valid) return;
-    setCreating(true);
-    try {
-      await onCreate({
-        streamId,
-        title: title.trim(),
-        date,
-        startTime: startTime || null,
-        status,
-        meetingUrl: meetingUrl.trim() || null,
-        notes: notes.trim() || null,
-      });
-      onCreated();
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border bg-card p-3">
-      <p className="text-sm font-medium">Новый урок</p>
-      {streams.length > 1 && (
-        <Field>
-          <FieldLabel htmlFor="new-stream">Группа</FieldLabel>
-          <Select value={streamId} onValueChange={setStreamId}>
-            <SelectTrigger id="new-stream" className="w-full">
-              <SelectValue placeholder="Выберите группу" />
-            </SelectTrigger>
-            <SelectContent>
-              {streams.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name} {s.status === 'archived' ? '(архив)' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-      <Field>
-        <FieldLabel htmlFor="new-title">Название урока</FieldLabel>
-        <Input
-          id="new-title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Название нового урока"
-          required
-        />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field>
-          <FieldLabel htmlFor="new-date">Дата</FieldLabel>
-          <DatePicker
-            id="new-date"
-            value={date}
-            onChange={(v) => setDate(v ?? '')}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="new-time">Время начала</FieldLabel>
-          <Input
-            id="new-time"
-            type="time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-          />
-        </Field>
-      </div>
-      <Field>
-        <FieldLabel htmlFor="new-status">Статус</FieldLabel>
-        <Select value={status} onValueChange={(v) => setStatus(v as LessonStatus)}>
-          <SelectTrigger id="new-status" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MANUAL_STATUS_ORDER.map((s) => (
-              <SelectItem key={s} value={s}>
-                {LESSON_STATUS_LABELS[s]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {plannedWithoutDate && (
-          <p className="text-xs text-destructive">
-            Для статуса «Запланирован» нужно указать дату.
-          </p>
-        )}
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="new-url">Ссылка на созвон</FieldLabel>
-        <Input
-          id="new-url"
-          type="url"
-          value={meetingUrl}
-          onChange={(e) => setMeetingUrl(e.target.value)}
-          placeholder="https://zoom.us/j/..."
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="new-notes">Тезисы</FieldLabel>
-        <Textarea
-          id="new-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Краткое описание того, что будет на уроке..."
-          rows={3}
-        />
-      </Field>
-      <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={creating || !valid}>
-          {creating && <Loader2 className="animate-spin" />}
-          Создать
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Отмена
