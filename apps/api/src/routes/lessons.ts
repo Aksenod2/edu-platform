@@ -849,7 +849,13 @@ export async function lessonRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Урок не найден' });
       }
 
-      // Если фронт прислал streamId — приоритетно проверяем его, иначе перебираем все.
+      // Приоритет — у явно переданного streamId (это активный таб студента на фронте).
+      // Если фронт прислал streamId — сужаем кандидатов ТОЛЬКО до него (при условии,
+      // что студент в нём зачислён). Если переданный streamId невалиден (студент в нём
+      // не состоит) — candidateStreamIds окажется пустым → 404 ниже: чужой поток НЕ
+      // подставляется молча, контент чужого потока не утекает.
+      // Если streamId не передан — это лишь ДЕФОЛТ-таб; перебираем все потоки студента,
+      // но детерминированно (см. orderBy ниже). Основной путь — явный streamId с фронта.
       const candidateStreamIds = streamId
         ? enrolledStreamIds.filter((sid) => sid === streamId)
         : enrolledStreamIds;
@@ -859,12 +865,20 @@ export async function lessonRoutes(app: FastifyInstance) {
       }
 
       // Session этого урока в потоках студента (несут видимость/расписание).
+      // orderBy обязателен: без него порядок findMany не определён, и при отсутствии
+      // streamId выбор «первого недрафтового» был бы недетерминированным — студент в
+      // двух потоках мог получить контекст случайного потока (баг #158). Сортируем по
+      // createdAt (а потом по streamId как тай-брейк), чтобы дефолт-таб был стабильным.
+      // Когда streamId передан валидно — кандидат ровно один, выбор однозначен.
       const candidateSessions = await prisma.session.findMany({
         where: { lessonId: id, streamId: { in: candidateStreamIds } },
         select: { streamId: true, ...sessionSelect },
+        orderBy: [{ createdAt: 'asc' }, { streamId: 'asc' }],
       });
 
-      // Студенту виден урок только через недрафтовую Session.
+      // Студенту виден урок только через недрафтовую Session. При переданном streamId
+      // кандидат один — если его Session черновик/отсутствует, visibleSession === null
+      // → 404 (не отдаём контент потока, недоступного студенту по этому уроку).
       const visibleSession =
         candidateSessions.find((s) => s.status !== 'draft') ?? null;
 
