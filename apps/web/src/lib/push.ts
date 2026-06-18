@@ -1,6 +1,5 @@
 /**
  * Web Push subscription helpers.
- * Requires NEXT_PUBLIC_VAPID_PUBLIC_KEY env var for push to work.
  */
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -22,9 +21,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export async function subscribeToPush(
   registration: ServiceWorkerRegistration,
+  vapidKey: string,
 ): Promise<PushSubscription | null> {
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  if (!vapidKey) return null;
   try {
     const existing = await registration.pushManager.getSubscription();
     if (existing) return existing;
@@ -75,6 +73,18 @@ export const PUSH_DENIED_KEY = 'push_permission_denied';
 
 export type EnablePushResult = 'subscribed' | 'denied' | 'unsupported' | 'error';
 
+/** Сетевой шаг не должен висеть вечно — гонка с таймаутом ~15с. */
+const NETWORK_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT_MS),
+    ),
+  ]);
+}
+
 /**
  * Полная цепочка включения web-push: запрос разрешения → регистрация SW →
  * подписка → сохранение на сервере. Запрос разрешения делается СИНХРОННО в
@@ -102,10 +112,26 @@ export async function enablePush(accessToken: string): Promise<EnablePushResult>
   }
   if (permission !== 'granted') return 'error';
 
+  // VAPID public key берём с сервера (рантайм-env), а не из build-time NEXT_PUBLIC_*.
+  let vapidKey: string | null;
+  try {
+    const { getVapidPublicKey } = await import('./api');
+    vapidKey = await withTimeout(getVapidPublicKey(accessToken));
+  } catch {
+    return 'error';
+  }
+  if (!vapidKey) {
+    console.error('Push: VAPID public key не настроен на сервере');
+    return 'error';
+  }
+
   const registration = await registerServiceWorker();
   if (!registration) return 'error';
 
-  const subscription = await subscribeToPush(registration);
+  // Ждём активации SW — иначе первая подписка может не создаться.
+  await navigator.serviceWorker.ready;
+
+  const subscription = await subscribeToPush(registration, vapidKey);
   if (!subscription) {
     if (typeof window !== 'undefined' && Notification.permission === 'denied') {
       window.localStorage.setItem(PUSH_DENIED_KEY, 'true');
@@ -119,10 +145,12 @@ export async function enablePush(accessToken: string): Promise<EnablePushResult>
 
   try {
     const { savePushSubscription } = await import('./api');
-    await savePushSubscription(accessToken, {
-      endpoint: raw.endpoint,
-      keys: { p256dh: raw.keys.p256dh, auth: raw.keys.auth },
-    });
+    await withTimeout(
+      savePushSubscription(accessToken, {
+        endpoint: raw.endpoint,
+        keys: { p256dh: raw.keys.p256dh, auth: raw.keys.auth },
+      }),
+    );
   } catch {
     return 'error';
   }
