@@ -155,7 +155,7 @@ function StudentLessonsContent() {
             return (
               <Link
                 key={lesson.id}
-                href={`/dashboard/lessons/${lesson.id}`}
+                href={`/dashboard/lessons/${lesson.id}${selectedStreamId ? `?streamId=${selectedStreamId}` : ''}`}
                 className="no-underline"
               >
                 <Card
