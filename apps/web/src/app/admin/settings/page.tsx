@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Upload, Trash2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Loader2, Upload, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -18,11 +18,38 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { PushToggle } from '@/components/push-toggle';
 import { InstallAppButton } from '@/components/install-instructions';
+import { NotificationSettings } from '@/components/notification-settings';
 import { cn } from '@platform/ui/lib/utils';
 
+// Версия приложения из build-арга (см. app-sidebar). В dev — 'dev'.
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev';
+
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+// Заголовок секции в едином стиле страницы настроек.
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
+        {title}
+      </h2>
+      {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+    </div>
+  );
+}
 
 function PaymentSettingsSection() {
   const { accessToken } = useAuth();
@@ -115,14 +142,10 @@ function PaymentSettingsSection() {
 
   return (
     <section className="mb-8">
-      <div className="mb-4">
-        <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
-          Оплата
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Реквизиты для перевода — студенты видят их на странице «Баланс»
-        </p>
-      </div>
+      <SectionHeading
+        title="Оплата"
+        description="Реквизиты для перевода — студенты видят их на странице «Баланс»"
+      />
 
       {error ? (
         <Card className="border-destructive p-4">
@@ -246,63 +269,112 @@ interface SettingRow {
   badge?: string;
 }
 
-function SettingsSection({
-  title,
-  description,
-  rows,
-  footer,
-}: {
-  title: string;
-  description?: string;
-  rows: SettingRow[];
-  footer?: React.ReactNode;
-}) {
+// Свёрнутый блок «О системе» — справочная информация без действий.
+function AboutSystemSection() {
+  const [open, setOpen] = useState(false);
+
+  const rows: { group: string; items: SettingRow[] }[] = [
+    {
+      group: 'Платформа',
+      items: [
+        { label: 'Название', value: 'Обучающая платформа' },
+        { label: 'Версия приложения', value: APP_VERSION, mono: true },
+        { label: 'Версия API', value: 'v1', mono: true },
+        {
+          label: 'Окружение',
+          value: process.env.NODE_ENV ?? 'production',
+          mono: true,
+          badge: process.env.NODE_ENV === 'development' ? 'DEV' : undefined,
+        },
+      ],
+    },
+    {
+      group: 'Аутентификация',
+      items: [
+        { label: 'Метод', value: 'JWT + Refresh Token' },
+        { label: 'Время жизни сессии', value: '15 мин / 30 дней', mono: true },
+        { label: 'Хеширование паролей', value: 'bcrypt', mono: true },
+        { label: 'Приглашения по email', value: 'Включено' },
+      ],
+    },
+    {
+      group: 'Хранилище',
+      items: [
+        { label: 'Провайдер', value: 'S3-совместимое', mono: true },
+        { label: 'Максимальный размер файла', value: '50 MB', mono: true },
+        { label: 'Подписанные URL', value: 'Да, TTL 1 час', mono: true },
+      ],
+    },
+  ];
+
   return (
     <section className="mb-8">
-      <div className="mb-4">
-        <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
-          {title}
-        </h2>
-        {description && (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <Card className="overflow-hidden p-0">
-        {rows.map((row, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              'flex items-center justify-between px-4 py-3',
-              idx < rows.length - 1 && 'border-b',
-            )}
-          >
-            <span className="text-sm text-muted-foreground">{row.label}</span>
-            <div className="flex items-center gap-2">
-              {row.badge && <Badge variant="outline">{row.badge}</Badge>}
-              <span
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <Card className="overflow-hidden p-0">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <div>
+                <span className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
+                  О системе
+                </span>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Справочная информация о платформе
+                </p>
+              </div>
+              <ChevronDown
                 className={cn(
-                  'text-sm',
-                  row.mono ? 'font-mono text-xs text-muted-foreground' : 'text-foreground',
+                  'size-4 text-muted-foreground transition-transform',
+                  open && 'rotate-180',
                 )}
-              >
-                {row.value}
-              </span>
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t">
+              {rows.map((section) => (
+                <div key={section.group}>
+                  <p className="bg-muted px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {section.group}
+                  </p>
+                  {section.items.map((row, idx) => (
+                    <div
+                      key={row.label}
+                      className={cn(
+                        'flex items-center justify-between gap-2 px-4 py-3',
+                        idx < section.items.length - 1 && 'border-b',
+                      )}
+                    >
+                      <span className="text-sm text-muted-foreground">{row.label}</span>
+                      <div className="flex items-center gap-2">
+                        {row.badge && <Badge variant="outline">{row.badge}</Badge>}
+                        <span
+                          className={cn(
+                            'text-right text-sm',
+                            row.mono
+                              ? 'font-mono text-xs text-muted-foreground'
+                              : 'text-foreground',
+                          )}
+                        >
+                          {row.value}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
-        {footer && (
-          <div className="px-4 py-3 border-t bg-muted">
-            {footer}
-          </div>
-        )}
-      </Card>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </section>
   );
 }
 
 export default function AdminSettingsPage() {
   const router = useRouter();
-  const [buildTime] = useState(() => new Date().toISOString());
 
   return (
     <>
@@ -313,54 +385,21 @@ export default function AdminSettingsPage() {
         </div>
       </div>
 
-      <SettingsSection
-        title="Платформа"
-        rows={[
-          { label: 'Название', value: 'Обучающая платформа' },
-          { label: 'Версия API', value: 'v1', mono: true },
-          { label: 'Окружение', value: process.env.NODE_ENV ?? 'production', mono: true, badge: process.env.NODE_ENV === 'development' ? 'DEV' : undefined },
-          { label: 'Последнее обновление страницы', value: buildTime, mono: true },
-        ]}
-      />
+      {/* ── Уведомления (функционально, вверху) ── */}
+      <section className="mb-8 mt-4">
+        <SectionHeading
+          title="Уведомления"
+          description="Какие события и по каким каналам приходят вам как администратору"
+        />
+        <NotificationSettings />
+      </section>
 
-      <SettingsSection
-        title="Аутентификация"
-        description="Параметры сессий и безопасности"
-        rows={[
-          { label: 'Метод аутентификации', value: 'JWT + Refresh Token' },
-          { label: 'Время жизни сессии', value: '15 мин (access) / 30 дней (refresh)', mono: true },
-          { label: 'Хеширование паролей', value: 'bcrypt', mono: true },
-          { label: 'Приглашения по email', value: 'Включено' },
-        ]}
-      />
-
-      <SettingsSection
-        title="Уведомления"
-        description="Категории уведомлений и персональные настройки"
-        rows={[
-          { label: 'Категории', value: 'урок / задание / дедлайн / сообщение', mono: true },
-        ]}
-        footer={
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              Настройки уведомлений для пользователей — в карточках студентов
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/students')}>
-              Перейти
-            </Button>
-          </div>
-        }
-      />
-
+      {/* Push на этом устройстве */}
       <section className="mb-8">
-        <div className="mb-4">
-          <h2 className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
-            Push-уведомления
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Включите push на этом устройстве, чтобы получать оповещения вне платформы
-          </p>
-        </div>
+        <SectionHeading
+          title="Push-уведомления"
+          description="Включите push на этом устройстве, чтобы получать оповещения вне платформы"
+        />
         <Card>
           <CardContent>
             <PushToggle />
@@ -371,82 +410,47 @@ export default function AdminSettingsPage() {
         </Card>
       </section>
 
-      <SettingsSection
-        title="Хранилище"
-        description="S3-совместимое хранилище файлов (MinIO)"
-        rows={[
-          { label: 'Провайдер', value: 'MinIO (S3-compatible)', mono: true },
-          { label: 'Загрузка файлов', value: 'Включено' },
-          { label: 'Максимальный размер файла', value: '50 MB', mono: true },
-          { label: 'Подписанные URL', value: 'Да, TTL 1 час', mono: true },
-        ]}
-      />
-
-      <SettingsSection
-        title="API-интеграция"
-        description="Внешний доступ через API-ключи"
-        rows={[
-          { label: 'API-прокси', value: '/api-proxy', mono: true },
-          { label: 'Аутентификация', value: 'Bearer token (API-ключ)' },
-          { label: 'Управление ключами', value: 'В разделе API-ключи' },
-        ]}
-        footer={
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              Создать и управлять API-ключами
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/api-keys')}>
-              Перейти
-            </Button>
-          </div>
-        }
-      />
-
-      <SettingsSection
-        title="Интеграции"
-        description="Внешние сервисы преподавателя — у каждого свои ключи"
-        rows={[
-          { label: 'Zoom', value: 'Создание ссылок на занятия, записи и итоги' },
-          { label: 'Telegram', value: 'Уведомления преподавателю в чат бота' },
-        ]}
-        footer={
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              Настроить интеграции
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/system/zoom')}>
-              Zoom
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/admin/system/telegram')}>
-              Telegram
-            </Button>
-          </div>
-        }
-      />
-
-      <PaymentSettingsSection />
-
-      {/* Danger zone */}
+      {/* Telegram-бот */}
       <section className="mb-8">
-        <div className="mb-4">
-          <h2 className="text-xs font-bold tracking-widest uppercase text-destructive">
-            Опасная зона
-          </h2>
-        </div>
-        <Card className="border-destructive p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground mb-1">
-                Сбросить данные платформы
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Необратимое удаление всех данных. Доступно только через прямой доступ к БД.
-              </p>
-            </div>
-            <Badge variant="destructive">Только для суперадмина</Badge>
-          </div>
+        <SectionHeading
+          title="Telegram-бот"
+          description="Дублирование уведомлений преподавателю в чат бота"
+        />
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Подключение и настройка бота — в отдельном разделе.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/admin/system/telegram')}
+            >
+              Настроить Telegram-бота
+              <ArrowRight />
+            </Button>
+          </CardContent>
         </Card>
       </section>
+
+      {/* ── Оплата (функционально) ── */}
+      <PaymentSettingsSection />
+
+      {/* Указатель на интеграции (Zoom/Telegram/API) — они в разделе «Система» */}
+      <section className="mb-8">
+        <SectionHeading title="Интеграции" />
+        <Card>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Внешние сервисы (Zoom, Telegram, API-ключи) настраиваются в разделе «Система»
+              в боковом меню.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── О системе (справка, свёрнута внизу) ── */}
+      <AboutSystemSection />
     </>
   );
 }
