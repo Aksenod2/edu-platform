@@ -13,7 +13,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FieldLabel } from '@/components/ui/field';
+import { FieldDescription, FieldLabel } from '@/components/ui/field';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { GraduationCap, Info } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -168,7 +170,26 @@ export function LessonVideosManager({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
-      <FieldLabel>Видео урока</FieldLabel>
+      <div className="flex flex-col gap-1">
+        <FieldLabel className="flex items-center gap-2">
+          <GraduationCap className="size-4 shrink-0 text-muted-foreground" />
+          Учебное видео урока
+        </FieldLabel>
+        <FieldDescription>
+          Методическое видео, которое студент смотрит ДО занятия. Это НЕ запись
+          созвона.
+        </FieldDescription>
+      </div>
+
+      {/* Явное предупреждение, чтобы запись созвона не грузили сюда по ошибке. */}
+      <Alert>
+        <Info className="size-4" />
+        <AlertTitle>Сюда не загружают запись созвона</AlertTitle>
+        <AlertDescription>
+          Это методическое видео до занятия. Запись прошедшего созвона загружайте в
+          раздел «Расписание» → «Запись занятия», а не сюда.
+        </AlertDescription>
+      </Alert>
 
       {videos.length === 0 ? (
         <p className="text-xs text-muted-foreground">Видео не добавлены.</p>
