@@ -3,16 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Calendar,
-  CheckCircle2,
   Clock,
   Download,
   ExternalLink,
   Loader2,
-  PlayCircle,
   RefreshCw,
   ScrollText,
   Video,
-  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@platform/ui/lib/utils';
@@ -32,17 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { BackButton } from '@/components/back-button';
 import { MarkdownContent } from '@/components/markdown/markdown-content';
 import { LessonStatusBadge } from '@/components/schedule/lesson-status-badge';
@@ -58,6 +44,7 @@ import {
 import { parseLocalDate } from '@/components/schedule/utils';
 import { parseVideoEmbed } from '@/lib/video-embed';
 import { MEETING_FALLBACK_TITLE } from '@/components/meetings/utils';
+import { MeetingStatusControl } from '@/components/meetings/meeting-status-control';
 
 /**
  * Детальная страница встречи 1-на-1 (общий компонент для админа и студента).
@@ -279,80 +266,40 @@ export function MeetingDetail({
               </div>
             )}
 
+            {/* Блок действий — зеркало карточки занятия (lesson-view): управление
+                статусом живёт в едином контроле (бейдж-дропдаун + одна primary-
+                кнопка «Провести»), а «Присоединиться» — вторичное действие
+                (secondary). Так нет двух конкурирующих чёрных кнопок: иерархия
+                чёткая и «функции выглядят одинаково» с занятием. */}
             <div className="mt-1 flex flex-wrap items-center gap-2">
+              {/* Управление встречей (Начать / Провести / Отменить + откаты не
+                  предусмотрены) — только владелец-препод. От «Проведена» зависит
+                  подтяжка записи/итогов/транскрипта. Студенту контрол не показываем
+                  (внутри сам прячется для done/cancelled). */}
+              {isAdmin && (
+                <MeetingStatusControl
+                  status={meeting.status}
+                  pending={statusPending || cancelling}
+                  onStatus={(next) => void handleStatus(next)}
+                  onCancel={handleCancel}
+                />
+              )}
+              {/* Присоединиться к запланированной/идущей встрече — вторичное
+                  действие (secondary), как «Присоединиться к созвону» у занятия. */}
               {canJoin && (
-                <Button asChild className="min-h-11 w-full sm:w-fit">
+                <Button
+                  asChild
+                  variant="secondary"
+                  className="min-h-9 w-full sm:w-fit"
+                >
                   <a href={meeting.meetingUrl!} target="_blank" rel="noopener noreferrer">
-                    <Video aria-hidden="true" />
+                    <Video className="size-4" aria-hidden="true" />
                     {meeting.status === 'live'
                       ? 'Присоединиться — встреча идёт'
                       : 'Присоединиться к встрече'}
+                    <ExternalLink className="size-4" aria-hidden="true" />
                   </a>
                 </Button>
-              )}
-              {/* Проведение встречи — только владелец-препод. «Начать» (planned→live)
-                  и «Провести» (planned|live→done). От «Проведена» зависит подтяжка
-                  записи/итогов/транскрипта. Студенту этих кнопок не показываем. */}
-              {isAdmin && meeting.status === 'planned' && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleStatus('live')}
-                  disabled={statusPending}
-                  className="min-h-11"
-                >
-                  {statusPending ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <PlayCircle aria-hidden="true" />
-                  )}
-                  Начать
-                </Button>
-              )}
-              {isAdmin && (meeting.status === 'planned' || meeting.status === 'live') && (
-                <Button
-                  type="button"
-                  onClick={() => void handleStatus('done')}
-                  disabled={statusPending}
-                  className="min-h-11"
-                >
-                  {statusPending ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <CheckCircle2 aria-hidden="true" />
-                  )}
-                  Провести
-                </Button>
-              )}
-              {/* Отмена — только админ-преподаватель, только для запланированной встречи. */}
-              {isAdmin && meeting.status === 'planned' && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" disabled={cancelling} className="min-h-11">
-                      {cancelling ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <XCircle aria-hidden="true" />
-                      )}
-                      Отменить встречу
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Отменить встречу?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Встреча будет отменена, а связанный созвон Zoom — удалён.
-                        Студент увидит её как отменённую.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Закрыть</AlertDialogCancel>
-                      <AlertDialogAction variant="destructive" onClick={handleCancel}>
-                        Отменить встречу
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               )}
             </div>
           </div>
