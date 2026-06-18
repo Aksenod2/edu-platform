@@ -1,15 +1,16 @@
 import type { FastifyInstance } from 'fastify';
-import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { prisma, type NotificationType } from '@platform/db';
-import {
-  CATEGORY_NOTIFICATION_TYPES,
-  NOTIFICATION_CATEGORIES,
-  notificationPreferencesResponseSchema,
-  updateNotificationPreferencesSchema,
-  type NotificationCategory,
-  type NotificationPreferencesResponse,
-} from '@platform/shared/contracts';
 import { authenticate } from '../middleware/auth.js';
+
+const ALL_NOTIFICATION_TYPES: NotificationType[] = [
+  'lesson_published',
+  'assignment_created',
+  'deadline_reminder',
+  'thread_entry',
+  'assignment_submitted',
+  'assignment_reviewed',
+  'schedule_entry_created',
+];
 
 export async function notificationRoutes(app: FastifyInstance) {
   // onRequest (а не preHandler): request.user должен быть установлен ДО
@@ -93,102 +94,69 @@ export async function notificationRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
-  // ── Матрица настроек «категория × Email/Push» (issue #172, контракт #174) ───
-  //
-  // Контракт фронт↔бэк — ОДНА zod-схема из @platform/shared/contracts. Продуктовая
-  // модель здесь — КАТЕГОРИЯ (строка матрицы); хранение — per-NotificationType
-  // (`NotificationPreference`, читает lib/notifications.ts при отправке). Карта
-  // CATEGORY_NOTIFICATION_TYPES раскрывает категорию в её типы: при PATCH один флаг
-  // канала пишется во ВСЕ типы категории, при GET типы сворачиваются обратно.
+  // GET /notification-preferences — get user preferences (all types)
+  app.get('/notification-preferences', async (request, reply) => {
+    const userId = request.user!.userId;
 
-  /**
-   * Собирает category-based ответ для пользователя: читает все per-type строки,
-   * для каждой категории берёт состояние её типов (все типы категории движутся
-   * в лок-степ — представителя достаточно; дефолт ВКЛ, если строки нет).
-   */
-  async function readCategoryPreferences(
-    userId: string,
-  ): Promise<NotificationPreferencesResponse> {
-    const matrixTypes = Object.values(CATEGORY_NOTIFICATION_TYPES).flat() as NotificationType[];
-    const existing = await prisma.notificationPreference.findMany({
-      where: { userId, type: { in: matrixTypes } },
-    });
-    const byType = new Map(existing.map((p) => [p.type, p]));
+    const existing = await prisma.notificationPreference.findMany({ where: { userId } });
+    const existingMap = new Map(existing.map((p) => [p.type, p]));
 
-    const preferences = NOTIFICATION_CATEGORIES.map((category) => {
-      const types = CATEGORY_NOTIFICATION_TYPES[category] as readonly NotificationType[];
-      // Email/Push включён для категории, если ВКЛ хотя бы у одного её типа
-      // (типы пишутся вместе, поэтому на практике все равны; some — безопасный
-      // дефолт при частично отсутствующих строках, дефолт типа — ВКЛ).
-      const channelEmail = types.some((t) => byType.get(t)?.emailEnabled ?? true);
-      const channelPush = types.some((t) => byType.get(t)?.pushEnabled ?? true);
-      return { category, channelEmail, channelPush };
+    // Return defaults for types not yet configured
+    const preferences = ALL_NOTIFICATION_TYPES.map((type) => {
+      const pref = existingMap.get(type);
+      return {
+        type,
+        emailEnabled: pref?.emailEnabled ?? true,
+        pushEnabled: pref?.pushEnabled ?? true,
+        inAppEnabled: pref?.inAppEnabled ?? true,
+      };
     });
 
     return { preferences };
-  }
+  });
 
-  // Типизированный инстанс (zod type provider): даёт вывод типа request.body из
-  // schema.body для роутов матрицы. Хуки/префиксы наследуются от app.
-  const typed = app.withTypeProvider<ZodTypeProvider>();
+  // PATCH /notification-preferences — update user preferences
+  app.patch('/notification-preferences', async (request, reply) => {
+    const userId = request.user!.userId;
+    const body = request.body as Array<{
+      type: NotificationType;
+      emailEnabled?: boolean;
+      pushEnabled?: boolean;
+      inAppEnabled?: boolean;
+    }>;
 
-  // GET /notification-preferences — настройки матрицы по категориям.
-  typed.get(
-    '/notification-preferences',
-    { schema: { response: { 200: notificationPreferencesResponseSchema } } },
-    async (request) => {
-      const userId = request.user!.userId;
-      return readCategoryPreferences(userId);
-    },
-  );
+    if (!Array.isArray(body) || body.length === 0) {
+      return reply.status(400).send({ error: 'Тело запроса должно быть массивом настроек' });
+    }
 
-  // PATCH /notification-preferences — обновить категории матрицы.
-  // Тело валидируется zod-схемой из shared (validatorCompiler) — несовпадение
-  // формы становится 400 ДО хендлера, без ручного `Array.isArray`.
-  typed.patch(
-    '/notification-preferences',
-    {
-      schema: {
-        body: updateNotificationPreferencesSchema,
-        response: { 200: notificationPreferencesResponseSchema },
-      },
-    },
-    async (request) => {
-      const userId = request.user!.userId;
-      const { preferences } = request.body;
-
-      // Раскрываем каждую категорию в её NotificationType и апсертим переданные
-      // каналы во все типы категории (частичное обновление: незаданный канал не трогаем).
-      const upserts: Array<Promise<unknown>> = [];
-      for (const item of preferences) {
-        const types = CATEGORY_NOTIFICATION_TYPES[item.category as NotificationCategory] as
-          | readonly NotificationType[]
-          | undefined;
-        if (!types) continue;
-        for (const type of types) {
-          upserts.push(
-            prisma.notificationPreference.upsert({
-              where: { userId_type: { userId, type } },
-              create: {
-                userId,
-                type,
-                emailEnabled: item.channelEmail ?? true,
-                pushEnabled: item.channelPush ?? true,
-                inAppEnabled: true,
-              },
-              update: {
-                ...(item.channelEmail !== undefined ? { emailEnabled: item.channelEmail } : {}),
-                ...(item.channelPush !== undefined ? { pushEnabled: item.channelPush } : {}),
-              },
-            }),
-          );
-        }
+    for (const item of body) {
+      if (!ALL_NOTIFICATION_TYPES.includes(item.type)) {
+        return reply.status(400).send({ error: `Неизвестный тип уведомления: ${item.type}` });
       }
-      await Promise.all(upserts);
+    }
 
-      return readCategoryPreferences(userId);
-    },
-  );
+    const upserted = await Promise.all(
+      body.map((item) =>
+        prisma.notificationPreference.upsert({
+          where: { userId_type: { userId, type: item.type } },
+          create: {
+            userId,
+            type: item.type,
+            emailEnabled: item.emailEnabled ?? true,
+            pushEnabled: item.pushEnabled ?? true,
+            inAppEnabled: item.inAppEnabled ?? true,
+          },
+          update: {
+            ...(item.emailEnabled !== undefined ? { emailEnabled: item.emailEnabled } : {}),
+            ...(item.pushEnabled !== undefined ? { pushEnabled: item.pushEnabled } : {}),
+            ...(item.inAppEnabled !== undefined ? { inAppEnabled: item.inAppEnabled } : {}),
+          },
+        }),
+      ),
+    );
+
+    return { preferences: upserted };
+  });
 
   // ── Настройки напоминаний о занятиях/встречах (issue #169) ─────────────────
   //

@@ -34,12 +34,8 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@platform/ui/lib/utils';
 
-// Категории строк матрицы + псевдо-категория 'system' (всегда вкл, НЕ
-// настраивается и НЕ уходит на бэк — её нет в контракте @platform/shared).
-type RowCategory = NotificationCategory | 'system';
-
 interface CategoryRow {
-  category: RowCategory;
+  category: NotificationCategory;
   label: string;
   description: string;
   roles: ('student' | 'admin')[];
@@ -131,14 +127,13 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
   }, [accessToken]);
 
   const getPref = useCallback(
-    (category: RowCategory): NotificationPreference | undefined =>
+    (category: NotificationCategory): NotificationPreference | undefined =>
       prefs.find((p) => p.category === category),
     [prefs],
   );
 
   const handleToggle = useCallback(
-    (category: RowCategory, channel: 'channelEmail' | 'channelPush', value: boolean) => {
-      if (category === 'system') return; // системные не настраиваются
+    (category: NotificationCategory, channel: 'channelEmail' | 'channelPush', value: boolean) => {
       setPrefs((prev) => {
         const existing = prev.find((p) => p.category === category);
         if (existing) {
@@ -146,45 +141,55 @@ export function NotificationSettings({ renderSaveSlot }: NotificationSettingsPro
             p.category === category ? { ...p, [channel]: value } : p,
           );
         }
-        // Создаём локально, если не пришло с сервера (дефолт второго канала — вкл).
+        // Создаём локально, если не пришло с сервера
         return [
           ...prev,
           {
+            id: `local-${category}`,
+            userId: user?.id ?? '',
             category,
             channelEmail: channel === 'channelEmail' ? value : true,
             channelPush: channel === 'channelPush' ? value : true,
+            updatedAt: new Date().toISOString(),
           },
         ];
       });
     },
-    [],
+    [user],
   );
 
-  const handleGlobalToggle = useCallback((enabled: boolean) => {
-    setPrefs(() =>
-      CATEGORY_ROWS.filter((r) => !r.system).map((r) => ({
-        // r.category здесь — только несистемные (контрактные) категории.
-        category: r.category as NotificationCategory,
-        channelEmail: enabled,
-        channelPush: enabled,
-      })),
-    );
-  }, []);
+  const handleGlobalToggle = useCallback(
+    (enabled: boolean) => {
+      setPrefs((prev) =>
+        CATEGORY_ROWS.filter((r) => !r.system).map((r) => {
+          const existing = prev.find((p) => p.category === r.category);
+          return {
+            id: existing?.id ?? `local-${r.category}`,
+            userId: user?.id ?? '',
+            category: r.category,
+            channelEmail: enabled,
+            channelPush: enabled,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      );
+    },
+    [user],
+  );
 
   const handleSave = useCallback(async () => {
     if (!accessToken) return;
     setSaving(true);
     try {
-      // Шлём согласованную с контрактом форму: { preferences: [{ category,
-      // channelEmail, channelPush }] }. 'system' в prefs не попадает — оно лишь
-      // строка матрицы (RowCategory), но не настраиваемая категория контракта.
-      const preferences = prefs.map((p) => ({
-        category: p.category,
-        channelEmail: p.channelEmail,
-        channelPush: p.channelPush,
-      }));
+      const updates = prefs
+        .filter((p) => p.category !== 'system')
+        .map((p) => ({
+          category: p.category,
+          channelEmail: p.channelEmail,
+          channelPush: p.channelPush,
+        }));
       const [data, savedReminders] = await Promise.all([
-        updateNotificationPreferences(accessToken, { preferences }),
+        updateNotificationPreferences(accessToken, updates),
         updateEventReminderPreferences(accessToken, reminders),
       ]);
       setPrefs(data.preferences);

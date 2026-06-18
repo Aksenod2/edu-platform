@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-production';
 
@@ -119,9 +118,6 @@ const IGNORED = new Set<string>(
 // Поднимаем приложение со всеми роутами (как в server.ts), собирая роуты через onRoute.
 async function collectActualRoutes(): Promise<Set<string>> {
   const app: FastifyInstance = Fastify();
-  // Как в server.ts: zod-компиляторы (есть роуты с zod schema, иначе .ready() падает).
-  app.setValidatorCompiler(validatorCompiler);
-  app.setSerializerCompiler(serializerCompiler);
   const routes = new Set<string>();
 
   app.addHook('onRoute', (routeOptions) => {

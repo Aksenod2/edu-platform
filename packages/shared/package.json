@@ -6,8 +6,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./foreign-email": "./src/foreign-email.ts",
-    "./contracts": "./src/contracts/index.ts"
+    "./foreign-email": "./src/foreign-email.ts"
   },
   "scripts": {
     "lint": "echo 'no lint'",
@@ -15,8 +14,5 @@
   },
   "devDependencies": {
     "typescript": "^5.8.0"
-  },
-  "dependencies": {
-    "zod": "^4.4.3"
   }
 }
