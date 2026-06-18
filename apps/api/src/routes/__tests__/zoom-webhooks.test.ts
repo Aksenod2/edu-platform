@@ -18,6 +18,11 @@ vi.mock('@platform/db', async () => {
         findFirst: vi.fn(),
         updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
       },
+      // Встречи 1-на-1 (#154): fallback-поиск Meeting по zoomMeetingId, когда нет Session.
+      meeting: {
+        findFirst: vi.fn(() => Promise.resolve(null)),
+        updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
+      },
     },
     Prisma: actual.Prisma,
   };
@@ -111,6 +116,8 @@ beforeEach(() => {
   db.zoomWebhookEvent.update.mockResolvedValue({});
   db.session.findFirst.mockResolvedValue(null);
   db.session.updateMany.mockResolvedValue({ count: 1 });
+  db.meeting.findFirst.mockResolvedValue(null);
+  db.meeting.updateMany.mockResolvedValue({ count: 1 });
 });
 
 describe('POST /webhooks/zoom/:webhookId — интеграция и конфиг', () => {
@@ -633,6 +640,117 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     const body = JSON.stringify({
       event: 'recording.completed',
       payload: { object: { id: 7 } },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+    expect(mockProcessRecording).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Fallback на встречу 1-на-1 (Meeting, эпик #154) ─────────────────────────
+//
+// Когда под zoomMeetingId НЕТ Session, роут ищет Meeting и вызывает те же
+// обработчики с kind='meeting'. Посещаемость (pullSessionAttendance) для Meeting
+// НЕ забирается. Если нет ни Session, ни Meeting — событие просто помечается
+// обработанным (обработчики не вызываются).
+describe('POST /webhooks/zoom/:webhookId — fallback на Meeting (встреча 1-на-1)', () => {
+  it('recording.completed: нет Session, есть Meeting → обработка с kind=meeting', async () => {
+    db.session.findFirst.mockResolvedValue(null);
+    db.meeting.findFirst.mockResolvedValue({ id: 'meet-1' });
+
+    const ts = nowTs();
+    const recordingFiles = [
+      { file_type: 'MP4', recording_type: 'shared_screen_with_speaker_view', download_url: 'https://z/r' },
+    ];
+    const body = JSON.stringify({
+      event: 'recording.completed',
+      download_token: 'dl-tok',
+      payload: { object: { id: 55555, recording_files: recordingFiles } },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    expect(db.meeting.findFirst).toHaveBeenCalledWith({
+      where: { zoomMeetingId: '55555' },
+      select: { id: true },
+    });
+    expect(mockProcessRecording).toHaveBeenCalledTimes(1);
+    const arg = mockProcessRecording.mock.calls[0][0];
+    expect(arg.sessionId).toBe('meet-1');
+    expect(arg.kind).toBe('meeting');
+    // Фолбэк-транскрипт тоже с kind=meeting.
+    expect(mockProcessTranscript).toHaveBeenCalledTimes(1);
+    expect(mockProcessTranscript.mock.calls[0][0].kind).toBe('meeting');
+  });
+
+  it('meeting.ended для Meeting: помечает pending с kind=meeting, посещаемость НЕ забирает', async () => {
+    db.session.findFirst.mockResolvedValue(null);
+    db.meeting.findFirst.mockResolvedValue({ id: 'meet-1' });
+
+    const ts = nowTs();
+    const body = JSON.stringify({
+      event: 'meeting.ended',
+      payload: { object: { id: 55555 } },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    expect(mockMarkPending).toHaveBeenCalledWith({ sessionId: 'meet-1', kind: 'meeting' });
+    expect(mockMarkSummaryPending).toHaveBeenCalledWith({ sessionId: 'meet-1', kind: 'meeting' });
+    expect(mockMarkTranscriptPending).toHaveBeenCalledWith({ sessionId: 'meet-1', kind: 'meeting' });
+    // Перевод встречи в done.
+    expect(db.meeting.updateMany).toHaveBeenCalledWith({
+      where: { id: 'meet-1', status: { in: ['planned', 'live'] } },
+      data: { status: 'done' },
+    });
+    // Посещаемость для 1-на-1 НЕ забирается.
+    expect(mockPullAttendance).not.toHaveBeenCalled();
+  });
+
+  it('нет ни Session, ни Meeting → обработчики не вызываются (событие помечено обработанным)', async () => {
+    db.session.findFirst.mockResolvedValue(null);
+    db.meeting.findFirst.mockResolvedValue(null);
+
+    const ts = nowTs();
+    const body = JSON.stringify({
+      event: 'recording.completed',
+      payload: { object: { id: 99999, recording_files: [] } },
     });
     const app = buildApp();
     const res = await app.inject({

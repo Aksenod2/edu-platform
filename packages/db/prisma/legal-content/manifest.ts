@@ -34,6 +34,11 @@ export const LEGAL_VERSIONS_MANIFEST: ReadonlyArray<LegalVersionManifestEntry> =
   { slug: 'requisites', versionNumber: 1, file: 'requisites.v1.md' },
   { slug: 'pd-consent', versionNumber: 1, file: 'pd-consent.v1.md' },
   { slug: 'marketing-consent', versionNumber: 1, file: 'marketing-consent.v1.md' },
+  {
+    slug: 'meeting-recording-consent',
+    versionNumber: 1,
+    file: 'meeting-recording-consent.v1.md',
+  },
 ];
 
 // Каталог с md-файлами — относительно ЭТОГО модуля (а не process.cwd()), чтобы сид

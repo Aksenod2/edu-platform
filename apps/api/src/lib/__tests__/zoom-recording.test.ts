@@ -11,6 +11,13 @@ vi.mock('@platform/db', () => ({
       update: vi.fn(() => Promise.resolve({})),
       updateMany: vi.fn(),
     },
+    // Встречи 1-на-1 (эпик #154): обработчики параметризованы kind='meeting' и
+    // должны писать сюда, а не в session. Те же методы.
+    meeting: {
+      findUnique: vi.fn(),
+      update: vi.fn(() => Promise.resolve({})),
+      updateMany: vi.fn(),
+    },
     lessonTeacher: {
       findMany: vi.fn(() => Promise.resolve([])),
     },
@@ -1326,5 +1333,96 @@ describe('processSummaryForSession — статус итогов (summaryStatus)
       meetingUuid: null,
     });
     expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+  });
+});
+
+// ─── Параметризация kind='meeting' (эпик «Встречи 1-на-1», #154) ────────────
+//
+// Обработчики приняли параметр kind ('session'|'meeting', дефолт 'session'). При
+// kind='meeting' ВСЕ операции должны идти в prisma.meeting, а prisma.session НЕ
+// затрагиваться (и наоборот — дефолт не пишет в meeting). Поля моделей идентичны.
+describe('параметризация kind=meeting → пишет в prisma.meeting, не в session', () => {
+  const params = {
+    sessionId: 'm-1',
+    meetingId: 'mtg-1',
+    teacherUserId: 'teacher-1',
+  };
+
+  function stubFetchOk(): () => void {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, body: { fake: 'stream' } }),
+    ) as never;
+    return () => {
+      globalThis.fetch = original;
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('processRecordingForSession(kind=meeting): запись пишется в meeting, session не трогаем', async () => {
+    db.meeting.findUnique.mockResolvedValue({ id: 'm-1', videoKey: null });
+    db.meeting.updateMany.mockResolvedValue({ count: 1 });
+    db.meeting.update.mockResolvedValue({});
+    mockUpload.mockResolvedValue({ key: 'recordings/new.mp4' } as never);
+    const restoreFetch = stubFetchOk();
+
+    try {
+      await processRecordingForSession({
+        ...params,
+        kind: 'meeting',
+        payloadFiles: [
+          {
+            file_type: 'MP4',
+            recording_type: 'shared_screen_with_speaker_view',
+            download_url: 'https://zoom.us/rec/x',
+          },
+        ],
+      });
+    } finally {
+      restoreFetch();
+    }
+
+    expect(db.meeting.update).toHaveBeenLastCalledWith({
+      where: { id: 'm-1' },
+      data: { videoKey: 'recordings/new.mp4', recordingStatus: 'ready', recordingError: null },
+    });
+    // Модель занятий не затронута.
+    expect(db.session.findUnique).not.toHaveBeenCalled();
+    expect(db.session.update).not.toHaveBeenCalled();
+    expect(db.session.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('processSummaryForSession(kind=meeting): итоги пишутся в meeting', async () => {
+    db.meeting.findUnique.mockResolvedValue({ id: 'm-1', summarySource: null });
+    db.meeting.update.mockResolvedValue({});
+
+    await processSummaryForSession({
+      ...params,
+      kind: 'meeting',
+      payloadSummary: { summary_overview: 'итоги встречи' },
+    });
+
+    expect(db.meeting.update).toHaveBeenCalledWith({
+      where: { id: 'm-1' },
+      data: { summary: 'итоги встречи', summarySource: 'zoom_ai', summaryStatus: 'ready' },
+    });
+    expect(db.session.update).not.toHaveBeenCalled();
+  });
+
+  it('markRecordingPending(kind=meeting): updateMany идёт в meeting, не в session', async () => {
+    db.meeting.updateMany.mockResolvedValue({ count: 1 });
+    await markRecordingPending({ sessionId: 'm-1', kind: 'meeting' });
+    expect(db.meeting.updateMany).toHaveBeenCalledTimes(1);
+    expect(db.session.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('ДЕФОЛТ (без kind): markRecordingPending пишет в session, meeting не трогаем', async () => {
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    await markRecordingPending({ sessionId: 'sess-1' });
+    expect(db.session.updateMany).toHaveBeenCalledTimes(1);
+    expect(db.meeting.updateMany).not.toHaveBeenCalled();
   });
 });

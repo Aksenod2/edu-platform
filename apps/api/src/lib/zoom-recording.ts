@@ -21,6 +21,37 @@ import { uploadStream } from './s3.js';
 //   - 'failed'     — реальная ошибка, статус в БД=failed (функция при этом бросает).
 export type ProcessOutcome = 'ready' | 'processing' | 'failed';
 
+// Сущность, чью запись/итоги/транскрипт обрабатываем. 'session' — обычное занятие
+// потока (Session), 'meeting' — встреча 1-на-1 (Meeting, эпик #154). Поля Zoom/записи/
+// итогов/транскрипта у обеих моделей ИДЕНТИЧНЫ по именам и типам, поэтому один набор
+// обработчиков работает для обеих — различается лишь Prisma-делегат. Дефолт 'session'
+// сохраняет прежнее поведение всего существующего кода занятий (он kind не передаёт).
+export type RecordingKind = 'session' | 'meeting';
+
+// Минимальный структурный интерфейс делегата Prisma, которым пользуются обработчики:
+// только findUnique/update/updateMany с нужными нам полями. Session и Meeting оба ему
+// удовлетворяют (поля идентичны). Параметры типизированы как Prisma-аргументы (any в
+// рамках узкого хелпера) — данные/where, которые мы передаём, валидны для обеих моделей.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+interface RecordingModelDelegate {
+  findUnique(args: { where: { id: string }; select: Record<string, boolean> }): Promise<any>;
+  update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<any>;
+  updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<{
+    count: number;
+  }>;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// Возвращает Prisma-делегат нужной модели по kind. Делегаты Session и Meeting имеют
+// совпадающие сигнатуры по используемым здесь полям (findUnique/update/updateMany с
+// одинаковым набором select/where/data) — поэтому работаем через узкий структурный тип.
+// Это и есть ЕДИНСТВЕННАЯ точка ветвления session↔meeting: ниже весь код общий.
+function modelFor(kind: RecordingKind): RecordingModelDelegate {
+  return (kind === 'meeting'
+    ? prisma.meeting
+    : prisma.session) as unknown as RecordingModelDelegate;
+}
+
 // Фоновая (асинхронная) обработка вебхуков Zoom: выгрузка записи занятия в S3 и
 // сбор AI-резюме. Вызывается роутом вебхука fire-and-forget — функции сами
 // обновляют статусы Session и НЕ бросают наружу (ошибку фиксируем в recordingError).
@@ -181,6 +212,9 @@ export async function processRecordingForSession(params: {
   retryDelaysMs?: number[];
   // Функция паузы (для тестов — мгновенная). По умолчанию setTimeout.
   sleep?: (ms: number) => Promise<void>;
+  // Сущность: занятие (Session) или встреча 1-на-1 (Meeting). Дефолт 'session' —
+  // существующий код занятий kind не передаёт и работает как раньше.
+  kind?: RecordingKind;
 }): Promise<ProcessOutcome> {
   const {
     sessionId,
@@ -190,9 +224,11 @@ export async function processRecordingForSession(params: {
     downloadToken,
     retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
     sleep = defaultSleep,
+    kind = 'session',
   } = params;
+  const model = modelFor(kind);
 
-  const session = await prisma.session.findUnique({
+  const session = await model.findUnique({
     where: { id: sessionId },
     select: { id: true, videoKey: true },
   });
@@ -200,7 +236,7 @@ export async function processRecordingForSession(params: {
 
   // Запись уже выгружена ранее — повторно не качаем (идемпотентность).
   if (session.videoKey) {
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { recordingStatus: 'ready', recordingError: null },
     });
@@ -212,7 +248,7 @@ export async function processRecordingForSession(params: {
   // оба скачать запись + залить в S3. Через updateMany с условием в WHERE только
   // ОДНА доставка переведёт Session в 'processing' (count===1), остальные получат
   // count===0 (кто-то уже качает/скачал) и выйдут без повторного скачивания.
-  const claimed = await prisma.session.updateMany({
+  const claimed = await model.updateMany({
     where: {
       id: sessionId,
       videoKey: null,
@@ -239,7 +275,7 @@ export async function processRecordingForSession(params: {
       } catch (err) {
         if (isRecordingsNotReady(err)) {
           // Записи у Zoom ещё нет — данные формируются, не failed.
-          await prisma.session.update({
+          await model.update({
             where: { id: sessionId },
             data: { recordingStatus: 'processing', recordingError: null },
           });
@@ -253,7 +289,7 @@ export async function processRecordingForSession(params: {
     // Записи нет вовсе (пустой листинг) или MP4 ещё не отрендерился (есть другие
     // файлы, но нет подходящего видео) — рендер не завершён → ФОРМИРУЕТСЯ, не сбой.
     if (!main || !main.download_url) {
-      await prisma.session.update({
+      await model.update({
         where: { id: sessionId },
         data: { recordingStatus: 'processing', recordingError: null },
       });
@@ -288,7 +324,7 @@ export async function processRecordingForSession(params: {
     const key = `recordings/${sessionId}-${randomUUID()}.mp4`;
     const uploaded = await uploadStream(body, key, 'video/mp4');
 
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { videoKey: uploaded.key, recordingStatus: 'ready', recordingError: null },
     });
@@ -298,7 +334,7 @@ export async function processRecordingForSession(params: {
     // (RecordingDownloadHttpError), недопустимый хост, 403/нет scope на листинге,
     // системные сбои. В recordingError — ТОЛЬКО обобщённый текст (без сырых
     // URL/тел/хостов).
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { recordingStatus: 'failed', recordingError: safeRecordingErrorMessage(err) },
     });
@@ -327,9 +363,10 @@ export async function processRecordingForSession(params: {
 export async function markRecordingPending(params: {
   sessionId: string;
   now?: Date;
+  kind?: RecordingKind;
 }): Promise<void> {
-  const { sessionId, now = new Date() } = params;
-  await prisma.session.updateMany({
+  const { sessionId, now = new Date(), kind = 'session' } = params;
+  await modelFor(kind).updateMany({
     where: {
       id: sessionId,
       videoKey: null,
@@ -359,9 +396,10 @@ export async function markRecordingPending(params: {
 export async function markSummaryPending(params: {
   sessionId: string;
   now?: Date;
+  kind?: RecordingKind;
 }): Promise<void> {
-  const { sessionId, now = new Date() } = params;
-  await prisma.session.updateMany({
+  const { sessionId, now = new Date(), kind = 'session' } = params;
+  await modelFor(kind).updateMany({
     where: {
       id: sessionId,
       NOT: { summarySource: 'manual' },
@@ -386,9 +424,10 @@ export async function markSummaryPending(params: {
 export async function markTranscriptPending(params: {
   sessionId: string;
   now?: Date;
+  kind?: RecordingKind;
 }): Promise<void> {
-  const { sessionId, now = new Date() } = params;
-  await prisma.session.updateMany({
+  const { sessionId, now = new Date(), kind = 'session' } = params;
+  await modelFor(kind).updateMany({
     where: {
       id: sessionId,
       transcriptVttKey: null,
@@ -454,10 +493,13 @@ export async function processSummaryForSession(params: {
   // UUID встречи Zoom — meeting_summary не принимает числовой id, поэтому при
   // наличии UUID используем его; иначе фолбэк на числовой meetingId.
   meetingUuid?: string | null;
+  kind?: RecordingKind;
 }): Promise<ProcessOutcome> {
-  const { sessionId, meetingId, teacherUserId, payloadSummary, meetingUuid } = params;
+  const { sessionId, meetingId, teacherUserId, payloadSummary, meetingUuid, kind = 'session' } =
+    params;
+  const model = modelFor(kind);
 
-  const session = await prisma.session.findUnique({
+  const session = await model.findUnique({
     where: { id: sessionId },
     select: { id: true, summarySource: true },
   });
@@ -480,7 +522,7 @@ export async function processSummaryForSession(params: {
       const summaryId = meetingUuid ?? meetingId;
       summary = await getMeetingSummary(teacherUserId, summaryId);
     } catch (err) {
-      await prisma.session.update({
+      await model.update({
         where: { id: sessionId },
         data: { summaryStatus: 'failed' },
       });
@@ -492,14 +534,14 @@ export async function processSummaryForSession(params: {
   if (!finalText) {
     // Резюме ещё нет / не готово — ФОРМИРУЕТСЯ, статус 'processing' (НЕ failed).
     // Текст summary не трогаем (могло быть проставлено ранее иным путём).
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { summaryStatus: 'processing' },
     });
     return 'processing';
   }
 
-  await prisma.session.update({
+  await model.update({
     where: { id: sessionId },
     data: { summary: finalText, summarySource: 'zoom_ai', summaryStatus: 'ready' },
   });
@@ -605,6 +647,7 @@ export async function processTranscriptForSession(params: {
   downloadToken?: string | null;
   retryDelaysMs?: number[];
   sleep?: (ms: number) => Promise<void>;
+  kind?: RecordingKind;
 }): Promise<ProcessOutcome> {
   const {
     sessionId,
@@ -614,9 +657,11 @@ export async function processTranscriptForSession(params: {
     downloadToken,
     retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
     sleep = defaultSleep,
+    kind = 'session',
   } = params;
+  const model = modelFor(kind);
 
-  const session = await prisma.session.findUnique({
+  const session = await model.findUnique({
     where: { id: sessionId },
     select: { id: true, transcriptVttKey: true },
   });
@@ -624,7 +669,7 @@ export async function processTranscriptForSession(params: {
 
   // Транскрипт уже выгружен ранее — повторно не качаем (идемпотентность).
   if (session.transcriptVttKey) {
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { transcriptStatus: 'ready', transcriptError: null },
     });
@@ -657,7 +702,7 @@ export async function processTranscriptForSession(params: {
   }
 
   // Атомарное застолбление обработки (анти-дабл-даунлоад) — как у записи.
-  const claimed = await prisma.session.updateMany({
+  const claimed = await model.updateMany({
     where: {
       id: sessionId,
       transcriptVttKey: null,
@@ -703,7 +748,7 @@ export async function processTranscriptForSession(params: {
     const savedVttKey = await uploadTextToS3(vttText, vttKey, 'text/vtt; charset=utf-8');
     const savedTxtKey = await uploadTextToS3(txtText, txtKey, 'text/plain; charset=utf-8');
 
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: {
         transcriptVttKey: savedVttKey,
@@ -716,7 +761,7 @@ export async function processTranscriptForSession(params: {
   } catch (err) {
     // Сюда — РЕАЛЬНЫЕ ошибки (повторный сбой скачивания после ретраев, недопустимый
     // хост, системные). В transcriptError — ТОЛЬКО обобщённый текст (без URL/тел/хостов).
-    await prisma.session.update({
+    await model.update({
       where: { id: sessionId },
       data: { transcriptStatus: 'failed', transcriptError: safeTranscriptErrorMessage(err) },
     });

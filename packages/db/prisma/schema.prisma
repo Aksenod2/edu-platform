@@ -135,6 +135,10 @@ enum ConsentType {
   serviceNotifications
   marketing
   personalDataPolicy
+  // Согласие на запись/транскрибацию созвонов (эпик «Встречи 1-на-1», #154).
+  // РАЗОВОЕ (решение заказчика): фиксируется один раз, не блокирует вход (не входит
+  // в REQUIRED_CONSENT_TYPES). Привязано к документу meeting-recording-consent.
+  meetingRecording
 }
 
 // Действие по согласию: granted — дано, revoked — отозвано. История append-only:

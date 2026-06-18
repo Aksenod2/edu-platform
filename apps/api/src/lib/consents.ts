@@ -19,6 +19,9 @@ export const CONSENT_TYPES = [
   'personalDataPolicy',
   'serviceNotifications',
   'marketing',
+  // Согласие на запись/транскрибацию созвонов (эпик «Встречи 1-на-1», #154).
+  // РАЗОВОЕ: фиксируется, но НЕ входит в REQUIRED_CONSENT_TYPES — вход не блокирует.
+  'meetingRecording',
 ] as const;
 export type ConsentTypeValue = (typeof CONSENT_TYPES)[number];
 
@@ -38,6 +41,7 @@ export const CONSENT_TYPE_TO_SLUG: Record<ConsentTypeValue, string> = {
   personalDataPolicy: 'personal-data-policy',
   serviceNotifications: 'pd-consent',
   marketing: 'marketing-consent',
+  meetingRecording: 'meeting-recording-consent',
 };
 
 // Обязательные юридические согласия: без них студент не может пользоваться
