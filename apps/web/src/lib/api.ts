@@ -3416,6 +3416,22 @@ export async function createMeeting(
   });
 }
 
+// Перенести/отредактировать встречу (admin-teacher своей встречи, только planned).
+// date — YYYY-MM-DD, startTime — HH:MM, title — тема (null очищает). Бэк
+// best-effort пересоздаёт созвон Zoom (старая ссылка перестаёт работать, студент
+// получает новую). Возвращает обновлённую встречу (та же проекция, что GET).
+export async function updateMeeting(
+  accessToken: string,
+  id: string,
+  body: { date?: string; startTime?: string; title?: string | null },
+): Promise<Meeting> {
+  return request(`/meetings/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
+  });
+}
+
 // Отмена встречи (admin-teacher своей встречи). status → cancelled.
 export async function cancelMeeting(accessToken: string, id: string): Promise<Meeting> {
   return request(`/meetings/${id}/cancel`, {

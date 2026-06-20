@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react';
+import { CalendarClock, Check, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react';
 import { cn } from '@platform/ui/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ import {
 } from '@/lib/api';
 import { STATUS_BADGE_VARIANT } from '@/components/schedule/utils';
 import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
+import { RescheduleMeetingDialog } from '@/components/meetings/reschedule-meeting-dialog';
 
 /**
  * Контрол смены статуса встречи 1-на-1 (только админ-преподаватель).
@@ -58,22 +59,29 @@ import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
  * planned|live→done, onCancel — отмена (через отдельный API, с удалением созвона).
  */
 export function MeetingStatusControl({
-  status,
+  meeting,
   pending,
   onStatus,
   onCancel,
+  onRescheduled,
   className,
 }: {
-  status: Meeting['status'];
+  /** Встреча целиком — нужна для переноса (диалог) и текстов про созвон. */
+  meeting: Meeting;
   /** Идёт запрос смены статуса/отмены — блокируем контрол и крутим спиннер. */
   pending: boolean;
   /** Сменить статус: live (Начать) или done (Провести). */
   onStatus: (next: 'live' | 'done') => void;
   /** Отменить встречу (бэк удалит связанный созвон Zoom). */
-  onCancel: () => void;
+  onCancel: () => void | Promise<void>;
+  /** Встреча перенесена — родитель обновляет данные (как после отмены). */
+  onRescheduled: (updated: Meeting) => void;
   className?: string;
 }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [reschedule, setReschedule] = useState(false);
+
+  const status = meeting.status;
 
   // done/cancelled — терминальны: менять нечего, контрол не нужен.
   if (status !== 'planned' && status !== 'live') return null;
@@ -128,6 +136,18 @@ export function MeetingStatusControl({
             <Check className="size-4 opacity-0" />
             Провести
           </DropdownMenuItem>
+          {/* Перенос — только пока встреча запланирована (live/done/cancelled
+              переносить нельзя). Диалог открываем ПОСЛЕ закрытия меню (как с
+              отменой) — иначе конфликт фокуса/портала. */}
+          {status === 'planned' && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => setReschedule(true)}
+            >
+              <CalendarClock className="size-4" />
+              Перенести…
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           {/* Отмена — destructive-пункт, через подтверждение (удалит созвон Zoom). */}
           <DropdownMenuItem
@@ -162,18 +182,40 @@ export function MeetingStatusControl({
           <AlertDialogHeader>
             <AlertDialogTitle>Отменить встречу?</AlertDialogTitle>
             <AlertDialogDescription>
-              Встреча будет отменена, а связанный созвон Zoom — удалён. Студент
-              увидит её как отменённую.
+              Встреча будет отменена
+              {meeting.meetingUrl ? ', ссылка на созвон удалится' : ''}. Студент
+              получит уведомление об отмене. Это действие необратимо.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Не отменять</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={onCancel}>
+            <AlertDialogCancel disabled={pending}>Не отменять</AlertDialogCancel>
+            {/* Не закрываем диалог сразу (без onSelect-автозакрытия): крутим
+                спиннер до ответа бэка, затем закрываем в ЛЮБОМ исходе. При успехе
+                контрол и так размонтируется (встреча станет cancelled); при ошибке
+                закрываем сами — ошибка показана тостом, не зависаем открытыми. */}
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending}
+              onClick={async (e) => {
+                e.preventDefault();
+                await onCancel();
+                setConfirmCancel(false);
+              }}
+            >
+              {pending && <Loader2 className="animate-spin" />}
               Отменить встречу
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Перенос встречи (только planned). Открывается из пункта меню. */}
+      <RescheduleMeetingDialog
+        meeting={meeting}
+        open={reschedule}
+        onOpenChange={setReschedule}
+        onRescheduled={onRescheduled}
+      />
     </div>
   );
 }
