@@ -74,26 +74,29 @@ function formatRuDate(dateStr: string): string {
 }
 
 // Best-effort создание Zoom-встречи под аккаунтом преподавателя. Возвращает
-// { joinUrl, meetingId } либо null, если интеграции нет / создание не требуется.
+// { joinUrl, meetingId, meetingUuid } либо null, если интеграции нет / создание не
+// требуется. meetingUuid захватываем сразу при создании (нужен для meeting_summary
+// API — числовой id он не принимает); может быть null, если Zoom его не вернул —
+// тогда UUID доедет лениво (processSummaryForSession) или вебхуком.
 // УСТОЙЧИВОСТЬ: любые ошибки Zoom гасятся (warn в лог, null) — создание встречи
 // 1-на-1 не должно падать из-за интеграции (зеркало maybeCreateMeetingUrl из lessons).
 async function maybeCreateZoomForMeeting(
   app: FastifyInstance,
   userId: string,
   opts: { date: Date | null; startTime: string | null | undefined; topic: string },
-): Promise<{ joinUrl: string; meetingId: string } | null> {
+): Promise<{ joinUrl: string; meetingId: string; meetingUuid: string | null } | null> {
   if (!opts.date) return null;
   try {
     // Достаточно технических предусловий интеграции ИЛИ включённого тумблера
     // авто-создания — встречу 1-на-1 создаём при любой рабочей интеграции.
     const ok = (await canCreateMeeting(userId)) || (await shouldAutoCreate(userId));
     if (!ok) return null;
-    const { joinUrl, meetingId } = await createZoomMeeting(userId, {
+    const { joinUrl, meetingId, meetingUuid } = await createZoomMeeting(userId, {
       topic: opts.topic,
       startTime: buildZoomStartTime(opts.date, opts.startTime),
       durationMinutes: 60,
     });
-    return { joinUrl, meetingId };
+    return { joinUrl, meetingId, meetingUuid };
   } catch (err) {
     app.log.warn({ err, userId }, 'Не удалось создать встречу Zoom 1-на-1 — продолжаем без ссылки');
     return null;
@@ -313,6 +316,7 @@ export async function meetingRoutes(app: FastifyInstance) {
         startTime,
         meetingUrl: zoom?.joinUrl ?? null,
         zoomMeetingId: zoom?.meetingId ?? null,
+        zoomMeetingUuid: zoom?.meetingUuid ?? null,
       },
       select: meetingSelect,
     });
@@ -475,6 +479,7 @@ export async function meetingRoutes(app: FastifyInstance) {
       title?: string | null;
       meetingUrl?: string | null;
       zoomMeetingId?: string | null;
+      zoomMeetingUuid?: string | null;
     } = {};
     if (hasDate) data.date = newDate;
     if (hasStartTime) data.startTime = newStartTime;
@@ -510,8 +515,11 @@ export async function meetingRoutes(app: FastifyInstance) {
         topic,
       });
       // Новые ссылка/идентификатор (могут быть null — best-effort как в POST).
+      // Создана НОВАЯ Zoom-встреча → перезаписываем и UUID (старый принадлежал
+      // прежнему созвону): null, если не получили — доедет лениво/вебхуком.
       data.meetingUrl = zoom?.joinUrl ?? null;
       data.zoomMeetingId = zoom?.meetingId ?? null;
+      data.zoomMeetingUuid = zoom?.meetingUuid ?? null;
 
       // 3) Сброс меток напоминаний — переназначатся на новое время (паритет lessons.ts).
       await prisma.eventReminderSent.deleteMany({

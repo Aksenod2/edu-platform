@@ -35,6 +35,11 @@ interface ZoomEventPayload {
     object?: {
       id?: number | string;
       uuid?: string;
+      // События AI-резюме (meeting.summary_completed/recovered/shared) идентифицируют
+      // встречу полями meeting_id/meeting_uuid, а НЕ id/uuid (см. Zoom Webhook docs).
+      // Учитываем оба написания, чтобы и этот канал находил встречу и заполнял UUID.
+      meeting_id?: number | string;
+      meeting_uuid?: string;
       recording_files?: ZoomRecordingFile[];
       summary_overview?: string;
       summary_details?: unknown;
@@ -42,6 +47,23 @@ interface ZoomEventPayload {
     };
   };
   event_ts?: number;
+}
+
+// Числовой id встречи из объекта события: обычные события несут его в `id`, события
+// AI-резюме — в `meeting_id`. Возвращает строку либо null.
+function extractMeetingId(
+  obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+): string | null {
+  const raw = obj?.id ?? obj?.meeting_id;
+  return raw !== undefined && raw !== null ? String(raw) : null;
+}
+
+// UUID встречи из объекта события: обычные события несут его в `uuid`, события
+// AI-резюме — в `meeting_uuid`. Возвращает строку либо null.
+function extractMeetingUuid(
+  obj: NonNullable<NonNullable<ZoomEventPayload['payload']>['object']> | undefined,
+): string | null {
+  return obj?.uuid ?? obj?.meeting_uuid ?? null;
 }
 
 // Безопасно парсит JSON из сырого буфера тела. Возвращает null при ошибке.
@@ -97,11 +119,13 @@ async function processMeetingEvent(
   });
   if (!meeting) return; // не наша встреча — выходим, событие пометится обработанным
 
-  // Идемпотентно фиксируем UUID встречи (нужен для meeting_summary API).
-  if (obj?.uuid) {
+  // Идемпотентно фиксируем UUID встречи (нужен для meeting_summary API). UUID может
+  // прийти как uuid (обычные события) или meeting_uuid (события AI-резюме).
+  const uuidFromEvent = extractMeetingUuid(obj);
+  if (uuidFromEvent) {
     await prisma.meeting.updateMany({
       where: { id: meeting.id, zoomMeetingUuid: null },
-      data: { zoomMeetingUuid: obj.uuid },
+      data: { zoomMeetingUuid: uuidFromEvent },
     });
   }
 
@@ -167,7 +191,7 @@ async function processMeetingEvent(
       meetingId,
       teacherUserId,
       payloadSummary: obj ? extractSummaryFromPayload(obj) : null,
-      meetingUuid: obj?.uuid ?? null,
+      meetingUuid: extractMeetingUuid(obj),
       kind: 'meeting',
     });
   }
@@ -184,7 +208,9 @@ async function processEventAsync(
   downloadToken: string | null,
 ): Promise<void> {
   try {
-    const meetingId = obj?.id !== undefined && obj?.id !== null ? String(obj.id) : null;
+    // Числовой id встречи: обычные события несут его в `id`, события AI-резюме —
+    // в `meeting_id` (extractMeetingId учитывает оба). Без id встречу не найти.
+    const meetingId = extractMeetingId(obj);
 
     if (meetingId) {
       const session = await prisma.session.findFirst({
@@ -195,13 +221,14 @@ async function processEventAsync(
       if (session) {
         // Идемпотентно фиксируем UUID встречи (нужен для meeting_summary API —
         // числовой id он не принимает). UUID есть в payload почти любого события
-        // (meeting.started/ended/recording.*/summary). Пишем только если поле ещё
-        // пусто — чтобы не перетирать ранее захваченный UUID. Срабатывает на любом
-        // из событий и фиксирует UUID один раз.
-        if (obj?.uuid) {
+        // (meeting.started/ended/recording.*/summary) — как `uuid` или `meeting_uuid`
+        // (события AI-резюме). Пишем только если поле ещё пусто — чтобы не перетирать
+        // ранее захваченный UUID. Срабатывает на любом из событий и фиксирует UUID один раз.
+        const uuidFromEvent = extractMeetingUuid(obj);
+        if (uuidFromEvent) {
           await prisma.session.updateMany({
             where: { id: session.id, zoomMeetingUuid: null },
-            data: { zoomMeetingUuid: obj.uuid },
+            data: { zoomMeetingUuid: uuidFromEvent },
           });
         }
 
@@ -304,7 +331,7 @@ async function processEventAsync(
             meetingId,
             teacherUserId,
             payloadSummary: obj ? extractSummaryFromPayload(obj) : null,
-            meetingUuid: obj?.uuid ?? null,
+            meetingUuid: extractMeetingUuid(obj),
           });
         }
       } else {

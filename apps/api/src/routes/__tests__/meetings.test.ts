@@ -156,7 +156,11 @@ describe('POST /meetings — создание встречи 1-на-1 (admin)', 
   it('best-effort Zoom: при рабочей интеграции пишет meetingUrl/zoomMeetingId', async () => {
     db.user.findFirst.mockResolvedValue({ id: STUDENT_A, name: 'Студент А' });
     mockCanCreate.mockResolvedValue(true);
-    mockCreateZoom.mockResolvedValue({ joinUrl: 'https://zoom.us/j/1', meetingId: '999' });
+    mockCreateZoom.mockResolvedValue({
+      joinUrl: 'https://zoom.us/j/1',
+      meetingId: '999',
+      meetingUuid: 'UUID-on-create==',
+    });
     db.meeting.create.mockResolvedValue(
       meetingRow({ meetingUrl: 'https://zoom.us/j/1', zoomMeetingId: '999' }),
     );
@@ -174,6 +178,8 @@ describe('POST /meetings — создание встречи 1-на-1 (admin)', 
     const data = db.meeting.create.mock.calls[0][0].data;
     expect(data.meetingUrl).toBe('https://zoom.us/j/1');
     expect(data.zoomMeetingId).toBe('999');
+    // UUID захвачен при создании (нужен для meeting_summary API).
+    expect(data.zoomMeetingUuid).toBe('UUID-on-create==');
   });
 
   it('студент не может создавать встречу (403)', async () => {
@@ -612,7 +618,11 @@ describe('PATCH /meetings/:id — перенос встречи (admin, свое
   it('happy: смена момента — пересоздаёт Zoom, сбрасывает метки, шлёт push, обновляет поля', async () => {
     db.meeting.findUnique.mockResolvedValue(plannedMeeting());
     mockCanCreate.mockResolvedValue(true);
-    mockCreateZoom.mockResolvedValue({ joinUrl: 'https://zoom.us/j/new', meetingId: 'new-999' });
+    mockCreateZoom.mockResolvedValue({
+      joinUrl: 'https://zoom.us/j/new',
+      meetingId: 'new-999',
+      meetingUuid: 'NEW-UUID==',
+    });
     db.user.findFirst.mockResolvedValue({ id: STUDENT_A });
     db.meeting.update.mockResolvedValue(
       meetingRow({
@@ -646,6 +656,8 @@ describe('PATCH /meetings/:id — перенос встречи (admin, свое
     expect(data.startTime).toBe('14:30');
     expect(data.meetingUrl).toBe('https://zoom.us/j/new');
     expect(data.zoomMeetingId).toBe('new-999');
+    // Новый созвон → перезаписываем и UUID (старый принадлежал прежней встрече).
+    expect(data.zoomMeetingUuid).toBe('NEW-UUID==');
     // Push о переносе студенту с новым временем.
     expect(mockSendPush).toHaveBeenCalledTimes(1);
     expect(mockSendPush.mock.calls[0][0]).toBe(STUDENT_A);

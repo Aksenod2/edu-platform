@@ -73,6 +73,7 @@ export async function getZoomAccessToken(userId: string): Promise<string> {
 
 interface ZoomMeetingResponse {
   id?: number | string;
+  uuid?: string;
   join_url?: string;
 }
 
@@ -81,11 +82,14 @@ interface ZoomMeetingResponse {
 // type: 2 — встреча с фиксированным временем (есть startTime), иначе 1 — мгновенная.
 // startTime — ISO без зоны ('YYYY-MM-DDTHH:MM:00'), интерпретируется в timezone.
 // Бросает Error при неуспехе — вызывающий оборачивает в try/catch и не падает.
-// Возвращает joinUrl и meetingId (числовой id Zoom, храним строкой).
+// Возвращает joinUrl, meetingId (числовой id Zoom, храним строкой) и meetingUuid
+// (UUID встречи, если Zoom его вернул — нужен для meeting_summary API, который
+// числовой id не принимает; захватываем сразу при создании, чтобы не зависеть от
+// вебхука/ленивого доезда). meetingUuid опционален: на старых ответах его может не быть.
 export async function createZoomMeeting(
   userId: string,
   params: { topic: string; startTime: string | null; durationMinutes?: number },
-): Promise<{ joinUrl: string; meetingId: string }> {
+): Promise<{ joinUrl: string; meetingId: string; meetingUuid: string | null }> {
   const token = await getZoomAccessToken(userId);
 
   const body: Record<string, unknown> = {
@@ -131,7 +135,56 @@ export async function createZoomMeeting(
   if (data.id === undefined || data.id === null) {
     throw new Error('Zoom не вернул id встречи');
   }
-  return { joinUrl: data.join_url, meetingId: String(data.id) };
+  return {
+    joinUrl: data.join_url,
+    meetingId: String(data.id),
+    meetingUuid: data.uuid ?? null,
+  };
+}
+
+// Минимально необходимое описание ответа GET /meetings/{meetingId}.
+interface ZoomMeetingDetailResponse {
+  id?: number | string;
+  uuid?: string;
+}
+
+// Возвращает UUID встречи Zoom по её ЧИСЛОВОМУ id (ленивый доезд UUID для встреч,
+// созданных до того, как мы стали сохранять UUID при создании).
+// GET https://api.zoom.us/v2/meetings/{numericId} (Bearer).
+// Возвращает uuid либо null, если Zoom его не отдал. На 404 («встречи уже нет /
+// неверный id») возвращаем null, НЕ бросая: вызывающий трактует отсутствие UUID
+// как «ещё недоступно» (processing), а не как жёсткую ошибку. На прочие ошибки
+// бросаем ZoomApiHttpError (вызывающий смотрит status).
+export async function getMeetingDetail(
+  userId: string,
+  meetingId: string,
+): Promise<{ uuid: string | null }> {
+  const token = await getZoomAccessToken(userId);
+
+  const res = await fetch(`${ZOOM_API_URL}/meetings/${encodeMeetingPathParam(meetingId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // 404 — встречи уже нет / неверный id: UUID получить неоткуда → null (не ошибка).
+  if (res.status === 404) return { uuid: null };
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errBody = (await res.json()) as { message?: string };
+      detail = errBody.message || '';
+    } catch {
+      // тело может быть не JSON — игнорируем
+    }
+    throw new ZoomApiHttpError(
+      res.status,
+      `Zoom вернул ошибку при получении встречи (${res.status})${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  const data = (await res.json()) as ZoomMeetingDetailResponse;
+  return { uuid: data.uuid ?? null };
 }
 
 // Удаляет встречу Zoom под аккаунтом пользователя.
@@ -350,6 +403,12 @@ export async function getMeetingSummary(
     } catch {
       // тело может быть не JSON — игнорируем
     }
+    // 400 «Invalid meeting id» Zoom отдаёт, когда meeting_summary запрошен по
+    // НЕправильному идентификатору — типично когда у встречи ещё нет UUID и мы
+    // дёрнули по числовому id (числовой id этот эндпоинт не принимает). Это не
+    // реальный сбой интеграции, а «итоги по этому id ещё недоступны» → возвращаем
+    // null (вызывающий трактует как processing «формируется»), НЕ бросая 400 в лицо.
+    if (res.status === 400) return null;
     throw new Error(
       `Zoom вернул ошибку при получении резюме (${res.status})${detail ? `: ${detail}` : ''}`,
     );

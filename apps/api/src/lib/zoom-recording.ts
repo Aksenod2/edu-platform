@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { prisma } from '@platform/db';
 import {
   canCreateMeeting,
+  getMeetingDetail,
   getMeetingRecordings,
   getMeetingSummary,
   getZoomAccessToken,
@@ -512,14 +513,46 @@ export async function processSummaryForSession(params: {
   const text = buildSummaryText(summary);
 
   // Если из payload текста не вышло — попробуем API (резюме могло прийти пустым).
-  // getMeetingSummary: null = ещё не готово/недоступно (404) → формируется;
+  // getMeetingSummary: null = ещё не готово/недоступно (404/400) → формируется;
   // throw = реальная ошибка (403/5xx) → failed.
   let finalText = text;
   if (!finalText) {
+    // meeting_summary не принимает числовой id — нужен UUID встречи. Для встреч,
+    // созданных ДО захвата UUID (zoomMeetingUuid=null) и не докрученных вебхуком,
+    // лениво ДОБИРАЕМ UUID: GET /meetings/{numericId} → uuid. Это чинит уже
+    // существующую встречу заказчика, не дожидаясь вебхука.
+    let effectiveUuid = meetingUuid ?? null;
+    if (!effectiveUuid) {
+      try {
+        const detail = await getMeetingDetail(teacherUserId, meetingId);
+        if (detail.uuid) {
+          effectiveUuid = detail.uuid;
+          // Сохраняем добытый UUID в модель (Session/Meeting) — чтобы следующие
+          // запросы (вебхук/refresh/свипер) уже шли по UUID без повторного доезда.
+          // Пишем только если поле ещё пусто (не перетираем ранее захваченный UUID).
+          await model.updateMany({
+            where: { id: sessionId, zoomMeetingUuid: null },
+            data: { zoomMeetingUuid: effectiveUuid },
+          });
+        }
+      } catch {
+        // Доезд UUID best-effort: 404 getMeetingDetail уже вернул бы null (не сюда).
+        // Сюда — реальная ошибка доступа (403/5xx) при запросе деталей встречи.
+        // Не валим жёстко: помечаем «формируется» (UUID/итоги пока недоступны),
+        // НЕ бросаем 400/прочее в лицо. Свипер/повторный refresh добёрут позже.
+        await model.update({
+          where: { id: sessionId },
+          data: { summaryStatus: 'processing' },
+        });
+        return 'processing';
+      }
+    }
+
     try {
-      // UUID предпочтительнее: meeting_summary не принимает числовой id. Если
-      // UUID нет (старые занятия) — пробуем числовой meetingId как фолбэк.
-      const summaryId = meetingUuid ?? meetingId;
+      // UUID предпочтительнее: meeting_summary не принимает числовой id. Если UUID
+      // так и не добыли — пробуем числовой meetingId как фолбэк; getMeetingSummary
+      // на 400 «Invalid meeting id» вернёт null (→ processing), а не бросит.
+      const summaryId = effectiveUuid ?? meetingId;
       summary = await getMeetingSummary(teacherUserId, summaryId);
     } catch (err) {
       await model.update({

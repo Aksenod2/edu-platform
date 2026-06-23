@@ -37,7 +37,7 @@ vi.mock('../../lib/s3.js', () => ({
 
 // Zoom — никаких встреч не создаём (assignment-флоу не трогает Zoom).
 vi.mock('../../lib/zoom.js', () => ({
-  createZoomMeeting: vi.fn(() => Promise.resolve({ joinUrl: '', meetingId: '' })),
+  createZoomMeeting: vi.fn(() => Promise.resolve({ joinUrl: '', meetingId: '', meetingUuid: null })),
   shouldAutoCreate: vi.fn(() => Promise.resolve(false)),
   canCreateMeeting: vi.fn(() => Promise.resolve(false)),
 }));

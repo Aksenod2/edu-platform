@@ -536,6 +536,53 @@ describe('POST /webhooks/zoom/:webhookId — маршрутизация к Sessi
     expect(mockProcessSummary.mock.calls[0][0].meetingUuid).toBe('/abc==');
   });
 
+  it('meeting.summary_completed с meeting_id/meeting_uuid (форма событий AI-резюме) → находит Session и фиксирует UUID', async () => {
+    // Zoom в событиях AI-резюме идентифицирует встречу полями meeting_id/meeting_uuid,
+    // а НЕ id/uuid (см. Zoom Webhook docs). Раньше obj.id отсутствовал → Session не
+    // находилась и резюме не обрабатывалось. Теперь учитываем оба написания.
+    db.session.findFirst.mockResolvedValue({
+      id: 'sess-mu',
+      streamId: 'stream-1',
+      zoomMeetingId: '999',
+    });
+
+    const ts = nowTs();
+    const body = JSON.stringify({
+      event: 'meeting.summary_completed',
+      payload: {
+        object: { meeting_id: 999, meeting_uuid: 'MU==', summary_title: 'Сводка' },
+      },
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/webhooks/zoom/${WEBHOOK_ID}`,
+      headers: {
+        'content-type': 'application/json',
+        'x-zm-signature': signBody(body, ts),
+        'x-zm-request-timestamp': ts,
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setImmediate(r));
+
+    // Session ищется по числовому meeting_id.
+    expect(db.session.findFirst).toHaveBeenCalledWith({
+      where: { zoomMeetingId: '999' },
+      select: { id: true, streamId: true, zoomMeetingId: true },
+    });
+    // UUID из meeting_uuid фиксируется в Session.
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-mu', zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: 'MU==' },
+    });
+    // И прокидывается в обработку резюме как meetingUuid.
+    expect(mockProcessSummary).toHaveBeenCalledTimes(1);
+    expect(mockProcessSummary.mock.calls[0][0].meetingUuid).toBe('MU==');
+  });
+
   it('meeting.ended → помечает запись pending и запускает забор посещаемости', async () => {
     db.session.findFirst.mockResolvedValue({
       id: 'sess-99',

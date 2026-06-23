@@ -39,6 +39,9 @@ vi.mock('../zoom.js', () => {
     canCreateMeeting: vi.fn(() => Promise.resolve(true)),
     getMeetingRecordings: vi.fn(() => Promise.resolve([])),
     getMeetingSummary: vi.fn(() => Promise.resolve(null)),
+    // Ленивый доезд UUID для встреч без zoomMeetingUuid. По умолчанию UUID нет
+    // (старая встреча, Zoom его не отдал) — тесты переопределяют по месту.
+    getMeetingDetail: vi.fn(() => Promise.resolve({ uuid: null })),
     getZoomAccessToken: vi.fn(() => Promise.resolve('access-token')),
     ZoomApiHttpError,
   };
@@ -62,6 +65,7 @@ import { prisma } from '@platform/db';
 import { uploadStream } from '../s3.js';
 import {
   canCreateMeeting,
+  getMeetingDetail,
   getMeetingRecordings,
   getMeetingSummary,
   getZoomAccessToken,
@@ -1362,12 +1366,16 @@ describe('markSummaryPending / markTranscriptPending — пометка «гот
 
 describe('processSummaryForSession — статус итогов (summaryStatus)', () => {
   const mockGetSummary = vi.mocked(getMeetingSummary);
+  const mockGetDetail = vi.mocked(getMeetingDetail);
   const params = { sessionId: 'sess-1', meetingId: 'mtg-1', teacherUserId: 'teacher-1' };
 
   beforeEach(() => {
     vi.clearAllMocks();
     db.session.update.mockResolvedValue({});
+    db.session.updateMany.mockResolvedValue({ count: 1 });
     mockGetSummary.mockResolvedValue(null);
+    // По умолчанию ленивый доезд UUID не находит его (старая встреча).
+    mockGetDetail.mockResolvedValue({ uuid: null });
   });
 
   it('успех с текстом → summary + summarySource=zoom_ai + summaryStatus=ready', async () => {
@@ -1413,7 +1421,7 @@ describe('processSummaryForSession — статус итогов (summaryStatus)
     expect(db.session.update).not.toHaveBeenCalled();
   });
 
-  it('при наличии meetingUuid именно UUID (а не числовой id) уходит в getMeetingSummary', async () => {
+  it('при наличии meetingUuid именно UUID (а не числовой id) уходит в getMeetingSummary, без доезда', async () => {
     db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
     await processSummaryForSession({
       ...params,
@@ -1421,16 +1429,82 @@ describe('processSummaryForSession — статус итогов (summaryStatus)
       meetingUuid: '/abc==',
     });
     expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', '/abc==');
+    // UUID уже есть — ленивый доезд деталей не нужен.
+    expect(mockGetDetail).not.toHaveBeenCalled();
   });
 
-  it('без meetingUuid (старые занятия) → фолбэк на числовой meetingId', async () => {
+  it('без meetingUuid: ленивый доезд getMeetingDetail добывает UUID → сохраняем в модель и им запрашиваем итоги', async () => {
     db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
-    await processSummaryForSession({
+    mockGetDetail.mockResolvedValue({ uuid: 'UUID-from-detail==' });
+    mockGetSummary.mockResolvedValue({ summary_overview: 'Итог 1-на-1' });
+
+    const outcome = await processSummaryForSession({
       ...params,
       payloadSummary: null,
       meetingUuid: null,
     });
+
+    // Доезд UUID по числовому id.
+    expect(mockGetDetail).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    // Сохранили добытый UUID в модель (идемпотентно: только если поле пусто).
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-1', zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: 'UUID-from-detail==' },
+    });
+    // Итоги запрошены по добытому UUID, а НЕ по числовому id.
+    expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', 'UUID-from-detail==');
+    // Резюме реально есть → ready (чинит существующую встречу заказчика).
+    expect(outcome).toBe('ready');
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { summary: 'Итог 1-на-1', summarySource: 'zoom_ai', summaryStatus: 'ready' },
+    });
+  });
+
+  it('без meetingUuid и доезд UUID не нашёл его → фолбэк на числовой meetingId (getMeetingSummary на 400 вернёт null → processing)', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    mockGetDetail.mockResolvedValue({ uuid: null });
+    const outcome = await processSummaryForSession({
+      ...params,
+      payloadSummary: null,
+      meetingUuid: null,
+    });
+    expect(mockGetDetail).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    // UUID не добыли — пробуем числовой id (getMeetingSummary его не примет и вернёт null).
     expect(mockGetSummary).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    // Итогов пока нет → processing (НЕ 400, НЕ failed).
+    expect(outcome).toBe('processing');
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { summaryStatus: 'processing' },
+    });
+  });
+
+  it('доезд UUID упал реальной ошибкой (403/5xx) → processing (не валим 400 в лицо), summary не запрашиваем', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    mockGetDetail.mockRejectedValue(new ZoomApiHttpError(403, 'нет доступа'));
+    const outcome = await processSummaryForSession({
+      ...params,
+      payloadSummary: null,
+      meetingUuid: null,
+    });
+    expect(outcome).toBe('processing');
+    expect(mockGetSummary).not.toHaveBeenCalled();
+    expect(db.session.update).toHaveBeenCalledWith({
+      where: { id: 'sess-1' },
+      data: { summaryStatus: 'processing' },
+    });
+  });
+
+  it('payload уже содержит текст → доезд UUID и summary API не дёргаем вовсе', async () => {
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', summarySource: null });
+    await processSummaryForSession({
+      ...params,
+      payloadSummary: { summary_overview: 'Готовый текст из вебхука' },
+      meetingUuid: null,
+    });
+    expect(mockGetDetail).not.toHaveBeenCalled();
+    expect(mockGetSummary).not.toHaveBeenCalled();
   });
 });
 

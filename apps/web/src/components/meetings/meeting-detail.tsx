@@ -42,6 +42,16 @@ import {
   SUMMARY_STALE_AFTER_MS,
   TRANSCRIPT_STALE_AFTER_MS,
 } from '@/components/schedule/processing-status';
+import { RecordingStatusBadge } from '@/components/schedule/recording-status-badge';
+import {
+  recordingStatusHint,
+  summaryProcessingHint,
+  summaryStaleHint,
+  summaryFailedHint,
+  transcriptProcessingHint,
+  transcriptStaleHint,
+  transcriptFailedHint,
+} from '@/components/schedule/processing-status-labels';
 import { parseLocalDate } from '@/components/schedule/utils';
 import { parseVideoEmbed } from '@/lib/video-embed';
 import { MEETING_FALLBACK_TITLE } from '@/components/meetings/utils';
@@ -388,28 +398,41 @@ export function MeetingDetail({
                   ) : (
                     <VideoFileFrame src={recordingUrl} label={`Запись встречи — ${title}`} />
                   )
-                ) : recordingPending ? (
-                  <div className="flex items-center gap-3 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">
-                    <Loader2 className="size-5 shrink-0 animate-spin" />
-                    <span>Формируется запись встречи — появится здесь. Зайдите позже.</span>
-                  </div>
-                ) : recordingStale ? (
-                  <div className="flex items-center gap-3 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
-                    <Clock className="size-5 shrink-0" />
-                    <span>Запись встречи пока недоступна.</span>
-                  </div>
-                ) : recordingFailed ? (
-                  <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-                    <div className="flex items-center gap-3">
-                      <Video className="size-5 shrink-0" />
-                      <span>Запись встречи не получена.</span>
-                      {/* recordingError виден только админу (студенту бэк его не отдаёт). */}
-                      {isAdmin && meeting.recordingError?.trim() && (
-                        <span className="text-xs">({meeting.recordingError.trim()})</span>
+                ) : recKind === 'processing' || recKind === 'stale' || recKind === 'failed' ? (
+                  // Единый инфоблок состояния записи — как у занятия (lesson-view):
+                  // цветной RecordingStatusBadge (с AlertTriangle при ошибке) + подпись
+                  // из общего источника. При failed добавляем «Повторить» прямо у ошибки.
+                  <div
+                    className={cn(
+                      'flex flex-col gap-2 rounded-md border p-3',
+                      recKind === 'processing' && 'border-blue-500/30 bg-blue-500/10',
+                      recKind === 'failed' && 'border-destructive/40 bg-destructive/5',
+                      recKind === 'stale' && 'bg-muted/50',
+                    )}
+                  >
+                    <RecordingStatusBadge
+                      status={meeting.recordingStatus}
+                      // recordingError виден только админу (студенту бэк его не отдаёт).
+                      error={isAdmin ? meeting.recordingError : undefined}
+                      requestedAt={meeting.recordingRequestedAt}
+                      className="w-fit"
+                    />
+                    <p
+                      className={cn(
+                        'text-xs',
+                        recKind === 'processing'
+                          ? 'text-blue-700 dark:text-blue-300'
+                          : 'text-muted-foreground',
                       )}
-                    </div>
-                    {/* Повторить автозагрузку записи — только владелец-препод. */}
-                    {isAdmin && (
+                    >
+                      {recordingStatusHint(
+                        recKind,
+                        'встречи',
+                        isAdmin ? meeting.recordingError : undefined,
+                      )}
+                    </p>
+                    {/* Повторить автозагрузку записи при сбое — только владелец-препод. */}
+                    {recKind === 'failed' && isAdmin && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -470,19 +493,38 @@ export function MeetingDetail({
                       <div className="flex flex-col gap-2">
                         <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
                           <Loader2 className="size-3.5 animate-spin" />
-                          Формируются итоги встречи — Zoom обычно готовит их за несколько
-                          минут. Зайдите позже.
+                          {summaryProcessingHint('встречи')}
                         </p>
                         <Skeleton className="h-4 w-full" />
                         <Skeleton className="h-4 w-3/4" />
                       </div>
                     ) : kind === 'failed' ? (
-                      <p className="text-sm text-destructive">
-                        Не удалось сформировать итоги этой встречи.
-                      </p>
+                      // Реальная ошибка — с кнопкой «подтянуть» прямо у ошибки (как у
+                      // занятия), чтобы не уходить за общей кнопкой в шапке.
+                      <div className="flex flex-col items-start gap-2">
+                        <p className="text-sm text-destructive">
+                          {summaryFailedHint('встречи')}
+                        </p>
+                        {adminCanRefresh && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRefresh}
+                            disabled={refreshing}
+                            className="min-h-9"
+                          >
+                            {refreshing ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="size-4" />
+                            )}
+                            Подтянуть итоги
+                          </Button>
+                        )}
+                      </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        Итоги по этой встрече пока недоступны.
+                        {summaryStaleHint('встречи')}
                       </p>
                     )}
                   </CardContent>
@@ -493,7 +535,12 @@ export function MeetingDetail({
 
           {/* Транскрипт — ТОЛЬКО админ/преподаватель (студенту бэк поля не отдаёт). */}
           {isAdmin && meeting.transcriptStatus !== undefined && (
-            <MeetingTranscriptCard meeting={meeting} />
+            <MeetingTranscriptCard
+              meeting={meeting}
+              canRefresh={adminCanRefresh}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
           )}
         </>
       )}
@@ -506,7 +553,18 @@ export function MeetingDetail({
  * подписанную ссылку подгружаем по клику «Открыть/Скачать» (зеркало блока
  * транскрипта занятия). Состояния — единый resolveProcessingKind.
  */
-function MeetingTranscriptCard({ meeting }: { meeting: Meeting }) {
+function MeetingTranscriptCard({
+  meeting,
+  canRefresh,
+  refreshing,
+  onRefresh,
+}: {
+  meeting: Meeting;
+  /** Можно ли вручную подтянуть из Zoom (владелец-препод, встреча проведена/идёт). */
+  canRefresh: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
   const { accessToken } = useAuth();
   const [busy, setBusy] = useState<'open' | 'vtt' | 'txt' | null>(null);
 
@@ -554,21 +612,38 @@ function MeetingTranscriptCard({ meeting }: { meeting: Meeting }) {
           <div className="flex flex-col gap-2">
             <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
               <Loader2 className="size-3.5 animate-spin" />
-              Формируется транскрипт встречи — он приходит из Zoom позже записи.
-              Загляните позже.
+              {transcriptProcessingHint('встречи')}
             </p>
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-2/3" />
           </div>
         ) : kind === 'stale' ? (
           <p className="text-sm text-muted-foreground">
-            Транскрипт по этой встрече пока недоступен.
+            {transcriptStaleHint('встречи')}
           </p>
         ) : kind === 'failed' ? (
-          <p className="text-sm text-destructive">
-            {meeting.transcriptError?.trim() ||
-              'Не удалось получить транскрипт встречи из Zoom.'}
-          </p>
+          // Реальная ошибка — с кнопкой «подтянуть» прямо у ошибки (как у занятия).
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-sm text-destructive">
+              {transcriptFailedHint('встречи', meeting.transcriptError)}
+            </p>
+            {canRefresh && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRefresh}
+                disabled={refreshing}
+                className="min-h-9"
+              >
+                {refreshing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Подтянуть транскрипт
+              </Button>
+            )}
+          </div>
         ) : (
           // ready
           <div className="flex flex-wrap gap-2">

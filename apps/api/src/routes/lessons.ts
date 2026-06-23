@@ -291,7 +291,7 @@ async function maybeCreateMeetingUrl(
     topic: string;
     generateMeeting?: boolean;
   },
-): Promise<{ joinUrl: string; meetingId: string } | null> {
+): Promise<{ joinUrl: string; meetingId: string; meetingUuid: string | null } | null> {
   // Явный отказ от генерации (даже при включённом тумблере).
   if (opts.generateMeeting === false) return null;
   // Нужна дата занятия (без даты не планируем встречу).
@@ -308,12 +308,12 @@ async function maybeCreateMeetingUrl(
         ? await canCreateMeeting(userId)
         : await shouldAutoCreate(userId);
     if (!ok) return null;
-    const { joinUrl, meetingId } = await createZoomMeeting(userId, {
+    const { joinUrl, meetingId, meetingUuid } = await createZoomMeeting(userId, {
       topic: opts.topic,
       startTime: buildZoomStartTime(opts.date, opts.startTime),
       durationMinutes: 60,
     });
-    return { joinUrl, meetingId };
+    return { joinUrl, meetingId, meetingUuid };
   } catch (err) {
     app.log.warn(
       { err, userId },
@@ -1110,6 +1110,8 @@ export async function lessonRoutes(app: FastifyInstance) {
     const meetingUrl = body.meetingUrl?.trim() || autoMeeting?.joinUrl || null;
     // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
     const zoomMeetingId = autoMeeting?.meetingId ?? null;
+    // zoomMeetingUuid захватываем сразу при создании (нужен для meeting_summary API).
+    const zoomMeetingUuid = autoMeeting?.meetingUuid ?? null;
 
     // 3) Session потока несёт расписание/статус/видео.
     const session = await prisma.session.upsert({
@@ -1122,6 +1124,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         startTime: body.startTime?.trim() || null,
         meetingUrl,
         ...(zoomMeetingId ? { zoomMeetingId } : {}),
+        ...(zoomMeetingUuid ? { zoomMeetingUuid } : {}),
       },
       update: {
         status,
@@ -1129,6 +1132,7 @@ export async function lessonRoutes(app: FastifyInstance) {
         startTime: body.startTime?.trim() || null,
         meetingUrl,
         ...(zoomMeetingId ? { zoomMeetingId } : {}),
+        ...(zoomMeetingUuid ? { zoomMeetingUuid } : {}),
       },
       select: sessionSelect,
     });
@@ -1342,9 +1346,13 @@ export async function lessonRoutes(app: FastifyInstance) {
         // meetingUrl не трогали явно, но автоматически создали встречу — сохраняем.
         sessionUpdate.meetingUrl = autoMeeting.joinUrl;
       }
-      // zoomMeetingId сохраняем только когда встречу реально создали через Zoom.
+      // zoomMeetingId/zoomMeetingUuid сохраняем только когда встречу реально создали
+      // через Zoom. UUID захватываем сразу (нужен для meeting_summary API); создана
+      // НОВАЯ встреча → перезаписываем UUID (старый принадлежал прежнему созвону),
+      // в т.ч. в null, если Zoom его не вернул — тогда доедет лениво/вебхуком.
       if (autoMeeting) {
         sessionUpdate.zoomMeetingId = autoMeeting.meetingId;
+        sessionUpdate.zoomMeetingUuid = autoMeeting.meetingUuid;
       }
 
       const created = await prisma.session.upsert({
@@ -1357,6 +1365,7 @@ export async function lessonRoutes(app: FastifyInstance) {
           startTime: body.startTime?.trim() || null,
           meetingUrl: body.meetingUrl?.trim() || autoMeeting?.joinUrl || null,
           ...(autoMeeting ? { zoomMeetingId: autoMeeting.meetingId } : {}),
+          ...(autoMeeting?.meetingUuid ? { zoomMeetingUuid: autoMeeting.meetingUuid } : {}),
           ...(body.summary !== undefined
             ? { summary: body.summary?.trim() || null, summarySource: 'manual' }
             : {}),

@@ -54,6 +54,16 @@ import {
   SUMMARY_STALE_AFTER_MS,
   TRANSCRIPT_STALE_AFTER_MS,
 } from '@/components/schedule/processing-status';
+import {
+  recordingStatusHint,
+  summaryProcessingHint,
+  summaryStaleHint,
+  summaryFailedHint,
+  summaryEmptyHint,
+  transcriptProcessingHint,
+  transcriptStaleHint,
+  transcriptFailedHint,
+} from '@/components/schedule/processing-status-labels';
 import { SessionStatusControl } from '@/components/schedule/session-status-control';
 import { SummarySourceBadge } from '@/components/schedule/lesson-summary';
 import { LessonAnalyticsSection } from '@/components/lessons/lesson-analytics-section';
@@ -652,12 +662,11 @@ function SessionContextCard({
                   : 'text-muted-foreground',
               )}
             >
-              {recKind === 'failed'
-                ? session.recordingError?.trim() ||
-                  'Запись с Zoom не получена — обновите позже или перезапустите загрузку в режиме редактирования.'
-                : recKind === 'stale'
-                  ? 'Запись от Zoom пока не пришла. Загляните позже или обновите вручную.'
-                  : 'Формируется запись конференции. Занятие завершилось — запись подтянется автоматически из Zoom. Зайдите позже.'}
+              {recordingStatusHint(
+                recKind as 'processing' | 'stale' | 'failed',
+                'занятия',
+                session.recordingError,
+              )}
             </p>
           </div>
         )}
@@ -775,7 +784,7 @@ function SessionSummaryBlock({
         <div className="flex flex-col gap-2">
           <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
             <Loader2 className="size-3.5 animate-spin" />
-            Формируются итоги занятия — Zoom обычно готовит их за несколько минут. Зайдите позже.
+            {summaryProcessingHint('занятия')}
           </p>
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-11/12" />
@@ -784,13 +793,13 @@ function SessionSummaryBlock({
       ) : kind === 'stale' ? (
         // Данных давно нет — нейтральное серое «недоступно».
         <p className="text-sm text-muted-foreground">
-          Итоги занятия пока недоступны. Загляните позже или обновите вручную.
+          {summaryStaleHint('занятия')}
         </p>
       ) : kind === 'failed' ? (
         // Реальная ошибка — единственное место с акцентом ошибки.
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm text-destructive">
-            Не удалось получить итоги занятия из Zoom.
+            {summaryFailedHint('занятия')}
           </p>
           {canRefresh && (
             <Button
@@ -812,7 +821,7 @@ function SessionSummaryBlock({
       ) : (
         // empty — none / нет интеграции Zoom.
         <p className="text-sm text-muted-foreground">
-          Итоги по этому занятию не формировались.
+          {summaryEmptyHint('занятия')}
         </p>
       )}
     </div>
@@ -894,7 +903,7 @@ function SessionTranscriptBlock({
           <div className="flex flex-col gap-2">
             <p className="flex items-center gap-1.5 text-sm text-blue-700 dark:text-blue-300">
               <Loader2 className="size-3.5 animate-spin" />
-              Формируется транскрипт занятия — он приходит из Zoom позже записи. Загляните позже.
+              {transcriptProcessingHint('занятия')}
             </p>
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-2/3" />
@@ -902,14 +911,13 @@ function SessionTranscriptBlock({
         ) : kind === 'stale' ? (
           // Данных давно нет — нейтральное серое «недоступно».
           <p className="text-sm text-muted-foreground">
-            Транскрипт по этому занятию пока недоступен. Загляните позже или обновите вручную.
+            {transcriptStaleHint('занятия')}
           </p>
         ) : kind === 'failed' ? (
           // Реальная ошибка — единственное место с акцентом ошибки.
           <div className="flex flex-col items-start gap-2">
             <p className="text-sm text-destructive">
-              {session.transcriptError?.trim() ||
-                'Не удалось получить транскрипт занятия из Zoom.'}
+              {transcriptFailedHint('занятия', session.transcriptError)}
             </p>
             <Button
               variant="outline"
