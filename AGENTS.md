@@ -4,6 +4,15 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Переиспользование — сначала ищи готовое (анти-дубль)
+
+Перед тем как писать утилиту/компонент/хелпер — сверься с **`docs/reuse-map.md`**: там перечислено
+уже существующее переиспользуемое (форматы дат, инициалы, статусы, пустые состояния, валидация,
+Prisma-select) и куда класть новое. НЕ пиши `toLocaleDateString`, `initials`, инлайн empty-state
+заново — бери из карты. Куда класть новое общее: api+web → `packages/shared` (без React/DOM);
+web без JSX → `apps/web/src/lib`; web с JSX → `apps/web/src/components`; только api →
+`apps/api/src/lib`. Контекст — ретро `docs/retro/2026-06-23.md`.
+
 <!-- BEGIN:ui-system-rules -->
 # UI Components — shadcn/ui (raw, no wrappers)
 
