@@ -23,6 +23,7 @@ import {
   retryMeetingRecording,
   updateMeetingStatus,
   type Meeting,
+  type MeetingRefreshResult,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +46,17 @@ import { parseLocalDate } from '@/components/schedule/utils';
 import { parseVideoEmbed } from '@/lib/video-embed';
 import { MEETING_FALLBACK_TITLE } from '@/components/meetings/utils';
 import { MeetingStatusControl } from '@/components/meetings/meeting-status-control';
+
+// Метки шагов единой подтяжки встречи из Zoom для тоста по частичному результату.
+// Зеркало ZOOM_REFRESH_LABELS занятия, но БЕЗ посещаемости (у встречи её нет by-design).
+const MEETING_REFRESH_LABELS: Record<
+  Exclude<keyof MeetingRefreshResult, 'meeting'>,
+  string
+> = {
+  recording: 'Запись',
+  summary: 'Итоги',
+  transcript: 'Транскрипт',
+};
 
 /**
  * Детальная страница встречи 1-на-1 (общий компонент для админа и студента).
@@ -129,14 +141,35 @@ export function MeetingDetail({
   );
 
   // Ручная подтяжка записи/итогов/транскрипта из Zoom (синхронно). Полезна, когда
-  // автосбор по вебхуку завис/не сработал. Возвращает обновлённую встречу.
+  // автосбор по вебхуку завис/не сработал. Карточку обновляем по meeting из ответа,
+  // а тост собираем по ЧАСТИЧНОМУ результату (что подтянулось / что ещё формируется /
+  // что не получилось — с причиной), как у группового занятия (но без посещаемости).
   const handleRefresh = useCallback(async () => {
     if (!accessToken || !meeting || refreshing) return;
     setRefreshing(true);
     try {
-      const updated = await refreshMeetingFromZoom(accessToken, meeting.id);
-      setMeeting(updated);
-      toast.success('Обновили данные встречи из Zoom');
+      const result = await refreshMeetingFromZoom(accessToken, meeting.id);
+      setMeeting(result.meeting);
+      // «Ещё формируется» — НЕ ошибка: бэк присылает reason про формирование. Такой шаг
+      // показываем нейтрально (…), а реальные сбои — с причиной.
+      const isPending = (reason?: string | null) =>
+        !!reason && /формир|ещё формируется|готов/i.test(reason);
+      const keys = Object.keys(MEETING_REFRESH_LABELS) as (keyof typeof MEETING_REFRESH_LABELS)[];
+      const parts = keys.map((key) => {
+        const step = result[key];
+        const label = MEETING_REFRESH_LABELS[key];
+        if (step?.ok) return `${label} ✓`;
+        if (isPending(step?.reason)) return `${label} — формируется…`;
+        return `${label} — ${step?.reason?.trim() || 'не получено'}`;
+      });
+      // Реальная ошибка = шаг не ok и причина НЕ про формирование.
+      const hasRealError = keys.some(
+        (key) => !result[key]?.ok && !isPending(result[key]?.reason),
+      );
+      const message = parts.join(', ');
+      // Всё ok или «формируется» — это не ошибка (success), иначе предупреждение.
+      if (hasRealError) toast.warning(message);
+      else toast.success(message);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
     } finally {

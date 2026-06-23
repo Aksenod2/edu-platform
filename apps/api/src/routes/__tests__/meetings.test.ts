@@ -838,7 +838,7 @@ describe('PATCH /meetings/:id/status — смена статуса (admin, св�
 });
 
 describe('POST /meetings/:id/refresh — ручная подтяжка из Zoom (admin, своей)', () => {
-  it('дёргает запись/итоги/транскрипт (kind=meeting) и возвращает { meeting }', async () => {
+  it('дёргает запись/итоги/транскрипт (kind=meeting) и возвращает { meeting } + per-step outcomes (все ready → ok)', async () => {
     db.meeting.findUnique
       .mockResolvedValueOnce({
         id: 'm-1',
@@ -855,7 +855,13 @@ describe('POST /meetings/:id/refresh — ручная подтяжка из Zoom
       headers: authHeaders(adminToken),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().meeting.id).toBe('m-1');
+    const body = res.json();
+    expect(body.meeting.id).toBe('m-1');
+    // Контракт: per-step исходы recording/summary/transcript (без attendance).
+    expect(body.recording).toEqual({ ok: true });
+    expect(body.summary).toEqual({ ok: true });
+    expect(body.transcript).toEqual({ ok: true });
+    expect(body).not.toHaveProperty('attendance');
     expect(mockProcessRecording).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'm-1', meetingId: '12345', kind: 'meeting' }),
     );
@@ -865,6 +871,57 @@ describe('POST /meetings/:id/refresh — ручная подтяжка из Zoom
     expect(mockProcessTranscript).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'm-1', meetingId: '12345', kind: 'meeting' }),
     );
+  });
+
+  it("ProcessOutcome 'processing' → шаг { ok:false, reason:'ещё формируется' } (НЕ ошибка)", async () => {
+    mockProcessRecording.mockResolvedValueOnce('processing');
+    db.meeting.findUnique
+      .mockResolvedValueOnce({
+        id: 'm-1',
+        teacherId: TEACHER_ID,
+        zoomMeetingId: '12345',
+        zoomMeetingUuid: null,
+      })
+      .mockResolvedValueOnce(meetingRow({ zoomMeetingId: '12345' }));
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/meetings/m-1/refresh',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.recording).toEqual({ ok: false, reason: 'ещё формируется' });
+    expect(body.summary).toEqual({ ok: true });
+    expect(body.transcript).toEqual({ ok: true });
+  });
+
+  it('сбойный шаг → { ok:false, reason } с фактическим текстом ошибки (exposeError для итогов)', async () => {
+    mockProcessSummary.mockRejectedValueOnce(new Error('Zoom вернул ошибку (403)'));
+    db.meeting.findUnique
+      .mockResolvedValueOnce({
+        id: 'm-1',
+        teacherId: TEACHER_ID,
+        zoomMeetingId: '12345',
+        zoomMeetingUuid: null,
+      })
+      .mockResolvedValueOnce(meetingRow({ zoomMeetingId: '12345' }));
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/meetings/m-1/refresh',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Остальные шаги не пострадали.
+    expect(body.recording).toEqual({ ok: true });
+    expect(body.transcript).toEqual({ ok: true });
+    // У итогов exposeError=true — reason несёт фактический текст ошибки Zoom.
+    expect(body.summary).toEqual({ ok: false, reason: 'Zoom вернул ошибку (403)' });
+    expect(body.meeting.id).toBe('m-1');
   });
 
   it('без zoomMeetingId → 400 «Zoom-встреча не создана», обработчики не зовём', async () => {

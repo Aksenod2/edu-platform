@@ -3460,17 +3460,28 @@ export async function updateMeetingStatus(
   return res.meeting;
 }
 
-// Единая ручная подтяжка встречи из Zoom (запись/итоги/транскрипт) — синхронно,
-// возвращает обновлённую встречу с уже подтянутыми артефактами. Только teacher.
+// Результат единой ручной подтяжки встречи 1-на-1 из Zoom. Зеркало ZoomRefreshResult
+// занятия, но БЕЗ посещаемости (у встречи её нет by-design). meeting — обновлённая
+// проекция (по ней обновляем карточку); recording/summary/transcript — частичный исход
+// по каждому шагу ({ ok, reason? }), чтобы фронт показал подробный тост, как у занятия.
+export interface MeetingRefreshResult {
+  meeting: Meeting;
+  recording: ZoomRefreshStep;
+  summary: ZoomRefreshStep;
+  transcript: ZoomRefreshStep;
+}
+
+// Единая ручная подтяжка встречи из Zoom (запись/итоги/транскрипт) — синхронно. Каждый
+// шаг best-effort: возвращает обновлённую встречу И частичный результат по каждому шагу
+// (что подтянулось / что ещё формируется / что не получилось — с причиной). Только teacher.
 export async function refreshMeetingFromZoom(
   accessToken: string,
   id: string,
-): Promise<Meeting> {
-  const res = await request<{ meeting: Meeting }>(`/meetings/${id}/refresh`, {
+): Promise<MeetingRefreshResult> {
+  return request<MeetingRefreshResult>(`/meetings/${id}/refresh`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return res.meeting;
 }
 
 // Повторить автозагрузку записи Zoom для встречи (teacher): когда recordingStatus

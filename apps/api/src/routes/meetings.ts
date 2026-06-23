@@ -714,14 +714,16 @@ export async function meetingRoutes(app: FastifyInstance) {
 
   // POST /meetings/:id/refresh — ручная подтяжка из Zoom («Обновить из Zoom»):
   // запись + итоги + транскрипт. Право: admin-преподаватель встречи (teacherId=me).
-  // Зеркало POST /lessons/:id/sessions/:streamId/refresh, но без посещаемости (для
-  // 1-на-1 её не забираем). teacherUserId — владелец встречи (Meeting.teacherId), под
-  // его OAuth-токеном Zoom скачиваются файлы (в отличие от Session, у Meeting реальный
+  // Зеркало POST /lessons/:id/sessions/:streamId/refresh, но БЕЗ посещаемости (для
+  // 1-на-1 её не забираем by-design). teacherUserId — владелец встречи (Meeting.teacherId),
+  // под его OAuth-токеном Zoom скачиваются файлы (в отличие от Session, у Meeting реальный
   // владелец хранится в БД, каскад resolveTeacherForZoom не нужен).
   //
   // Требует zoomMeetingId (без него нет id для API Zoom) — иначе 400. Каждый шаг
-  // best-effort (ошибка одного не валит остальные); по итогу возвращаем ОБНОВЛЁННУЮ
-  // проекцию { meeting } (статусы полей в ней отражают исход подтяжки).
+  // best-effort (ошибка одного НЕ валит остальные). Возвращает ОБНОВЛЁННУЮ проекцию
+  // { meeting } (карточка по-прежнему обновляется по ней) И ЧАСТИЧНЫЙ результат по шагам:
+  // { recording:{ok,reason?}, summary:{...}, transcript:{...} } — чтобы фронт показал
+  // подробный тост «что подтянулось», как у группового занятия (но без attendance).
   app.post('/meetings/:id/refresh', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const teacherId = request.user!.userId;
@@ -740,20 +742,36 @@ export async function meetingRoutes(app: FastifyInstance) {
     }
     const meetingId = meeting.zoomMeetingId;
 
-    // Шаг best-effort: запускает работу, ошибку/«формируется» гасит (refresh не должен
-    // падать целиком из-за одного источника). Исход не возвращаем наружу — финальная
-    // проекция и так несёт актуальные статусы полей. Ошибку лишь логируем.
-    const step = async (fn: () => Promise<ProcessOutcome>, what: string) => {
+    // Шаг best-effort: запускает работу, ловит ошибку и приводит к { ok, reason? } —
+    // ЗЕРКАЛО step() из refresh занятия (lessons.ts). Различаем три исхода ProcessOutcome:
+    //   - 'ready'      → { ok:true } (данные получены);
+    //   - 'processing' → { ok:false, reason:'ещё формируется' } — у Zoom данных ЕЩЁ нет;
+    //                    это НЕ ошибка, фронт-тост скажет «формируется»;
+    //   - throw        → { ok:false, reason:<...> } — РЕАЛЬНАЯ ошибка.
+    // При exposeError=true (summary/transcript) reason несёт ФАКТИЧЕСКИЙ текст ошибки Zoom —
+    // это admin-эндпоинт владельца встречи, текст безопасен. Иначе reason — общий failReason.
+    const step = async (
+      fn: () => Promise<ProcessOutcome>,
+      failReason: string,
+      exposeError = false,
+    ) => {
       try {
-        await fn();
+        const outcome = await fn();
+        if (outcome === 'processing') {
+          return { ok: false as const, reason: 'ещё формируется' };
+        }
+        return { ok: true as const };
       } catch (err) {
-        app.log.error({ err, meetingId: meeting.id }, `refresh встречи: ${what}`);
+        app.log.error({ err, meetingId: meeting.id }, `refresh встречи: ${failReason}`);
+        const detail = err instanceof Error ? err.message.trim() : '';
+        const reason = exposeError && detail ? detail : failReason;
+        return { ok: false as const, reason };
       }
     };
 
     // Параллельно — шаги независимы (разные поля Meeting). kind='meeting' переключает
     // общие обработчики на Prisma-делегат Meeting.
-    await Promise.all([
+    const [recording, summary, transcript] = await Promise.all([
       step(
         () =>
           processRecordingForSession({
@@ -774,6 +792,7 @@ export async function meetingRoutes(app: FastifyInstance) {
             kind: 'meeting',
           }),
         'не удалось обновить итоги',
+        true,
       ),
       step(
         () =>
@@ -784,6 +803,7 @@ export async function meetingRoutes(app: FastifyInstance) {
             kind: 'meeting',
           }),
         'не удалось обновить транскрипт',
+        true,
       ),
     ]);
 
@@ -792,7 +812,12 @@ export async function meetingRoutes(app: FastifyInstance) {
     if (!updated) {
       return reply.status(404).send({ error: 'Встреча не найдена' });
     }
-    return { meeting: await projectMeeting(updated as MeetingRow, false) };
+    return {
+      meeting: await projectMeeting(updated as MeetingRow, false),
+      recording,
+      summary,
+      transcript,
+    };
   });
 
   // POST /meetings/:id/recording/retry — повторная попытка забора записи Zoom
