@@ -1,0 +1,46 @@
+# Гейт на дубли: ловит РОСТ копипаста (jscpd vs baseline) и новые локальные
+# пере-определения общих утилит (греп по изменённым в PR файлам).
+# Запуск ТОЛЬКО на pull_request в main — деплой (vps-deploy.yml на push в main)
+# этот workflow не трогает и не блокирует.
+name: Dup gate
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: dup-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dup-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # нужна история до base, чтобы reuse-гейт построил diff (merge-base)
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # jscpd-гейт: падает только при РОСТЕ числа клонов над scripts/dup-baseline.json
+      - name: Детектор копипаста (jscpd, baseline)
+        run: pnpm dup:check
+
+      # reuse-гейт: проверяет ТОЛЬКО изменённые в PR файлы (diff vs base),
+      # чтобы не валить накопленный долг. BASE_SHA — база PR.
+      - name: Запрет локальных пере-определений утилит (reuse)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: pnpm reuse:check
