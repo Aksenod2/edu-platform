@@ -2561,6 +2561,8 @@ export async function lessonRoutes(app: FastifyInstance) {
         sessionId: session.id,
         meetingId: session.zoomMeetingId,
         teacherUserId,
+        // Ручной ретрай — перезайти даже из зависшего 'processing' (#188).
+        allowReprocess: true,
       }).catch((err) => {
         app.log.error(
           { err, sessionId: session.id },
@@ -2654,6 +2656,8 @@ export async function lessonRoutes(app: FastifyInstance) {
               meetingId,
               teacherUserId,
               meetingUuid: session.zoomMeetingUuid,
+              // Ручной «Обновить из Zoom» — перезайти даже из зависшего 'processing' (#188).
+              allowReprocess: true,
             }),
           'не удалось обновить запись',
         ),

@@ -275,6 +275,14 @@ export async function processRecordingForSession(params: {
   // Сущность: занятие (Session) или встреча 1-на-1 (Meeting). Дефолт 'session' —
   // существующий код занятий kind не передаёт и работает как раньше.
   kind?: RecordingKind;
+  // Разрешить повторный вход из «зависшего» recordingStatus='processing'. Дефолт
+  // false: вебхуки и свипер сохраняют строгий анти-дабл-даунлоад (две параллельные
+  // доставки recording.completed не качают дважды). РУЧНЫЕ маршруты («Обновить из
+  // Zoom», retry) передают true: пользовательский клик — явное «забери сейчас», он
+  // сериализован человеком и защищён авторизацией, поэтому может перезайти из
+  // 'processing'. Без этого после первого «формируется» (MP4 ещё не отрендерился)
+  // claim навсегда блокировал ручной повтор — запись не подтягивалась никогда (#188).
+  allowReprocess?: boolean;
 }): Promise<ProcessOutcome> {
   const {
     sessionId,
@@ -286,6 +294,7 @@ export async function processRecordingForSession(params: {
     retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
     sleep = defaultSleep,
     kind = 'session',
+    allowReprocess = false,
   } = params;
   const model = modelFor(kind);
 
@@ -309,11 +318,16 @@ export async function processRecordingForSession(params: {
   // оба скачать запись + залить в S3. Через updateMany с условием в WHERE только
   // ОДНА доставка переведёт Session в 'processing' (count===1), остальные получат
   // count===0 (кто-то уже качает/скачал) и выйдут без повторного скачивания.
+  // Какие статусы НЕ дают перезайти. 'ready' исключён всегда (готовую не качаем —
+  // дополнительно к проверке videoKey выше). 'processing' исключаем только в строгом
+  // режиме (вебхук/свипер) ради анти-дабл-даунлоада; при allowReprocess (ручной клик)
+  // его НЕ исключаем, иначе «зависший processing» навсегда блокирует ручной повтор (#188).
+  const claimExcludeStatuses = allowReprocess ? ['ready'] : ['processing', 'ready'];
   const claimed = await model.updateMany({
     where: {
       id: sessionId,
       videoKey: null,
-      OR: [{ recordingStatus: null }, { recordingStatus: { notIn: ['processing', 'ready'] } }],
+      OR: [{ recordingStatus: null }, { recordingStatus: { notIn: claimExcludeStatuses } }],
     },
     data: { recordingStatus: 'processing', recordingError: null },
   });
@@ -419,77 +433,6 @@ export async function processRecordingForSession(params: {
       data: { recordingStatus: 'failed', recordingError: safeRecordingErrorMessage(err) },
     });
     throw err;
-  }
-}
-
-// ВРЕМЕННО (диагностика #188) — удалить после.
-// Безопасная диагностика листинга записей Zoom для ручного refresh встречи. НЕ
-// скачивает файлы, НЕ меняет статусы в БД и НЕ раскрывает чувствительное
-// (download_url/токены/сырые тела). Повторяет доезд UUID + листинг recordings ровно
-// как processRecordingForSession, и формирует короткий человекочитаемый отчёт о том,
-// что РЕАЛЬНО вернул Zoom: какой id использован, HTTP-исход, число файлов, по каждому
-// файлу его тип/статус/наличие ссылки (булево), и итог pickMainRecording. Нужна, чтобы
-// заказчик увидел причину «висит формируется» в тосте и прислал её. Безопасно вызывать
-// best-effort: никогда не бросает (любую ошибку оборачивает в текст отчёта).
-export async function diagnoseRecordingListing(params: {
-  sessionId: string;
-  meetingId: string;
-  teacherUserId: string;
-  meetingUuid?: string | null;
-  kind?: RecordingKind;
-}): Promise<string> {
-  const { sessionId, meetingId, teacherUserId, meetingUuid, kind = 'session' } = params;
-  const model = modelFor(kind);
-  const lines: string[] = [];
-
-  try {
-    // Доезд UUID — той же логикой, что и в processRecordingForSession.
-    const ensured = await ensureMeetingUuid(model, sessionId, meetingUuid, meetingId, teacherUserId);
-    if (ensured.detailFailed) {
-      return 'DEBUG #188: доезд UUID встречи упал реальной ошибкой деталей (getMeetingDetail 403/5xx) → запись не запрашивалась (processing).';
-    }
-
-    // Какой id использован для листинга и факт «uuid: да/нет» — БЕЗ самого значения.
-    const usedUuid = ensured.uuid != null;
-    lines.push(`id листинга: ${usedUuid ? 'uuid' : 'numeric'} (uuid: ${usedUuid ? 'да' : 'нет'})`);
-    const recordingsId = ensured.uuid ?? meetingId;
-
-    // HTTP-исход листинга: ok / 404 / иной код / тип ошибки.
-    let files: ZoomRecordingFile[];
-    try {
-      files = await getMeetingRecordings(teacherUserId, recordingsId);
-      lines.push('листинг: ok');
-    } catch (err) {
-      if (err instanceof ZoomApiHttpError) {
-        lines.push(`листинг: HTTP ${err.status}${err.status === 404 ? ' (записи ещё нет/не готова → processing)' : ''}`);
-      } else {
-        lines.push(`листинг: ошибка типа ${err instanceof Error ? err.constructor.name : 'unknown'}`);
-      }
-      return `DEBUG #188: ${lines.join('; ')}`;
-    }
-
-    // Число файлов и краткое описание каждого (без download_url — только булево).
-    lines.push(`файлов: ${files.length}`);
-    files.forEach((f, i) => {
-      lines.push(
-        `[${i}] file_type=${f.file_type ?? '—'} recording_type=${f.recording_type ?? '—'} ` +
-          `status=${(f as { status?: unknown }).status ?? '—'} ext=${f.file_extension ?? '—'} ` +
-          `download_url=${f.download_url ? 'есть' : 'нет'}`,
-      );
-    });
-
-    // Итог pickMainRecording.
-    const main = pickMainRecording(files);
-    lines.push(
-      main
-        ? `pickMain: выбран recording_type=${main.recording_type ?? '—'} file_type=${main.file_type ?? '—'}`
-        : 'pickMain: none (подходящего MP4 со ссылкой нет → processing)',
-    );
-
-    return `DEBUG #188: ${lines.join('; ')}`;
-  } catch (err) {
-    // Best-effort — никогда не валим refresh. Текст без сырых деталей.
-    return `DEBUG #188: диагностика не выполнена (${err instanceof Error ? err.constructor.name : 'unknown'})`;
   }
 }
 

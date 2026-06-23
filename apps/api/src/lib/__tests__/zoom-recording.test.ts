@@ -226,6 +226,44 @@ describe('processRecordingForSession — атомарное застолблен
     expect(mockUpload).not.toHaveBeenCalled();
   });
 
+  it('allowReprocess=true (ручной refresh) → claim перезаходит из зависшего processing', async () => {
+    // #188: после первого «формируется» статус залип в 'processing'. Ручной «Обновить
+    // из Zoom» ОБЯЗАН перезайти: WHERE исключает только 'ready', НЕ 'processing'.
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', videoKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    mockUpload.mockResolvedValue({ key: 'recordings/new.mp4' } as never);
+    const restoreFetch = stubFetchOk();
+
+    try {
+      await processRecordingForSession({
+        ...params,
+        allowReprocess: true,
+        payloadFiles: [
+          {
+            file_type: 'MP4',
+            recording_type: 'shared_screen_with_speaker_view',
+            download_url: 'https://zoom.us/rec/x',
+          },
+        ],
+      });
+    } finally {
+      restoreFetch();
+    }
+
+    // Ключевое: 'processing' НЕ в списке исключённых → залипшую запись можно перезабрать.
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'sess-1',
+        videoKey: null,
+        OR: [{ recordingStatus: null }, { recordingStatus: { notIn: ['ready'] } }],
+      },
+      data: { recordingStatus: 'processing', recordingError: null },
+    });
+    // И раз застолбили (count===1) — качаем и заливаем.
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+  });
+
   it('застолбление удалось (count===1) → качает и заливает в S3 ровно один раз', async () => {
     db.session.findUnique.mockResolvedValue({ id: 'sess-1', videoKey: null });
     db.session.updateMany.mockResolvedValue({ count: 1 });

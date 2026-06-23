@@ -59,10 +59,8 @@ import { MeetingStatusControl } from '@/components/meetings/meeting-status-contr
 
 // Метки шагов единой подтяжки встречи из Zoom для тоста по частичному результату.
 // Зеркало ZOOM_REFRESH_LABELS занятия, но БЕЗ посещаемости (у встречи её нет by-design).
-// ВРЕМЕННО (диагностика #188) — удалить после: 'recordingDebug' тоже исключён из меток
-// шагов (это не шаг подтяжки, а отдельное диагностическое поле строки).
 const MEETING_REFRESH_LABELS: Record<
-  Exclude<keyof MeetingRefreshResult, 'meeting' | 'recordingDebug'>,
+  Exclude<keyof MeetingRefreshResult, 'meeting'>,
   string
 > = {
   recording: 'Запись',
@@ -178,17 +176,10 @@ export function MeetingDetail({
       const hasRealError = keys.some(
         (key) => !result[key]?.ok && !isPending(result[key]?.reason),
       );
-      let message = parts.join(', ');
-      // ВРЕМЕННО (диагностика #188) — удалить после. Дописываем безопасный отчёт о
-      // том, что вернул Zoom на листинг записей, чтобы заказчик мог скопировать и прислать.
-      if (result.recordingDebug) {
-        message = `${message}\n\n${result.recordingDebug}`;
-      }
+      const message = parts.join(', ');
       // Всё ok или «формируется» — это не ошибка (success), иначе предупреждение.
-      // ВРЕМЕННО (диагностика #188): duration увеличена, чтобы успеть скопировать отчёт.
-      const toastOpts = result.recordingDebug ? { duration: 60000 } : undefined;
-      if (hasRealError) toast.warning(message, toastOpts);
-      else toast.success(message, toastOpts);
+      if (hasRealError) toast.warning(message);
+      else toast.success(message);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось обновить из Zoom');
     } finally {

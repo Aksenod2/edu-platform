@@ -23,5 +23,3 @@
 | DEBT-20260618-meet-reschedule | Встреча 1-на-1: нет переноса date/startTime в API (только создание/статус/отмена; done и cancelled терминальны). Если добавим перенос — обязателен сброс меток EventReminderSent (deleteMany по eventId), иначе после переноса напоминания не переназначатся | #169 | низкий (переноса пока нет) | принят |
 
 | DEBT-20260623-notify-active | Чаты потока (notifyCohort/notifyStream): преподаватели НЕ фильтруются по isActive/deletedAt (в отличие от threads/payments/assignments) — удалённый препод потока попадёт в список получателей (push не доедет, но неаккуратно). Фикс: getActiveStreamTeacherIds(streamId) + обновить тест-моки conversations.notify-scope | #179 | низкий (пред-существующее; push удалённому не доставляется) | открыт |
-
-| DEBT-20260623-rec-debug | ВРЕМЕННАЯ диагностика #188 (recordingDebug в /meetings/:id/refresh + вывод в тост): diagnoseRecordingListing в zoom-recording.ts, поле recordingDebug, дописывание в тост meeting-detail. УДАЛИТЬ после получения отчёта и фикса записи | #188 | временное (диагностика) | открыт |

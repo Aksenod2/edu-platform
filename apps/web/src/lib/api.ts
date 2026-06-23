@@ -3469,8 +3469,6 @@ export interface MeetingRefreshResult {
   recording: ZoomRefreshStep;
   summary: ZoomRefreshStep;
   transcript: ZoomRefreshStep;
-  // ВРЕМЕННО (диагностика #188) — удалить после. Безопасный отчёт о листинге записей Zoom.
-  recordingDebug?: string;
 }
 
 // Единая ручная подтяжка встречи из Zoom (запись/итоги/транскрипт) — синхронно. Каждый
