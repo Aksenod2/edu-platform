@@ -185,6 +185,60 @@ async function fetchRecordingStream(
   return res.body as unknown as ReadableStream;
 }
 
+// Результат ленивого доезда UUID встречи Zoom (ensureMeetingUuid):
+//   - uuid — UUID встречи (исходный, либо добытый getMeetingDetail), либо null;
+//   - detailFailed — getMeetingDetail упал РЕАЛЬНОЙ ошибкой (403/5xx). Отличаем
+//     это от «UUID просто нет» (uuid=null, detailFailed=false): на реальной ошибке
+//     вызывающий помечает «формируется» (данные пока недоступны), НЕ запрашивая
+//     запись/итоги по заведомо неподходящему id.
+interface EnsureUuidResult {
+  uuid: string | null;
+  detailFailed: boolean;
+}
+
+// ЕДИНАЯ точка ленивого доезда UUID встречи Zoom (#185 → #188). UUID нужен запросам
+// записи/транскрипта/итогов: у прошедшей встречи (особенно 1-на-1) эти данные у Zoom
+// доступны по UUID, а числовой id отдаёт 404/400. Для встреч/занятий, созданных ДО
+// захвата UUID (zoomMeetingUuid=null) и не докрученных вебхуком, добираем UUID:
+// GET /meetings/{numericId} → uuid, и идемпотентно сохраняем его в модель
+// (Session/Meeting), чтобы следующие запросы шли по UUID без повторного доезда.
+//
+// Возврат (НЕ бросает — вызывающий сам решает статус):
+//   - { uuid: <известный/добытый>, detailFailed: false } — UUID есть;
+//   - { uuid: null, detailFailed: false } — UUID нет (Zoom не отдал / 404 деталей):
+//     вызывающий пробует фолбэк на числовой meetingId;
+//   - { uuid: null, detailFailed: true } — getMeetingDetail упал реальной ошибкой
+//     (403/5xx): вызывающий трактует как «формируется» и не дёргает запись/итоги.
+async function ensureMeetingUuid(
+  model: RecordingModelDelegate,
+  sessionId: string,
+  currentUuid: string | null | undefined,
+  meetingId: string,
+  teacherUserId: string,
+): Promise<EnsureUuidResult> {
+  if (currentUuid) return { uuid: currentUuid, detailFailed: false };
+
+  try {
+    const detail = await getMeetingDetail(teacherUserId, meetingId);
+    if (detail.uuid) {
+      // Сохраняем добытый UUID — только если поле ещё пусто (не перетираем ранее
+      // захваченный UUID). Дальше вебхук/refresh/свипер пойдут по UUID без доезда.
+      await model.updateMany({
+        where: { id: sessionId, zoomMeetingUuid: null },
+        data: { zoomMeetingUuid: detail.uuid },
+      });
+      return { uuid: detail.uuid, detailFailed: false };
+    }
+    // 404 деталей getMeetingDetail уже вернул бы { uuid: null } — сюда: Zoom отдал
+    // детали без UUID. UUID не добыт, но это и не реальный сбой → фолбэк на числовой.
+    return { uuid: null, detailFailed: false };
+  } catch {
+    // Реальная ошибка доступа (403/5xx) при запросе деталей встречи. Не валим жёстко:
+    // сигналим detailFailed — вызывающий пометит «формируется». Свипер/повтор добёрут.
+    return { uuid: null, detailFailed: true };
+  }
+}
+
 // Обрабатывает событие recording.completed: скачивает основной MP4 и заливает в S3.
 // `payloadFiles` — recording_files из вебхука (если есть); иначе тянем через API.
 // Идемпотентность: если у Session уже стоит videoKey — выходим, не перезаписывая.
@@ -204,6 +258,11 @@ export async function processRecordingForSession(params: {
   meetingId: string;
   teacherUserId: string;
   payloadFiles?: ZoomRecordingFile[] | null;
+  // UUID встречи Zoom — листинг recordings у прошедшей встречи (особенно 1-на-1)
+  // доступен по UUID, а числовой id отдаёт 404. При наличии UUID используем его;
+  // иначе общий хелпер ensureMeetingUuid лениво добирает его, иначе фолбэк на
+  // числовой meetingId. Передаётся из рефреш-роутов (как у summary, #188).
+  meetingUuid?: string | null;
   // download_token из вебхука recording.completed — короткоживущий токен Zoom,
   // выданный специально для скачивания файлов этого события. Предпочитаем его
   // OAuth-токену аккаунта; у ручного ретрая его нет — там фолбэк на OAuth-токен.
@@ -222,6 +281,7 @@ export async function processRecordingForSession(params: {
     meetingId,
     teacherUserId,
     payloadFiles,
+    meetingUuid,
     downloadToken,
     retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
     sleep = defaultSleep,
@@ -271,8 +331,27 @@ export async function processRecordingForSession(params: {
     // листинге recordings = облачной записи ЕЩЁ НЕТ (рендер не завершён / не было):
     // это «формируется», а не ошибка — статус оставляем 'processing' и выходим.
     if (!main) {
+      // Листинг recordings у прошедшей встречи доступен по UUID (числовой id → 404).
+      // Доезд UUID — общий хелпер (как у summary/transcript, #188). detailFailed
+      // (реальная ошибка деталей) → «формируется», запрос не дёргаем по плохому id.
+      const ensured = await ensureMeetingUuid(
+        model,
+        sessionId,
+        meetingUuid,
+        meetingId,
+        teacherUserId,
+      );
+      if (ensured.detailFailed) {
+        await model.update({
+          where: { id: sessionId },
+          data: { recordingStatus: 'processing', recordingError: null },
+        });
+        return 'processing';
+      }
+      // UUID предпочтительнее (запись по нему доступна); иначе фолбэк на числовой id.
+      const recordingsId = ensured.uuid ?? meetingId;
       try {
-        files = await getMeetingRecordings(teacherUserId, meetingId);
+        files = await getMeetingRecordings(teacherUserId, recordingsId);
       } catch (err) {
         if (isRecordingsNotReady(err)) {
           // Записи у Zoom ещё нет — данные формируются, не failed.
@@ -517,36 +596,27 @@ export async function processSummaryForSession(params: {
   // throw = реальная ошибка (403/5xx) → failed.
   let finalText = text;
   if (!finalText) {
-    // meeting_summary не принимает числовой id — нужен UUID встречи. Для встреч,
-    // созданных ДО захвата UUID (zoomMeetingUuid=null) и не докрученных вебхуком,
-    // лениво ДОБИРАЕМ UUID: GET /meetings/{numericId} → uuid. Это чинит уже
+    // meeting_summary не принимает числовой id — нужен UUID встречи. Доезд UUID для
+    // встреч, созданных ДО его захвата (zoomMeetingUuid=null), — ОБЩИЙ хелпер
+    // ensureMeetingUuid (та же логика у записи и транскрипта, #188). Это чинит уже
     // существующую встречу заказчика, не дожидаясь вебхука.
-    let effectiveUuid = meetingUuid ?? null;
-    if (!effectiveUuid) {
-      try {
-        const detail = await getMeetingDetail(teacherUserId, meetingId);
-        if (detail.uuid) {
-          effectiveUuid = detail.uuid;
-          // Сохраняем добытый UUID в модель (Session/Meeting) — чтобы следующие
-          // запросы (вебхук/refresh/свипер) уже шли по UUID без повторного доезда.
-          // Пишем только если поле ещё пусто (не перетираем ранее захваченный UUID).
-          await model.updateMany({
-            where: { id: sessionId, zoomMeetingUuid: null },
-            data: { zoomMeetingUuid: effectiveUuid },
-          });
-        }
-      } catch {
-        // Доезд UUID best-effort: 404 getMeetingDetail уже вернул бы null (не сюда).
-        // Сюда — реальная ошибка доступа (403/5xx) при запросе деталей встречи.
-        // Не валим жёстко: помечаем «формируется» (UUID/итоги пока недоступны),
-        // НЕ бросаем 400/прочее в лицо. Свипер/повторный refresh добёрут позже.
-        await model.update({
-          where: { id: sessionId },
-          data: { summaryStatus: 'processing' },
-        });
-        return 'processing';
-      }
+    const ensured = await ensureMeetingUuid(
+      model,
+      sessionId,
+      meetingUuid,
+      meetingId,
+      teacherUserId,
+    );
+    if (ensured.detailFailed) {
+      // Доезд UUID упал реальной ошибкой (403/5xx) — итоги по неподходящему id не
+      // запрашиваем. Помечаем «формируется» (НЕ бросаем 400/прочее в лицо).
+      await model.update({
+        where: { id: sessionId },
+        data: { summaryStatus: 'processing' },
+      });
+      return 'processing';
     }
+    const effectiveUuid = ensured.uuid;
 
     try {
       // UUID предпочтительнее: meeting_summary не принимает числовой id. Если UUID
@@ -676,6 +746,11 @@ export async function processTranscriptForSession(params: {
   meetingId: string;
   teacherUserId: string;
   payloadFiles?: ZoomRecordingFile[] | null;
+  // UUID встречи Zoom — листинг recordings (откуда берём файл транскрипта) у
+  // прошедшей встречи доступен по UUID, а числовой id отдаёт 404. При наличии UUID
+  // используем его; иначе общий хелпер ensureMeetingUuid лениво добирает; иначе
+  // фолбэк на числовой meetingId. Передаётся из рефреш-роутов (как у summary, #188).
+  meetingUuid?: string | null;
   // download_token из вебхука (короткоживущий токен для скачивания файлов события).
   downloadToken?: string | null;
   retryDelaysMs?: number[];
@@ -687,6 +762,7 @@ export async function processTranscriptForSession(params: {
     meetingId,
     teacherUserId,
     payloadFiles,
+    meetingUuid,
     downloadToken,
     retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
     sleep = defaultSleep,
@@ -717,8 +793,21 @@ export async function processTranscriptForSession(params: {
   let files = payloadFiles ?? [];
   let transcriptFile = pickTranscriptFile(files);
   if (!transcriptFile) {
+    // Листинг recordings у прошедшей встречи доступен по UUID (числовой id → 404).
+    // Доезд UUID — общий хелпер (как у summary/recording, #188). detailFailed
+    // (реальная ошибка деталей) → «формируется», статус НЕ ломаем.
+    const ensured = await ensureMeetingUuid(
+      model,
+      sessionId,
+      meetingUuid,
+      meetingId,
+      teacherUserId,
+    );
+    if (ensured.detailFailed) return 'processing';
+    // UUID предпочтительнее; иначе фолбэк на числовой id.
+    const recordingsId = ensured.uuid ?? meetingId;
     try {
-      files = await getMeetingRecordings(teacherUserId, meetingId);
+      files = await getMeetingRecordings(teacherUserId, recordingsId);
     } catch (err) {
       if (isRecordingsNotReady(err)) {
         // Записи/транскрипта у Zoom ещё нет — формируется, статус НЕ ломаем.
@@ -913,6 +1002,7 @@ export async function sweepFailedRecordings(params?: {
       streamId: true,
       lessonId: true,
       zoomMeetingId: true,
+      zoomMeetingUuid: true,
       recordingStatus: true,
     },
     orderBy: { updatedAt: 'asc' },
@@ -946,6 +1036,7 @@ export async function sweepFailedRecordings(params?: {
         sessionId: s.id,
         meetingId: s.zoomMeetingId,
         teacherUserId,
+        meetingUuid: s.zoomMeetingUuid,
         retryDelaysMs: params?.retryDelaysMs,
         sleep: params?.sleep,
       });
@@ -966,6 +1057,7 @@ export async function sweepFailedRecordings(params?: {
       id: true,
       teacherId: true,
       zoomMeetingId: true,
+      zoomMeetingUuid: true,
       recordingStatus: true,
     },
     orderBy: { updatedAt: 'asc' },
@@ -994,6 +1086,7 @@ export async function sweepFailedRecordings(params?: {
         sessionId: m.id,
         meetingId: m.zoomMeetingId,
         teacherUserId: m.teacherId,
+        meetingUuid: m.zoomMeetingUuid,
         retryDelaysMs: params?.retryDelaysMs,
         sleep: params?.sleep,
         kind: 'meeting',

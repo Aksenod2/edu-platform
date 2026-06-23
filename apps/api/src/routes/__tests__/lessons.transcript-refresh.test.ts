@@ -117,9 +117,16 @@ describe('POST /lessons/:id/sessions/:streamId/refresh — единая подт
     expect(mockSummary).toHaveBeenCalledTimes(1);
     expect(mockTranscript).toHaveBeenCalledTimes(1);
     expect(mockAttendance).toHaveBeenCalledTimes(1);
-    // UUID встречи из сессии прокидывается в подтяжку итогов (meeting_summary
-    // не принимает числовой id — нужен UUID).
+    // UUID встречи из сессии прокидывается во ВСЕ три подтяжки: итоги (meeting_summary
+    // не принимает числовой id), а также запись и транскрипт (#188 — листинг recordings
+    // у прошедшей встречи доступен по UUID, числовой id → 404).
     expect(mockSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingUuid: '/abc==' }),
+    );
+    expect(mockRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingUuid: '/abc==' }),
+    );
+    expect(mockTranscript).toHaveBeenCalledWith(
       expect.objectContaining({ meetingUuid: '/abc==' }),
     );
   });

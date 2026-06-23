@@ -325,6 +325,10 @@ export class ZoomApiHttpError extends Error {
 // GET https://api.zoom.us/v2/meetings/{meetingId}/recordings (Bearer).
 // Бросает ZoomApiHttpError при неуспехе (вызывающий смотрит status: 404 = записи
 // ещё нет/не готова → processing; прочее, напр. 403 = реальная ошибка → failed).
+// meetingId здесь — UUID встречи (предпочтительно) либо числовой id (фолбэк): у
+// прошедшей встречи 1-на-1 запись/транскрипт, как и итоги, доступны по UUID, а
+// числовой листинг отдаёт 404. Кодирование UUID (в т.ч. двойное для UUID со
+// слэшами) берёт на себя encodeMeetingPathParam — как у getMeetingSummary.
 export async function getMeetingRecordings(
   userId: string,
   meetingId: string,
@@ -332,7 +336,7 @@ export async function getMeetingRecordings(
   const token = await getZoomAccessToken(userId);
 
   const res = await fetch(
-    `${ZOOM_API_URL}/meetings/${encodeURIComponent(meetingId)}/recordings`,
+    `${ZOOM_API_URL}/meetings/${encodeMeetingPathParam(meetingId)}/recordings`,
     {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },

@@ -874,14 +874,31 @@ describe('POST /meetings/:id/refresh — ручная подтяжка из Zoom
     expect(body.summary).toEqual({ ok: true });
     expect(body.transcript).toEqual({ ok: true });
     expect(body).not.toHaveProperty('attendance');
+    // #188: UUID встречи пробрасывается во ВСЕ три обработчика (запись/итоги/
+    // транскрипт), чтобы листинг recordings/итоги шли по UUID, а не числовому id.
     expect(mockProcessRecording).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'm-1', meetingId: '12345', kind: 'meeting' }),
+      expect.objectContaining({
+        sessionId: 'm-1',
+        meetingId: '12345',
+        meetingUuid: 'uuid-1',
+        kind: 'meeting',
+      }),
     );
     expect(mockProcessSummary).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'm-1', meetingId: '12345', kind: 'meeting' }),
+      expect.objectContaining({
+        sessionId: 'm-1',
+        meetingId: '12345',
+        meetingUuid: 'uuid-1',
+        kind: 'meeting',
+      }),
     );
     expect(mockProcessTranscript).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'm-1', meetingId: '12345', kind: 'meeting' }),
+      expect.objectContaining({
+        sessionId: 'm-1',
+        meetingId: '12345',
+        meetingUuid: 'uuid-1',
+        kind: 'meeting',
+      }),
     );
   });
 

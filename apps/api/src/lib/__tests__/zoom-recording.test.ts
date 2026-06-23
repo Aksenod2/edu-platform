@@ -510,6 +510,175 @@ describe('processRecordingForSession — «формируется» (processing)
   });
 });
 
+// ─── Листинг recordings по UUID (#188): запись/транскрипт у прошедшей встречи ───
+// доступны по UUID (числовой id → 404). Доезд UUID — общий хелпер ensureMeetingUuid,
+// тот же, что у summary. Проверяем: при наличии UUID листинг идёт по нему; без UUID
+// — ленивый доезд getMeetingDetail → запрос по добытому UUID; 404 по числовому без
+// UUID → processing (как раньше). Аналогично для транскрипта.
+describe('processRecordingForSession — листинг recordings по UUID (#188)', () => {
+  const mockGetDetail = vi.mocked(getMeetingDetail);
+  const params = {
+    sessionId: 'sess-1',
+    meetingId: 'mtg-1',
+    teacherUserId: 'teacher-1',
+    retryDelaysMs: [],
+    sleep: () => Promise.resolve(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', videoKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    mockGetToken.mockResolvedValue('access-token');
+    mockGetRecordings.mockResolvedValue([]);
+    mockGetDetail.mockResolvedValue({ uuid: null });
+  });
+
+  it('при наличии meetingUuid листинг recordings запрашивается по UUID, без доезда', async () => {
+    await processRecordingForSession({ ...params, payloadFiles: [], meetingUuid: '/abc==' });
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', '/abc==');
+    expect(mockGetDetail).not.toHaveBeenCalled();
+  });
+
+  it('без meetingUuid (существующая встреча, uuid=null): доезд getMeetingDetail → листинг по добытому UUID + сохранение UUID', async () => {
+    mockGetDetail.mockResolvedValue({ uuid: 'UUID-from-detail==' });
+    await processRecordingForSession({ ...params, payloadFiles: [], meetingUuid: null });
+    expect(mockGetDetail).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    // Добытый UUID сохранён в модель идемпотентно (общий хелпер ensureMeetingUuid).
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-1', zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: 'UUID-from-detail==' },
+    });
+    // Листинг — по добытому UUID, а не по числовому id.
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', 'UUID-from-detail==');
+  });
+
+  it('без meetingUuid и доезд UUID не нашёл → фолбэк на числовой meetingId; 404 листинга → processing (как раньше)', async () => {
+    mockGetDetail.mockResolvedValue({ uuid: null });
+    mockGetRecordings.mockRejectedValue(new ZoomApiHttpError(404, 'no recordings'));
+    const outcome = await processRecordingForSession({
+      ...params,
+      payloadFiles: [],
+      meetingUuid: null,
+    });
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    expect(outcome).toBe('processing');
+    const failCall = db.session.update.mock.calls.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (c: any) => c[0]?.data?.recordingStatus === 'failed',
+    );
+    expect(failCall).toBeUndefined();
+  });
+
+  it('доезд UUID упал реальной ошибкой (403/5xx) → processing, листинг recordings НЕ дёргаем', async () => {
+    mockGetDetail.mockRejectedValue(new ZoomApiHttpError(403, 'нет доступа'));
+    const outcome = await processRecordingForSession({
+      ...params,
+      payloadFiles: [],
+      meetingUuid: null,
+    });
+    expect(outcome).toBe('processing');
+    expect(mockGetRecordings).not.toHaveBeenCalled();
+  });
+});
+
+describe('processTranscriptForSession — листинг recordings по UUID (#188)', () => {
+  const mockGetDetail = vi.mocked(getMeetingDetail);
+  const params = {
+    sessionId: 'sess-1',
+    meetingId: 'mtg-1',
+    teacherUserId: 'teacher-1',
+    retryDelaysMs: [],
+    sleep: () => Promise.resolve(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.session.findUnique.mockResolvedValue({ id: 'sess-1', transcriptVttKey: null });
+    db.session.updateMany.mockResolvedValue({ count: 1 });
+    db.session.update.mockResolvedValue({});
+    mockGetToken.mockResolvedValue('access-token');
+    mockGetRecordings.mockResolvedValue([]);
+    mockGetDetail.mockResolvedValue({ uuid: null });
+  });
+
+  it('при наличии meetingUuid листинг запрашивается по UUID, без доезда', async () => {
+    await processTranscriptForSession({ ...params, payloadFiles: [], meetingUuid: '/abc==' });
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', '/abc==');
+    expect(mockGetDetail).not.toHaveBeenCalled();
+  });
+
+  it('без meetingUuid (существующая встреча): доезд getMeetingDetail → листинг по добытому UUID', async () => {
+    mockGetDetail.mockResolvedValue({ uuid: 'UUID-from-detail==' });
+    await processTranscriptForSession({ ...params, payloadFiles: [], meetingUuid: null });
+    expect(mockGetDetail).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    expect(db.session.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sess-1', zoomMeetingUuid: null },
+      data: { zoomMeetingUuid: 'UUID-from-detail==' },
+    });
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', 'UUID-from-detail==');
+  });
+
+  it('без meetingUuid и доезд не нашёл → фолбэк на числовой id; 404 листинга → processing', async () => {
+    mockGetDetail.mockResolvedValue({ uuid: null });
+    mockGetRecordings.mockRejectedValue(new ZoomApiHttpError(404, 'no recordings'));
+    const outcome = await processTranscriptForSession({
+      ...params,
+      payloadFiles: [],
+      meetingUuid: null,
+    });
+    expect(mockGetRecordings).toHaveBeenCalledWith('teacher-1', 'mtg-1');
+    expect(outcome).toBe('processing');
+  });
+
+  it('доезд UUID упал реальной ошибкой → processing, листинг НЕ дёргаем', async () => {
+    mockGetDetail.mockRejectedValue(new ZoomApiHttpError(403, 'нет доступа'));
+    const outcome = await processTranscriptForSession({
+      ...params,
+      payloadFiles: [],
+      meetingUuid: null,
+    });
+    expect(outcome).toBe('processing');
+    expect(mockGetRecordings).not.toHaveBeenCalled();
+  });
+
+  it('payload уже содержит файл транскрипта → доезд UUID и листинг API не дёргаем', async () => {
+    const transcriptFiles: ZoomRecordingFile[] = [
+      {
+        recording_type: 'audio_transcript',
+        file_type: 'TRANSCRIPT',
+        download_url: 'https://zoom.us/rec/t.vtt',
+      },
+    ];
+    mockUpload.mockImplementation((_body, key) => Promise.resolve({ key } as never));
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('WEBVTT\n\nПривет'));
+            controller.close();
+          },
+        }),
+      }),
+    ) as never;
+    try {
+      await processTranscriptForSession({
+        ...params,
+        payloadFiles: transcriptFiles,
+        meetingUuid: null,
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(mockGetDetail).not.toHaveBeenCalled();
+    expect(mockGetRecordings).not.toHaveBeenCalled();
+  });
+});
+
 describe('processTranscriptForSession — «формируется» (processing) vs ошибка', () => {
   const params = {
     sessionId: 'sess-1',

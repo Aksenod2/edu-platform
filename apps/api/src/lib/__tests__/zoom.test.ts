@@ -26,6 +26,7 @@ vi.mock('../crypto.js', () => ({
 import {
   encodeMeetingPathParam,
   getMeetingSummary,
+  getMeetingRecordings,
   getMeetingDetail,
   createZoomMeeting,
 } from '../zoom.js';
@@ -135,6 +136,68 @@ describe('getMeetingSummary — формирование URL с meetingId/UUID',
     mockFetchSequence(summaryResponse);
 
     await expect(getMeetingSummary('teacher-1', 'uuid==')).rejects.toThrow();
+  });
+});
+
+describe('getMeetingRecordings — формирование URL с meetingId/UUID (#188)', () => {
+  // Имитируем fetch: сначала OAuth-токен, затем listing recordings.
+  function mockFetchSequence(recordingsResponse: Response) {
+    const tokenResponse = new Response(JSON.stringify({ access_token: 'access-token' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse) // getZoomAccessToken
+      .mockResolvedValueOnce(recordingsResponse); // getMeetingRecordings
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("UUID со слэшем ('/abc==') → сегмент пути дважды кодирован (как у meeting_summary)", async () => {
+    const recordingsResponse = new Response(JSON.stringify({ recording_files: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const fetchMock = mockFetchSequence(recordingsResponse);
+
+    await getMeetingRecordings('teacher-1', '/abc==');
+
+    const url = String(fetchMock.mock.calls[1][0]);
+    const doubleEncoded = encodeURIComponent(encodeURIComponent('/abc=='));
+    expect(url).toContain(`/meetings/${doubleEncoded}/recordings`);
+    // Сырой одиночно кодированный сегмент со слэшем (старый encodeURIComponent) недопустим.
+    expect(url).not.toContain(`/meetings/${encodeURIComponent('/abc==')}/recordings`);
+  });
+
+  it('числовой id → сегмент пути кодирован один раз', async () => {
+    const recordingsResponse = new Response(JSON.stringify({ recording_files: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const fetchMock = mockFetchSequence(recordingsResponse);
+
+    await getMeetingRecordings('teacher-1', '1234567890');
+
+    const url = String(fetchMock.mock.calls[1][0]);
+    expect(url).toContain(`/meetings/${encodeURIComponent('1234567890')}/recordings`);
+  });
+
+  it('404 (записи ещё нет) → ZoomApiHttpError со status 404 (вызывающий трактует как processing)', async () => {
+    const recordingsResponse = new Response(null, { status: 404 });
+    mockFetchSequence(recordingsResponse);
+
+    await expect(getMeetingRecordings('teacher-1', '1234567890')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });
 

@@ -157,6 +157,7 @@ async function processMeetingEvent(
       meetingId,
       teacherUserId,
       payloadFiles: obj?.recording_files ?? null,
+      meetingUuid: uuidFromEvent,
       downloadToken,
       kind: 'meeting',
     });
@@ -167,6 +168,7 @@ async function processMeetingEvent(
         meetingId,
         teacherUserId,
         payloadFiles: obj?.recording_files ?? null,
+        meetingUuid: uuidFromEvent,
         downloadToken,
         kind: 'meeting',
       });
@@ -182,6 +184,7 @@ async function processMeetingEvent(
       meetingId,
       teacherUserId,
       payloadFiles: obj?.recording_files ?? null,
+      meetingUuid: uuidFromEvent,
       downloadToken,
       kind: 'meeting',
     });
@@ -297,6 +300,7 @@ async function processEventAsync(
             meetingId,
             teacherUserId,
             payloadFiles: obj?.recording_files ?? null,
+            meetingUuid: uuidFromEvent,
             downloadToken,
           });
           // Фолбэк: транскрипт нередко уже лежит в recording_files того же события
@@ -309,6 +313,7 @@ async function processEventAsync(
               meetingId,
               teacherUserId,
               payloadFiles: obj?.recording_files ?? null,
+              meetingUuid: uuidFromEvent,
               downloadToken,
             });
           } catch (err) {
@@ -323,6 +328,7 @@ async function processEventAsync(
             meetingId,
             teacherUserId,
             payloadFiles: obj?.recording_files ?? null,
+            meetingUuid: uuidFromEvent,
             downloadToken,
           });
         } else if (event === 'meeting.summary_completed') {
