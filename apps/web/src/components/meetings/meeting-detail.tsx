@@ -224,9 +224,20 @@ export function MeetingDetail({
           {/* Шапка */}
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              {/* Встреча знает planned/live/done/cancelled — все валидны как LessonStatus. */}
-              <LessonStatusBadge status={meeting.status as LessonStatus} />
-              <Badge>1-на-1</Badge>
+              {/* Бейдж типа встречи — всегда. */}
+              <Badge variant="secondary">1-на-1</Badge>
+              {/* Статус в шапке read-only показываем, когда кликабельного
+                  MeetingStatusControl нет: для терминальных встреч (done/cancelled,
+                  где контрол не рендерится) ИЛИ для студента (контрол только у
+                  админа). Иначе (админ + активная встреча planned/live) статус
+                  живёт в едином кликабельном бейдже-дропдауне в блоке действий —
+                  здесь его НЕ дублируем. Встреча знает planned/live/done/cancelled —
+                  все валидны как LessonStatus. */}
+              {(!isAdmin ||
+                meeting.status === 'done' ||
+                meeting.status === 'cancelled') && (
+                <LessonStatusBadge status={meeting.status as LessonStatus} />
+              )}
             </div>
             <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
 

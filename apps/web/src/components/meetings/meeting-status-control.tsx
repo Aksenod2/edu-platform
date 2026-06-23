@@ -28,7 +28,6 @@ import {
   type LessonStatus,
   type Meeting,
 } from '@/lib/api';
-import { STATUS_BADGE_VARIANT } from '@/components/schedule/utils';
 import { LivePulseDot } from '@/components/schedule/lesson-status-badge';
 import { RescheduleMeetingDialog } from '@/components/meetings/reschedule-meeting-dialog';
 
@@ -94,10 +93,15 @@ export function MeetingStatusControl({
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={pending}>
           {/* Бейдж-триггер: <button> с увеличенной тап-зоной, cursor-pointer и
-              ChevronDown как аффорданс кликабельности (зеркало занятия). */}
+              ChevronDown как аффорданс кликабельности (зеркало занятия).
+              Для planned НЕ используем глобальный STATUS_BADGE_VARIANT.planned
+              ('default'/чёрный): здесь рядом стоит чёрная primary-кнопка
+              «Провести», поэтому планируемый статус красим НЕЙТРАЛЬНО ('secondary')
+              ЛОКАЛЬНО — единственной чёрной остаётся «Провести». Глобальный токен
+              для занятий/расписания не трогаем. */}
           <Badge
             asChild
-            variant={isLive ? 'default' : STATUS_BADGE_VARIANT[current]}
+            variant={isLive ? 'default' : 'secondary'}
             className={cn(
               'min-h-9 cursor-pointer gap-1 px-2.5 py-1 text-sm transition-opacity hover:opacity-90 focus-visible:outline-none',
               isLive && 'font-medium',
@@ -117,7 +121,10 @@ export function MeetingStatusControl({
         <DropdownMenuContent align="start" className="min-w-44">
           <DropdownMenuLabel>Статус встречи</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {/* «Начать» (planned→live) — только пока встреча запланирована. */}
+          {/* «Начать» (planned→live) — только пока встреча запланирована.
+              «Провести» в меню НЕ дублируем — этот частый переход вынесен
+              отдельной primary-кнопкой рядом. В меню остаются «Начать»
+              (для planned) и «Отменить встречу». */}
           {status === 'planned' && (
             <DropdownMenuItem
               className="cursor-pointer"
@@ -127,18 +134,10 @@ export function MeetingStatusControl({
               Начать
             </DropdownMenuItem>
           )}
-          {/* «Провести» (planned|live→done) — дублирует вынесенную кнопку, но
-              оставляем в меню для полноты переходов. */}
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onSelect={() => onStatus('done')}
-          >
-            <Check className="size-4 opacity-0" />
-            Провести
-          </DropdownMenuItem>
           {/* Перенос — только пока встреча запланирована (live/done/cancelled
               переносить нельзя). Диалог открываем ПОСЛЕ закрытия меню (как с
-              отменой) — иначе конфликт фокуса/портала. */}
+              отменой) — иначе конфликт фокуса/портала. «Провести» в меню НЕ
+              дублируем (вынесена primary-кнопкой, #177). */}
           {status === 'planned' && (
             <DropdownMenuItem
               className="cursor-pointer"
