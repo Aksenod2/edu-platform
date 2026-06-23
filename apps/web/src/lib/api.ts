@@ -2809,7 +2809,11 @@ export function getNotificationLink(
       if (role === 'admin' && m.assignmentId) return `/admin/assignments/${m.assignmentId}`;
       return '/admin/assignments';
     case 'assignment_reviewed':
-      if (role === 'student' && m.assignmentId) return `/dashboard/assignments/${m.assignmentId}`;
+      // Страница /dashboard/assignments/[id] резолвит задание по StudentAssignment.id
+      // (как и ссылка «Подробнее» из списка). Поэтому ведём по studentAssignmentId,
+      // а НЕ по assignmentId (= session.id) — иначе «Задание не найдено» (баг прод).
+      if (role === 'student' && m.studentAssignmentId)
+        return `/dashboard/assignments/${m.studentAssignmentId}`;
       return role === 'student' ? '/dashboard/assignments' : '/admin/assignments';
     case 'thread_entry':
       if (role === 'student') return '/dashboard/messages?tab=personal';
