@@ -11,11 +11,14 @@ vi.mock('@platform/db', async () => {
     prisma: {
       user: {
         findUnique: vi.fn(),
+        findFirst: vi.fn(),
         findMany: vi.fn(),
         findUniqueOrThrow: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn(),
       },
+      stream: { findMany: vi.fn() },
+      streamEnrollment: { findMany: vi.fn() },
       topUpRequest: {
         findFirst: vi.fn(),
         findMany: vi.fn(),
@@ -264,11 +267,30 @@ describe('POST /topup-requests', () => {
 
 // ─── POST /topup-requests — уведомление админам о новой заявке ─────────────────
 
-describe('POST /topup-requests — уведомление админам', () => {
-  it('уведомляет всех админов с типом topup_requested (имя студента + сумма)', async () => {
+// Поток в форме streamTeacherSourcesInclude (преподаватели из program.programLessons).
+function streamWithTeachers(teacherUserIds: string[]) {
+  return {
+    program: {
+      id: 'prog-1',
+      name: 'Программа',
+      type: 'course',
+      programLessons: [
+        { lesson: { teachers: teacherUserIds.map((id) => ({ user: { id, name: `Преп ${id}` } })) } },
+      ],
+    },
+    sessions: [],
+  };
+}
+
+describe('POST /topup-requests — уведомление по группам', () => {
+  it('уведомляет преподавателя группы студента (имя + сумма); посторонний админ НЕ получает', async () => {
     stubCreatedRequest('req-1', 500000); // 5 000 ₽
     db.user.findUnique.mockResolvedValueOnce({ name: 'Иван Петров' }); // имя студента
-    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }, { id: 'admin-2' }]); // админы
+    // getActiveStudentStreamTeacherIds: студент зачислён в stream-1, ведёт teacher-1.
+    db.streamEnrollment.findMany.mockResolvedValueOnce([{ streamId: 'stream-1' }]);
+    db.stream.findMany.mockResolvedValueOnce([streamWithTeachers(['teacher-1'])]);
+    // Фильтр активности: teacher-1 активен (посторонний admin в выборку не попадает).
+    db.user.findMany.mockResolvedValueOnce([{ id: 'teacher-1' }]);
 
     const app = await buildApp();
     const mp = buildMultipart({ fields: { claimedAmountKopecks: '500000' } });
@@ -282,27 +304,57 @@ describe('POST /topup-requests — уведомление админам', () =>
     expect(res.statusCode).toBe(201);
     await flushAsync();
 
-    // Админов выбираем строго по роли.
-    expect(db.user.findMany).toHaveBeenCalledWith({
-      where: { role: 'admin' },
-      select: { id: true },
-    });
-    // Fan-out на всех админов с нужным типом, заголовком и metadata.
+    // Адресуем строго преподавателю группы, а не всем role:'admin'.
     expect(notifyManyMock).toHaveBeenCalledTimes(1);
     const [userIds, type, title, body, metadata] = notifyManyMock.mock.calls[0];
-    expect(userIds).toEqual(['admin-1', 'admin-2']);
+    expect(userIds).toEqual(['teacher-1']);
     expect(type).toBe('topup_requested');
     expect(title).toBe('Новая заявка на пополнение');
     // Тело: имя студента + сумма в рублях. Нормализуем пробелы (toLocaleString может
     // ставить неразрывный пробел-разделитель тысяч в зависимости от ICU).
     expect(body.replace(/[\u00A0\u202F]/g, ' ')).toBe('Иван Петров · 5 000 ₽');
     expect(metadata).toEqual({ studentId: 's-1', requestId: 'req-1' });
+    // Владельца НЕ ищем — у студента есть активный преподаватель.
+    expect(db.user.findFirst).not.toHaveBeenCalled();
   });
 
-  it('без указанной суммы — тело «<имя> приложил оплату»', async () => {
+  it('удалённый/неактивный преподаватель отсеивается → фолбэк на владельца платформы', async () => {
+    stubCreatedRequest('req-d', 100000);
+    db.user.findUnique.mockResolvedValueOnce({ name: 'Студент' });
+    db.streamEnrollment.findMany.mockResolvedValueOnce([{ streamId: 'stream-1' }]);
+    db.stream.findMany.mockResolvedValueOnce([streamWithTeachers(['teacher-del'])]);
+    // Фильтр isActive/deletedAt отсеял единственного преподавателя (удалён).
+    db.user.findMany.mockResolvedValueOnce([]);
+    // Фолбэк: владелец платформы (самый ранний активный админ).
+    db.user.findFirst.mockResolvedValueOnce({ id: 'owner-1' });
+
+    const app = await buildApp();
+    const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/topup-requests',
+      headers: { ...authHeaders(studentToken('s-1')), ...mp.headers },
+      payload: mp.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    await flushAsync();
+
+    // Владельца определяем как самого раннего активного админа.
+    expect(db.user.findFirst).toHaveBeenCalledWith({
+      where: { role: 'admin', isActive: true, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    expect(notifyManyMock).toHaveBeenCalledTimes(1);
+    expect(notifyManyMock.mock.calls[0][0]).toEqual(['owner-1']);
+  });
+
+  it('студент без группы → уведомление владельцу платформы (деньги без группы не теряем)', async () => {
     stubCreatedRequest('req-2', null);
     db.user.findUnique.mockResolvedValueOnce({ name: 'Мария Сидорова' });
-    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]); // нет зачислений
+    db.user.findFirst.mockResolvedValueOnce({ id: 'owner-1' }); // владелец платформы
 
     const app = await buildApp();
     const mp = buildMultipart({}); // без claimedAmountKopecks
@@ -316,8 +368,10 @@ describe('POST /topup-requests — уведомление админам', () =>
     expect(res.statusCode).toBe(201);
     await flushAsync();
 
+    // У студента нет групп → потоки не запрашиваем, сразу владелец.
+    expect(db.stream.findMany).not.toHaveBeenCalled();
     expect(notifyManyMock).toHaveBeenCalledWith(
-      ['admin-1'],
+      ['owner-1'],
       'topup_requested',
       'Новая заявка на пополнение',
       'Мария Сидорова приложил оплату',
@@ -328,7 +382,8 @@ describe('POST /topup-requests — уведомление админам', () =>
   it('ошибка уведомления НЕ ломает создание заявки (всё равно 201)', async () => {
     stubCreatedRequest('req-3', 100000);
     db.user.findUnique.mockResolvedValueOnce({ name: 'Студент' });
-    db.user.findMany.mockResolvedValueOnce([{ id: 'admin-1' }]);
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    db.user.findFirst.mockResolvedValueOnce({ id: 'owner-1' });
     notifyManyMock.mockRejectedValueOnce(new Error('почта недоступна'));
 
     const app = await buildApp();
@@ -347,10 +402,11 @@ describe('POST /topup-requests — уведомление админам', () =>
     expect(notifyManyMock).toHaveBeenCalled();
   });
 
-  it('нет админов — уведомление не отправляется, заявка создаётся', async () => {
+  it('нет ни преподавателей, ни владельца (вырожденный случай) — не шлём, заявка создаётся', async () => {
     stubCreatedRequest('req-4', 100000);
     db.user.findUnique.mockResolvedValueOnce({ name: 'Студент' });
-    db.user.findMany.mockResolvedValueOnce([]); // админов нет
+    db.streamEnrollment.findMany.mockResolvedValueOnce([]);
+    db.user.findFirst.mockResolvedValueOnce(null); // активных админов нет вовсе
 
     const app = await buildApp();
     const mp = buildMultipart({ fields: { claimedAmountKopecks: '100000' } });

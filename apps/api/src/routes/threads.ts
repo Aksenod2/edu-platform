@@ -3,45 +3,21 @@ import { prisma, type ThreadEntryType } from '@platform/db';
 import { authenticate } from '../middleware/auth.js';
 import { uploadFile, getFileUrl } from '../lib/s3.js';
 import { createNotification } from '../lib/notifications.js';
-import { deriveStreamTeachers, streamTeacherSourcesInclude } from '../lib/stream-teachers.js';
+import { getActiveStudentStreamTeacherIds } from '../lib/stream-teachers.js';
 
 /**
  * Получатели уведомления о сообщении студента в его личном треде.
  *
  * Уведомление о сообщении студента адресуется ПРЕПОДАВАТЕЛЯМ его потоков (всех
  * потоков, на которые студент зачислён), а НЕ всем админам. Список дедуплицируется
- * по id (один препод, ведущий несколько потоков/уроков студента, получает одно
- * уведомление) и фильтруется по активности.
+ * и фильтруется по активности — это делает общий хелпер getActiveStudentStreamTeacherIds.
  *
  * Фолбэк на админов — ТОЛЬКО если у потоков студента нет активных преподавателей
- * (или у студента вовсе нет потоков), чтобы сообщение не осталось без адресата.
+ * (или у студента вовсе нет потоков), чтобы личное сообщение не осталось без адресата.
  */
 async function recipientsForStudentThread(studentId: string): Promise<string[]> {
-  const enrollments = await prisma.streamEnrollment.findMany({
-    where: { userId: studentId },
-    select: { streamId: true },
-  });
-
-  const teacherIds = new Set<string>();
-  if (enrollments.length > 0) {
-    // Один запрос на все потоки студента вместо N тяжёлых запросов в цикле.
-    const streams = await prisma.stream.findMany({
-      where: { id: { in: enrollments.map((e) => e.streamId) } },
-      select: streamTeacherSourcesInclude,
-    });
-    for (const stream of streams) {
-      for (const t of deriveStreamTeachers(stream).teachers) teacherIds.add(t.id);
-    }
-  }
-
-  if (teacherIds.size > 0) {
-    // Отсеиваем неактивных/удалённых преподавателей (список их флагов не несёт).
-    const active = await prisma.user.findMany({
-      where: { id: { in: [...teacherIds] }, isActive: true, deletedAt: null },
-      select: { id: true },
-    });
-    if (active.length > 0) return active.map((u) => u.id);
-  }
+  const teacherIds = await getActiveStudentStreamTeacherIds(studentId);
+  if (teacherIds.length > 0) return teacherIds;
 
   const admins = await prisma.user.findMany({
     where: { role: 'admin', isActive: true, deletedAt: null },

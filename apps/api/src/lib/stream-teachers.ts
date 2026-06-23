@@ -111,3 +111,65 @@ export async function getStreamTeacherList(
   if (!stream) return [];
   return deriveStreamTeachers(stream).teachers;
 }
+
+/**
+ * АКТИВНЫЕ преподаватели ВСЕХ потоков студента (дедуплицированы по id).
+ *
+ * Это «правильные» получатели уведомлений о студенте: преподаватель, ведущий
+ * любой из потоков студента, получает ровно одно уведомление. Неактивные/удалённые
+ * преподаватели отсеиваются (их флаги не несёт список из deriveStreamTeachers).
+ *
+ * Возвращает ПУСТОЙ массив, если у студента нет потоков ИЛИ у потоков нет активных
+ * преподавателей — решение о фолбэке (админам / владельцу / не слать) принимает
+ * вызывающий, т.к. оно различается по событию (личный тред → админы, оплата → владелец,
+ * чат/зачисление → не слать).
+ *
+ * Переиспользуется в routes/threads.ts (личный тред) и routes/payments.ts (оплата),
+ * чтобы не дублировать связку enrollment → потоки → преподаватели → фильтр активности.
+ */
+export async function getActiveStudentStreamTeacherIds(studentId: string): Promise<string[]> {
+  const enrollments = await prisma.streamEnrollment.findMany({
+    where: { userId: studentId },
+    select: { streamId: true },
+  });
+  if (enrollments.length === 0) return [];
+
+  // Один запрос на все потоки студента вместо N тяжёлых запросов в цикле.
+  const streams = await prisma.stream.findMany({
+    where: { id: { in: enrollments.map((e) => e.streamId) } },
+    select: streamTeacherSourcesInclude,
+  });
+  const teacherIds = new Set<string>();
+  for (const stream of streams) {
+    for (const t of deriveStreamTeachers(stream).teachers) teacherIds.add(t.id);
+  }
+  if (teacherIds.size === 0) return [];
+
+  // Отсеиваем неактивных/удалённых преподавателей (список их флагов не несёт).
+  const active = await prisma.user.findMany({
+    where: { id: { in: [...teacherIds] }, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  return active.map((u) => u.id);
+}
+
+/**
+ * Владелец платформы — фолбэк-адресат для событий, где «деньги/студент без группы
+ * не должны теряться» (например, заявка на оплату от студента без потока).
+ *
+ * В модели данных НЕТ отдельного флага «владелец платформы» и нет супер-роли:
+ * роли только student/admin, а Stream.ownerId/Program.ownerId — это «ведущий»
+ * конкретного потока/программы, а не владелец всей платформы. Поэтому за владельца
+ * платформы принимаем САМОГО РАННЕГО активного админа (основателя — первый
+ * заведённый в системе админ). Это детерминированно и не требует миграции схемы.
+ *
+ * Возвращает null, только если активных админов нет вовсе (вырожденный случай).
+ */
+export async function getPlatformOwnerId(): Promise<string | null> {
+  const owner = await prisma.user.findFirst({
+    where: { role: 'admin', isActive: true, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return owner?.id ?? null;
+}

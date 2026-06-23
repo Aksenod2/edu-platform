@@ -7,6 +7,10 @@ import { uploadFile, getFileUrl, deleteFile } from '../lib/s3.js';
 import { isPositiveInt, creditBalance, MAX_AMOUNT_KOPECKS } from '../lib/money.js';
 import { settleOutstandingCharges } from '../lib/charges.js';
 import { notifyMany } from '../lib/notifications.js';
+import {
+  getActiveStudentStreamTeacherIds,
+  getPlatformOwnerId,
+} from '../lib/stream-teachers.js';
 
 // Эпик «Оплата и баланс», Фаза 1.
 //
@@ -184,16 +188,25 @@ export async function paymentRoutes(app: FastifyInstance) {
         throw err;
       }
 
-      // Best-effort: уведомляем всех админов о новой заявке на пополнение.
-      // Ошибка уведомления НЕ должна валить создание заявки (.catch как в других местах).
-      // Имя студента берём из БД (в JWT-пэйлоаде имени нет).
+      // Best-effort: уведомляем о новой заявке на пополнение строго ПО ГРУППАМ —
+      // преподавателей потоков студента-плательщика (активных, дедуп.), а НЕ всех админов
+      // (правило адресации #179). Если у студента нет групп/активных преподавателей,
+      // деньги без группы не теряем — уведомляем владельца платформы (см.
+      // getPlatformOwnerId: самый ранний активный админ). Ошибка уведомления НЕ должна
+      // валить создание заявки (.catch как в других местах). Имя студента — из БД (в JWT нет).
       void (async () => {
-        const [student, admins] = await Promise.all([
+        const [student, teacherIds] = await Promise.all([
           prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
-          prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+          getActiveStudentStreamTeacherIds(userId),
         ]);
-        const adminIds = admins.map((a) => a.id);
-        if (adminIds.length === 0) return;
+
+        let recipientIds = teacherIds;
+        if (recipientIds.length === 0) {
+          // Фолбэк «деньги без группы не теряем»: владелец платформы.
+          const ownerId = await getPlatformOwnerId();
+          recipientIds = ownerId ? [ownerId] : [];
+        }
+        if (recipientIds.length === 0) return;
 
         const studentName = student?.name?.trim() || 'Студент';
         const body =
@@ -201,7 +214,7 @@ export async function paymentRoutes(app: FastifyInstance) {
             ? `${studentName} · ${formatRubles(claimedAmountKopecks)}`
             : `${studentName} приложил оплату`;
 
-        await notifyMany(adminIds, 'topup_requested', 'Новая заявка на пополнение', body, {
+        await notifyMany(recipientIds, 'topup_requested', 'Новая заявка на пополнение', body, {
           studentId: userId,
           requestId: created.id,
         });

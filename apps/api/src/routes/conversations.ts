@@ -748,7 +748,12 @@ async function handleStaffMultipartEntry(
 
 /**
  * Уведомить аудиторию пер-поточного канала о новом сообщении:
- * преподаватели потока + все активные админы, КРОМЕ автора (с дедупликацией).
+ * ТОЛЬКО преподаватели потока, КРОМЕ автора (с дедупликацией). Никаких «всех админов»:
+ * админ-не-преподаватель этого потока уведомление НЕ получает (правило адресации #179).
+ * teacherIds — преподаватели потока (источник getStreamTeachers). ВНИМАНИЕ: здесь они
+ * НЕ фильтруются по isActive/deletedAt (в отличие от threads/payments/assignments) —
+ * удалённый/выключенный препод потока теоретически попадёт в список (push ему всё равно
+ * не доедет). Ужесточение до «только активные» — отдельный долг (DEBTS, нужен тест-мок).
  * Ссылка ведёт в /admin/messages (studentId не задаём — это канал преподавателей).
  */
 async function notifyStream(
@@ -762,13 +767,8 @@ async function notifyStream(
   type: ThreadEntryType,
   content: string,
 ): Promise<void> {
-  const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true, deletedAt: null },
-    select: { id: true },
-  });
-
-  // Аудитория = преподаватели потока ∪ активные админы, минус автор (dedupe через Set).
-  const recipients = new Set<string>([...teacherIds, ...admins.map((a) => a.id)]);
+  // Аудитория = преподаватели потока, минус автор (dedupe через Set).
+  const recipients = new Set<string>(teacherIds);
   recipients.delete(authorId);
   if (recipients.size === 0) return;
 
@@ -867,8 +867,9 @@ async function handleStreamMultipartEntry(
 
 /**
  * Уведомить аудиторию общего чата потока о новом сообщении:
- * зачисленные студенты потока + преподаватели потока + активные админы,
- * КРОМЕ автора (с дедупликацией). Ссылка несёт streamId для навигации.
+ * зачисленные (активные) студенты потока ∪ преподаватели потока, КРОМЕ автора
+ * (с дедупликацией). Никаких «всех админов»: админ-не-преподаватель этого потока
+ * уведомление НЕ получает (правило адресации #179). Ссылка несёт streamId для навигации.
  */
 async function notifyCohort(
   conversationId: string,
@@ -880,24 +881,16 @@ async function notifyCohort(
   type: ThreadEntryType,
   content: string,
 ): Promise<void> {
-  const [enrollments, teacherIds, admins] = await Promise.all([
+  const [enrollments, teacherIds] = await Promise.all([
     prisma.streamEnrollment.findMany({
       where: { streamId, user: { isActive: true, deletedAt: null } },
       select: { userId: true },
     }),
     getStreamTeachers(streamId),
-    prisma.user.findMany({
-      where: { role: 'admin', isActive: true, deletedAt: null },
-      select: { id: true },
-    }),
   ]);
 
-  // Аудитория = студенты потока ∪ преподаватели потока ∪ админы, минус автор.
-  const recipients = new Set<string>([
-    ...enrollments.map((e) => e.userId),
-    ...teacherIds,
-    ...admins.map((a) => a.id),
-  ]);
+  // Аудитория = студенты потока ∪ преподаватели потока, минус автор.
+  const recipients = new Set<string>([...enrollments.map((e) => e.userId), ...teacherIds]);
   recipients.delete(authorId);
   if (recipients.size === 0) return;
 
