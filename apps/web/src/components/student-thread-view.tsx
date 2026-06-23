@@ -32,6 +32,7 @@ import {
 } from '@/lib/api';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
 import { isNewDay } from '@/lib/chat-date';
+import { initials as getInitials } from '@/lib/initials';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -465,7 +466,7 @@ function MessageBubble({
   const isOwn = entry.authorId === currentUserId;
   const isAdmin = entry.author.role === 'admin';
   const date = new Date(entry.createdAt);
-  const initials = entry.author.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  const authorInitials = getInitials(entry.author.name);
 
   return (
     <div
@@ -485,7 +486,7 @@ function MessageBubble({
                 : 'bg-muted text-muted-foreground',
             )}
           >
-            {initials}
+            {authorInitials}
           </AvatarFallback>
         </Avatar>
       ) : (

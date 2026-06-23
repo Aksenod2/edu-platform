@@ -83,19 +83,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { HintCallout } from '@/components/hint-callout';
+import { initials } from '@/lib/initials';
 
 // Допустимые дни списания для менторских групп (бэк: 1..28).
 const BILLING_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
-
-// Инициалы из имени для аватара преподавателя
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('');
-}
 
 export default function StreamsPage() {
   const router = useRouter();

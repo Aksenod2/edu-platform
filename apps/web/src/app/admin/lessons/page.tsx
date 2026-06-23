@@ -20,8 +20,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Avatar,
-  AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
 } from '@/components/ui/avatar';
@@ -38,7 +36,7 @@ import {
 import { cn } from '@platform/ui/lib/utils';
 import { getLessons, createLessonBlock } from '@/lib/api';
 import { type LessonBlock } from '@/components/lessons/lesson-block';
-import { initials } from '@/components/lessons/teacher-picker';
+import { UserAvatar } from '@/components/user-avatar';
 import { HintCallout } from '@/components/hint-callout';
 
 // Варианты сортировки копилки уроков. Дефолт — по дате создания, старые сверху.
@@ -328,9 +326,7 @@ function LessonCard({
           <>
             <AvatarGroup>
               {teachers.slice(0, 3).map((t) => (
-                <Avatar key={t.id} size="sm">
-                  <AvatarFallback>{initials(t.name)}</AvatarFallback>
-                </Avatar>
+                <UserAvatar key={t.id} name={t.name} size="sm" />
               ))}
               {teachers.length > 3 && (
                 <AvatarGroupCount className="size-6 text-xs">
