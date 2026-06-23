@@ -11,6 +11,8 @@ import {
   processRecordingForSession,
   processSummaryForSession,
   processTranscriptForSession,
+  // ВРЕМЕННО (диагностика #188) — удалить после.
+  diagnoseRecordingListing,
   type ProcessOutcome,
 } from '../lib/zoom-recording.js';
 import { getFileUrl, readFileText } from '../lib/s3.js';
@@ -817,6 +819,17 @@ export async function meetingRoutes(app: FastifyInstance) {
       ),
     ]);
 
+    // ВРЕМЕННО (диагностика #188) — удалить после. Безопасный отчёт о том, что
+    // РЕАЛЬНО вернул Zoom на листинг записей (без download_url/токенов/сырых тел).
+    // Best-effort: своя ошибка не валит refresh.
+    const recordingDebug = await diagnoseRecordingListing({
+      sessionId: meeting.id,
+      meetingId,
+      teacherUserId: teacherId,
+      meetingUuid: meeting.zoomMeetingUuid,
+      kind: 'meeting',
+    });
+
     // Перечитываем встречу — отдаём актуальную проекцию (статусы полей обновлены).
     const updated = await prisma.meeting.findUnique({ where: { id }, select: meetingSelect });
     if (!updated) {
@@ -827,6 +840,8 @@ export async function meetingRoutes(app: FastifyInstance) {
       recording,
       summary,
       transcript,
+      // ВРЕМЕННО (диагностика #188) — удалить после.
+      recordingDebug,
     };
   });
 

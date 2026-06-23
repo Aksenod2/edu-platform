@@ -422,6 +422,77 @@ export async function processRecordingForSession(params: {
   }
 }
 
+// ВРЕМЕННО (диагностика #188) — удалить после.
+// Безопасная диагностика листинга записей Zoom для ручного refresh встречи. НЕ
+// скачивает файлы, НЕ меняет статусы в БД и НЕ раскрывает чувствительное
+// (download_url/токены/сырые тела). Повторяет доезд UUID + листинг recordings ровно
+// как processRecordingForSession, и формирует короткий человекочитаемый отчёт о том,
+// что РЕАЛЬНО вернул Zoom: какой id использован, HTTP-исход, число файлов, по каждому
+// файлу его тип/статус/наличие ссылки (булево), и итог pickMainRecording. Нужна, чтобы
+// заказчик увидел причину «висит формируется» в тосте и прислал её. Безопасно вызывать
+// best-effort: никогда не бросает (любую ошибку оборачивает в текст отчёта).
+export async function diagnoseRecordingListing(params: {
+  sessionId: string;
+  meetingId: string;
+  teacherUserId: string;
+  meetingUuid?: string | null;
+  kind?: RecordingKind;
+}): Promise<string> {
+  const { sessionId, meetingId, teacherUserId, meetingUuid, kind = 'session' } = params;
+  const model = modelFor(kind);
+  const lines: string[] = [];
+
+  try {
+    // Доезд UUID — той же логикой, что и в processRecordingForSession.
+    const ensured = await ensureMeetingUuid(model, sessionId, meetingUuid, meetingId, teacherUserId);
+    if (ensured.detailFailed) {
+      return 'DEBUG #188: доезд UUID встречи упал реальной ошибкой деталей (getMeetingDetail 403/5xx) → запись не запрашивалась (processing).';
+    }
+
+    // Какой id использован для листинга и факт «uuid: да/нет» — БЕЗ самого значения.
+    const usedUuid = ensured.uuid != null;
+    lines.push(`id листинга: ${usedUuid ? 'uuid' : 'numeric'} (uuid: ${usedUuid ? 'да' : 'нет'})`);
+    const recordingsId = ensured.uuid ?? meetingId;
+
+    // HTTP-исход листинга: ok / 404 / иной код / тип ошибки.
+    let files: ZoomRecordingFile[];
+    try {
+      files = await getMeetingRecordings(teacherUserId, recordingsId);
+      lines.push('листинг: ok');
+    } catch (err) {
+      if (err instanceof ZoomApiHttpError) {
+        lines.push(`листинг: HTTP ${err.status}${err.status === 404 ? ' (записи ещё нет/не готова → processing)' : ''}`);
+      } else {
+        lines.push(`листинг: ошибка типа ${err instanceof Error ? err.constructor.name : 'unknown'}`);
+      }
+      return `DEBUG #188: ${lines.join('; ')}`;
+    }
+
+    // Число файлов и краткое описание каждого (без download_url — только булево).
+    lines.push(`файлов: ${files.length}`);
+    files.forEach((f, i) => {
+      lines.push(
+        `[${i}] file_type=${f.file_type ?? '—'} recording_type=${f.recording_type ?? '—'} ` +
+          `status=${(f as { status?: unknown }).status ?? '—'} ext=${f.file_extension ?? '—'} ` +
+          `download_url=${f.download_url ? 'есть' : 'нет'}`,
+      );
+    });
+
+    // Итог pickMainRecording.
+    const main = pickMainRecording(files);
+    lines.push(
+      main
+        ? `pickMain: выбран recording_type=${main.recording_type ?? '—'} file_type=${main.file_type ?? '—'}`
+        : 'pickMain: none (подходящего MP4 со ссылкой нет → processing)',
+    );
+
+    return `DEBUG #188: ${lines.join('; ')}`;
+  } catch (err) {
+    // Best-effort — никогда не валим refresh. Текст без сырых деталей.
+    return `DEBUG #188: диагностика не выполнена (${err instanceof Error ? err.constructor.name : 'unknown'})`;
+  }
+}
+
 // Помечает запись занятия ОЖИДАЕМОЙ (recordingStatus='pending') на событии
 // meeting.ended. Смысл: между концом созвона и приходом recording.completed Zoom
 // обрабатывает облачную запись минуты-часы; без этой пометки проведённое занятие
