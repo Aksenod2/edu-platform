@@ -12,8 +12,14 @@ vi.mock('@platform/db', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
-    user: { findFirst: vi.fn() },
+    user: { findFirst: vi.fn(), findUnique: vi.fn() },
+    eventReminderSent: { deleteMany: vi.fn(() => Promise.resolve({ count: 0 })) },
   },
+}));
+
+// Push студенту (перенос/отмена) — мокаем: проверяем факт вызова, не доставку.
+vi.mock('../../lib/notifications.js', () => ({
+  sendPushToUser: vi.fn(() => Promise.resolve()),
 }));
 
 // Общие обработчики записи/итогов/транскрипта мокаем — тут проверяем РОУТ (изоляция,
@@ -48,6 +54,7 @@ import {
   deleteZoomMeeting,
 } from '../../lib/zoom.js';
 import { getFileUrl } from '../../lib/s3.js';
+import { sendPushToUser } from '../../lib/notifications.js';
 import {
   processRecordingForSession,
   processSummaryForSession,
@@ -63,6 +70,7 @@ const mockGetFileUrl = vi.mocked(getFileUrl);
 const mockProcessRecording = vi.mocked(processRecordingForSession);
 const mockProcessSummary = vi.mocked(processSummaryForSession);
 const mockProcessTranscript = vi.mocked(processTranscriptForSession);
+const mockSendPush = vi.mocked(sendPushToUser);
 
 const TEACHER_ID = 'teacher-1';
 const STUDENT_A = 'student-a';
@@ -390,14 +398,18 @@ describe('Проекция записи — recordingFileUrl (подписанн
 });
 
 describe('PATCH /meetings/:id/cancel — отмена (admin, своей)', () => {
-  it('переводит в cancelled и best-effort удаляет Zoom-встречу', async () => {
+  it('переводит в cancelled, best-effort удаляет Zoom-встречу и шлёт push студенту', async () => {
     db.meeting.findUnique.mockResolvedValue({
       id: 'm-1',
       teacherId: TEACHER_ID,
       status: 'planned',
       zoomMeetingId: '999',
+      studentId: STUDENT_A,
+      date: new Date('2026-07-01T00:00:00.000Z'),
+      startTime: '10:00',
     });
     db.meeting.update.mockResolvedValue(meetingRow({ status: 'cancelled' }));
+    db.user.findFirst.mockResolvedValue({ id: STUDENT_A });
 
     const app = buildApp();
     const res = await app.inject({
@@ -409,6 +421,55 @@ describe('PATCH /meetings/:id/cancel — отмена (admin, своей)', () =
     expect(res.json().status).toBe('cancelled');
     expect(db.meeting.update.mock.calls[0][0].data).toEqual({ status: 'cancelled' });
     expect(mockDeleteZoom).toHaveBeenCalledWith(TEACHER_ID, '999');
+    // Push студенту об отмене (студент активен).
+    expect(mockSendPush).toHaveBeenCalledTimes(1);
+    expect(mockSendPush.mock.calls[0][0]).toBe(STUDENT_A);
+    expect(mockSendPush.mock.calls[0][1].title).toBe('Встреча отменена');
+    expect(mockSendPush.mock.calls[0][1].body).toContain('01.07.2026');
+    expect(mockSendPush.mock.calls[0][1].body).toContain('10:00');
+  });
+
+  it('уже отменённую встречу отменить нельзя → 409, без сайд-эффектов', async () => {
+    db.meeting.findUnique.mockResolvedValue({
+      id: 'm-1',
+      teacherId: TEACHER_ID,
+      status: 'cancelled',
+      zoomMeetingId: '999',
+      studentId: STUDENT_A,
+      date: new Date('2026-07-01T00:00:00.000Z'),
+      startTime: '10:00',
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1/cancel',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+    expect(mockDeleteZoom).not.toHaveBeenCalled();
+    expect(mockSendPush).not.toHaveBeenCalled();
+  });
+
+  it('проведённую встречу отменить нельзя → 409, без сайд-эффектов', async () => {
+    db.meeting.findUnique.mockResolvedValue({
+      id: 'm-1',
+      teacherId: TEACHER_ID,
+      status: 'done',
+      zoomMeetingId: '999',
+      studentId: STUDENT_A,
+      date: new Date('2026-07-01T00:00:00.000Z'),
+      startTime: '10:00',
+    });
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1/cancel',
+      headers: authHeaders(adminToken),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+    expect(mockSendPush).not.toHaveBeenCalled();
   });
 
   it('чужую встречу (другой teacher) отменить нельзя → 404', async () => {
@@ -417,6 +478,9 @@ describe('PATCH /meetings/:id/cancel — отмена (admin, своей)', () =
       teacherId: 'teacher-2',
       status: 'planned',
       zoomMeetingId: null,
+      studentId: STUDENT_A,
+      date: new Date('2026-07-01T00:00:00.000Z'),
+      startTime: '10:00',
     });
     const app = buildApp();
     const res = await app.inject({
@@ -434,6 +498,213 @@ describe('PATCH /meetings/:id/cancel — отмена (admin, своей)', () =
       method: 'PATCH',
       url: '/meetings/m-1/cancel',
       headers: authHeaders(studentAToken),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('PATCH /meetings/:id — перенос встречи (admin, своей)', () => {
+  // Текущая встреча: planned, teacher↔A, момент 2026-07-01 10:00, есть Zoom.
+  function plannedMeeting(over: Record<string, unknown> = {}) {
+    return {
+      id: 'm-1',
+      teacherId: TEACHER_ID,
+      status: 'planned',
+      date: new Date('2026-07-01T00:00:00.000Z'),
+      startTime: '10:00',
+      zoomMeetingId: '999',
+      studentId: STUDENT_A,
+      title: 'Разбор',
+      ...over,
+    };
+  }
+
+  it('пустое тело → 400, БД не трогаем', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.meeting.findUnique).not.toHaveBeenCalled();
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('битый формат даты → 400, без update', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { date: '01.07.2026' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('битый формат времени → 400, без update', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { startTime: '9:5' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('время вне диапазона (99:99) → 400, без update (строгая валидация, паритет занятий)', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { startTime: '99:99' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('несуществующая дата (2026-02-30) → 400, без update (не молчаливый перекат)', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { date: '2026-02-30' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('чужую встречу (другой teacher) перенести нельзя → 404', async () => {
+    db.meeting.findUnique.mockResolvedValue(plannedMeeting({ teacherId: 'teacher-2' }));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { date: '2026-07-02' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('терминальную (done) встречу перенести нельзя → 409, без сайд-эффектов', async () => {
+    db.meeting.findUnique.mockResolvedValue(plannedMeeting({ status: 'done' }));
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { date: '2026-07-02', startTime: '12:00' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(db.meeting.update).not.toHaveBeenCalled();
+    expect(mockDeleteZoom).not.toHaveBeenCalled();
+    expect(mockSendPush).not.toHaveBeenCalled();
+    expect(db.eventReminderSent.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('happy: смена момента — пересоздаёт Zoom, сбрасывает метки, шлёт push, обновляет поля', async () => {
+    db.meeting.findUnique.mockResolvedValue(plannedMeeting());
+    mockCanCreate.mockResolvedValue(true);
+    mockCreateZoom.mockResolvedValue({ joinUrl: 'https://zoom.us/j/new', meetingId: 'new-999' });
+    db.user.findFirst.mockResolvedValue({ id: STUDENT_A });
+    db.meeting.update.mockResolvedValue(
+      meetingRow({
+        date: new Date('2026-07-05T00:00:00.000Z'),
+        startTime: '14:30',
+        meetingUrl: 'https://zoom.us/j/new',
+        zoomMeetingId: 'new-999',
+      }),
+    );
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { date: '2026-07-05', startTime: '14:30' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Старый Zoom удалён, новый создан.
+    expect(mockDeleteZoom).toHaveBeenCalledWith(TEACHER_ID, '999');
+    expect(mockCreateZoom).toHaveBeenCalledTimes(1);
+    // Метки напоминаний сброшены.
+    expect(db.eventReminderSent.deleteMany).toHaveBeenCalledWith({
+      where: { eventType: 'meeting', eventId: 'm-1' },
+    });
+    // Поля обновлены: новый момент + новый Zoom.
+    const data = db.meeting.update.mock.calls[0][0].data;
+    expect(data.date).toBeInstanceOf(Date);
+    expect(data.date.toISOString().slice(0, 10)).toBe('2026-07-05');
+    expect(data.startTime).toBe('14:30');
+    expect(data.meetingUrl).toBe('https://zoom.us/j/new');
+    expect(data.zoomMeetingId).toBe('new-999');
+    // Push о переносе студенту с новым временем.
+    expect(mockSendPush).toHaveBeenCalledTimes(1);
+    expect(mockSendPush.mock.calls[0][0]).toBe(STUDENT_A);
+    expect(mockSendPush.mock.calls[0][1].title).toBe('Встреча перенесена');
+    expect(mockSendPush.mock.calls[0][1].body).toContain('05.07.2026');
+    expect(mockSendPush.mock.calls[0][1].body).toContain('14:30');
+    // Новый meetingUrl попал в проекцию ответа.
+    expect(res.json().meetingUrl).toBe('https://zoom.us/j/new');
+  });
+
+  it('title-only: момент не менялся — Zoom/метки/push НЕ трогаем', async () => {
+    db.meeting.findUnique.mockResolvedValue(plannedMeeting());
+    db.meeting.update.mockResolvedValue(meetingRow({ title: 'Новая тема' }));
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      payload: { title: 'Новая тема' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Zoom не трогаем, метки не сбрасываем, push не шлём.
+    expect(mockDeleteZoom).not.toHaveBeenCalled();
+    expect(mockCreateZoom).not.toHaveBeenCalled();
+    expect(db.eventReminderSent.deleteMany).not.toHaveBeenCalled();
+    expect(mockSendPush).not.toHaveBeenCalled();
+    // Обновили только title.
+    expect(db.meeting.update.mock.calls[0][0].data).toEqual({ title: 'Новая тема' });
+  });
+
+  it('передан тот же момент (без фактической смены) — момент не считается изменённым', async () => {
+    db.meeting.findUnique.mockResolvedValue(plannedMeeting());
+    db.meeting.update.mockResolvedValue(meetingRow());
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(adminToken),
+      // те же date/startTime, что у встречи
+      payload: { date: '2026-07-01', startTime: '10:00' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockDeleteZoom).not.toHaveBeenCalled();
+    expect(mockCreateZoom).not.toHaveBeenCalled();
+    expect(db.eventReminderSent.deleteMany).not.toHaveBeenCalled();
+    expect(mockSendPush).not.toHaveBeenCalled();
+  });
+
+  it('студент не может переносить (403)', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/meetings/m-1',
+      headers: authHeaders(studentAToken),
+      payload: { date: '2026-07-02' },
     });
     expect(res.statusCode).toBe(403);
   });

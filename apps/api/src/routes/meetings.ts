@@ -14,6 +14,7 @@ import {
   type ProcessOutcome,
 } from '../lib/zoom-recording.js';
 import { getFileUrl, readFileText } from '../lib/s3.js';
+import { sendPushToUser } from '../lib/notifications.js';
 
 // ─── Встречи 1-на-1 (эпик «Встречи 1-на-1», #154) ───────────────────────────
 //
@@ -40,6 +41,21 @@ async function recordingFileUrlFor(videoKey: string | null | undefined): Promise
   }
 }
 
+// Строгая валидация времени HH:MM в диапазоне 00:00–23:59 (паритет lessons.ts:1042).
+// Голый /^\d{2}:\d{2}$/ пропускал «99:99» — мусор уезжал в Zoom-старт и напоминания.
+const VALID_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Парсит дату YYYY-MM-DD в UTC-полночь, ОТВЕРГАЯ несуществующие даты: new Date
+// перекатывает, например, 2026-02-30 на 2026-03-02, поэтому сверяем обратную
+// сериализацию с входом. null → дата невалидна (формат или несуществующий день).
+function parseMeetingDate(dateStr: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const parsed = new Date(`${dateStr}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.toISOString().slice(0, 10) !== dateStr) return null;
+  return parsed;
+}
+
 // Строит ISO-строку начала встречи для Zoom из даты (YYYY-MM-DD) и времени HH:MM.
 // Без времени — null (Zoom создаст встречу без явного старта). Зеркало
 // buildZoomStartTime из lessons.ts (та же форма даты у Session/Meeting).
@@ -48,6 +64,13 @@ function buildZoomStartTime(date: Date, startTime: string | null | undefined): s
   const datePart = date.toISOString().slice(0, 10);
   const time = startTime.trim().slice(0, 5); // HH:MM
   return `${datePart}T${time}:00`;
+}
+
+// Форматирует дату встречи (YYYY-MM-DD) в человекочитаемое ДД.ММ.ГГГГ для тела push.
+// На вход — нормализованная строка вида '2026-07-01' (как валидируем на границе).
+function formatRuDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}.${m}.${y}`;
 }
 
 // Best-effort создание Zoom-встречи под аккаунтом преподавателя. Возвращает
@@ -241,12 +264,9 @@ export async function meetingRoutes(app: FastifyInstance) {
     }
 
     const dateStr = typeof body.date === 'string' ? body.date.trim() : '';
-    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const date = parseMeetingDate(dateStr);
+    if (!date) {
       return reply.status(400).send({ error: 'Некорректная дата (ожидается YYYY-MM-DD)' });
-    }
-    const date = new Date(`${dateStr}T00:00:00.000Z`);
-    if (Number.isNaN(date.getTime())) {
-      return reply.status(400).send({ error: 'Некорректная дата' });
     }
 
     // Встреча 1-на-1 всегда с временем начала: оно обязательно (issue #169) — момент
@@ -255,7 +275,7 @@ export async function meetingRoutes(app: FastifyInstance) {
     if (!startTimeRaw) {
       return reply.status(400).send({ error: 'Встрече нужно время начала' });
     }
-    if (!/^\d{2}:\d{2}$/.test(startTimeRaw)) {
+    if (!VALID_TIME_RE.test(startTimeRaw)) {
       return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
     }
     const startTime: string = startTimeRaw;
@@ -344,19 +364,218 @@ export async function meetingRoutes(app: FastifyInstance) {
     return await projectMeeting(meeting as MeetingRow, forStudent);
   });
 
+  // PATCH /meetings/:id — перенос встречи 1-на-1 (admin, только своей: teacherId=me).
+  // Меняет момент старта (date/startTime) и/или тему (title). Body — все поля опц.,
+  // но хотя бы одно должно быть передано (иначе 400).
+  //
+  // Переносить можно ТОЛЬКО запланированную встречу (status='planned'): идущую/
+  // проведённую/отменённую нельзя (409). Паритет с canTransitionMeeting и с переносом
+  // занятия (lessons.ts: сброс меток напоминаний при смене момента).
+  //
+  // При фактической смене момента (momentChanged): best-effort пересоздаём Zoom-созвон
+  // (старый удаляем, новый создаём — как при отмене+создании), сбрасываем метки
+  // напоминаний EventReminderSent (переназначатся на новое время) и шлём студенту push
+  // «Встреча перенесена». При изменении ТОЛЬКО темы Zoom/метки/push не трогаем.
+  //
+  // Перенос в прошлую дату РАЗРЕШЁН (валидируем только формат date/startTime).
+  app.patch('/meetings/:id', { onRequest: adminOnly }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const teacherId = request.user!.userId;
+    const body = (request.body ?? {}) as {
+      date?: unknown;
+      startTime?: unknown;
+      title?: unknown;
+    };
+
+    // Хотя бы одно из полей должно присутствовать в теле — иначе переносить нечего.
+    const hasDate = body.date !== undefined;
+    const hasStartTime = body.startTime !== undefined;
+    const hasTitle = body.title !== undefined;
+    if (!hasDate && !hasStartTime && !hasTitle) {
+      return reply
+        .status(400)
+        .send({ error: 'Нечего обновлять: передайте date, startTime или title' });
+    }
+
+    // Валидация формата (как в POST). Парсим только переданные поля.
+    let newDate: Date | undefined;
+    let newDateStr: string | undefined;
+    if (hasDate) {
+      const dateStr = typeof body.date === 'string' ? body.date.trim() : '';
+      const parsed = parseMeetingDate(dateStr);
+      if (!parsed) {
+        return reply.status(400).send({ error: 'Некорректная дата (ожидается YYYY-MM-DD)' });
+      }
+      newDate = parsed;
+      newDateStr = dateStr;
+    }
+
+    let newStartTime: string | undefined;
+    if (hasStartTime) {
+      const startTimeRaw = typeof body.startTime === 'string' ? body.startTime.trim() : '';
+      if (!VALID_TIME_RE.test(startTimeRaw)) {
+        return reply.status(400).send({ error: 'Некорректное время (ожидается HH:MM)' });
+      }
+      newStartTime = startTimeRaw;
+    }
+
+    // title: trim, ''→null, обрезаем до 500 (паритет с POST). null допустим (снять тему).
+    let newTitle: string | null | undefined;
+    if (hasTitle) {
+      if (body.title === null) {
+        newTitle = null;
+      } else if (typeof body.title !== 'string') {
+        return reply.status(400).send({ error: 'Некорректная тема' });
+      } else {
+        const trimmed = body.title.trim();
+        newTitle = trimmed === '' ? null : trimmed.slice(0, 500);
+      }
+    }
+
+    // Текущая встреча: участие (teacherId=me) — иначе 404 (паритет /cancel).
+    const meeting = await prisma.meeting.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        teacherId: true,
+        status: true,
+        date: true,
+        startTime: true,
+        zoomMeetingId: true,
+        studentId: true,
+        title: true,
+      },
+    });
+    if (!meeting || meeting.teacherId !== teacherId) {
+      return reply.status(404).send({ error: 'Встреча не найдена' });
+    }
+
+    // Переносить можно только запланированную: идущую/проведённую/отменённую нельзя.
+    if (meeting.status !== 'planned') {
+      return reply
+        .status(409)
+        .send({ error: 'Перенести можно только запланированную встречу' });
+    }
+
+    // Фактическая смена момента: сравниваем переданные поля со старыми значениями.
+    // date — @db.Date, сравниваем по нормализованному YYYY-MM-DD.
+    const prevDateStr = meeting.date ? meeting.date.toISOString().slice(0, 10) : null;
+    const dateChanged = hasDate && newDateStr !== prevDateStr;
+    const startTimeChanged = hasStartTime && newStartTime !== (meeting.startTime ?? null);
+    const momentChanged = dateChanged || startTimeChanged;
+
+    // Итоговые момент старта для Zoom/уведомления (новые значения там, где переданы).
+    const effectiveDate = newDate ?? meeting.date;
+    const effectiveStartTime = newStartTime ?? meeting.startTime;
+
+    // Поля для update — только переданные.
+    const data: {
+      date?: Date;
+      startTime?: string;
+      title?: string | null;
+      meetingUrl?: string | null;
+      zoomMeetingId?: string | null;
+    } = {};
+    if (hasDate) data.date = newDate;
+    if (hasStartTime) data.startTime = newStartTime;
+    if (hasTitle) data.title = newTitle;
+
+    if (momentChanged) {
+      // 1) Best-effort удаление старого Zoom-созвона (не валим перенос при ошибке).
+      if (meeting.zoomMeetingId) {
+        try {
+          await deleteZoomMeeting(teacherId, meeting.zoomMeetingId);
+        } catch (err) {
+          app.log.warn(
+            { err, meetingId: id },
+            'Не удалось удалить старую встречу Zoom при переносе — продолжаем',
+          );
+        }
+      }
+
+      // 2) Best-effort создание нового Zoom-созвона на новый момент. Тема — новый/
+      // текущий title, либо «Встреча 1-на-1 с <имя студента>».
+      const effectiveTitle = hasTitle ? newTitle : meeting.title;
+      let topic = effectiveTitle ?? null;
+      if (!topic) {
+        const student = await prisma.user.findUnique({
+          where: { id: meeting.studentId },
+          select: { name: true },
+        });
+        topic = `Встреча 1-на-1 с ${student?.name ?? 'учеником'}`;
+      }
+      const zoom = await maybeCreateZoomForMeeting(app, teacherId, {
+        date: effectiveDate,
+        startTime: effectiveStartTime,
+        topic,
+      });
+      // Новые ссылка/идентификатор (могут быть null — best-effort как в POST).
+      data.meetingUrl = zoom?.joinUrl ?? null;
+      data.zoomMeetingId = zoom?.meetingId ?? null;
+
+      // 3) Сброс меток напоминаний — переназначатся на новое время (паритет lessons.ts).
+      await prisma.eventReminderSent.deleteMany({
+        where: { eventType: 'meeting', eventId: id },
+      });
+    }
+
+    const updated = await prisma.meeting.update({
+      where: { id },
+      data,
+      select: meetingSelect,
+    });
+
+    // Push студенту о переносе — только если момент реально сменился и студент активен.
+    if (momentChanged) {
+      const student = await prisma.user.findFirst({
+        where: { id: meeting.studentId, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (student) {
+        const whenDate = effectiveDate ? effectiveDate.toISOString().slice(0, 10) : null;
+        const whenStr = whenDate
+          ? `${formatRuDate(whenDate)} в ${effectiveStartTime ?? ''}`.trim()
+          : (effectiveStartTime ?? '');
+        await sendPushToUser(meeting.studentId, {
+          title: 'Встреча перенесена',
+          body: `Новое время: ${whenStr}`,
+          data: { url: `/dashboard/meetings/${id}` },
+        });
+      }
+    }
+
+    return await projectMeeting(updated as MeetingRow, false);
+  });
+
   // PATCH /meetings/:id/cancel — отмена встречи (admin, только своей: teacherId=me).
-  // status=cancelled + best-effort удаление Zoom-встречи.
+  // status=cancelled + best-effort удаление Zoom-встречи + push студенту.
   app.patch('/meetings/:id/cancel', { onRequest: adminOnly }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const teacherId = request.user!.userId;
 
     const meeting = await prisma.meeting.findUnique({
       where: { id },
-      select: { id: true, teacherId: true, status: true, zoomMeetingId: true },
+      select: {
+        id: true,
+        teacherId: true,
+        status: true,
+        zoomMeetingId: true,
+        studentId: true,
+        date: true,
+        startTime: true,
+      },
     });
     // Чужую (или несуществующую) встречу не раскрываем — 404.
     if (!meeting || meeting.teacherId !== teacherId) {
       return reply.status(404).send({ error: 'Встреча не найдена' });
+    }
+
+    // Терминальность: проведённую или уже отменённую встречу отменять нельзя (ДО
+    // сайд-эффектов). planned и live — отменять можно.
+    if (meeting.status === 'done' || meeting.status === 'cancelled') {
+      return reply
+        .status(409)
+        .send({ error: 'Нельзя отменить проведённую или уже отменённую встречу' });
     }
 
     // Best-effort удаление Zoom-встречи (не валит отмену при ошибке интеграции).
@@ -376,6 +595,23 @@ export async function meetingRoutes(app: FastifyInstance) {
       data: { status: 'cancelled' },
       select: meetingSelect,
     });
+
+    // Push студенту об отмене — только если студент активен/не удалён.
+    const student = await prisma.user.findFirst({
+      where: { id: meeting.studentId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (student) {
+      const whenDate = meeting.date ? meeting.date.toISOString().slice(0, 10) : null;
+      const whenStr = whenDate
+        ? `${formatRuDate(whenDate)} в ${meeting.startTime ?? ''}`.trim()
+        : (meeting.startTime ?? '');
+      await sendPushToUser(meeting.studentId, {
+        title: 'Встреча отменена',
+        body: `Встреча ${whenStr} отменена`,
+        data: { url: `/dashboard/meetings/${id}` },
+      });
+    }
 
     return await projectMeeting(updated as MeetingRow, false);
   });

@@ -289,10 +289,11 @@ export function MeetingDetail({
                   (внутри сам прячется для done/cancelled). */}
               {isAdmin && (
                 <MeetingStatusControl
-                  status={meeting.status}
+                  meeting={meeting}
                   pending={statusPending || cancelling}
                   onStatus={(next) => void handleStatus(next)}
                   onCancel={handleCancel}
+                  onRescheduled={(updated) => setMeeting(updated)}
                 />
               )}
               {/* Присоединиться к запланированной/идущей встрече — вторичное
