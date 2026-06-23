@@ -73,22 +73,50 @@ function resolveBase() {
   return 'HEAD~1';
 }
 
+// База diff вычисляется один раз — нужна и для списка файлов, и для набора
+// добавленных строк (построчный режим).
+const BASE = all ? null : resolveBase();
+const MERGE_BASE = all ? null : sh('git', ['merge-base', BASE, 'HEAD']) || BASE;
+
 function listFiles() {
   if (all) {
     return sh('git', ['ls-files', '*.ts', '*.tsx', '*.js', '*.jsx'])
       .split('\n')
       .filter(Boolean);
   }
-  const base = resolveBase();
-  const mergeBase = sh('git', ['merge-base', base, 'HEAD']) || base;
-  const diff = sh('git', ['diff', '--name-only', '--diff-filter=ACMR', mergeBase, 'HEAD']);
+  const diff = sh('git', ['diff', '--name-only', '--diff-filter=ACMR', MERGE_BASE, 'HEAD']);
   const staged = sh('git', ['diff', '--name-only', '--diff-filter=ACMR', '--cached']);
   const unstaged = sh('git', ['diff', '--name-only', '--diff-filter=ACMR']);
   // новые (untracked) файлы — в PR они будут закоммичены; локально ловим до коммита
   const untracked = sh('git', ['ls-files', '--others', '--exclude-standard']);
   const set = new Set([...diff.split('\n'), ...staged.split('\n'), ...unstaged.split('\n'), ...untracked.split('\n')].filter(Boolean));
-  console.log(`reuse: diff-режим, база ${base} (merge-base ${mergeBase.slice(0, 8)}); файлов в diff: ${set.size}`);
+  console.log(`reuse: diff-режим (построчно), база ${BASE} (merge-base ${String(MERGE_BASE).slice(0, 8)}); файлов в diff: ${set.size}`);
   return [...set];
+}
+
+// Номера ДОБАВЛЕННЫХ/ИЗМЕНЁННЫХ строк файла (правая сторона diff). null = «все
+// строки» (untracked-файл целиком новый, либо режим --all). Так гейт винит только
+// то, что реально написано в ЭТОМ изменении, а не пред-существующий легаси-дубль,
+// случайно оказавшийся в том же файле (его чистим отдельной задачей, под браузер-гейт).
+function addedLineSet(file) {
+  if (all) return null;
+  if (sh('git', ['ls-files', '--others', '--exclude-standard', '--', file])) return null; // untracked
+  const set = new Set();
+  const sources = [
+    ['diff', '--unified=0', MERGE_BASE, 'HEAD', '--', file],
+    ['diff', '--unified=0', '--cached', '--', file],
+    ['diff', '--unified=0', '--', file],
+  ];
+  for (const args of sources) {
+    for (const line of sh('git', args).split('\n')) {
+      const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+      if (!m) continue;
+      const start = Number(m[1]);
+      const count = m[2] === undefined ? 1 : Number(m[2]);
+      for (let i = 0; i < count; i++) set.add(start + i);
+    }
+  }
+  return set;
 }
 
 const files = listFiles()
@@ -100,8 +128,10 @@ const hits = [];
 for (const file of files) {
   const abs = resolve(ROOT, file);
   if (!existsSync(abs)) continue;
+  const addedLines = addedLineSet(file); // null = проверяем все строки (новый файл)
   const lines = readFileSync(abs, 'utf8').split('\n');
   lines.forEach((line, i) => {
+    if (addedLines && !addedLines.has(i + 1)) return; // только добавленные/изменённые строки
     if (line.trimStart().startsWith('//') || line.trimStart().startsWith('*')) return;
     for (const { re, msg } of FORBIDDEN) {
       if (re.test(line)) hits.push({ file, line: i + 1, code: line.trim(), msg });

@@ -77,16 +77,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
+import { initials } from '@/lib/initials';
 
 export default function StudentsPage() {
   const { accessToken } = useAuth();

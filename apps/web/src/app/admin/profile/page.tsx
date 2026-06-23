@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { updateMe, uploadMyAvatar, deleteMyAvatar } from '@/lib/api';
 import { PHONE_FORMAT_ERROR, PHONE_HINT, isValidPhone, normalizePhone } from '@/lib/phone';
 import { MyConsentsCard } from '@/components/my-consents-card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,15 +19,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
 
 export default function AdminProfilePage() {
   const { user, accessToken, setAccessToken, setUser } = useAuth();
@@ -234,10 +225,7 @@ export default function AdminProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
-              <Avatar size="lg">
-                {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.name} /> : null}
-                <AvatarFallback>{initials(user.name)}</AvatarFallback>
-              </Avatar>
+              <UserAvatar name={user.name} src={user.avatarUrl} size="lg" />
               <div className="flex flex-wrap gap-2">
                 <input
                   ref={fileInputRef}

@@ -23,16 +23,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ThreadConversation } from '@/components/thread-conversation';
 import { StaffConversation, type ConversationSource } from '@/components/staff-conversation';
 import { cn } from '@platform/ui/lib/utils';
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
+import { initials } from '@/lib/initials';
 
 function relativeTime(iso: string) {
   const date = new Date(iso);

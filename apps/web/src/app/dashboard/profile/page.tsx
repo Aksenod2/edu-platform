@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { initials } from '@/lib/initials';
 
 export default function ProfilePage() {
   const { user, accessToken, setUser } = useAuth();
@@ -124,12 +125,7 @@ export default function ProfilePage() {
   };
 
   const isCompleted = !!profile?.questionnaireCompletedAt;
-  const initials = user.name
-    .split(' ')
-    .slice(0, 2)
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase();
+  const userInitials = initials(user.name);
 
   return (
     <>
@@ -164,7 +160,7 @@ export default function ProfilePage() {
       <Card className="mb-8 mt-4">
         <CardContent className="flex items-center gap-4">
           <div className="flex size-14 flex-shrink-0 items-center justify-center rounded-full border-2 border-primary bg-muted">
-            <span className="text-base font-bold tracking-wider text-primary">{initials}</span>
+            <span className="text-base font-bold tracking-wider text-primary">{userInitials}</span>
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-base font-semibold text-foreground">{user.name}</p>

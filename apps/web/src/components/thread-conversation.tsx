@@ -36,18 +36,9 @@ import { cn } from '@platform/ui/lib/utils';
 import { usePolling, isNearBottom, mergeById } from '@/lib/chat-realtime';
 import { isNewDay } from '@/lib/chat-date';
 import { getStatusMeta } from '@/lib/assignment-status';
+import { initials } from '@/lib/initials';
 
 const POLL_INTERVAL_MS = 5000;
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
 
 function formatBytes(size: number) {
   return size < 1024 * 1024
