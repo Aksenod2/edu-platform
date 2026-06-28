@@ -113,6 +113,7 @@ describe('GET /messages/unread-count', () => {
       // Первый count — личные треды: type='student', автор-студент, readAt=null, не сам.
       expect(db.conversationEntry.count).toHaveBeenCalledWith({
         where: {
+          deletedAt: null,
           conversation: { type: 'student' },
           author: { role: 'student' },
           authorId: { not: 'admin-1' },
@@ -180,6 +181,7 @@ describe('GET /messages/unread-count', () => {
 
       expect(db.conversationEntry.count).toHaveBeenCalledWith({
         where: {
+          deletedAt: null,
           conversation: { type: 'student', studentId: 'stu-1' },
           author: { role: { not: 'student' } },
           authorId: { not: 'stu-1' },

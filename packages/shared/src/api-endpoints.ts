@@ -467,10 +467,12 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   { group: 'Профили/заметки', method: 'POST', path: '/profiles/:studentId/notes', desc: 'Добавить заметку об ученике' },
   { group: 'Профили/заметки', method: 'DELETE', path: '/profiles/:studentId/notes/:noteId', desc: 'Удалить заметку об ученике' },
 
-  // ─── Ленты/треды/чаты (записи append-only: правки/удаления нет) ───────────
+  // ─── Ленты/треды/чаты ──────────────────────────────────────────────────────
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/threads', desc: 'Список лент учеников' },
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/threads/:studentId', desc: 'Личный 1:1 чат ментор↔студент. Возвращает ВСЕ сообщения ОБЕИХ сторон (author {id,name,role}, createdAt, type, content). ?lessonId (или легаси ?assignmentId) — ОПЦИОНАЛЬНЫЙ фильтр по уроку; для полного чата НЕ передавать.' },
   { group: 'Ленты/треды/чаты', method: 'POST', path: '/threads/:studentId/entries', desc: 'Отправить сообщение в личный чат студента (он видит его в своём интерфейсе). Тело {type:text|link|comment, content}. Канонический канал ментор↔студент; работает по sk_-ключу.' },
+  { group: 'Ленты/треды/чаты', method: 'PATCH', path: '/threads/entries/:entryId', desc: 'Редактировать сообщение. Только автор. Тело {content}. Обновляется editedAt.' },
+  { group: 'Ленты/треды/чаты', method: 'DELETE', path: '/threads/entries/:entryId', desc: 'Удалить сообщение (мягкое удаление — флаг deletedAt). Только автор.' },
   { group: 'Ленты/треды/чаты', method: 'PATCH', path: '/threads/:studentId/entries/:entryId/read', desc: 'Отметить запись ленты прочитанной' },
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/conversations/staff', desc: 'Штаб-канал персонала' },
   { group: 'Ленты/треды/чаты', method: 'GET', path: '/conversations/staff/unread', desc: 'Непрочитанные в штаб-канале' },

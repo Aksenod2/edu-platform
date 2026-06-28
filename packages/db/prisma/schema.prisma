@@ -679,6 +679,11 @@ model ConversationEntry {
   lessonId       String?
   createdAt      DateTime        @default(now())
   readAt         DateTime?
+  // Мягкое удаление: пользователь удалил сообщение (NULL = активно).
+  // Запись остаётся в БД для аудита, но исключается из выдачи.
+  deletedAt      DateTime?
+  // Время последнего редактирования контента автором.
+  editedAt       DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   author       User         @relation("AuthoredEntries", fields: [authorId], references: [id], onDelete: Cascade)

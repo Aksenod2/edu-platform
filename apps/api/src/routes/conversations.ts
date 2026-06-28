@@ -78,6 +78,7 @@ async function countUnread(conversationId: string, userId: string): Promise<numb
   return prisma.conversationEntry.count({
     where: {
       conversationId,
+      deletedAt: null,
       authorId: { not: userId },
       ...(read ? { createdAt: { gt: read.lastReadAt } } : {}),
     },
@@ -120,6 +121,7 @@ async function countCohortsUnread(userId: string, streamIds: string[]): Promise<
       return prisma.conversationEntry.count({
         where: {
           conversationId,
+          deletedAt: null,
           authorId: { not: userId },
           ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
         },
@@ -159,6 +161,7 @@ export async function conversationRoutes(app: FastifyInstance) {
         // Один count по всем student-каналам сразу (без разбивки по студентам).
         prisma.conversationEntry.count({
           where: {
+            deletedAt: null,
             conversation: { type: 'student' },
             author: { role: 'student' },
             authorId: { not: user.userId },
@@ -185,6 +188,7 @@ export async function conversationRoutes(app: FastifyInstance) {
       // Фильтр conversation.studentId = me гарантирует приватность (только свой тред).
       prisma.conversationEntry.count({
         where: {
+          deletedAt: null,
           conversation: { type: 'student', studentId: user.userId },
           author: { role: { not: 'student' } },
           authorId: { not: user.userId },
@@ -213,7 +217,7 @@ export async function conversationRoutes(app: FastifyInstance) {
     const conversation = await getOrCreateStaffConversation();
 
     const entries = await prisma.conversationEntry.findMany({
-      where: { conversationId: conversation.id },
+      where: { conversationId: conversation.id, deletedAt: null },
       include: {
         author: { select: { id: true, name: true, role: true } },
       },
@@ -363,7 +367,7 @@ export async function conversationRoutes(app: FastifyInstance) {
     const conversation = await getOrCreateStreamConversation(streamId);
 
     const entries = await prisma.conversationEntry.findMany({
-      where: { conversationId: conversation.id },
+      where: { conversationId: conversation.id, deletedAt: null },
       include: {
         author: { select: { id: true, name: true, role: true } },
       },
@@ -537,7 +541,7 @@ export async function conversationRoutes(app: FastifyInstance) {
     const conversation = await getOrCreateCohortConversation(streamId);
 
     const entries = await prisma.conversationEntry.findMany({
-      where: { conversationId: conversation.id },
+      where: { conversationId: conversation.id, deletedAt: null },
       include: {
         author: { select: { id: true, name: true, role: true } },
       },

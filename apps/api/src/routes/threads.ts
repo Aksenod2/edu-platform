@@ -105,7 +105,7 @@ export async function threadRoutes(app: FastifyInstance) {
       where: {
         type: 'student',
         student: { deletedAt: null },
-        entries: { some: {} },
+        entries: { some: { deletedAt: null } },
       },
       select: {
         studentId: true,
@@ -113,6 +113,7 @@ export async function threadRoutes(app: FastifyInstance) {
         entries: {
           orderBy: { createdAt: 'desc' },
           take: 1,
+          where: { deletedAt: null },
           select: {
             type: true,
             content: true,
@@ -122,7 +123,7 @@ export async function threadRoutes(app: FastifyInstance) {
         },
         _count: {
           select: {
-            entries: { where: { readAt: null, author: { role: 'student' } } },
+            entries: { where: { readAt: null, author: { role: 'student' }, deletedAt: null } },
           },
         },
       },
@@ -188,6 +189,7 @@ export async function threadRoutes(app: FastifyInstance) {
     const entries = await prisma.conversationEntry.findMany({
       where: {
         conversationId: thread.id,
+        deletedAt: null,
         // Students cannot see "note" entries (admin-only notes)
         ...(user.role === 'student' ? { type: { not: 'note' as ThreadEntryType } } : {}),
         // Optional: filter by lesson context (assignment свёрнут в Lesson)
@@ -272,6 +274,81 @@ export async function threadRoutes(app: FastifyInstance) {
     });
 
     return { entry: updated };
+  });
+
+  // DELETE /threads/entries/:entryId — мягкое удаление сообщения.
+  // Удалить может ТОЛЬКО автор сообщения (студент — своё в своём треде,
+  // admin — любое своё). Запись остаётся в БД (deletedAt), исключается из выдачи.
+  app.delete('/threads/entries/:entryId', async (request, reply) => {
+    const { entryId } = request.params as { entryId: string };
+    const user = request.user!;
+
+    const entry = await prisma.conversationEntry.findUnique({
+      where: { id: entryId },
+      include: { conversation: { select: { studentId: true, type: true } } },
+    });
+
+    if (!entry) {
+      return reply.status(404).send({ error: 'Сообщение не найдено' });
+    }
+
+    // Только автор может удалить своё сообщение
+    if (entry.authorId !== user.userId) {
+      return reply.status(403).send({ error: 'Удалять можно только свои сообщения' });
+    }
+
+    // Нельзя удалить уже удалённое
+    if (entry.deletedAt) {
+      return reply.status(400).send({ error: 'Сообщение уже удалено' });
+    }
+
+    const now = new Date();
+    await prisma.conversationEntry.update({
+      where: { id: entryId },
+      data: { deletedAt: now },
+    });
+
+    return { entry: { id: entryId, deletedAt: now } };
+  });
+
+  // PATCH /threads/entries/:entryId — редактирование content сообщения.
+  // Редактировать может ТОЛЬКО автор. Обновляется content и editedAt.
+  app.patch('/threads/entries/:entryId', async (request, reply) => {
+    const { entryId } = request.params as { entryId: string };
+    const user = request.user!;
+    const body = request.body as { content: string };
+
+    if (!body.content || body.content.trim().length === 0) {
+      return reply.status(400).send({ error: 'Поле content обязательно и не может быть пустым' });
+    }
+
+    const entry = await prisma.conversationEntry.findUnique({
+      where: { id: entryId },
+      include: { conversation: { select: { studentId: true, type: true } } },
+    });
+
+    if (!entry) {
+      return reply.status(404).send({ error: 'Сообщение не найдено' });
+    }
+
+    // Только автор может редактировать
+    if (entry.authorId !== user.userId) {
+      return reply.status(403).send({ error: 'Редактировать можно только свои сообщения' });
+    }
+
+    // Нельзя редактировать удалённое
+    if (entry.deletedAt) {
+      return reply.status(400).send({ error: 'Нельзя редактировать удалённое сообщение' });
+    }
+
+    const now = new Date();
+    const updated = await prisma.conversationEntry.update({
+      where: { id: entryId },
+      data: { content: body.content.trim(), editedAt: now },
+      include: ENTRY_INCLUDE,
+    });
+
+    return { entry: withLegacyAssignmentShape(updated) };
   });
 
   // POST /threads/:studentId/entries — add entry (text, file, audio, link, comment, note)
