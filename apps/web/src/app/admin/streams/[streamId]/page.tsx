@@ -28,7 +28,7 @@ import { BackButton } from '@/components/back-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Card,
@@ -786,16 +786,6 @@ function AssignmentsTab({ streamId }: { streamId: string }) {
   );
 }
 
-// Инициалы из имени для аватара преподавателя
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('');
-}
-
 // Допустимые дни списания для менторских групп (бэк: 1..28).
 const BILLING_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -1433,9 +1423,7 @@ function OverviewTab({
             <div className="flex flex-wrap gap-3">
               {stream.teachers.map((t) => (
                 <div key={t.id} className="flex items-center gap-2">
-                  <Avatar size="sm">
-                    <AvatarFallback>{initials(t.name)}</AvatarFallback>
-                  </Avatar>
+                  <UserAvatar name={t.name} size="sm" />
                   <span className="text-sm">{t.name}</span>
                 </div>
               ))}

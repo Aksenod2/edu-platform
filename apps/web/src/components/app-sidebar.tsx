@@ -54,6 +54,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { initials } from '@/lib/initials';
 
 // Ключ счётчика-бейджа. Привязывает пункт меню к источнику числа, без хардкода href.
 type BadgeKey = 'topups' | 'messages';
@@ -321,16 +322,6 @@ function useSidebarCounters(
   }, [role, accessToken, pathname]);
 
   return counts;
-}
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 }
 
 function NavUser() {

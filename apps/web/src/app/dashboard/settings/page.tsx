@@ -6,6 +6,7 @@ import { ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { initials } from '@/lib/initials';
 
 interface SettingCard {
   title: string;
@@ -53,7 +54,7 @@ export default function StudentSettingsPage() {
         <CardContent className="flex items-center gap-4">
           <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-full border bg-muted">
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              {user.name.split(' ').slice(0, 2).map((w) => w[0]).join('')}
+              {initials(user.name)}
             </span>
           </div>
           <div className="min-w-0 flex-1">

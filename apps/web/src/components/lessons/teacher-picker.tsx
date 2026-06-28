@@ -1,18 +1,8 @@
 'use client';
 
 import { Checkbox } from '@/components/ui/checkbox';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import type { Teacher } from '@/lib/api';
-
-/** Инициалы из имени для аватара преподавателя. */
-export function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('');
-}
 
 // Чек-лист мультивыбора преподавателей (admins) для урока-блока.
 export function TeacherPicker({
@@ -39,9 +29,7 @@ export function TeacherPicker({
                 checked={selected.includes(teacher.id)}
                 onCheckedChange={() => onToggle(teacher.id)}
               />
-              <Avatar size="sm">
-                <AvatarFallback>{initials(teacher.name)}</AvatarFallback>
-              </Avatar>
+              <UserAvatar name={teacher.name} size="sm" />
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-medium">{teacher.name}</span>
                 <span className="truncate text-xs text-muted-foreground">

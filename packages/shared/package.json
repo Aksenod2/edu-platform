@@ -6,7 +6,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./foreign-email": "./src/foreign-email.ts"
+    "./foreign-email": "./src/foreign-email.ts",
+    "./validation": "./src/validation.ts",
+    "./enums": "./src/enums.ts"
   },
   "scripts": {
     "lint": "echo 'no lint'",
