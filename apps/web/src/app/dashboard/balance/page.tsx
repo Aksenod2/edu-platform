@@ -12,6 +12,7 @@ import {
   CalendarClock,
   Info,
   ChevronsUpDown,
+  Inbox,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
@@ -29,7 +30,8 @@ import {
   type NextMentorshipCharge,
   type PayableStream,
 } from '@/lib/api';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { EmptyState } from '@/components/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -351,11 +353,11 @@ export default function StudentBalancePage() {
   const transactionsView = error ? (
     <p className="text-sm text-destructive">Не удалось загрузить историю операций.</p>
   ) : transactions.length === 0 ? (
-    <p className="text-sm text-muted-foreground">Операций пока нет.</p>
+    <EmptyState icon={Wallet} title="Операций пока нет" />
   ) : (
     <>
-      {/* Десктоп: таблица */}
-      <div className="hidden rounded-lg border sm:block">
+      {/* Десктоп: таблица. Внешнюю границу даёт Card — своя рамка не нужна. */}
+      <div className="hidden sm:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -396,12 +398,12 @@ export default function StudentBalancePage() {
         </Table>
       </div>
 
-      {/* Мобильные: карточки-стек */}
-      <ul className="flex flex-col gap-3 sm:hidden">
+      {/* Мобильные: ряды списка через divide-y, без рамок у каждого ряда. */}
+      <ul className="divide-y sm:hidden">
         {transactions.map((tx) => {
           const isTopup = tx.kind === 'topup';
           return (
-            <li key={tx.id} className="rounded-lg border p-4">
+            <li key={tx.id} className="py-3 first:pt-0 last:pb-0">
               <div className="flex items-center justify-between gap-2">
                 <Badge variant={isTopup ? 'default' : 'secondary'}>
                   {isTopup ? 'Пополнение' : 'Списание'}
@@ -434,11 +436,11 @@ export default function StudentBalancePage() {
   const chargesView = error ? (
     <p className="text-sm text-destructive">Не удалось загрузить начисления.</p>
   ) : charges.length === 0 ? (
-    <p className="text-sm text-muted-foreground">Начислений пока нет.</p>
+    <EmptyState icon={Wallet} title="Начислений пока нет" />
   ) : (
     <>
-      {/* Десктоп: таблица */}
-      <div className="hidden rounded-lg border sm:block">
+      {/* Десктоп: таблица. Внешнюю границу даёт Card — своя рамка не нужна. */}
+      <div className="hidden sm:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -481,13 +483,13 @@ export default function StudentBalancePage() {
         </Table>
       </div>
 
-      {/* Мобильные: карточки-стек */}
-      <ul className="flex flex-col gap-3 sm:hidden">
+      {/* Мобильные: ряды списка через divide-y, без рамок у каждого ряда. */}
+      <ul className="divide-y sm:hidden">
         {charges.map((c) => {
           const meta = CHARGE_STATUS_META[c.status];
           const due = Math.max(c.amountKopecks - c.paidKopecks, 0);
           return (
-            <li key={c.id} className="rounded-lg border p-4">
+            <li key={c.id} className="py-3 first:pt-0 last:pb-0">
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0 truncate font-medium text-foreground">
                   {c.streamName}
@@ -533,13 +535,15 @@ export default function StudentBalancePage() {
       <Loader2 className="size-5 animate-spin text-muted-foreground" />
     </div>
   ) : requests.length === 0 ? (
-    <p className="text-sm text-muted-foreground">Заявок пока нет.</p>
+    <EmptyState icon={Inbox} title="Заявок пока нет" />
   ) : (
-    <div className="flex flex-col gap-3">
+    <ul className="divide-y">
       {requests.map((req) => (
-        <Card key={req.id}>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <li
+          key={req.id}
+          className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={STATUS_VARIANT[req.status]}>
                   {TOPUP_STATUS_LABELS[req.status]}
@@ -592,21 +596,20 @@ export default function StudentBalancePage() {
                 </DialogContent>
               </Dialog>
             )}
-          </CardContent>
-        </Card>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Баланс</h1>
         <p className="text-sm text-muted-foreground">Баланс, оплата и история операций</p>
       </div>
 
       {error && (
-        <Alert variant="destructive" className="mt-4">
+        <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -616,57 +619,51 @@ export default function StudentBalancePage() {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="mt-4 flex flex-col gap-6">
+        <div className="flex flex-col gap-6">
           {/* ============ БЛОК 1 — «Оплата» ============ */}
           <Card>
             <CardHeader>
               <CardTitle>Оплата</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
-              {/* 1) Сводка: текущий баланс + к оплате. */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {/* Текущий баланс */}
-                <div className="rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
+              {/* 1) Сводка: hero-баланс, ниже — состояние «К оплате». */}
+              <div className="flex flex-col gap-4">
+                {/* Текущий баланс — главный показатель (hero), без обёртки-коробки. */}
+                <div>
+                  <div className="flex items-center gap-2">
                     <Wallet className="size-5 text-muted-foreground" />
                     <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                       Текущий баланс
                     </span>
                   </div>
-                  <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">
                     {formatKopecks(balanceKopecks ?? 0)}
                   </p>
                 </div>
 
-                {/* Долг: заметно при наличии (акцент destructive), спокойно — когда чисто. */}
+                {/* К оплате: есть долг — акцентный Alert (destructive); чисто — спокойная
+                    строка под балансом, отделённая Separator. */}
                 {hasDebt ? (
-                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
-                    <div className="flex items-center gap-3">
-                      <TriangleAlert className="size-5 text-destructive" />
-                      <span className="font-mono text-xs uppercase tracking-wider text-destructive">
-                        К оплате
-                      </span>
-                    </div>
-                    <p className="mt-2 text-3xl font-bold tabular-nums text-destructive">
-                      {formatKopecks(outstandingKopecks)}
-                    </p>
+                  <Alert variant="destructive">
+                    <TriangleAlert />
+                    <AlertTitle className="tabular-nums">
+                      К оплате: {formatKopecks(outstandingKopecks)}
+                    </AlertTitle>
                     {/* Edge: есть долг, но нет групп со ссылкой — подсказываем, как платить. */}
                     {payableStreams.length === 0 && (
-                      <p className="mt-2 text-sm text-muted-foreground">
+                      <AlertDescription>
                         Оплатите по ссылке вашей группы или сообщите преподавателю.
-                      </p>
+                      </AlertDescription>
                     )}
-                  </div>
+                  </Alert>
                 ) : (
-                  <div className="rounded-lg border p-4">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle2 className="size-5 text-muted-foreground" />
-                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        К оплате
-                      </span>
+                  <>
+                    <Separator />
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle2 className="size-4" />
+                      <span>К оплате: задолженности нет</span>
                     </div>
-                    <p className="mt-2 text-sm text-muted-foreground">Задолженности нет</p>
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -828,6 +825,6 @@ export default function StudentBalancePage() {
           </Card>
         </div>
       )}
-    </>
+    </div>
   );
 }
